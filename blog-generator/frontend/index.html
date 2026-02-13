@@ -306,6 +306,10 @@
         <label for="apiKey">API Key</label>
         <input type="password" id="apiKey" placeholder="Claude API Key (sk-ant-...)" />
       </div>
+      <div class="api-key-row" style="margin-bottom: 16px;">
+        <label for="titleKeyword" style="min-width: 80px;">제목 키워드</label>
+        <input type="text" id="titleKeyword" placeholder="제목에 포함할 키워드 (예: 갤럭시 S24 울트라)" style="font-family: inherit;" />
+      </div>
       <div class="product-input">
         <textarea id="productInfo" placeholder="상품 정보를 붙여넣으세요.&#10;&#10;예시:&#10;삼성 갤럭시 S24 울트라&#10;- 가격: 1,650,000원~&#10;- 6.8인치 다이내믹 AMOLED 2X&#10;- 스냅드래곤 8 Gen 3&#10;- 2억 화소 카메라&#10;- 5000mAh 배터리&#10;- S펜 내장&#10;- 티타늄 프레임&#10;- Galaxy AI 기능 탑재"></textarea>
       </div>
@@ -366,9 +370,11 @@
 
     function startGenerate() {
       const apiKey = document.getElementById('apiKey').value.trim();
+      const titleKeyword = document.getElementById('titleKeyword').value.trim();
       const productInfo = document.getElementById('productInfo').value.trim();
 
       if (!apiKey) return showError('Claude API 키를 입력하세요.');
+      if (!titleKeyword) return showError('제목에 포함할 키워드를 입력하세요.');
       if (!productInfo) return showError('상품 정보를 입력하세요.');
 
       hideError();
@@ -380,7 +386,7 @@
       fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey, product_info: productInfo }),
+        body: JSON.stringify({ api_key: apiKey, title_keyword: titleKeyword, product_info: productInfo }),
       }).then(response => {
         if (!response.ok) {
           return response.json().then(err => { throw new Error(err.detail || '서버 오류'); });

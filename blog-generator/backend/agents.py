@@ -54,9 +54,12 @@ def run_research_agent(api_key: str, product_info: str) -> dict:
 
 
 # === 2. SEO 에이전트 ===
-def run_seo_agent(api_key: str, research_data: dict) -> dict:
+def run_seo_agent(api_key: str, research_data: dict, title_keyword: str = "") -> dict:
     """네이버 블로그용 키워드, 제목, 태그 생성"""
-    prompt = SEO_PROMPT.format(research_data=json.dumps(research_data, ensure_ascii=False, indent=2))
+    prompt = SEO_PROMPT.format(
+        research_data=json.dumps(research_data, ensure_ascii=False, indent=2),
+        title_keyword=title_keyword,
+    )
     response = _call_claude(api_key, prompt)
     return _parse_json(response)
 
@@ -91,14 +94,14 @@ def run_reviewer_agent(api_key: str, main_keyword: str, content: str) -> dict:
 
 
 # === 전체 파이프라인 ===
-async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
+async def run_pipeline(api_key: str, product_info: str, title_keyword: str = "", progress_callback=None):
     """
     전체 에이전트 파이프라인 실행
     Returns: {
         research: dict,
         seo: dict,
-        articles: { friendly: str, expert: str, review: str },
-        reviews: { friendly: dict, expert: dict, review: dict },
+        articles: { friendly: str, expert: str, beginner: str },
+        reviews: { friendly: dict, expert: dict, beginner: dict },
     }
     """
     # Step 1: 리서치
@@ -109,7 +112,7 @@ async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
     # Step 2: SEO
     if progress_callback:
         await progress_callback("seo")
-    seo_data = run_seo_agent(api_key, research_data)
+    seo_data = run_seo_agent(api_key, research_data, title_keyword)
 
     main_keyword = seo_data["main_keyword"]
     sub_keywords = seo_data["sub_keywords"]

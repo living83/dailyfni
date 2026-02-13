@@ -21,6 +21,7 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 class GenerateRequest(BaseModel):
     api_key: str
+    title_keyword: str
     product_info: str
 
 
@@ -34,6 +35,8 @@ async def generate(req: GenerateRequest):
     """SSE 스트림으로 파이프라인 진행 상태 + 최종 결과를 전송"""
     if not req.api_key or len(req.api_key) < 10:
         raise HTTPException(status_code=400, detail="유효한 Claude API 키를 입력하세요.")
+    if not req.title_keyword.strip():
+        raise HTTPException(status_code=400, detail="제목에 포함할 키워드를 입력하세요.")
     if not req.product_info.strip():
         raise HTTPException(status_code=400, detail="상품 정보를 입력하세요.")
 
@@ -51,7 +54,7 @@ async def generate(req: GenerateRequest):
             # Step 2: SEO
             yield send_event("progress", {"step": "seo", "message": "SEO 키워드 분석 중..."})
             await asyncio.sleep(0)
-            seo_data = await asyncio.to_thread(run_seo_agent, req.api_key, research_data)
+            seo_data = await asyncio.to_thread(run_seo_agent, req.api_key, research_data, req.title_keyword)
             yield send_event("progress", {"step": "seo_done", "message": "SEO 분석 완료"})
 
             main_keyword = seo_data["main_keyword"]
