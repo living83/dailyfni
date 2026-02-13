@@ -8,6 +8,7 @@ const researchRoutes = require('./routes/researchRoutes');
 const seoRoutes = require('./routes/seoRoutes');
 const writerRoutes = require('./routes/writerRoutes');
 const imageRoutes = require('./routes/imageRoutes');
+const reviewerRoutes = require('./routes/reviewerRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,7 @@ app.use('/api', researchRoutes);
 app.use('/api', seoRoutes);
 app.use('/api', writerRoutes);
 app.use('/api', imageRoutes);
+app.use('/api', reviewerRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
