@@ -4,6 +4,7 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes');
 const agencyRoutes = require('./routes/agencyRoutes');
 const plannerRoutes = require('./routes/plannerRoutes');
+const researchRoutes = require('./routes/researchRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', authRoutes);
 app.use('/api', agencyRoutes);
 app.use('/api', plannerRoutes);
+app.use('/api', researchRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
