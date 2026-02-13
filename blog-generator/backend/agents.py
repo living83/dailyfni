@@ -4,7 +4,7 @@
 """
 
 import json
-import google.generativeai as genai
+import anthropic
 from prompts import (
     RESEARCH_PROMPT,
     SEO_PROMPT,
@@ -15,18 +15,17 @@ from prompts import (
 )
 
 
-def _call_gemini(api_key: str, prompt: str, max_tokens: int = 4096) -> str:
-    """Google Gemini API 호출 공통 함수"""
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=0.7,
-        ),
+def _call_claude(api_key: str, prompt: str, max_tokens: int = 4096) -> str:
+    """Claude API 호출 공통 함수"""
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
     )
-    return response.text
+    return message.content[0].text
 
 
 def _parse_json(text: str) -> dict:
@@ -50,7 +49,7 @@ def _parse_json(text: str) -> dict:
 def run_research_agent(api_key: str, product_info: str) -> dict:
     """상품 정보를 JSON으로 정리"""
     prompt = RESEARCH_PROMPT.format(product_info=product_info)
-    response = _call_gemini(api_key, prompt)
+    response = _call_claude(api_key, prompt)
     return _parse_json(response)
 
 
@@ -58,7 +57,7 @@ def run_research_agent(api_key: str, product_info: str) -> dict:
 def run_seo_agent(api_key: str, research_data: dict) -> dict:
     """네이버 블로그용 키워드, 제목, 태그 생성"""
     prompt = SEO_PROMPT.format(research_data=json.dumps(research_data, ensure_ascii=False, indent=2))
-    response = _call_gemini(api_key, prompt)
+    response = _call_claude(api_key, prompt)
     return _parse_json(response)
 
 
@@ -80,14 +79,14 @@ def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub
         sub_keywords=", ".join(sub_keywords),
         research_data=json.dumps(research_data, ensure_ascii=False, indent=2),
     )
-    return _call_gemini(api_key, prompt, max_tokens=4096)
+    return _call_claude(api_key, prompt, max_tokens=4096)
 
 
 # === 4. 리뷰어 에이전트 ===
 def run_reviewer_agent(api_key: str, main_keyword: str, content: str) -> dict:
     """맞춤법, SEO, 저품질 검수"""
     prompt = REVIEWER_PROMPT.format(main_keyword=main_keyword, content=content)
-    response = _call_gemini(api_key, prompt)
+    response = _call_claude(api_key, prompt)
     return _parse_json(response)
 
 
