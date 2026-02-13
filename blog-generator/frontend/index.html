@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DailyFNI - 네이버 블로그 상품 설명 자동 생성기</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f6fa;
+      color: #2d3436;
+      min-height: 100vh;
+    }
+
+    /* === 헤더 === */
+    .header {
+      background: linear-gradient(135deg, #0984e3, #6c5ce7);
+      color: #fff;
+      padding: 32px 0 28px;
+      text-align: center;
+    }
+    .header h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+    .header p { font-size: 14px; opacity: 0.85; }
+
+    /* === 컨테이너 === */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+    /* === 입력 섹션 === */
+    .input-section {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      margin-top: -20px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+
+    .api-key-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .api-key-row label {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      color: #636e72;
+    }
+    .api-key-row input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #dfe6e9;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: monospace;
+      transition: border-color 0.2s;
+    }
+    .api-key-row input:focus { border-color: #0984e3; outline: none; }
+
+    .product-input textarea {
+      width: 100%;
+      height: 160px;
+      padding: 14px;
+      border: 1.5px solid #dfe6e9;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: vertical;
+      transition: border-color 0.2s;
+    }
+    .product-input textarea:focus { border-color: #0984e3; outline: none; }
+    .product-input textarea::placeholder { color: #b2bec3; }
+
+    .btn-generate {
+      display: block;
+      width: 100%;
+      margin-top: 16px;
+      padding: 14px;
+      background: linear-gradient(135deg, #0984e3, #6c5ce7);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-generate:hover { opacity: 0.92; }
+    .btn-generate:active { transform: scale(0.99); }
+    .btn-generate:disabled {
+      background: #b2bec3;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* === 진행 상태 === */
+    .progress-section {
+      display: none;
+      margin-top: 24px;
+    }
+    .progress-section.active { display: block; }
+
+    .progress-bar-track {
+      background: #dfe6e9;
+      border-radius: 20px;
+      height: 8px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0984e3, #6c5ce7);
+      border-radius: 20px;
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+
+    .progress-steps {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .progress-step {
+      flex: 1;
+      text-align: center;
+      padding: 10px 6px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #f0f0f0;
+      color: #b2bec3;
+      transition: all 0.3s;
+    }
+    .progress-step.active {
+      background: #dfe6e9;
+      color: #2d3436;
+      animation: pulse 1.5s infinite;
+    }
+    .progress-step.done {
+      background: #00b894;
+      color: #fff;
+      animation: none;
+    }
+    .progress-step .icon { font-size: 18px; display: block; margin-bottom: 4px; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* === 에러 === */
+    .error-box {
+      display: none;
+      margin-top: 16px;
+      padding: 14px 18px;
+      background: #fff5f5;
+      border: 1.5px solid #e17055;
+      border-radius: 10px;
+      color: #d63031;
+      font-size: 14px;
+    }
+    .error-box.active { display: block; }
+
+    /* === 결과 카드 === */
+    .results-section {
+      display: none;
+      margin-top: 32px;
+      padding-bottom: 60px;
+    }
+    .results-section.active { display: block; }
+
+    .results-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .results-header h2 { font-size: 22px; font-weight: 800; color: #2d3436; }
+    .results-header p { font-size: 13px; color: #636e72; margin-top: 4px; }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .cards-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-header {
+      padding: 18px 20px 14px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-header.friendly { background: linear-gradient(135deg, #00b894, #00cec9); }
+    .card-header.expert { background: linear-gradient(135deg, #0984e3, #74b9ff); }
+    .card-header.review { background: linear-gradient(135deg, #e17055, #fdcb6e); }
+
+    .card-header h3 { font-size: 15px; font-weight: 700; }
+    .card-header .badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.25);
+      font-weight: 600;
+    }
+
+    .card-title {
+      padding: 14px 20px 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: #2d3436;
+      line-height: 1.4;
+    }
+
+    .card-content {
+      padding: 12px 20px;
+      font-size: 13px;
+      line-height: 1.75;
+      color: #2d3436;
+      flex: 1;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .card-content h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 16px 0 8px;
+      color: #2d3436;
+    }
+    .card-content p { margin-bottom: 10px; }
+    .card-content ul, .card-content ol { margin: 8px 0 8px 20px; }
+    .card-content li { margin-bottom: 4px; }
+    .card-content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+    .card-content th, .card-content td { border: 1px solid #dfe6e9; padding: 6px 8px; text-align: left; }
+    .card-content th { background: #f5f6fa; font-weight: 600; }
+
+    .card-review {
+      padding: 12px 20px;
+      border-top: 1px solid #f0f0f0;
+      font-size: 12px;
+      color: #636e72;
+    }
+    .card-review .score-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .card-review .grade {
+      font-size: 20px;
+      font-weight: 800;
+      margin-right: 6px;
+    }
+    .grade-A { color: #00b894; }
+    .grade-B { color: #0984e3; }
+    .grade-C { color: #fdcb6e; }
+    .grade-D { color: #d63031; }
+
+    .card-footer {
+      padding: 12px 20px 16px;
+      border-top: 1px solid #f0f0f0;
+    }
+    .btn-copy {
+      width: 100%;
+      padding: 10px;
+      border: 1.5px solid #dfe6e9;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #636e72;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-copy:hover { border-color: #0984e3; color: #0984e3; }
+    .btn-copy.copied {
+      background: #00b894;
+      border-color: #00b894;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 헤더 -->
+  <div class="header">
+    <h1>DailyFNI Blog Generator</h1>
+    <p>상품 정보를 넣으면 네이버 블로그 글 3가지를 자동 생성합니다</p>
+  </div>
+
+  <div class="container">
+    <!-- 입력 섹션 -->
+    <div class="input-section">
+      <div class="api-key-row">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." />
+      </div>
+      <div class="product-input">
+        <textarea id="productInfo" placeholder="상품 정보를 붙여넣으세요.&#10;&#10;예시:&#10;삼성 갤럭시 S24 울트라&#10;- 가격: 1,650,000원~&#10;- 6.8인치 다이내믹 AMOLED 2X&#10;- 스냅드래곤 8 Gen 3&#10;- 2억 화소 카메라&#10;- 5000mAh 배터리&#10;- S펜 내장&#10;- 티타늄 프레임&#10;- Galaxy AI 기능 탑재"></textarea>
+      </div>
+      <button class="btn-generate" id="btnGenerate" onclick="startGenerate()">생성하기</button>
+
+      <!-- 진행 상태 -->
+      <div class="progress-section" id="progressSection">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBar"></div>
+        </div>
+        <div class="progress-steps">
+          <div class="progress-step" id="stepResearch">
+            <span class="icon">🔍</span>리서치
+          </div>
+          <div class="progress-step" id="stepSeo">
+            <span class="icon">📊</span>SEO 분석
+          </div>
+          <div class="progress-step" id="stepWriting">
+            <span class="icon">✍️</span>글 작성
+          </div>
+          <div class="progress-step" id="stepReview">
+            <span class="icon">✅</span>검수
+          </div>
+        </div>
+      </div>
+
+      <!-- 에러 -->
+      <div class="error-box" id="errorBox"></div>
+    </div>
+
+    <!-- 결과 카드 -->
+    <div class="results-section" id="resultsSection">
+      <div class="results-header">
+        <h2>생성 완료</h2>
+        <p>원하는 톤의 글을 복사하여 네이버 블로그에 붙여넣으세요</p>
+      </div>
+      <div class="cards-grid" id="cardsGrid"></div>
+    </div>
+  </div>
+
+  <script>
+    const TONE_CONFIG = {
+      friendly: { label: '친근톤', desc: '~해요체, 추천 느낌', headerClass: 'friendly' },
+      expert:   { label: '전문톤', desc: '~입니다체, 스펙 중심', headerClass: 'expert' },
+      review:   { label: '리뷰톤', desc: '사용 후기, 별점 포함', headerClass: 'review' },
+    };
+
+    const STEP_MAP = {
+      researching:   { el: 'stepResearch', progress: 15 },
+      research_done: { el: 'stepResearch', progress: 25, done: true },
+      seo:           { el: 'stepSeo',      progress: 35 },
+      seo_done:      { el: 'stepSeo',      progress: 45, done: true },
+      writing:       { el: 'stepWriting',  progress: 55 },
+      writing_done:  { el: 'stepWriting',  progress: 75, done: true },
+      reviewing:     { el: 'stepReview',   progress: 85 },
+      reviewing_done:{ el: 'stepReview',   progress: 95, done: true },
+    };
+
+    function startGenerate() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const productInfo = document.getElementById('productInfo').value.trim();
+
+      if (!apiKey) return showError('Anthropic API 키를 입력하세요.');
+      if (!apiKey.startsWith('sk-ant-')) return showError('유효한 Anthropic API 키 형식이 아닙니다.');
+      if (!productInfo) return showError('상품 정보를 입력하세요.');
+
+      hideError();
+      setLoading(true);
+      resetProgress();
+      document.getElementById('resultsSection').classList.remove('active');
+
+      // SSE 연결
+      fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey, product_info: productInfo }),
+      }).then(response => {
+        if (!response.ok) {
+          return response.json().then(err => { throw new Error(err.detail || '서버 오류'); });
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) return;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            let eventType = '';
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                eventType = line.slice(7).trim();
+              } else if (line.startsWith('data: ') && eventType) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  handleEvent(eventType, data);
+                } catch (e) { /* ignore parse errors */ }
+                eventType = '';
+              }
+            }
+            read();
+          });
+        }
+        read();
+      }).catch(err => {
+        showError(err.message);
+        setLoading(false);
+      });
+    }
+
+    function handleEvent(event, data) {
+      if (event === 'progress') {
+        updateProgress(data.step);
+      } else if (event === 'complete') {
+        document.getElementById('progressBar').style.width = '100%';
+        setTimeout(() => {
+          setLoading(false);
+          renderResults(data);
+        }, 400);
+      } else if (event === 'error') {
+        showError(data.message);
+        setLoading(false);
+      }
+    }
+
+    function updateProgress(step) {
+      const info = STEP_MAP[step];
+      if (!info) return;
+
+      document.getElementById('progressBar').style.width = info.progress + '%';
+
+      if (info.done) {
+        document.getElementById(info.el).classList.remove('active');
+        document.getElementById(info.el).classList.add('done');
+      } else {
+        document.getElementById(info.el).classList.add('active');
+      }
+    }
+
+    function renderResults(data) {
+      const grid = document.getElementById('cardsGrid');
+      grid.innerHTML = '';
+
+      for (const [tone, config] of Object.entries(TONE_CONFIG)) {
+        const article = data.articles[tone];
+        if (!article) continue;
+
+        const review = article.review || {};
+        const grade = review.grade || '-';
+        const score = review.overall_score || 0;
+        const verdict = review.verdict || '-';
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="card-header ${config.headerClass}">
+            <h3>${config.label}</h3>
+            <span class="badge">${config.desc}</span>
+          </div>
+          <div class="card-title">${escapeHtml(article.title)}</div>
+          <div class="card-content">${markdownToHtml(article.content)}</div>
+          <div class="card-review">
+            <div class="score-row">
+              <span><span class="grade grade-${grade}">${grade}</span> ${score}점</span>
+              <span>${verdict}</span>
+            </div>
+            ${renderReviewDetails(review)}
+          </div>
+          <div class="card-footer">
+            <button class="btn-copy" onclick="copyContent(this, '${tone}')">복사하기</button>
+          </div>
+        `;
+        card.dataset.rawContent = article.content;
+        card.dataset.tone = tone;
+        grid.appendChild(card);
+      }
+
+      document.getElementById('resultsSection').classList.add('active');
+      document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function renderReviewDetails(review) {
+      if (!review.spell_check && !review.seo_check && !review.quality_check) return '';
+      const spell = review.spell_check?.score ?? '-';
+      const seo = review.seo_check?.score ?? '-';
+      const quality = review.quality_check?.score ?? '-';
+      return `<div class="score-row" style="margin-top:4px;font-size:11px;color:#b2bec3;">
+        <span>맞춤법 ${spell}</span>
+        <span>SEO ${seo}</span>
+        <span>품질 ${quality}</span>
+      </div>`;
+    }
+
+    function copyContent(btn, tone) {
+      const card = btn.closest('.card');
+      const text = card.dataset.rawContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = '복사 완료!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '복사하기';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    }
+
+    /* --- 유틸 --- */
+
+    function markdownToHtml(md) {
+      if (!md) return '';
+      let html = escapeHtml(md);
+      // headings
+      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+      // bold/italic
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      // lists
+      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+      // table (simple)
+      html = html.replace(/\|(.+)\|/g, (match) => {
+        const cells = match.split('|').filter(c => c.trim());
+        if (cells.every(c => /^[\s-:]+$/.test(c))) return '';
+        const tag = 'td';
+        return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+      });
+      html = html.replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table>${m}</table>`);
+      // line breaks
+      html = html.replace(/\n\n/g, '</p><p>');
+      html = html.replace(/\n/g, '<br/>');
+      return `<p>${html}</p>`;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function setLoading(loading) {
+      const btn = document.getElementById('btnGenerate');
+      const progress = document.getElementById('progressSection');
+      if (loading) {
+        btn.disabled = true;
+        btn.textContent = '생성 중...';
+        progress.classList.add('active');
+      } else {
+        btn.disabled = false;
+        btn.textContent = '생성하기';
+        progress.classList.remove('active');
+      }
+    }
+
+    function resetProgress() {
+      document.getElementById('progressBar').style.width = '0%';
+      ['stepResearch', 'stepSeo', 'stepWriting', 'stepReview'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('active', 'done');
+      });
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      box.textContent = msg;
+      box.classList.add('active');
+    }
+
+    function hideError() {
+      document.getElementById('errorBox').classList.remove('active');
+    }
+  </script>
+</body>
+</html>
