@@ -32,8 +32,8 @@ async def serve_frontend():
 @app.post("/api/generate")
 async def generate(req: GenerateRequest):
     """SSE 스트림으로 파이프라인 진행 상태 + 최종 결과를 전송"""
-    if not req.api_key or not req.api_key.startswith("sk-ant-"):
-        raise HTTPException(status_code=400, detail="유효한 Anthropic API 키를 입력하세요.")
+    if not req.api_key or len(req.api_key) < 10:
+        raise HTTPException(status_code=400, detail="유효한 Google Gemini API 키를 입력하세요.")
     if not req.product_info.strip():
         raise HTTPException(status_code=400, detail="상품 정보를 입력하세요.")
 
