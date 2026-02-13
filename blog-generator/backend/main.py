@@ -66,7 +66,7 @@ async def generate(req: GenerateRequest):
             tones = [
                 ("friendly", titles["friendly"]),
                 ("expert", titles["expert"]),
-                ("review", titles["review"]),
+                ("beginner", titles["beginner"]),
             ]
             for tone, title in tones:
                 articles[tone] = await asyncio.to_thread(
@@ -92,7 +92,7 @@ async def generate(req: GenerateRequest):
                 "articles": {
                     "friendly": {"title": titles["friendly"], "content": articles["friendly"], "review": reviews["friendly"]},
                     "expert": {"title": titles["expert"], "content": articles["expert"], "review": reviews["expert"]},
-                    "review": {"title": titles["review"], "content": articles["review"], "review": reviews["review"]},
+                    "beginner": {"title": titles["beginner"], "content": articles["beginner"], "review": reviews["beginner"]},
                 },
             }
             yield send_event("complete", result)

@@ -10,7 +10,7 @@ from prompts import (
     SEO_PROMPT,
     WRITER_FRIENDLY_PROMPT,
     WRITER_EXPERT_PROMPT,
-    WRITER_REVIEW_PROMPT,
+    WRITER_BEGINNER_PROMPT,
     REVIEWER_PROMPT,
 )
 
@@ -67,7 +67,7 @@ def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub
     template_map = {
         "friendly": WRITER_FRIENDLY_PROMPT,
         "expert": WRITER_EXPERT_PROMPT,
-        "review": WRITER_REVIEW_PROMPT,
+        "beginner": WRITER_BEGINNER_PROMPT,
     }
     template = template_map.get(tone)
     if not template:
@@ -120,7 +120,7 @@ async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
         await progress_callback("writing")
 
     articles = {}
-    for tone, title in [("friendly", titles["friendly"]), ("expert", titles["expert"]), ("review", titles["review"])]:
+    for tone, title in [("friendly", titles["friendly"]), ("expert", titles["expert"]), ("beginner", titles["beginner"])]:
         articles[tone] = run_writer_agent(api_key, tone, title, main_keyword, sub_keywords, research_data)
 
     # Step 4: 리뷰어 (각 글 검수)
