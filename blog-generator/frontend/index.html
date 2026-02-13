@@ -233,11 +233,31 @@
       max-height: 400px;
       overflow-y: auto;
     }
-    .card-content h2 {
-      font-size: 15px;
-      font-weight: 700;
-      margin: 16px 0 8px;
+    .card-content h1 {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 20px 0 10px;
       color: #2d3436;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #dfe6e9;
+    }
+    .card-content h2 {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 18px 0 8px;
+      color: #2d3436;
+    }
+    .card-content h3 {
+      font-size: 14.5px;
+      font-weight: 600;
+      margin: 14px 0 6px;
+      color: #636e72;
+    }
+    .card-content h4 {
+      font-size: 13.5px;
+      font-weight: 600;
+      margin: 10px 0 4px;
+      color: #636e72;
     }
     .card-content p { margin-bottom: 10px; }
     .card-content ul, .card-content ol { margin: 8px 0 8px 20px; }
@@ -527,9 +547,11 @@
     function markdownToHtml(md) {
       if (!md) return '';
       let html = escapeHtml(md);
-      // headings
+      // headings (순서 중요: 큰 것부터)
+      html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
       html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
       html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+      html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
       // bold/italic
       html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
       html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
