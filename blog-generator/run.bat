@@ -1,46 +1,57 @@
 @echo off
-chcp 65001 >nul
-REM ============================================
-REM  네이버 블로그 상품 설명 자동 생성기 실행 스크립트
-REM  사용법: run.bat 더블클릭
-REM ============================================
+chcp 65001 >nul 2>&1
 
 echo ================================================
-echo   DailyFNI - 네이버 블로그 상품 설명 자동 생성기
+echo   DailyFNI - Blog Generator
 echo ================================================
 echo.
 
-REM Python 확인
+REM Python check
 where python >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo [오류] Python이 설치되어 있지 않습니다.
-    echo   https://www.python.org/downloads/ 에서 Python 3.9 이상을 설치해주세요.
+    echo [ERROR] Python is not installed.
+    echo   Please install Python 3.9+ from https://www.python.org/downloads/
     pause
     exit /b 1
 )
 
 for /f "tokens=*" %%i in ('python --version') do set PYVER=%%i
-echo [1/3] Python 확인: %PYVER%
+echo [1/3] Python: %PYVER%
 
-REM 가상환경 생성
+REM Create venv
 if not exist ".venv" (
-    echo [2/3] 가상환경 생성 중...
+    echo [2/3] Creating virtual environment...
     python -m venv .venv
+    if %ERRORLEVEL% NEQ 0 (
+        echo [ERROR] Failed to create virtual environment.
+        pause
+        exit /b 1
+    )
 )
 
-REM 가상환경 활성화
+REM Activate venv
+echo [2/3] Activating virtual environment...
 call .venv\Scripts\activate.bat
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Failed to activate virtual environment.
+    pause
+    exit /b 1
+)
 
-REM 패키지 설치
-echo [2/3] 패키지 설치 중...
+REM Install packages
+echo [2/3] Installing packages...
 pip install -q -r requirements.txt
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Failed to install packages. Retrying...
+    pip install -r requirements.txt
+)
 
-REM 서버 실행
-echo [3/3] 서버 시작 중...
+REM Start server
+echo [3/3] Starting server...
 echo.
 echo ================================================
-echo   브라우저에서 http://localhost:8000 접속하세요
-echo   종료하려면 Ctrl+C 를 누르세요
+echo   Open http://localhost:8000 in your browser
+echo   Press Ctrl+C to stop
 echo ================================================
 echo.
 
