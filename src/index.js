@@ -6,6 +6,7 @@ const agencyRoutes = require('./routes/agencyRoutes');
 const plannerRoutes = require('./routes/plannerRoutes');
 const researchRoutes = require('./routes/researchRoutes');
 const seoRoutes = require('./routes/seoRoutes');
+const writerRoutes = require('./routes/writerRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +24,7 @@ app.use('/api', agencyRoutes);
 app.use('/api', plannerRoutes);
 app.use('/api', researchRoutes);
 app.use('/api', seoRoutes);
+app.use('/api', writerRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
