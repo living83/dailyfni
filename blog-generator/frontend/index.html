@@ -609,6 +609,18 @@
     function hideError() {
       document.getElementById('errorBox').classList.remove('active');
     }
+
+    /* --- 페이지 로드 시 저장된 API 키 복원 --- */
+    (function() {
+      const saved = localStorage.getItem('claude_api_key');
+      if (saved) document.getElementById('apiKey').value = saved;
+
+      document.getElementById('apiKey').addEventListener('change', function() {
+        const v = this.value.trim();
+        if (v) localStorage.setItem('claude_api_key', v);
+        else localStorage.removeItem('claude_api_key');
+      });
+    })();
   </script>
 </body>
 </html>
