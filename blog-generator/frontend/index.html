@@ -388,7 +388,7 @@
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0">
           <div class="form-row">
             <label>일괄 등록</label>
-            <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력 (상품소개 없이 키워드만 등록)"></textarea>
+            <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력 (위 상품소개가 모든 키워드에 적용됩니다)"></textarea>
             <button class="btn btn-secondary btn-sm" onclick="addKeywordsBulk()" style="align-self:flex-start">일괄 등록</button>
           </div>
         </div>
@@ -1063,7 +1063,9 @@ async function addKeyword() {
 async function addKeywordsBulk() {
   const text = document.getElementById('kwBulkInput').value.trim();
   if (!text) return;
-  const keywords = text.split('\n').map(k => k.trim()).filter(k => k);
+  const productInfo = document.getElementById('kwProductInfo').value.trim();
+  const keywords = text.split('\n').map(k => k.trim()).filter(k => k)
+    .map(k => ({ keyword: k, product_info: productInfo, priority: 'medium' }));
   try {
     const result = await api('/api/keywords/bulk', { method: 'POST', body: JSON.stringify({ keywords, priority: 'medium' }) });
     showToast(result.message);
