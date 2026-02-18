@@ -148,6 +148,7 @@ async def get_db():
 
 async def create_account(data: dict) -> dict:
     async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """INSERT INTO accounts (account_name, naver_id, naver_password, specialty)
                VALUES (?, ?, ?, ?)""",
