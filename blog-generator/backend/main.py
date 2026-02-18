@@ -96,6 +96,7 @@ class CategoryUpdate(BaseModel):
 class DocumentGenerateRequest(BaseModel):
     api_key: str
     keyword: str
+    product_info: str = ""
 
 class PublishRequest(BaseModel):
     api_key: str
@@ -104,6 +105,7 @@ class PublishRequest(BaseModel):
 
 class KeywordCreate(BaseModel):
     keyword: str
+    product_info: str = ""
     priority: str = "medium"
 
 class KeywordBulkCreate(BaseModel):
@@ -112,6 +114,7 @@ class KeywordBulkCreate(BaseModel):
 
 class KeywordUpdate(BaseModel):
     keyword: Optional[str] = None
+    product_info: Optional[str] = None
     priority: Optional[str] = None
     status: Optional[str] = None
 
@@ -367,12 +370,17 @@ async def generate_documents(req: DocumentGenerateRequest):
                 ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
             ]
 
+            # 상품소개가 있으면 프롬프트에 삽입
+            product_info_section = ""
+            if req.product_info.strip():
+                product_info_section = f"\n상품소개:\n{req.product_info.strip()}\n"
+
             documents = []
             for i, (fmt, prompt_template, desc) in enumerate(doc_configs):
                 yield send_event("progress", {"step": i + 1, "total": 3, "message": f"문서 {i+1} 생성 중... ({desc})"})
                 await asyncio.sleep(0)
 
-                prompt = prompt_template.format(keyword=req.keyword)
+                prompt = prompt_template.format(keyword=req.keyword, product_info_section=product_info_section)
                 result = await asyncio.to_thread(_call_claude, req.api_key, prompt, 4096)
 
                 lines = result.strip().split("\n", 1)
@@ -727,7 +735,7 @@ async def republish(history_id: int, background_tasks: BackgroundTasks):
 
 @app.post("/api/keywords")
 async def create_keyword(req: KeywordCreate):
-    return await db.add_keyword({"keyword": req.keyword, "priority": req.priority})
+    return await db.add_keyword({"keyword": req.keyword, "product_info": req.product_info, "priority": req.priority})
 
 
 @app.post("/api/keywords/bulk")
@@ -755,6 +763,8 @@ async def update_keyword_api(kw_id: int, req: KeywordUpdate):
     data = {}
     if req.keyword is not None:
         data["keyword"] = req.keyword
+    if req.product_info is not None:
+        data["product_info"] = req.product_info
     if req.priority is not None:
         data["priority"] = req.priority
     if req.status is not None:

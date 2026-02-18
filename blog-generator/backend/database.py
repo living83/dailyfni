@@ -77,6 +77,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS keyword_queue (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 keyword TEXT NOT NULL,
+                product_info TEXT DEFAULT '',
                 priority TEXT DEFAULT 'medium',
                 status TEXT DEFAULT 'pending',
                 last_used_at TEXT DEFAULT '',
@@ -128,6 +129,13 @@ async def init_db():
             INSERT OR IGNORE INTO scheduler_config (id) VALUES (1);
         """)
         await db.commit()
+
+        # 기존 테이블에 product_info 컬럼 추가 (마이그레이션)
+        try:
+            await db.execute("ALTER TABLE keyword_queue ADD COLUMN product_info TEXT DEFAULT ''")
+            await db.commit()
+        except Exception:
+            pass  # 이미 존재하면 무시
 
 
 def _row_to_dict(cursor, row):
@@ -394,8 +402,8 @@ async def add_keyword(data: dict) -> dict:
     async with aiosqlite.connect(str(DB_PATH)) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "INSERT INTO keyword_queue (keyword, priority) VALUES (?, ?)",
-            (data["keyword"], data.get("priority", "medium")),
+            "INSERT INTO keyword_queue (keyword, product_info, priority) VALUES (?, ?, ?)",
+            (data["keyword"], data.get("product_info", ""), data.get("priority", "medium")),
         )
         await db.commit()
         row = await db.execute("SELECT * FROM keyword_queue WHERE id = ?", (cursor.lastrowid,))
@@ -408,10 +416,11 @@ async def add_keywords_bulk(keywords: list) -> int:
         for kw in keywords:
             keyword = kw if isinstance(kw, str) else kw.get("keyword", "")
             priority = "medium" if isinstance(kw, str) else kw.get("priority", "medium")
+            product_info = "" if isinstance(kw, str) else kw.get("product_info", "")
             if keyword.strip():
                 await db.execute(
-                    "INSERT INTO keyword_queue (keyword, priority) VALUES (?, ?)",
-                    (keyword.strip(), priority),
+                    "INSERT INTO keyword_queue (keyword, product_info, priority) VALUES (?, ?, ?)",
+                    (keyword.strip(), product_info, priority),
                 )
                 count += 1
         await db.commit()
@@ -451,7 +460,7 @@ async def get_next_keyword() -> dict | None:
 async def update_keyword(kw_id: int, data: dict):
     fields = []
     values = []
-    for key in ["keyword", "priority", "status", "last_used_at", "next_available_at", "used_count"]:
+    for key in ["keyword", "product_info", "priority", "status", "last_used_at", "next_available_at", "used_count"]:
         if key in data:
             fields.append(f"{key} = ?")
             values.append(data[key])

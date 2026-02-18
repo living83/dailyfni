@@ -362,6 +362,14 @@
     <!-- ═══ 탭 4: 키워드 큐 ═══ -->
     <div class="tab-content" id="tab-keywords">
       <div class="card">
+        <h3>Claude API Key</h3>
+        <div class="form-row">
+          <label>API Key</label>
+          <input type="password" id="kwApiKey" placeholder="Claude API Key (sk-ant-...)" />
+          <span id="kwApiKeySaved" style="font-size:11px;color:#00b894;display:none">자동 저장됨</span>
+        </div>
+      </div>
+      <div class="card">
         <h3>키워드 추가</h3>
         <div class="form-row">
           <label>키워드</label>
@@ -371,12 +379,18 @@
             <option value="medium" selected>보통</option>
             <option value="low">낮음</option>
           </select>
-          <button class="btn btn-primary btn-sm" onclick="addKeyword()">추가</button>
         </div>
         <div class="form-row">
-          <label>일괄 등록</label>
-          <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력"></textarea>
-          <button class="btn btn-secondary btn-sm" onclick="addKeywordsBulk()" style="align-self:flex-start">일괄 등록</button>
+          <label>상품소개</label>
+          <textarea id="kwProductInfo" rows="4" placeholder="상품 정보를 입력하세요 (선택사항 - 입력하면 블로그 글에 반영됩니다)"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="addKeyword()" style="width:100%">키워드 추가</button>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0">
+          <div class="form-row">
+            <label>일괄 등록</label>
+            <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력 (상품소개 없이 키워드만 등록)"></textarea>
+            <button class="btn btn-secondary btn-sm" onclick="addKeywordsBulk()" style="align-self:flex-start">일괄 등록</button>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -387,8 +401,8 @@
           <button class="btn btn-sm btn-secondary" onclick="loadKeywords('used')">사용됨</button>
         </div>
         <table class="data-table">
-          <thead><tr><th>키워드</th><th>우선순위</th><th>상태</th><th>사용 횟수</th><th>등록일</th><th>작업</th></tr></thead>
-          <tbody id="kwTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+          <thead><tr><th>키워드</th><th>상품소개</th><th>우선순위</th><th>상태</th><th>사용 횟수</th><th>등록일</th><th>작업</th></tr></thead>
+          <tbody id="kwTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -621,7 +635,7 @@ const STEP_MAP = {
 };
 
 function startGenerate() {
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
   const titleKeyword = document.getElementById('titleKeyword').value.trim();
   const productInfo = document.getElementById('productInfo').value.trim();
   if (!apiKey || !titleKeyword || !productInfo) return showToast('모든 필드를 입력하세요', 'error');
@@ -724,9 +738,9 @@ function copyText(btn, tone) {
 
 /* ━━━ 키워드 기반 3개 문서 생성 ━━━ */
 function startDocGenerate() {
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
   const keyword = document.getElementById('docKeyword').value.trim();
-  if (!apiKey) return showToast('API Key를 입력하세요', 'error');
+  if (!apiKey) return showToast('API Key를 입력하세요 (글 생성 탭 또는 키워드 큐 탭)', 'error');
   if (!keyword) return showToast('키워드를 입력하세요', 'error');
 
   document.getElementById('btnDocGenerate').disabled = true;
@@ -837,7 +851,7 @@ async function onDocAccountChange(docIdx, accountId) {
 }
 
 async function publishGeneratedDocs() {
-  const apiKey = document.getElementById('apiKey').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
   const keyword = document.getElementById('docKeyword').value.trim();
   if (!apiKey) return showToast('API Key가 필요합니다', 'error');
   if (!generatedDocs.length) return showToast('먼저 문서를 생성하세요', 'error');
@@ -1015,13 +1029,14 @@ async function loadKeywords(status) {
     const url = status ? `/api/keywords?status=${status}` : '/api/keywords';
     const keywords = await api(url);
     const tbody = document.getElementById('kwTableBody');
-    if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
+    if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
     const prioMap = { high: '높음', medium: '보통', low: '낮음' };
     const prioTag = { high: 'tag-red', medium: 'tag-blue', low: 'tag-gray' };
     const statusMap = { pending: '대기', used: '사용됨', reserved: '예약' };
     const statusTag = { pending: 'tag-yellow', used: 'tag-green', reserved: 'tag-blue' };
     tbody.innerHTML = keywords.map(kw => `<tr>
       <td><strong>${escapeHtml(kw.keyword)}</strong></td>
+      <td style="max-width:200px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(kw.product_info || '')}">${kw.product_info ? escapeHtml(kw.product_info).slice(0, 30) + (kw.product_info.length > 30 ? '...' : '') : '<span style="color:#b2bec3">-</span>'}</td>
       <td><span class="tag ${prioTag[kw.priority] || 'tag-gray'}">${prioMap[kw.priority] || kw.priority}</span></td>
       <td><span class="tag ${statusTag[kw.status] || 'tag-gray'}">${statusMap[kw.status] || kw.status}</span></td>
       <td>${kw.used_count}</td>
@@ -1034,10 +1049,12 @@ async function loadKeywords(status) {
 async function addKeyword() {
   const kw = document.getElementById('kwInput').value.trim();
   const priority = document.getElementById('kwPriority').value;
+  const productInfo = document.getElementById('kwProductInfo').value.trim();
   if (!kw) return;
   try {
-    await api('/api/keywords', { method: 'POST', body: JSON.stringify({ keyword: kw, priority }) });
+    await api('/api/keywords', { method: 'POST', body: JSON.stringify({ keyword: kw, product_info: productInfo, priority }) });
     document.getElementById('kwInput').value = '';
+    document.getElementById('kwProductInfo').value = '';
     showToast('키워드가 추가되었습니다');
     loadKeywords();
   } catch (e) { showToast(e.message, 'error'); }
@@ -1292,15 +1309,28 @@ async function deleteNotif(id) {
   try { await api(`/api/notifications/${id}`, { method: 'DELETE' }); loadNotifications(); } catch(e){}
 }
 
+/* ━━━ API Key 동기화 (글 생성 탭 ↔ 키워드 큐 탭) ━━━ */
+function syncApiKeys(sourceId) {
+  const val = document.getElementById(sourceId).value.trim();
+  if (val) localStorage.setItem('claude_api_key', val);
+  else localStorage.removeItem('claude_api_key');
+  // 양쪽 입력란 동기화
+  if (sourceId === 'apiKey') document.getElementById('kwApiKey').value = val;
+  else document.getElementById('apiKey').value = val;
+  // 저장 표시
+  const badge = document.getElementById('kwApiKeySaved');
+  if (val) { badge.style.display = 'inline'; setTimeout(() => badge.style.display = 'none', 2000); }
+}
+
 /* ━━━ 초기화 ━━━ */
 (function() {
   const saved = localStorage.getItem('claude_api_key');
-  if (saved) document.getElementById('apiKey').value = saved;
-  document.getElementById('apiKey').addEventListener('change', function() {
-    const v = this.value.trim();
-    if (v) localStorage.setItem('claude_api_key', v);
-    else localStorage.removeItem('claude_api_key');
-  });
+  if (saved) {
+    document.getElementById('apiKey').value = saved;
+    document.getElementById('kwApiKey').value = saved;
+  }
+  document.getElementById('apiKey').addEventListener('change', function() { syncApiKeys('apiKey'); });
+  document.getElementById('kwApiKey').addEventListener('input', function() { syncApiKeys('kwApiKey'); });
   // 초기 데이터 로드
   loadAccounts();
   loadNotifications();

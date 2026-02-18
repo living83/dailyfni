@@ -95,6 +95,7 @@ async def daily_publish_job():
         return
 
     keyword = kw["keyword"]
+    product_info = kw.get("product_info", "")
     logger.info(f"자동 발행 시작: 키워드 = {keyword}")
 
     # 활성 계정 가져오기
@@ -135,9 +136,14 @@ async def daily_publish_job():
             ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
         ]
 
+        # 상품소개가 있으면 프롬프트에 삽입
+        product_info_section = ""
+        if product_info.strip():
+            product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
+
         documents = []
         for fmt, prompt_template, desc in doc_formats:
-            prompt = prompt_template.format(keyword=keyword)
+            prompt = prompt_template.format(keyword=keyword, product_info_section=product_info_section)
             from agents import _call_claude
             result = _call_claude(api_key, prompt, max_tokens=4096)
             # 제목과 본문 분리
