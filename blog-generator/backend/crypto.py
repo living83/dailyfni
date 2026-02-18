@@ -11,11 +11,12 @@ import hmac
 import struct
 
 
+_DEFAULT_KEY = "dailyfni-default-master-key-2026"
+
+
 def _get_master_key() -> bytes:
-    """환경변수에서 마스터 키를 가져와 256비트 키로 파생"""
-    master = os.getenv("MASTER_KEY", "")
-    if not master:
-        raise RuntimeError("MASTER_KEY 환경변수가 설정되지 않았습니다.")
+    """환경변수에서 마스터 키를 가져와 256비트 키로 파생 (없으면 기본값 사용)"""
+    master = os.getenv("MASTER_KEY", "") or _DEFAULT_KEY
     return hashlib.sha256(master.encode()).digest()
 
 
