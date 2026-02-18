@@ -3,3 +3,20 @@ __pycache__/
 .env
 *.log
 dist/
+
+# 데이터 디렉토리 (DB, 쿠키, 로그)
+blog-generator/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 쿠키 파일
+cookies/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

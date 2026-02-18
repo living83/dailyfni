@@ -3,624 +3,1308 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DailyFNI - 네이버 블로그 상품 설명 자동 생성기</title>
+  <title>DailyFNI - 네이버 블로그 자동 발행 시스템</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
     body {
       font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: #f5f6fa;
       color: #2d3436;
       min-height: 100vh;
     }
-
     /* === 헤더 === */
     .header {
       background: linear-gradient(135deg, #0984e3, #6c5ce7);
       color: #fff;
-      padding: 32px 0 28px;
+      padding: 20px 0 14px;
       text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
-    .header h1 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
-    .header p { font-size: 14px; opacity: 0.85; }
+    .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .header p { font-size: 12px; opacity: 0.8; }
+    .notification-badge {
+      position: absolute;
+      top: 16px;
+      right: 24px;
+      background: #e17055;
+      color: #fff;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .notification-badge.show { display: flex; }
+
+    /* === 탭 네비 === */
+    .tab-nav {
+      display: flex;
+      background: #fff;
+      border-bottom: 2px solid #dfe6e9;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tab-nav button {
+      flex: none;
+      padding: 12px 18px;
+      border: none;
+      background: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: #636e72;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-nav button:hover { color: #0984e3; }
+    .tab-nav button.active { color: #0984e3; border-bottom-color: #0984e3; }
 
     /* === 컨테이너 === */
-    .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-    /* === 입력 섹션 === */
-    .input-section {
-      background: #fff;
-      border-radius: 16px;
-      padding: 28px;
-      margin-top: -20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-    }
-
-    .api-key-row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
-      align-items: center;
-    }
-    .api-key-row label {
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      color: #636e72;
-    }
-    .api-key-row input {
-      flex: 1;
-      padding: 10px 14px;
-      border: 1.5px solid #dfe6e9;
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: monospace;
-      transition: border-color 0.2s;
-    }
-    .api-key-row input:focus { border-color: #0984e3; outline: none; }
-
-    .product-input textarea {
-      width: 100%;
-      height: 160px;
-      padding: 14px;
-      border: 1.5px solid #dfe6e9;
-      border-radius: 10px;
-      font-size: 14px;
-      line-height: 1.6;
-      resize: vertical;
-      transition: border-color 0.2s;
-    }
-    .product-input textarea:focus { border-color: #0984e3; outline: none; }
-    .product-input textarea::placeholder { color: #b2bec3; }
-
-    .btn-generate {
-      display: block;
-      width: 100%;
-      margin-top: 16px;
-      padding: 14px;
-      background: linear-gradient(135deg, #0984e3, #6c5ce7);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
-    }
-    .btn-generate:hover { opacity: 0.92; }
-    .btn-generate:active { transform: scale(0.99); }
-    .btn-generate:disabled {
-      background: #b2bec3;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    /* === 진행 상태 === */
-    .progress-section {
-      display: none;
-      margin-top: 24px;
-    }
-    .progress-section.active { display: block; }
-
-    .progress-bar-track {
-      background: #dfe6e9;
-      border-radius: 20px;
-      height: 8px;
-      overflow: hidden;
-      margin-bottom: 16px;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #0984e3, #6c5ce7);
-      border-radius: 20px;
-      width: 0%;
-      transition: width 0.5s ease;
-    }
-
-    .progress-steps {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .progress-step {
-      flex: 1;
-      text-align: center;
-      padding: 10px 6px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      background: #f0f0f0;
-      color: #b2bec3;
-      transition: all 0.3s;
-    }
-    .progress-step.active {
-      background: #dfe6e9;
-      color: #2d3436;
-      animation: pulse 1.5s infinite;
-    }
-    .progress-step.done {
-      background: #00b894;
-      color: #fff;
-      animation: none;
-    }
-    .progress-step .icon { font-size: 18px; display: block; margin-bottom: 4px; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-
-    /* === 에러 === */
-    .error-box {
-      display: none;
-      margin-top: 16px;
-      padding: 14px 18px;
-      background: #fff5f5;
-      border: 1.5px solid #e17055;
-      border-radius: 10px;
-      color: #d63031;
-      font-size: 14px;
-    }
-    .error-box.active { display: block; }
-
-    /* === 결과 카드 === */
-    .results-section {
-      display: none;
-      margin-top: 32px;
-      padding-bottom: 60px;
-    }
-    .results-section.active { display: block; }
-
-    .results-header {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-    .results-header h2 { font-size: 22px; font-weight: 800; color: #2d3436; }
-    .results-header p { font-size: 13px; color: #636e72; margin-top: 4px; }
-
-    .cards-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-    }
-    @media (max-width: 900px) {
-      .cards-grid { grid-template-columns: 1fr; }
-    }
-
+    /* === 공통 컴포넌트 === */
     .card {
       background: #fff;
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-      display: flex;
-      flex-direction: column;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     }
-
-    .card-header {
-      padding: 18px 20px 14px;
-      color: #fff;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .card-header.friendly { background: linear-gradient(135deg, #00b894, #00cec9); }
-    .card-header.expert { background: linear-gradient(135deg, #0984e3, #74b9ff); }
-    .card-header.beginner { background: linear-gradient(135deg, #a29bfe, #fd79a8); }
-
-    .card-header h3 { font-size: 15px; font-weight: 700; }
-    .card-header .badge {
-      font-size: 11px;
-      padding: 3px 10px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.25);
-      font-weight: 600;
-    }
-
-    .card-title {
-      padding: 14px 20px 0;
-      font-size: 14px;
-      font-weight: 700;
-      color: #2d3436;
-      line-height: 1.4;
-    }
-
-    .card-content {
-      padding: 12px 20px;
-      font-size: 13px;
-      line-height: 1.75;
-      color: #2d3436;
+    .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: #2d3436; }
+    .form-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+    .form-row label { font-size: 13px; font-weight: 600; min-width: 80px; color: #636e72; }
+    .form-row input, .form-row select, .form-row textarea {
       flex: 1;
-      max-height: 400px;
-      overflow-y: auto;
-    }
-    .card-content h1 {
-      font-size: 18px;
-      font-weight: 800;
-      margin: 20px 0 10px;
-      color: #2d3436;
-      padding-bottom: 6px;
-      border-bottom: 2px solid #dfe6e9;
-    }
-    .card-content h2 {
-      font-size: 16px;
-      font-weight: 700;
-      margin: 18px 0 8px;
-      color: #2d3436;
-    }
-    .card-content h3 {
-      font-size: 14.5px;
-      font-weight: 600;
-      margin: 14px 0 6px;
-      color: #636e72;
-    }
-    .card-content h4 {
-      font-size: 13.5px;
-      font-weight: 600;
-      margin: 10px 0 4px;
-      color: #636e72;
-    }
-    .card-content p { margin-bottom: 10px; }
-    .card-content ul, .card-content ol { margin: 8px 0 8px 20px; }
-    .card-content li { margin-bottom: 4px; }
-    .card-content table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
-    .card-content th, .card-content td { border: 1px solid #dfe6e9; padding: 6px 8px; text-align: left; }
-    .card-content th { background: #f5f6fa; font-weight: 600; }
-
-    .card-review {
-      padding: 12px 20px;
-      border-top: 1px solid #f0f0f0;
-      font-size: 12px;
-      color: #636e72;
-    }
-    .card-review .score-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    .card-review .grade {
-      font-size: 20px;
-      font-weight: 800;
-      margin-right: 6px;
-    }
-    .grade-A { color: #00b894; }
-    .grade-B { color: #0984e3; }
-    .grade-C { color: #fdcb6e; }
-    .grade-D { color: #d63031; }
-
-    .card-footer {
-      padding: 12px 20px 16px;
-      border-top: 1px solid #f0f0f0;
-    }
-    .btn-copy {
-      width: 100%;
-      padding: 10px;
+      padding: 9px 12px;
       border: 1.5px solid #dfe6e9;
       border-radius: 8px;
-      background: #fff;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus { border-color: #0984e3; outline: none; }
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 8px;
       font-size: 13px;
       font-weight: 600;
-      color: #636e72;
       cursor: pointer;
       transition: all 0.2s;
     }
-    .btn-copy:hover { border-color: #0984e3; color: #0984e3; }
-    .btn-copy.copied {
-      background: #00b894;
-      border-color: #00b894;
+    .btn-primary { background: linear-gradient(135deg, #0984e3, #6c5ce7); color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger { background: #d63031; color: #fff; }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-secondary { background: #dfe6e9; color: #2d3436; }
+    .btn-secondary:hover { background: #b2bec3; }
+    .btn-success { background: #00b894; color: #fff; }
+    .btn-success:hover { opacity: 0.9; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn:disabled { background: #b2bec3; cursor: not-allowed; }
+
+    .tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin: 2px; }
+    .tag-green { background: #e6fff7; color: #00b894; }
+    .tag-blue { background: #e8f4fd; color: #0984e3; }
+    .tag-red { background: #fff5f5; color: #d63031; }
+    .tag-yellow { background: #fefce8; color: #f39c12; }
+    .tag-gray { background: #f0f0f0; color: #636e72; }
+
+    .toggle { position: relative; width: 48px; height: 26px; display: inline-block; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider { position: absolute; inset: 0; background: #b2bec3; border-radius: 26px; cursor: pointer; transition: 0.3s; }
+    .toggle .slider:before { content: ''; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+    .toggle input:checked + .slider { background: #00b894; }
+    .toggle input:checked + .slider:before { transform: translateX(22px); }
+
+    /* === 테이블 === */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th { background: #f5f6fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #636e72; border-bottom: 2px solid #dfe6e9; }
+    .data-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    .data-table tr:hover { background: #fafafa; }
+
+    /* === 진행 상태 === */
+    .progress-bar-track { background: #dfe6e9; border-radius: 20px; height: 8px; overflow: hidden; margin: 8px 0; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #0984e3, #6c5ce7); border-radius: 20px; width: 0%; transition: width 0.5s ease; }
+
+    .progress-steps { display: flex; justify-content: space-between; gap: 8px; }
+    .progress-step { flex: 1; text-align: center; padding: 10px 6px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #f0f0f0; color: #b2bec3; transition: all 0.3s; }
+    .progress-step.active { background: #dfe6e9; color: #2d3436; animation: pulse 1.5s infinite; }
+    .progress-step.done { background: #00b894; color: #fff; animation: none; }
+    .progress-step .icon { font-size: 18px; display: block; margin-bottom: 4px; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    /* === 토스트 알림 === */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+    .toast {
+      background: #2d3436;
       color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      margin-top: 8px;
+      font-size: 13px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { border-left: 4px solid #00b894; }
+    .toast.error { border-left: 4px solid #d63031; }
+    .toast.warning { border-left: 4px solid #fdcb6e; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* === 모달 === */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; justify-content: center; align-items: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: #fff; border-radius: 16px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .modal h3 { margin-bottom: 16px; }
+    .modal-close { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: #636e72; }
+
+    /* === 에러 === */
+    .error-box { display: none; margin-top: 12px; padding: 12px 16px; background: #fff5f5; border: 1.5px solid #e17055; border-radius: 8px; color: #d63031; font-size: 13px; }
+    .error-box.active { display: block; }
+
+    /* === 결과 카드 그리드 === */
+    .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .cards-grid { grid-template-columns: 1fr; } }
+
+    .doc-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: flex; flex-direction: column; }
+    .doc-card-header { padding: 14px 18px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .doc-card-header.tutorial { background: linear-gradient(135deg, #00b894, #00cec9); }
+    .doc-card-header.review { background: linear-gradient(135deg, #0984e3, #74b9ff); }
+    .doc-card-header.analysis { background: linear-gradient(135deg, #a29bfe, #fd79a8); }
+    .doc-card-header h4 { font-size: 14px; font-weight: 700; }
+    .doc-card-header .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: rgba(255,255,255,0.25); font-weight: 600; }
+    .doc-card-title { padding: 12px 18px 0; font-size: 14px; font-weight: 700; }
+    .doc-card-content { padding: 10px 18px; font-size: 12px; line-height: 1.7; flex: 1; max-height: 300px; overflow-y: auto; }
+    .doc-card-content h1,.doc-card-content h2,.doc-card-content h3 { margin: 12px 0 6px; font-size: 14px; font-weight: 700; }
+    .doc-card-content p { margin-bottom: 8px; }
+    .doc-card-content ul { margin: 6px 0 6px 16px; }
+    .doc-card-footer { padding: 12px 18px; border-top: 1px solid #f0f0f0; display: flex; gap: 8px; }
+    .doc-card-footer select { padding: 6px; border: 1px solid #dfe6e9; border-radius: 6px; font-size: 12px; }
+
+    .char-count { font-size: 11px; color: #636e72; }
+    .char-count.ok { color: #00b894; }
+    .char-count.short { color: #d63031; }
+
+    /* === 발행 상태 패널 === */
+    .publish-status-panel { border: 2px solid #dfe6e9; border-radius: 12px; padding: 20px; }
+    .publish-status-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .publish-status-item:last-child { border-bottom: none; }
+    .publish-status-icon { font-size: 24px; }
+    .publish-status-info { flex: 1; }
+    .publish-status-info .title { font-size: 14px; font-weight: 600; }
+    .publish-status-info .detail { font-size: 12px; color: #636e72; margin-top: 2px; }
+
+    /* === 반응형 === */
+    @media (max-width: 768px) {
+      .form-row { flex-direction: column; }
+      .form-row label { min-width: auto; }
+      .container { padding: 12px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- 헤더 -->
   <div class="header">
-    <h1>DailyFNI Blog Generator</h1>
-    <p>상품 정보를 넣으면 네이버 블로그 글 3가지를 자동 생성합니다</p>
+    <h1>DailyFNI Blog Auto Publisher</h1>
+    <p>네이버 블로그 자동 글 생성 & 발행 시스템</p>
+    <div class="notification-badge" id="notifBadge" onclick="switchTab('notifications')">0</div>
   </div>
+
+  <nav class="tab-nav" id="tabNav">
+    <button class="active" onclick="switchTab('generate')">글 생성</button>
+    <button onclick="switchTab('publish')">문서 발행</button>
+    <button onclick="switchTab('accounts')">계정 관리</button>
+    <button onclick="switchTab('keywords')">키워드 큐</button>
+    <button onclick="switchTab('scheduler')">자동 스케줄</button>
+    <button onclick="switchTab('history')">발행 이력</button>
+    <button onclick="switchTab('stats')">통계</button>
+    <button onclick="switchTab('notifications')">알림</button>
+  </nav>
 
   <div class="container">
-    <!-- 입력 섹션 -->
-    <div class="input-section">
-      <div class="api-key-row">
-        <label for="apiKey">API Key</label>
-        <input type="password" id="apiKey" placeholder="Claude API Key (sk-ant-...)" />
-      </div>
-      <div class="api-key-row" style="margin-bottom: 16px;">
-        <label for="titleKeyword" style="min-width: 80px;">제목 키워드</label>
-        <input type="text" id="titleKeyword" placeholder="제목에 포함할 키워드 (예: 갤럭시 S24 울트라)" style="font-family: inherit;" />
-      </div>
-      <div class="product-input">
-        <textarea id="productInfo" placeholder="상품 정보를 붙여넣으세요.&#10;&#10;예시:&#10;삼성 갤럭시 S24 울트라&#10;- 가격: 1,650,000원~&#10;- 6.8인치 다이내믹 AMOLED 2X&#10;- 스냅드래곤 8 Gen 3&#10;- 2억 화소 카메라&#10;- 5000mAh 배터리&#10;- S펜 내장&#10;- 티타늄 프레임&#10;- Galaxy AI 기능 탑재"></textarea>
-      </div>
-      <button class="btn-generate" id="btnGenerate" onclick="startGenerate()">생성하기</button>
 
-      <!-- 진행 상태 -->
-      <div class="progress-section" id="progressSection">
-        <div class="progress-bar-track">
-          <div class="progress-bar-fill" id="progressBar"></div>
+    <!-- ═══ 탭 1: 글 생성 ═══ -->
+    <div class="tab-content active" id="tab-generate">
+      <div class="card">
+        <h3>상품 기반 글 생성 (3가지 톤)</h3>
+        <div class="form-row">
+          <label>API Key</label>
+          <input type="password" id="apiKey" placeholder="Claude API Key (sk-ant-...)" />
         </div>
-        <div class="progress-steps">
-          <div class="progress-step" id="stepResearch">
-            <span class="icon">🔍</span>리서치
-          </div>
-          <div class="progress-step" id="stepSeo">
-            <span class="icon">📊</span>SEO 분석
-          </div>
-          <div class="progress-step" id="stepWriting">
-            <span class="icon">✍️</span>글 작성
-          </div>
-          <div class="progress-step" id="stepReview">
-            <span class="icon">✅</span>검수
+        <div class="form-row">
+          <label>제목 키워드</label>
+          <input type="text" id="titleKeyword" placeholder="제목에 포함할 키워드" />
+        </div>
+        <div class="form-row">
+          <label>상품 정보</label>
+          <textarea id="productInfo" rows="5" placeholder="상품 정보를 붙여넣으세요"></textarea>
+        </div>
+        <button class="btn btn-primary" id="btnGenerate" onclick="startGenerate()" style="width:100%">생성하기</button>
+        <div id="genProgressSection" style="display:none;margin-top:16px">
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="genProgressBar"></div></div>
+          <div class="progress-steps">
+            <div class="progress-step" id="stepResearch"><span class="icon">🔍</span>리서치</div>
+            <div class="progress-step" id="stepSeo"><span class="icon">📊</span>SEO</div>
+            <div class="progress-step" id="stepWriting"><span class="icon">✍️</span>작성</div>
+            <div class="progress-step" id="stepReview"><span class="icon">✅</span>검수</div>
           </div>
         </div>
+        <div class="error-box" id="genErrorBox"></div>
+      </div>
+      <div id="genResultsSection" style="display:none">
+        <div style="text-align:center;margin-bottom:16px"><h3>생성 완료</h3><p style="font-size:13px;color:#636e72">원하는 글을 복사하거나 바로 발행하세요</p></div>
+        <div class="cards-grid" id="genCardsGrid"></div>
       </div>
 
-      <!-- 에러 -->
-      <div class="error-box" id="errorBox"></div>
+      <div class="card" style="margin-top:24px">
+        <h3>키워드 기반 자동 문서 생성 (3가지 관점)</h3>
+        <div class="form-row">
+          <label>키워드</label>
+          <input type="text" id="docKeyword" placeholder="문서를 생성할 키워드 (예: 파이썬 크롤링)" />
+        </div>
+        <button class="btn btn-primary" id="btnDocGenerate" onclick="startDocGenerate()" style="width:100%">3개 문서 생성</button>
+        <div id="docProgressSection" style="display:none;margin-top:16px">
+          <div class="progress-bar-track"><div class="progress-bar-fill" id="docProgressBar"></div></div>
+          <p id="docProgressMsg" style="text-align:center;font-size:13px;color:#636e72;margin-top:8px"></p>
+        </div>
+        <div class="error-box" id="docErrorBox"></div>
+      </div>
+      <div id="docResultsSection" style="display:none">
+        <div style="text-align:center;margin-bottom:16px"><h3>3개 문서 생성 완료</h3><p style="font-size:13px;color:#636e72">각 문서의 계정/카테고리를 선택하고 발행하세요</p></div>
+        <div class="cards-grid" id="docCardsGrid"></div>
+        <div style="text-align:center;margin-top:16px">
+          <button class="btn btn-success" onclick="publishGeneratedDocs()" id="btnPublishDocs">즉시 발행</button>
+        </div>
+      </div>
     </div>
 
-    <!-- 결과 카드 -->
-    <div class="results-section" id="resultsSection">
-      <div class="results-header">
-        <h2>생성 완료</h2>
-        <p>원하는 톤의 글을 복사하여 네이버 블로그에 붙여넣으세요</p>
+    <!-- ═══ 탭 2: 발행 ═══ -->
+    <div class="tab-content" id="tab-publish">
+      <div class="card">
+        <h3>발행 진행 상황</h3>
+        <div id="publishStatusPanel">
+          <p style="color:#636e72;font-size:13px">진행 중인 발행이 없습니다.</p>
+        </div>
       </div>
-      <div class="cards-grid" id="cardsGrid"></div>
+      <div class="card">
+        <h3>최근 발행 배치</h3>
+        <table class="data-table">
+          <thead><tr><th>ID</th><th>키워드</th><th>상태</th><th>성공</th><th>실패</th><th>일시</th><th>작업</th></tr></thead>
+          <tbody id="batchesTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 3: 계정 관리 ═══ -->
+    <div class="tab-content" id="tab-accounts">
+      <div class="card">
+        <h3>계정 추가</h3>
+        <div class="form-row">
+          <label>별칭</label>
+          <input type="text" id="accName" placeholder="예: 메인블로그" />
+        </div>
+        <div class="form-row">
+          <label>네이버 ID</label>
+          <input type="text" id="accNaverId" placeholder="네이버 아이디" />
+        </div>
+        <div class="form-row">
+          <label>비밀번호</label>
+          <input type="password" id="accNaverPw" placeholder="네이버 비밀번호" />
+        </div>
+        <div class="form-row">
+          <label>특화 분야</label>
+          <select id="accSpecialty">
+            <option value="">선택 안함</option>
+            <option value="IT/개발">IT/개발</option>
+            <option value="일상/리뷰">일상/리뷰</option>
+            <option value="여행/취미">여행/취미</option>
+            <option value="맛집/요리">맛집/요리</option>
+            <option value="건강/운동">건강/운동</option>
+            <option value="재테크/경제">재테크/경제</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="addAccount()">계정 추가</button>
+      </div>
+      <div class="card">
+        <h3>등록된 계정</h3>
+        <table class="data-table">
+          <thead><tr><th>별칭</th><th>특화 분야</th><th>상태</th><th>마지막 사용</th><th>카테고리</th><th>작업</th></tr></thead>
+          <tbody id="accountsTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">계정이 없습니다</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- 카테고리 관리 모달 -->
+      <div class="modal-overlay" id="catModal">
+        <div class="modal">
+          <button class="modal-close" onclick="closeCatModal()">&times;</button>
+          <h3 id="catModalTitle">카테고리 관리</h3>
+          <div class="form-row">
+            <input type="text" id="catNameInput" placeholder="카테고리명" />
+            <button class="btn btn-primary btn-sm" onclick="addCategory()">추가</button>
+          </div>
+          <table class="data-table" style="margin-top:12px">
+            <thead><tr><th>카테고리명</th><th>기본</th><th>작업</th></tr></thead>
+            <tbody id="catTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 4: 키워드 큐 ═══ -->
+    <div class="tab-content" id="tab-keywords">
+      <div class="card">
+        <h3>키워드 추가</h3>
+        <div class="form-row">
+          <label>키워드</label>
+          <input type="text" id="kwInput" placeholder="키워드 입력" />
+          <select id="kwPriority">
+            <option value="high">높음</option>
+            <option value="medium" selected>보통</option>
+            <option value="low">낮음</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="addKeyword()">추가</button>
+        </div>
+        <div class="form-row">
+          <label>일괄 등록</label>
+          <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력"></textarea>
+          <button class="btn btn-secondary btn-sm" onclick="addKeywordsBulk()" style="align-self:flex-start">일괄 등록</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>키워드 목록</h3>
+        <div style="margin-bottom:12px">
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords()">전체</button>
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords('pending')">대기</button>
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords('used')">사용됨</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>키워드</th><th>우선순위</th><th>상태</th><th>사용 횟수</th><th>등록일</th><th>작업</th></tr></thead>
+          <tbody id="kwTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 5: 자동 스케줄 ═══ -->
+    <div class="tab-content" id="tab-scheduler">
+      <div class="card">
+        <h3>자동 발행 설정</h3>
+        <div class="form-row">
+          <label>자동 발행</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedActive" />
+            <span class="slider"></span>
+          </label>
+          <span id="schedStatusText" style="font-size:13px;color:#636e72">비활성</span>
+        </div>
+        <div class="form-row">
+          <label>발행 시작</label>
+          <input type="number" id="schedStartH" min="0" max="23" value="8" style="width:60px" /> 시
+          <input type="number" id="schedStartM" min="0" max="59" value="0" style="width:60px" /> 분 ~
+          <input type="number" id="schedEndH" min="0" max="23" value="10" style="width:60px" /> 시
+          <input type="number" id="schedEndM" min="0" max="59" value="0" style="width:60px" /> 분
+        </div>
+        <div class="form-row">
+          <label>발행 요일</label>
+          <div id="schedDays">
+            <label><input type="checkbox" value="1" checked /> 월</label>
+            <label><input type="checkbox" value="2" checked /> 화</label>
+            <label><input type="checkbox" value="3" checked /> 수</label>
+            <label><input type="checkbox" value="4" checked /> 목</label>
+            <label><input type="checkbox" value="5" checked /> 금</label>
+            <label><input type="checkbox" value="6" /> 토</label>
+            <label><input type="checkbox" value="7" /> 일</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>계정 간 간격</label>
+          <input type="number" id="schedMinInterval" value="2" min="1" max="12" style="width:60px" /> 시간 ~
+          <input type="number" id="schedMaxInterval" value="4" min="1" max="12" style="width:60px" /> 시간
+        </div>
+        <div class="form-row">
+          <label>랜덤 휴식</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedRandomRest" checked />
+            <span class="slider"></span>
+          </label>
+          <span style="font-size:12px;color:#636e72">확률:</span>
+          <input type="number" id="schedRestPercent" value="20" min="0" max="100" style="width:60px" /> %
+        </div>
+        <div class="form-row">
+          <label>주말 확률</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedWeekendLow" checked />
+            <span class="slider"></span>
+          </label>
+          <input type="number" id="schedWeekendPercent" value="30" min="0" max="100" style="width:60px" /> %
+        </div>
+        <div class="form-row">
+          <label>연속 강제 휴식</label>
+          <input type="number" id="schedForceRest" value="3" min="0" max="14" style="width:60px" /> 일 후
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="saveSchedulerConfig()">설정 저장</button>
+          <button class="btn btn-success" onclick="startScheduler()">스케줄러 시작</button>
+          <button class="btn btn-danger" onclick="stopScheduler()">스케줄러 중지</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>스케줄러 상태</h3>
+        <div id="schedulerStatusInfo" style="font-size:13px;color:#636e72">로딩 중...</div>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 6: 발행 이력 ═══ -->
+    <div class="tab-content" id="tab-history">
+      <div class="card">
+        <h3>발행 이력</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <input type="text" id="histKeyword" placeholder="키워드 검색" style="padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px" />
+          <select id="histStatus" style="padding:6px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px">
+            <option value="">전체 상태</option>
+            <option value="success">성공</option>
+            <option value="failed">실패</option>
+            <option value="pending">대기</option>
+          </select>
+          <select id="histAccount" style="padding:6px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px">
+            <option value="">전체 계정</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="loadHistory()">검색</button>
+          <button class="btn btn-sm btn-secondary" onclick="exportHistory()">CSV 내보내기</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>날짜</th><th>계정</th><th>제목</th><th>키워드</th><th>상태</th><th>URL</th><th>작업</th></tr></thead>
+          <tbody id="histTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 7: 통계 ═══ -->
+    <div class="tab-content" id="tab-stats">
+      <div class="cards-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">총 발행 성공</div>
+          <div id="statSuccess" style="font-size:28px;font-weight:800;color:#00b894">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">총 발행 실패</div>
+          <div id="statFailed" style="font-size:28px;font-weight:800;color:#d63031">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">대기 키워드</div>
+          <div id="statPendingKw" style="font-size:28px;font-weight:800;color:#0984e3">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">사용된 키워드</div>
+          <div id="statUsedKw" style="font-size:28px;font-weight:800;color:#636e72">0</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>계정별 발행 현황</h3>
+        <div id="statsByAccount" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+      <div class="card">
+        <h3>자주 사용한 키워드 TOP 10</h3>
+        <div id="topKeywords" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+      <div class="card">
+        <h3>최근 7일 발행 추이</h3>
+        <div id="dailyTrend" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 8: 알림 ═══ -->
+    <div class="tab-content" id="tab-notifications">
+      <div class="card">
+        <h3>알림</h3>
+        <div id="notifList" style="min-height:60px"><p style="color:#636e72;font-size:13px">알림이 없습니다</p></div>
+      </div>
     </div>
   </div>
 
-  <script>
-    const TONE_CONFIG = {
-      friendly: { label: '친숙형', desc: '~해요체, 공감 추천', headerClass: 'friendly' },
-      expert:   { label: '전문가형', desc: '~입니다체, 스펙 분석', headerClass: 'expert' },
-      beginner: { label: '초보자형', desc: '쉬운 설명, 가이드', headerClass: 'beginner' },
-    };
+  <div class="toast-container" id="toastContainer"></div>
 
-    const STEP_MAP = {
-      researching:   { el: 'stepResearch', progress: 15 },
-      research_done: { el: 'stepResearch', progress: 25, done: true },
-      seo:           { el: 'stepSeo',      progress: 35 },
-      seo_done:      { el: 'stepSeo',      progress: 45, done: true },
-      writing:       { el: 'stepWriting',  progress: 55 },
-      writing_done:  { el: 'stepWriting',  progress: 75, done: true },
-      reviewing:     { el: 'stepReview',   progress: 85 },
-      reviewing_done:{ el: 'stepReview',   progress: 95, done: true },
-    };
+<script>
+/* ━━━ 전역 상태 ━━━ */
+let accounts = [];
+let generatedDocs = [];
+let currentCatAccountId = null;
 
-    function startGenerate() {
-      const apiKey = document.getElementById('apiKey').value.trim();
-      const titleKeyword = document.getElementById('titleKeyword').value.trim();
-      const productInfo = document.getElementById('productInfo').value.trim();
+/* ━━━ 유틸 ━━━ */
+function showToast(msg, type = 'success') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
 
-      if (!apiKey) return showError('Claude API 키를 입력하세요.');
-      if (!titleKeyword) return showError('제목에 포함할 키워드를 입력하세요.');
-      if (!productInfo) return showError('상품 정보를 입력하세요.');
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
-      hideError();
-      setLoading(true);
-      resetProgress();
-      document.getElementById('resultsSection').classList.remove('active');
+function markdownToHtml(md) {
+  if (!md) return '';
+  let html = escapeHtml(md);
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+  html = html.replace(/\|(.+)\|/g, (match) => {
+    const cells = match.split('|').filter(c => c.trim());
+    if (cells.every(c => /^[\s-:]+$/.test(c))) return '';
+    return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+  });
+  html = html.replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table style="width:100%;border-collapse:collapse;font-size:11px;margin:8px 0">${m}</table>`);
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br/>');
+  return `<p>${html}</p>`;
+}
 
-      // SSE 연결
-      fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey, title_keyword: titleKeyword, product_info: productInfo }),
-      }).then(response => {
-        if (!response.ok) {
-          return response.json().then(err => { throw new Error(err.detail || '서버 오류'); });
-        }
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '서버 오류' }));
+    throw new Error(err.detail || '요청 실패');
+  }
+  return res.json();
+}
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+/* ━━━ 탭 전환 ━━━ */
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+  const btns = document.querySelectorAll('.tab-nav button');
+  const tabs = ['generate','publish','accounts','keywords','scheduler','history','stats','notifications'];
+  const idx = tabs.indexOf(tabName);
+  if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
 
-        function read() {
-          reader.read().then(({ done, value }) => {
-            if (done) return;
-            buffer += decoder.decode(value, { stream: true });
+  // 탭 전환 시 데이터 로드
+  if (tabName === 'accounts') loadAccounts();
+  if (tabName === 'keywords') loadKeywords();
+  if (tabName === 'scheduler') loadSchedulerConfig();
+  if (tabName === 'history') loadHistory();
+  if (tabName === 'stats') loadStats();
+  if (tabName === 'notifications') loadNotifications();
+  if (tabName === 'publish') loadBatches();
+}
 
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
+/* ━━━ 상품 기반 글 생성 ━━━ */
+const STEP_MAP = {
+  researching: { el: 'stepResearch', progress: 15 },
+  research_done: { el: 'stepResearch', progress: 25, done: true },
+  seo: { el: 'stepSeo', progress: 35 },
+  seo_done: { el: 'stepSeo', progress: 45, done: true },
+  writing: { el: 'stepWriting', progress: 55 },
+  writing_done: { el: 'stepWriting', progress: 75, done: true },
+  reviewing: { el: 'stepReview', progress: 85 },
+  reviewing_done: { el: 'stepReview', progress: 95, done: true },
+};
 
-            let eventType = '';
-            for (const line of lines) {
-              if (line.startsWith('event: ')) {
-                eventType = line.slice(7).trim();
-              } else if (line.startsWith('data: ') && eventType) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  handleEvent(eventType, data);
-                } catch (e) { /* ignore parse errors */ }
-                eventType = '';
+function startGenerate() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const titleKeyword = document.getElementById('titleKeyword').value.trim();
+  const productInfo = document.getElementById('productInfo').value.trim();
+  if (!apiKey || !titleKeyword || !productInfo) return showToast('모든 필드를 입력하세요', 'error');
+
+  document.getElementById('btnGenerate').disabled = true;
+  document.getElementById('btnGenerate').textContent = '생성 중...';
+  document.getElementById('genProgressSection').style.display = 'block';
+  document.getElementById('genResultsSection').style.display = 'none';
+  document.getElementById('genProgressBar').style.width = '0%';
+  ['stepResearch','stepSeo','stepWriting','stepReview'].forEach(id => {
+    document.getElementById(id).className = 'progress-step';
+  });
+
+  fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey, title_keyword: titleKeyword, product_info: productInfo }),
+  }).then(response => {
+    if (!response.ok) return response.json().then(e => { throw new Error(e.detail); });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+          else if (line.startsWith('data: ') && eventType) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === 'progress') {
+                const info = STEP_MAP[data.step];
+                if (info) {
+                  document.getElementById('genProgressBar').style.width = info.progress + '%';
+                  if (info.done) { document.getElementById(info.el).className = 'progress-step done'; }
+                  else { document.getElementById(info.el).className = 'progress-step active'; }
+                }
+              } else if (eventType === 'complete') {
+                document.getElementById('genProgressBar').style.width = '100%';
+                setTimeout(() => renderGenResults(data), 400);
+              } else if (eventType === 'error') {
+                showToast(data.message, 'error');
               }
-            }
-            read();
-          });
+            } catch (e) {}
+            eventType = '';
+          }
         }
         read();
-      }).catch(err => {
-        showError(err.message);
-        setLoading(false);
       });
     }
+    read();
+  }).catch(err => showToast(err.message, 'error'))
+    .finally(() => {
+      document.getElementById('btnGenerate').disabled = false;
+      document.getElementById('btnGenerate').textContent = '생성하기';
+    });
+}
 
-    function handleEvent(event, data) {
-      if (event === 'progress') {
-        updateProgress(data.step);
-      } else if (event === 'complete') {
-        document.getElementById('progressBar').style.width = '100%';
-        setTimeout(() => {
-          setLoading(false);
-          renderResults(data);
-        }, 400);
-      } else if (event === 'error') {
-        showError(data.message);
-        setLoading(false);
-      }
+const TONE_CFG = {
+  friendly: { label: '친숙형', desc: '~해요체', cls: 'tutorial' },
+  expert: { label: '전문가형', desc: '~입니다체', cls: 'review' },
+  beginner: { label: '초보자형', desc: '쉬운 설명', cls: 'analysis' },
+};
+
+function renderGenResults(data) {
+  const grid = document.getElementById('genCardsGrid');
+  grid.innerHTML = '';
+  for (const [tone, cfg] of Object.entries(TONE_CFG)) {
+    const article = data.articles[tone];
+    if (!article) continue;
+    const review = article.review || {};
+    const card = document.createElement('div');
+    card.className = 'doc-card';
+    card.innerHTML = `
+      <div class="doc-card-header ${cfg.cls}"><h4>${cfg.label}</h4><span class="badge">${cfg.desc}</span></div>
+      <div class="doc-card-title">${escapeHtml(article.title)}</div>
+      <div class="doc-card-content">${markdownToHtml(article.content)}</div>
+      <div class="doc-card-footer">
+        <button class="btn btn-sm btn-secondary" onclick="copyText(this, '${tone}')">복사</button>
+        <span class="tag tag-${review.grade === 'A' ? 'green' : review.grade === 'B' ? 'blue' : review.grade === 'C' ? 'yellow' : 'red'}">${review.grade || '-'} ${review.overall_score || 0}점</span>
+      </div>`;
+    card.dataset.rawContent = article.content;
+    grid.appendChild(card);
+  }
+  document.getElementById('genResultsSection').style.display = 'block';
+  document.getElementById('genProgressSection').style.display = 'none';
+}
+
+function copyText(btn, tone) {
+  const card = btn.closest('.doc-card');
+  navigator.clipboard.writeText(card.dataset.rawContent || '').then(() => {
+    btn.textContent = '복사됨!';
+    setTimeout(() => btn.textContent = '복사', 2000);
+  });
+}
+
+/* ━━━ 키워드 기반 3개 문서 생성 ━━━ */
+function startDocGenerate() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const keyword = document.getElementById('docKeyword').value.trim();
+  if (!apiKey) return showToast('API Key를 입력하세요', 'error');
+  if (!keyword) return showToast('키워드를 입력하세요', 'error');
+
+  document.getElementById('btnDocGenerate').disabled = true;
+  document.getElementById('btnDocGenerate').textContent = '생성 중...';
+  document.getElementById('docProgressSection').style.display = 'block';
+  document.getElementById('docResultsSection').style.display = 'none';
+  document.getElementById('docProgressBar').style.width = '0%';
+
+  generatedDocs = [];
+
+  fetch('/api/documents/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey, keyword }),
+  }).then(response => {
+    if (!response.ok) return response.json().then(e => { throw new Error(e.detail); });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        let eventType = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+          else if (line.startsWith('data: ') && eventType) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (eventType === 'progress') {
+                document.getElementById('docProgressBar').style.width = (data.step / data.total * 100) + '%';
+                document.getElementById('docProgressMsg').textContent = data.message;
+              } else if (eventType === 'warning') {
+                showToast(data.message, 'warning');
+              } else if (eventType === 'complete') {
+                generatedDocs = data.documents;
+                renderDocResults(data);
+              } else if (eventType === 'error') {
+                showToast(data.message, 'error');
+              }
+            } catch (e) {}
+            eventType = '';
+          }
+        }
+        read();
+      });
     }
+    read();
+  }).catch(err => showToast(err.message, 'error'))
+    .finally(() => {
+      document.getElementById('btnDocGenerate').disabled = false;
+      document.getElementById('btnDocGenerate').textContent = '3개 문서 생성';
+    });
+}
 
-    function updateProgress(step) {
-      const info = STEP_MAP[step];
-      if (!info) return;
+const DOC_CFG = { tutorial: { label: '튜토리얼/가이드', cls: 'tutorial' }, review: { label: '경험담/후기', cls: 'review' }, analysis: { label: '비교/분석', cls: 'analysis' } };
 
-      document.getElementById('progressBar').style.width = info.progress + '%';
-
-      if (info.done) {
-        document.getElementById(info.el).classList.remove('active');
-        document.getElementById(info.el).classList.add('done');
-      } else {
-        document.getElementById(info.el).classList.add('active');
-      }
+function renderDocResults(data) {
+  const grid = document.getElementById('docCardsGrid');
+  grid.innerHTML = '';
+  data.documents.forEach((doc, i) => {
+    const cfg = DOC_CFG[doc.format] || DOC_CFG.tutorial;
+    const charClass = doc.char_count >= 1000 ? 'ok' : 'short';
+    const card = document.createElement('div');
+    card.className = 'doc-card';
+    card.dataset.docIndex = i;
+    card.innerHTML = `
+      <div class="doc-card-header ${cfg.cls}"><h4>문서 ${doc.document_number}</h4><span class="badge">${cfg.label}</span></div>
+      <div class="doc-card-title">${escapeHtml(doc.title)}</div>
+      <div class="doc-card-content">${markdownToHtml(doc.content)}</div>
+      <div style="padding:8px 18px"><span class="char-count ${charClass}">${doc.char_count}자</span></div>
+      <div class="doc-card-footer" style="flex-wrap:wrap;gap:6px">
+        <select class="doc-account-select" data-doc="${i}" onchange="onDocAccountChange(${i}, this.value)">
+          <option value="">계정 선택</option>
+          ${accounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('')}
+        </select>
+        <select class="doc-category-select" data-doc="${i}">
+          <option value="">카테고리</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="copyText(this)">복사</button>
+      </div>`;
+    card.dataset.rawContent = doc.content;
+    grid.appendChild(card);
+  });
+  document.getElementById('docResultsSection').style.display = 'block';
+  document.getElementById('docProgressSection').style.display = 'none';
+  // 자동 순차 계정 배정
+  accounts.forEach((a, i) => {
+    if (i < 3) {
+      const sel = document.querySelectorAll('.doc-account-select')[i];
+      if (sel) { sel.value = a.id; onDocAccountChange(i, a.id); }
     }
+  });
+}
 
-    function renderResults(data) {
-      const grid = document.getElementById('cardsGrid');
-      grid.innerHTML = '';
+async function onDocAccountChange(docIdx, accountId) {
+  const catSel = document.querySelectorAll('.doc-category-select')[docIdx];
+  catSel.innerHTML = '<option value="">카테고리</option>';
+  if (!accountId) return;
+  try {
+    const cats = await api(`/api/categories/${accountId}`);
+    cats.forEach(c => {
+      catSel.innerHTML += `<option value="${c.id}" ${c.is_default ? 'selected' : ''}>${c.category_name}</option>`;
+    });
+  } catch (e) {}
+}
 
-      for (const [tone, config] of Object.entries(TONE_CONFIG)) {
-        const article = data.articles[tone];
-        if (!article) continue;
+async function publishGeneratedDocs() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const keyword = document.getElementById('docKeyword').value.trim();
+  if (!apiKey) return showToast('API Key가 필요합니다', 'error');
+  if (!generatedDocs.length) return showToast('먼저 문서를 생성하세요', 'error');
 
-        const review = article.review || {};
-        const grade = review.grade || '-';
-        const score = review.overall_score || 0;
-        const verdict = review.verdict || '-';
+  const documents = generatedDocs.map((doc, i) => {
+    const accSel = document.querySelectorAll('.doc-account-select')[i];
+    const catSel = document.querySelectorAll('.doc-category-select')[i];
+    return {
+      title: doc.title,
+      content: doc.content,
+      format: doc.format,
+      account_id: accSel ? parseInt(accSel.value) || null : null,
+      category_id: catSel ? parseInt(catSel.value) || null : null,
+      keywords: [keyword],
+    };
+  }).filter(d => d.account_id);
 
-        const card = document.createElement('div');
-        card.className = 'card';
-        card.innerHTML = `
-          <div class="card-header ${config.headerClass}">
-            <h3>${config.label}</h3>
-            <span class="badge">${config.desc}</span>
-          </div>
-          <div class="card-title">${escapeHtml(article.title)}</div>
-          <div class="card-content">${markdownToHtml(article.content)}</div>
-          <div class="card-review">
-            <div class="score-row">
-              <span><span class="grade grade-${grade}">${grade}</span> ${score}점</span>
-              <span>${verdict}</span>
+  if (!documents.length) return showToast('계정을 선택하세요', 'error');
+
+  try {
+    document.getElementById('btnPublishDocs').disabled = true;
+    document.getElementById('btnPublishDocs').textContent = '발행 시작...';
+    const result = await api('/api/publish/immediate', {
+      method: 'POST',
+      body: JSON.stringify({ api_key: apiKey, keyword, documents }),
+    });
+    showToast(`발행 시작됨! (배치 #${result.batch_id})`, 'success');
+    switchTab('publish');
+    pollPublishStatus(result.batch_id);
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    document.getElementById('btnPublishDocs').disabled = false;
+    document.getElementById('btnPublishDocs').textContent = '즉시 발행';
+  }
+}
+
+/* ━━━ 발행 상태 폴링 ━━━ */
+async function pollPublishStatus(batchId) {
+  const panel = document.getElementById('publishStatusPanel');
+  const poll = async () => {
+    try {
+      const status = await api(`/api/publish/status/${batchId}`);
+      let html = '<div class="publish-status-panel">';
+      (status.documents || []).forEach(doc => {
+        const icon = doc.status === 'success' ? '✅' : doc.status === 'failed' ? '❌' : '⏳';
+        html += `<div class="publish-status-item">
+          <div class="publish-status-icon">${icon}</div>
+          <div class="publish-status-info">
+            <div class="title">문서 ${doc.document_number} → ${doc.account_name || '계정'}</div>
+            <div class="detail">${doc.status === 'success' ? doc.url : doc.status === 'failed' ? doc.error : '발행 대기 중...'}</div>
+          </div></div>`;
+      });
+      html += '</div>';
+      panel.innerHTML = html;
+      if (status.status === 'publishing') setTimeout(poll, 3000);
+      else {
+        showToast('발행이 완료되었습니다!');
+        loadBatches();
+      }
+    } catch (e) { panel.innerHTML = `<p style="color:#d63031">${e.message}</p>`; }
+  };
+  poll();
+}
+
+/* ━━━ 계정 관리 ━━━ */
+async function loadAccounts() {
+  try {
+    accounts = await api('/api/accounts');
+    const tbody = document.getElementById('accountsTableBody');
+    if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">계정이 없습니다</td></tr>'; return; }
+    tbody.innerHTML = accounts.map(a => `<tr>
+      <td><strong>${escapeHtml(a.account_name)}</strong></td>
+      <td>${a.specialty ? `<span class="tag tag-blue">${a.specialty}</span>` : '-'}</td>
+      <td>${a.is_active ? '<span class="tag tag-green">활성</span>' : '<span class="tag tag-gray">비활성</span>'}</td>
+      <td style="font-size:12px">${a.last_used || '-'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="openCatModal(${a.id},'${escapeHtml(a.account_name)}')">관리</button></td>
+      <td>
+        <button class="btn btn-sm ${a.is_active ? 'btn-secondary' : 'btn-success'}" onclick="toggleAccount(${a.id},${a.is_active ? 0 : 1})">${a.is_active ? '비활성화' : '활성화'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAccount(${a.id})">삭제</button>
+      </td>
+    </tr>`).join('');
+    // 이력 필터 업데이트
+    const sel = document.getElementById('histAccount');
+    sel.innerHTML = '<option value="">전체 계정</option>' + accounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addAccount() {
+  const name = document.getElementById('accName').value.trim();
+  const naverId = document.getElementById('accNaverId').value.trim();
+  const naverPw = document.getElementById('accNaverPw').value.trim();
+  const specialty = document.getElementById('accSpecialty').value;
+  if (!name || !naverId || !naverPw) return showToast('모든 필드를 입력하세요', 'error');
+  try {
+    await api('/api/accounts', { method: 'POST', body: JSON.stringify({ account_name: name, naver_id: naverId, naver_password: naverPw, specialty }) });
+    showToast('계정이 추가되었습니다');
+    document.getElementById('accName').value = '';
+    document.getElementById('accNaverId').value = '';
+    document.getElementById('accNaverPw').value = '';
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function toggleAccount(id, active) {
+  try {
+    await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: active }) });
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteAccount(id) {
+  if (!confirm('정말 삭제하시겠습니까?')) return;
+  try {
+    await api(`/api/accounts/${id}`, { method: 'DELETE' });
+    showToast('계정이 삭제되었습니다');
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 카테고리 모달 ━━━ */
+function openCatModal(accountId, accountName) {
+  currentCatAccountId = accountId;
+  document.getElementById('catModalTitle').textContent = `카테고리 관리 - ${accountName}`;
+  document.getElementById('catModal').classList.add('show');
+  loadCategories();
+}
+
+function closeCatModal() {
+  document.getElementById('catModal').classList.remove('show');
+  currentCatAccountId = null;
+}
+
+async function loadCategories() {
+  if (!currentCatAccountId) return;
+  try {
+    const cats = await api(`/api/categories/${currentCatAccountId}`);
+    const tbody = document.getElementById('catTableBody');
+    if (!cats.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#636e72">카테고리 없음</td></tr>'; return; }
+    tbody.innerHTML = cats.map(c => `<tr>
+      <td>${escapeHtml(c.category_name)}</td>
+      <td>${c.is_default ? '<span class="tag tag-green">기본</span>' : `<button class="btn btn-sm btn-secondary" onclick="setDefaultCat(${c.id})">기본 설정</button>`}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteCat(${c.id})">삭제</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addCategory() {
+  const name = document.getElementById('catNameInput').value.trim();
+  if (!name || !currentCatAccountId) return;
+  try {
+    await api('/api/categories', { method: 'POST', body: JSON.stringify({ account_id: currentCatAccountId, category_name: name }) });
+    document.getElementById('catNameInput').value = '';
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function setDefaultCat(catId) {
+  try {
+    await api(`/api/categories/${catId}`, { method: 'PUT', body: JSON.stringify({ is_default: true }) });
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteCat(catId) {
+  try {
+    await api(`/api/categories/${catId}`, { method: 'DELETE' });
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 키워드 큐 ━━━ */
+async function loadKeywords(status) {
+  try {
+    const url = status ? `/api/keywords?status=${status}` : '/api/keywords';
+    const keywords = await api(url);
+    const tbody = document.getElementById('kwTableBody');
+    if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
+    const prioMap = { high: '높음', medium: '보통', low: '낮음' };
+    const prioTag = { high: 'tag-red', medium: 'tag-blue', low: 'tag-gray' };
+    const statusMap = { pending: '대기', used: '사용됨', reserved: '예약' };
+    const statusTag = { pending: 'tag-yellow', used: 'tag-green', reserved: 'tag-blue' };
+    tbody.innerHTML = keywords.map(kw => `<tr>
+      <td><strong>${escapeHtml(kw.keyword)}</strong></td>
+      <td><span class="tag ${prioTag[kw.priority] || 'tag-gray'}">${prioMap[kw.priority] || kw.priority}</span></td>
+      <td><span class="tag ${statusTag[kw.status] || 'tag-gray'}">${statusMap[kw.status] || kw.status}</span></td>
+      <td>${kw.used_count}</td>
+      <td style="font-size:11px">${(kw.created_at || '').slice(0,10)}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteKeyword(${kw.id})">삭제</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addKeyword() {
+  const kw = document.getElementById('kwInput').value.trim();
+  const priority = document.getElementById('kwPriority').value;
+  if (!kw) return;
+  try {
+    await api('/api/keywords', { method: 'POST', body: JSON.stringify({ keyword: kw, priority }) });
+    document.getElementById('kwInput').value = '';
+    showToast('키워드가 추가되었습니다');
+    loadKeywords();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addKeywordsBulk() {
+  const text = document.getElementById('kwBulkInput').value.trim();
+  if (!text) return;
+  const keywords = text.split('\n').map(k => k.trim()).filter(k => k);
+  try {
+    const result = await api('/api/keywords/bulk', { method: 'POST', body: JSON.stringify({ keywords, priority: 'medium' }) });
+    showToast(result.message);
+    document.getElementById('kwBulkInput').value = '';
+    loadKeywords();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteKeyword(id) {
+  try {
+    await api(`/api/keywords/${id}`, { method: 'DELETE' });
+    loadKeywords();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 스케줄러 ━━━ */
+async function loadSchedulerConfig() {
+  try {
+    const cfg = await api('/api/scheduler/config');
+    document.getElementById('schedActive').checked = !!cfg.is_active;
+    document.getElementById('schedStatusText').textContent = cfg.is_active ? '활성' : '비활성';
+    document.getElementById('schedStartH').value = cfg.start_hour || 8;
+    document.getElementById('schedStartM').value = cfg.start_minute || 0;
+    document.getElementById('schedEndH').value = cfg.end_hour || 10;
+    document.getElementById('schedEndM').value = cfg.end_minute || 0;
+    document.getElementById('schedMinInterval').value = cfg.min_interval_hours || 2;
+    document.getElementById('schedMaxInterval').value = cfg.max_interval_hours || 4;
+    document.getElementById('schedRandomRest').checked = !!cfg.random_rest_enabled;
+    document.getElementById('schedRestPercent').value = cfg.random_rest_percent || 20;
+    document.getElementById('schedWeekendLow').checked = !!cfg.weekend_low_prob;
+    document.getElementById('schedWeekendPercent').value = cfg.weekend_prob_percent || 30;
+    document.getElementById('schedForceRest').value = cfg.force_rest_after_days || 3;
+    const days = cfg.days_of_week || [1,2,3,4,5];
+    document.querySelectorAll('#schedDays input').forEach(cb => {
+      cb.checked = days.includes(parseInt(cb.value));
+    });
+
+    const status = await api('/api/scheduler/status');
+    document.getElementById('schedulerStatusInfo').innerHTML = `
+      <p>상태: <strong>${status.is_running ? '실행 중' : '중지됨'}</strong></p>
+      ${status.jobs.map(j => `<p>다음 실행: ${j.next_run_time || '-'}</p>`).join('')}`;
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function saveSchedulerConfig() {
+  const days = [];
+  document.querySelectorAll('#schedDays input:checked').forEach(cb => days.push(parseInt(cb.value)));
+  try {
+    await api('/api/scheduler/config', { method: 'PUT', body: JSON.stringify({
+      start_hour: parseInt(document.getElementById('schedStartH').value),
+      start_minute: parseInt(document.getElementById('schedStartM').value),
+      end_hour: parseInt(document.getElementById('schedEndH').value),
+      end_minute: parseInt(document.getElementById('schedEndM').value),
+      days_of_week: days,
+      min_interval_hours: parseInt(document.getElementById('schedMinInterval').value),
+      max_interval_hours: parseInt(document.getElementById('schedMaxInterval').value),
+      random_rest_enabled: document.getElementById('schedRandomRest').checked ? 1 : 0,
+      random_rest_percent: parseInt(document.getElementById('schedRestPercent').value),
+      weekend_low_prob: document.getElementById('schedWeekendLow').checked ? 1 : 0,
+      weekend_prob_percent: parseInt(document.getElementById('schedWeekendPercent').value),
+      force_rest_after_days: parseInt(document.getElementById('schedForceRest').value),
+    })});
+    showToast('설정이 저장되었습니다');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function startScheduler() {
+  try {
+    await api('/api/scheduler/start', { method: 'POST' });
+    showToast('스케줄러가 시작되었습니다');
+    loadSchedulerConfig();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function stopScheduler() {
+  try {
+    await api('/api/scheduler/stop', { method: 'POST' });
+    showToast('스케줄러가 중지되었습니다');
+    loadSchedulerConfig();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 발행 이력 ━━━ */
+async function loadHistory() {
+  try {
+    const params = new URLSearchParams();
+    const kw = document.getElementById('histKeyword').value.trim();
+    const st = document.getElementById('histStatus').value;
+    const acc = document.getElementById('histAccount').value;
+    if (kw) params.set('keyword', kw);
+    if (st) params.set('status', st);
+    if (acc) params.set('account_id', acc);
+    const history = await api(`/api/history?${params.toString()}`);
+    const tbody = document.getElementById('histTableBody');
+    if (!history.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">이력이 없습니다</td></tr>'; return; }
+    tbody.innerHTML = history.map(h => `<tr>
+      <td style="font-size:11px">${(h.published_at || h.created_at || '').slice(0,16)}</td>
+      <td>${h.account_name || '-'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.title || '')}</td>
+      <td style="font-size:11px">${h.keywords || ''}</td>
+      <td><span class="tag ${h.status === 'success' ? 'tag-green' : h.status === 'failed' ? 'tag-red' : 'tag-yellow'}">${h.status}</span></td>
+      <td>${h.naver_post_url ? `<a href="${h.naver_post_url}" target="_blank" style="font-size:11px;color:#0984e3">보기</a>` : '-'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="republish(${h.id})">재발행</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function republish(id) {
+  try {
+    const result = await api(`/api/history/${id}/republish`, { method: 'POST' });
+    showToast(result.message);
+    switchTab('publish');
+    pollPublishStatus(result.batch_id);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function exportHistory() {
+  const params = new URLSearchParams();
+  const st = document.getElementById('histStatus').value;
+  const acc = document.getElementById('histAccount').value;
+  if (st) params.set('status', st);
+  if (acc) params.set('account_id', acc);
+  window.open(`/api/history/export?${params.toString()}`);
+}
+
+/* ━━━ 배치 목록 ━━━ */
+async function loadBatches() {
+  try {
+    const batches = await api('/api/batches');
+    const tbody = document.getElementById('batchesTableBody');
+    if (!batches.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">배치가 없습니다</td></tr>'; return; }
+    const statusMap = { all_success: '전체 성공', partial_success: '부분 성공', all_failed: '전체 실패', pending: '대기 중', publishing: '발행 중' };
+    const statusTag = { all_success: 'tag-green', partial_success: 'tag-yellow', all_failed: 'tag-red', pending: 'tag-gray' };
+    tbody.innerHTML = batches.map(b => `<tr>
+      <td>#${b.id}</td>
+      <td>${escapeHtml(b.keyword)}</td>
+      <td><span class="tag ${statusTag[b.status] || 'tag-gray'}">${statusMap[b.status] || b.status}</span></td>
+      <td>${b.success_count}</td>
+      <td>${b.failed_count}</td>
+      <td style="font-size:11px">${(b.created_at || '').slice(0,16)}</td>
+      <td>${b.failed_count > 0 ? `<button class="btn btn-sm btn-secondary" onclick="retryBatch(${b.id})">재시도</button>` : ''}</td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function retryBatch(batchId) {
+  try {
+    const result = await api(`/api/batches/${batchId}/retry`, { method: 'POST' });
+    showToast(result.message);
+    pollPublishStatus(batchId);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 통계 ━━━ */
+async function loadStats() {
+  try {
+    const stats = await api('/api/history/stats');
+    document.getElementById('statSuccess').textContent = stats.total_success || 0;
+    document.getElementById('statFailed').textContent = stats.total_failed || 0;
+    document.getElementById('statPendingKw').textContent = stats.pending_keywords || 0;
+    document.getElementById('statUsedKw').textContent = stats.used_keywords || 0;
+
+    // 계정별
+    if (stats.by_account && stats.by_account.length) {
+      const maxCount = Math.max(...stats.by_account.map(a => a.count));
+      document.getElementById('statsByAccount').innerHTML = stats.by_account.map(a =>
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="min-width:100px;font-size:13px;font-weight:600">${a.account_name}</span>
+          <div style="flex:1;background:#dfe6e9;border-radius:4px;height:24px;overflow:hidden">
+            <div style="width:${(a.count/maxCount*100).toFixed(0)}%;background:linear-gradient(90deg,#0984e3,#6c5ce7);height:100%;border-radius:4px;display:flex;align-items:center;padding:0 8px">
+              <span style="color:#fff;font-size:11px;font-weight:600">${a.count}건</span>
             </div>
-            ${renderReviewDetails(review)}
           </div>
-          <div class="card-footer">
-            <button class="btn-copy" onclick="copyContent(this, '${tone}')">복사하기</button>
-          </div>
-        `;
-        card.dataset.rawContent = article.content;
-        card.dataset.tone = tone;
-        grid.appendChild(card);
-      }
-
-      document.getElementById('resultsSection').classList.add('active');
-      document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        </div>`
+      ).join('');
     }
 
-    function renderReviewDetails(review) {
-      if (!review.spell_check && !review.seo_check && !review.quality_check) return '';
-      const spell = review.spell_check?.score ?? '-';
-      const seo = review.seo_check?.score ?? '-';
-      const quality = review.quality_check?.score ?? '-';
-      return `<div class="score-row" style="margin-top:4px;font-size:11px;color:#b2bec3;">
-        <span>맞춤법 ${spell}</span>
-        <span>SEO ${seo}</span>
-        <span>품질 ${quality}</span>
+    // 키워드 TOP 10
+    const topKw = await api('/api/history/keywords?limit=10');
+    if (topKw.length) {
+      const maxC = Math.max(...topKw.map(k => k.total_count));
+      document.getElementById('topKeywords').innerHTML = topKw.map(k =>
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="min-width:120px;font-size:13px">${k.keyword}</span>
+          <div style="flex:1;background:#dfe6e9;border-radius:4px;height:20px;overflow:hidden">
+            <div style="width:${(k.total_count/maxC*100).toFixed(0)}%;background:#00b894;height:100%;border-radius:4px;display:flex;align-items:center;padding:0 8px">
+              <span style="color:#fff;font-size:10px">${k.total_count}회</span>
+            </div>
+          </div>
+        </div>`
+      ).join('');
+    }
+
+    // 일별 추이
+    if (stats.daily_trend && stats.daily_trend.length) {
+      const maxD = Math.max(...stats.daily_trend.map(d => d.count));
+      document.getElementById('dailyTrend').innerHTML = `<div style="display:flex;align-items:flex-end;gap:8px;height:100px">
+        ${stats.daily_trend.map(d =>
+          `<div style="flex:1;text-align:center">
+            <div style="background:linear-gradient(180deg,#0984e3,#6c5ce7);height:${Math.max((d.count/maxD*80),4)}px;border-radius:4px 4px 0 0;margin-bottom:4px"></div>
+            <div style="font-size:10px;color:#636e72">${(d.date||'').slice(5)}</div>
+            <div style="font-size:11px;font-weight:600">${d.count}</div>
+          </div>`
+        ).join('')}
       </div>`;
     }
+  } catch (e) { showToast(e.message, 'error'); }
+}
 
-    function copyContent(btn, tone) {
-      const card = btn.closest('.card');
-      const text = card.dataset.rawContent;
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '복사 완료!';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = '복사하기';
-          btn.classList.remove('copied');
-        }, 2000);
-      });
-    }
+/* ━━━ 알림 ━━━ */
+async function loadNotifications() {
+  try {
+    const notifs = await api('/api/notifications');
+    const unread = notifs.filter(n => !n.is_read).length;
+    const badge = document.getElementById('notifBadge');
+    if (unread > 0) { badge.textContent = unread; badge.classList.add('show'); }
+    else { badge.classList.remove('show'); }
 
-    /* --- 유틸 --- */
+    const container = document.getElementById('notifList');
+    if (!notifs.length) { container.innerHTML = '<p style="color:#636e72;font-size:13px">알림이 없습니다</p>'; return; }
+    const typeIcon = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    container.innerHTML = notifs.map(n =>
+      `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;${n.is_read ? 'opacity:0.6' : ''}">
+        <span style="font-size:20px">${typeIcon[n.type] || 'ℹ️'}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">${escapeHtml(n.title)}</div>
+          <div style="font-size:12px;color:#636e72">${escapeHtml(n.message || '')}</div>
+          <div style="font-size:11px;color:#b2bec3;margin-top:2px">${(n.created_at || '').slice(0,16)}</div>
+        </div>
+        <div>
+          ${!n.is_read ? `<button class="btn btn-sm btn-secondary" onclick="markNotifRead(${n.id})">읽음</button>` : ''}
+          <button class="btn btn-sm btn-danger" onclick="deleteNotif(${n.id})">삭제</button>
+        </div>
+      </div>`
+    ).join('');
+  } catch (e) {}
+}
 
-    function markdownToHtml(md) {
-      if (!md) return '';
-      let html = escapeHtml(md);
-      // headings (순서 중요: 큰 것부터)
-      html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-      html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-      // bold/italic
-      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      // lists
-      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-      html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
-      // table (simple)
-      html = html.replace(/\|(.+)\|/g, (match) => {
-        const cells = match.split('|').filter(c => c.trim());
-        if (cells.every(c => /^[\s-:]+$/.test(c))) return '';
-        const tag = 'td';
-        return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
-      });
-      html = html.replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table>${m}</table>`);
-      // line breaks
-      html = html.replace(/\n\n/g, '</p><p>');
-      html = html.replace(/\n/g, '<br/>');
-      return `<p>${html}</p>`;
-    }
+async function markNotifRead(id) {
+  try { await api(`/api/notifications/${id}/read`, { method: 'PUT' }); loadNotifications(); } catch(e){}
+}
+async function deleteNotif(id) {
+  try { await api(`/api/notifications/${id}`, { method: 'DELETE' }); loadNotifications(); } catch(e){}
+}
 
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function setLoading(loading) {
-      const btn = document.getElementById('btnGenerate');
-      const progress = document.getElementById('progressSection');
-      if (loading) {
-        btn.disabled = true;
-        btn.textContent = '생성 중...';
-        progress.classList.add('active');
-      } else {
-        btn.disabled = false;
-        btn.textContent = '생성하기';
-        progress.classList.remove('active');
-      }
-    }
-
-    function resetProgress() {
-      document.getElementById('progressBar').style.width = '0%';
-      ['stepResearch', 'stepSeo', 'stepWriting', 'stepReview'].forEach(id => {
-        const el = document.getElementById(id);
-        el.classList.remove('active', 'done');
-      });
-    }
-
-    function showError(msg) {
-      const box = document.getElementById('errorBox');
-      box.textContent = msg;
-      box.classList.add('active');
-    }
-
-    function hideError() {
-      document.getElementById('errorBox').classList.remove('active');
-    }
-
-    /* --- 페이지 로드 시 저장된 API 키 복원 --- */
-    (function() {
-      const saved = localStorage.getItem('claude_api_key');
-      if (saved) document.getElementById('apiKey').value = saved;
-
-      document.getElementById('apiKey').addEventListener('change', function() {
-        const v = this.value.trim();
-        if (v) localStorage.setItem('claude_api_key', v);
-        else localStorage.removeItem('claude_api_key');
-      });
-    })();
-  </script>
+/* ━━━ 초기화 ━━━ */
+(function() {
+  const saved = localStorage.getItem('claude_api_key');
+  if (saved) document.getElementById('apiKey').value = saved;
+  document.getElementById('apiKey').addEventListener('change', function() {
+    const v = this.value.trim();
+    if (v) localStorage.setItem('claude_api_key', v);
+    else localStorage.removeItem('claude_api_key');
+  });
+  // 초기 데이터 로드
+  loadAccounts();
+  loadNotifications();
+})();
+</script>
 </body>
 </html>
