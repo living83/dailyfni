@@ -156,6 +156,7 @@ async def publish_to_naver(
     content: str,
     category_name: str = "",
     tags: list = None,
+    image_path: str = "",
 ) -> dict:
     """
     네이버 블로그에 글을 발행합니다.
@@ -230,6 +231,50 @@ async def publish_to_naver(
         # 7. 본문 영역으로 이동
         await page.keyboard.press("Tab")
         await _random_delay(1, 2)
+
+        # 7-1. 대표이미지 삽입 (키워드 이미지)
+        if image_path:
+            try:
+                # 이미지 버튼 클릭
+                img_btn = await page.wait_for_selector(
+                    'button.se-image-toolbar-button, button[data-name="image"], '
+                    'button[class*="image"], .se-toolbar-item-image',
+                    timeout=5000,
+                )
+                if img_btn:
+                    await img_btn.click()
+                    await _random_delay(1, 2)
+
+                    # 파일 input에 이미지 설정
+                    file_input = await page.wait_for_selector(
+                        'input[type="file"][accept*="image"]',
+                        timeout=5000,
+                    )
+                    if file_input:
+                        await file_input.set_input_files(image_path)
+                        await _random_delay(3, 5)
+
+                        # 업로드 완료 대기 및 확인 버튼
+                        try:
+                            confirm = await page.wait_for_selector(
+                                'button:has-text("확인"), button:has-text("등록"), '
+                                'button:has-text("삽입"), button.se-popup-button-confirm',
+                                timeout=10000,
+                            )
+                            if confirm:
+                                await confirm.click()
+                                await _random_delay(2, 3)
+                        except Exception:
+                            pass
+
+                        # 이미지 삽입 후 엔터로 줄바꿈
+                        await page.keyboard.press("Enter")
+                        await page.keyboard.press("Enter")
+                        await _random_delay(1, 2)
+
+                logger.info("대표이미지 삽입 완료")
+            except Exception as e:
+                logger.warning(f"대표이미지 삽입 실패 (계속 진행): {e}")
 
         # 8. 본문 입력 (줄 단위로 입력하여 자연스럽게)
         try:
@@ -364,6 +409,7 @@ async def run_publish_task(
     content: str,
     category_name: str = "",
     tags: list = None,
+    image_path: str = "",
 ) -> dict:
     """단일 문서 발행 실행"""
     from playwright.async_api import async_playwright
@@ -379,7 +425,7 @@ async def run_publish_task(
         try:
             result = await publish_to_naver(
                 page, account_id, naver_id, naver_password,
-                title, content, category_name, tags,
+                title, content, category_name, tags, image_path,
             )
             return result
         except Exception as e:

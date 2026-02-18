@@ -29,6 +29,7 @@ from agents import (
 from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
+from image_generator import generate_keyword_image
 
 # ─── 로깅 설정 ──────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
@@ -201,9 +202,17 @@ async def generate(req: GenerateRequest):
                 )
             yield send_event("progress", {"step": "reviewing_done", "message": "검수 완료"})
 
+            # 키워드 대표이미지 생성
+            keyword_image = ""
+            try:
+                keyword_image = await asyncio.to_thread(generate_keyword_image, main_keyword)
+            except Exception as e:
+                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
             result = {
                 "research": research_data,
                 "seo": seo_data,
+                "keyword_image": keyword_image,
                 "articles": {
                     "friendly": {"title": titles["friendly"], "content": articles["friendly"], "review": reviews["friendly"]},
                     "expert": {"title": titles["expert"], "content": articles["expert"], "review": reviews["expert"]},
@@ -398,9 +407,17 @@ async def generate_documents(req: DocumentGenerateRequest):
 
                 yield send_event("doc_ready", {"document_number": i + 1, "title": title, "format": fmt})
 
+            # 키워드 대표이미지 생성
+            keyword_image = ""
+            try:
+                keyword_image = await asyncio.to_thread(generate_keyword_image, req.keyword)
+            except Exception as e:
+                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
             yield send_event("complete", {
                 "keyword": req.keyword,
                 "documents": documents,
+                "keyword_image": keyword_image,
                 "is_duplicate_keyword": is_dup,
             })
 
@@ -427,6 +444,14 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
         "documents": [],
         "current": 0,
     }
+
+    # 키워드 대표이미지 생성
+    keyword_image_path = ""
+    try:
+        keyword_image_path = await asyncio.to_thread(generate_keyword_image, keyword)
+        logger.info(f"키워드 대표이미지 생성 완료: {keyword_image_path}")
+    except Exception as e:
+        logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
     success_count = 0
     failed_count = 0
@@ -485,7 +510,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             pub_result = await run_publish_task(
                 account_id, naver_id, naver_pw,
                 doc.get("title", ""), doc.get("content", ""),
-                cat_name, tags,
+                cat_name, tags, keyword_image_path,
             )
 
             if pub_result["success"]:
