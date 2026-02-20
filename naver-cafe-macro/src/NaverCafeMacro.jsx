@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 const TABS = ["계정 & 카페", "글쓰기 설정", "댓글 설정", "스케줄", "히스토리"];
 const DAYS = ["월", "화", "수", "목", "금", "토", "일"];
@@ -78,6 +78,37 @@ export default function NaverCafeMacro() {
   const [newBoardLabel, setNewBoardLabel] = useState("");
   const [newKeyword, setNewKeyword] = useState("");
   const [newComment, setNewComment] = useState("");
+
+  const [claudeApiKey, setClaudeApiKey] = useState("");
+  const [claudeModel, setClaudeModel] = useState("claude-sonnet-4-6");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("naver-cafe-macro-claude-api");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.apiKey) setClaudeApiKey(parsed.apiKey);
+        if (parsed.model) setClaudeModel(parsed.model);
+        setApiKeySaved(true);
+      }
+    } catch {}
+  }, []);
+
+  const saveApiKey = () => {
+    if (!claudeApiKey.trim()) return;
+    localStorage.setItem("naver-cafe-macro-claude-api", JSON.stringify({ apiKey: claudeApiKey, model: claudeModel }));
+    setApiKeySaved(true);
+    setTimeout(() => setApiKeySaved(false), 2000);
+  };
+
+  const clearApiKey = () => {
+    localStorage.removeItem("naver-cafe-macro-claude-api");
+    setClaudeApiKey("");
+    setClaudeModel("claude-sonnet-4-6");
+    setShowApiKey(false);
+  };
 
   const [commentEnabled, setCommentEnabled] = useState(true);
   const [commentsPerPost, setCommentsPerPost] = useState(6);
@@ -268,7 +299,67 @@ export default function NaverCafeMacro() {
         </div>)}
 
         {/* Tab 1: 글쓰기 설정 */}
-        {activeTab === 1 && (<div className="macro-card">
+        {activeTab === 1 && (<div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Claude API 설정 */}
+          <div className="macro-card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: "#e0e8f0" }}>Claude API 설정</h2>
+              {claudeApiKey && (
+                <span style={{ fontSize: 12, color: claudeApiKey.startsWith("sk-ant-") ? "#38bd94" : "#e0a040", fontWeight: 600 }}>
+                  {claudeApiKey.startsWith("sk-ant-") ? "키 형식 확인됨" : "키 형식을 확인하세요"}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 13, color: "#4a5a70", marginBottom: 20 }}>글 자동 생성에 사용할 Claude API 키를 입력하세요. 키는 브라우저 로컬 스토리지에 저장됩니다.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>API Key</label>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ position: "relative", flex: 1 }}>
+                    <input
+                      className="input-field"
+                      type={showApiKey ? "text" : "password"}
+                      placeholder="sk-ant-api03-..."
+                      value={claudeApiKey}
+                      onChange={(e) => setClaudeApiKey(e.target.value)}
+                      style={{ paddingRight: 48 }}
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#4a5a70", cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}
+                    >
+                      {showApiKey ? "숨김" : "보기"}
+                    </button>
+                  </div>
+                  <button className="btn-primary" onClick={saveApiKey} style={{ whiteSpace: "nowrap", minWidth: 80, position: "relative" }}>
+                    {apiKeySaved ? "저장됨" : "저장"}
+                  </button>
+                  {claudeApiKey && (
+                    <button className="btn-danger" onClick={clearApiKey} style={{ whiteSpace: "nowrap", padding: "12px 16px" }}>초기화</button>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>모델</label>
+                  <select className="input-field" value={claudeModel} onChange={(e) => setClaudeModel(e.target.value)}>
+                    <option value="claude-opus-4-6">Claude Opus 4.6 (최고 품질)</option>
+                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (균형)</option>
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (빠름/저렴)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>용도</label>
+                  <div className="info-box" style={{ padding: "10px 16px", fontSize: 12, lineHeight: 1.6 }}>
+                    키워드 기반 <strong>글 제목/본문 자동 생성</strong>에 사용됩니다. 댓글 템플릿이 부족할 경우 <strong>댓글 자동 생성</strong>에도 활용됩니다.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 키워드 관리 */}
+          <div className="macro-card">
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#e0e8f0", marginBottom: 4 }}>키워드 관리</h2>
           <p style={{ fontSize: 13, color: "#4a5a70", marginBottom: 20 }}>글 작성에 사용할 키워드를 등록하세요.</p>
           <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
@@ -292,6 +383,7 @@ export default function NaverCafeMacro() {
               <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>글 길이</label><select className="input-field" defaultValue="medium"><option value="short">짧게 (200~500자)</option><option value="medium">보통 (500~1000자)</option><option value="long">길게 (1000~2000자)</option></select></div>
               <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>게시판 선택</label><select className="input-field" defaultValue="all"><option value="all">전체 게시판 순환</option><option value="random">랜덤 게시판</option></select></div>
             </div>
+          </div>
           </div>
         </div>)}
 
