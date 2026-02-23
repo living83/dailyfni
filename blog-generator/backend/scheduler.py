@@ -141,6 +141,15 @@ async def daily_publish_job():
         if product_info.strip():
             product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
+        # 키워드 대표이미지 생성
+        keyword_image_path = ""
+        try:
+            from image_generator import generate_keyword_image
+            keyword_image_path = generate_keyword_image(keyword)
+            logger.info(f"키워드 대표이미지 생성: {keyword_image_path}")
+        except Exception as e:
+            logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
         documents = []
         for fmt, prompt_template, desc in doc_formats:
             prompt = prompt_template.format(keyword=keyword, product_info_section=product_info_section)
@@ -195,6 +204,7 @@ async def daily_publish_job():
                 pub_result = await run_publish_task(
                     account["id"], naver_id, naver_pw,
                     doc["title"], doc["content"], cat_name, doc["keywords"],
+                    keyword_image_path,
                 )
 
                 if pub_result["success"]:
