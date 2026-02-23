@@ -16,10 +16,11 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, Response
-from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, validator
 from typing import Optional, List
 
 from agents import (
@@ -49,6 +50,56 @@ logger = logging.getLogger("main")
 
 app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
 
+# ─── CORS 미들웨어 ──────────────────────────────────────────
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
+
+
+# ─── 보안 헤더 미들웨어 ──────────────────────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+# ─── 간단 Rate Limiter (IP 기반, 인메모리) ──────────────────
+_rate_limit_store: dict = {}  # {ip: [timestamp, ...]}
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "30"))  # 분당 최대 요청
+RATE_LIMIT_WINDOW = 60  # 초
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api/"):
+        client_ip = request.client.host if request.client else "unknown"
+        now = datetime.now().timestamp()
+        # 만료된 기록 정리
+        if client_ip in _rate_limit_store:
+            _rate_limit_store[client_ip] = [
+                t for t in _rate_limit_store[client_ip] if now - t < RATE_LIMIT_WINDOW
+            ]
+        else:
+            _rate_limit_store[client_ip] = []
+        if len(_rate_limit_store[client_ip]) >= RATE_LIMIT_MAX:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."},
+            )
+        _rate_limit_store[client_ip].append(now)
+    return await call_next(request)
+
+
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
@@ -65,18 +116,83 @@ async def startup():
         logger.info("스케줄러 자동 시작")
 
 
+@app.on_event("shutdown")
+async def shutdown():
+    """Graceful shutdown: DB 풀 정리, 스케줄러 중지"""
+    logger.info("서버 종료 중...")
+    try:
+        from scheduler import stop_scheduler
+        await stop_scheduler()
+    except Exception:
+        pass
+    try:
+        await db.close_pool()
+    except Exception:
+        pass
+    logger.info("서버 종료 완료")
+
+
 # ─── Pydantic 모델 ──────────────────────────────────────
+
+# ─── 공통 검증 함수 ──────────────────────────────────────
+def _validate_max_length(value: str, max_len: int, field_name: str) -> str:
+    if value and len(value) > max_len:
+        raise ValueError(f"{field_name}은(는) {max_len}자 이하여야 합니다.")
+    return value
+
+
+def _validate_api_key(v: str) -> str:
+    if not v or len(v) < 20:
+        raise ValueError("유효한 API 키를 입력하세요 (20자 이상).")
+    return v
+
+
+def _validate_priority(v: str) -> str:
+    if v not in ("high", "medium", "low"):
+        raise ValueError("priority는 high, medium, low 중 하나여야 합니다.")
+    return v
+
 
 class GenerateRequest(BaseModel):
     api_key: str
     title_keyword: str
     product_info: str
 
+    @validator("api_key")
+    def check_api_key(cls, v):
+        return _validate_api_key(v)
+
+    @validator("title_keyword")
+    def check_title(cls, v):
+        return _validate_max_length(v.strip(), 100, "제목 키워드")
+
+    @validator("product_info")
+    def check_product(cls, v):
+        return _validate_max_length(v, 10000, "상품 정보")
+
+
 class AccountCreate(BaseModel):
     account_name: str
     naver_id: str
     naver_password: str
     specialty: str = ""
+
+    @validator("account_name")
+    def check_name(cls, v):
+        return _validate_max_length(v.strip(), 100, "계정 이름")
+
+    @validator("naver_id")
+    def check_id(cls, v):
+        return _validate_max_length(v.strip(), 100, "네이버 ID")
+
+    @validator("naver_password")
+    def check_pw(cls, v):
+        return _validate_max_length(v, 200, "비밀번호")
+
+    @validator("specialty")
+    def check_spec(cls, v):
+        return _validate_max_length(v, 500, "전문분야")
+
 
 class AccountUpdate(BaseModel):
     account_name: Optional[str] = None
@@ -85,39 +201,109 @@ class AccountUpdate(BaseModel):
     specialty: Optional[str] = None
     is_active: Optional[int] = None
 
+    @validator("is_active")
+    def check_active(cls, v):
+        if v is not None and v not in (0, 1):
+            raise ValueError("is_active는 0 또는 1이어야 합니다.")
+        return v
+
+
 class CategoryCreate(BaseModel):
     account_id: int
     category_name: str
     is_default: bool = False
 
+    @validator("category_name")
+    def check_name(cls, v):
+        return _validate_max_length(v.strip(), 100, "카테고리 이름")
+
+
 class CategoryUpdate(BaseModel):
     category_name: Optional[str] = None
     is_default: Optional[bool] = None
+
 
 class DocumentGenerateRequest(BaseModel):
     api_key: str
     keyword: str
     product_info: str = ""
 
+    @validator("api_key")
+    def check_api_key(cls, v):
+        return _validate_api_key(v)
+
+    @validator("keyword")
+    def check_keyword(cls, v):
+        return _validate_max_length(v.strip(), 200, "키워드")
+
+    @validator("product_info")
+    def check_product(cls, v):
+        return _validate_max_length(v, 10000, "상품 정보")
+
+
 class PublishRequest(BaseModel):
     api_key: str
     keyword: str
     documents: List[dict]  # [{title, content, format, account_id, category_id, keywords}]
+
+    @validator("api_key")
+    def check_api_key(cls, v):
+        return _validate_api_key(v)
+
+    @validator("documents")
+    def check_docs(cls, v):
+        if len(v) > 10:
+            raise ValueError("한 번에 최대 10개 문서만 발행할 수 있습니다.")
+        return v
+
 
 class KeywordCreate(BaseModel):
     keyword: str
     product_info: str = ""
     priority: str = "medium"
 
+    @validator("keyword")
+    def check_keyword(cls, v):
+        return _validate_max_length(v.strip(), 200, "키워드")
+
+    @validator("priority")
+    def check_priority(cls, v):
+        return _validate_priority(v)
+
+
 class KeywordBulkCreate(BaseModel):
     keywords: List[str]
     priority: str = "medium"
+
+    @validator("keywords")
+    def check_keywords(cls, v):
+        if len(v) > 500:
+            raise ValueError("한 번에 최대 500개 키워드만 등록할 수 있습니다.")
+        return v
+
+    @validator("priority")
+    def check_priority(cls, v):
+        return _validate_priority(v)
+
 
 class KeywordUpdate(BaseModel):
     keyword: Optional[str] = None
     product_info: Optional[str] = None
     priority: Optional[str] = None
     status: Optional[str] = None
+
+    @validator("priority")
+    def check_priority(cls, v):
+        if v is not None:
+            return _validate_priority(v)
+        return v
+
+    @validator("status")
+    def check_status(cls, v):
+        if v is not None and v not in ("pending", "used", "paused"):
+            raise ValueError("status는 pending, used, paused 중 하나여야 합니다.")
+        return v
+
 
 class SchedulerConfigUpdate(BaseModel):
     is_active: Optional[int] = None
@@ -133,6 +319,25 @@ class SchedulerConfigUpdate(BaseModel):
     weekend_low_prob: Optional[int] = None
     weekend_prob_percent: Optional[int] = None
     force_rest_after_days: Optional[int] = None
+
+    @validator("start_hour", "end_hour")
+    def check_hour(cls, v):
+        if v is not None and not (0 <= v <= 23):
+            raise ValueError("시간은 0~23 사이여야 합니다.")
+        return v
+
+    @validator("start_minute", "end_minute")
+    def check_minute(cls, v):
+        if v is not None and not (0 <= v <= 59):
+            raise ValueError("분은 0~59 사이여야 합니다.")
+        return v
+
+    @validator("days_of_week")
+    def check_days(cls, v):
+        if v is not None:
+            if not all(1 <= d <= 7 for d in v):
+                raise ValueError("요일은 1(월)~7(일) 사이여야 합니다.")
+        return v
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -431,19 +636,32 @@ async def generate_documents(req: DocumentGenerateRequest):
 # 발행 API
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# 발행 상태 추적 (메모리)
+# 발행 상태 추적 (메모리, TTL 관리)
 _publish_status = {}
+_publish_status_timestamps = {}
+_PUBLISH_STATUS_TTL = 3600  # 1시간 후 자동 정리
+
+
+def _cleanup_publish_status():
+    """만료된 발행 상태 엔트리 정리"""
+    now = datetime.now().timestamp()
+    expired = [k for k, t in _publish_status_timestamps.items() if now - t > _PUBLISH_STATUS_TTL]
+    for k in expired:
+        _publish_status.pop(k, None)
+        _publish_status_timestamps.pop(k, None)
 
 
 async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_key: str):
     """백그라운드에서 3개 문서를 순차 발행"""
     from publisher import run_publish_task
 
+    _cleanup_publish_status()
     _publish_status[batch_id] = {
         "status": "publishing",
         "documents": [],
         "current": 0,
     }
+    _publish_status_timestamps[batch_id] = datetime.now().timestamp()
 
     # 키워드 대표이미지 생성
     keyword_image_path = ""
@@ -873,7 +1091,23 @@ async def delete_notification(nid: int):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "2.0.0", "features": ["generate", "accounts", "categories", "publish", "scheduler", "keywords", "history", "notifications"]}
+    """DB 연결 상태 포함 헬스체크"""
+    db_ok = False
+    try:
+        pool = await db._get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT 1")
+                db_ok = True
+    except Exception:
+        pass
+
+    status = "ok" if db_ok else "degraded"
+    return {
+        "status": status,
+        "version": "2.1.0",
+        "database": "connected" if db_ok else "disconnected",
+    }
 
 
 if __name__ == "__main__":

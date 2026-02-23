@@ -43,6 +43,15 @@ async def _get_pool() -> aiomysql.Pool:
     return _pool
 
 
+async def close_pool():
+    """커넥션 풀 종료 (graceful shutdown)"""
+    global _pool
+    if _pool is not None and not _pool.closed:
+        _pool.close()
+        await _pool.wait_closed()
+        _pool = None
+
+
 async def init_db():
     """데이터베이스 초기화 및 테이블 생성"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)

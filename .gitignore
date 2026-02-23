@@ -1,10 +1,12 @@
 node_modules/
 __pycache__/
+*.pyc
+*.pyo
 .env
 *.log
 dist/
 
-# 데이터 디렉토리 (DB, 쿠키, 로그)
+# 데이터 디렉토리 (DB, 쿠키, 로그, 생성 이미지)
 blog-generator/data/
 *.db
 *.sqlite
@@ -13,6 +15,9 @@ blog-generator/data/
 # 쿠키 파일
 cookies/
 
+# 생성된 이미지 파일
+blog-generator/data/images/
+
 # IDE
 .vscode/
 .idea/
@@ -20,3 +25,8 @@ cookies/
 # OS
 .DS_Store
 Thumbs.db
+
+# 보안: 환경변수 파일 (하위 디렉토리 포함)
+**/.env
+!.env.example
+!**/.env.example
