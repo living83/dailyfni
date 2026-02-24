@@ -380,10 +380,10 @@
         </div>
       </div>
       <div class="card">
-        <h3>키워드 추가</h3>
+        <h3>키워드 등록</h3>
         <div class="form-row">
-          <label>키워드</label>
-          <input type="text" id="kwInput" placeholder="키워드 입력" />
+          <label>키워드 (줄바꿈으로 여러 개 입력)</label>
+          <textarea id="kwInput" rows="5" placeholder="키워드를 입력하세요&#10;줄바꿈으로 여러 개 등록 가능&#10;예)&#10;강아지 사료 추천&#10;고양이 장난감 순위"></textarea>
           <select id="kwPriority">
             <option value="high">높음</option>
             <option value="medium" selected>보통</option>
@@ -391,17 +391,10 @@
           </select>
         </div>
         <div class="form-row">
-          <label>상품소개</label>
+          <label>상품소개 (모든 키워드에 공통 적용)</label>
           <textarea id="kwProductInfo" rows="4" placeholder="상품 정보를 입력하세요 (선택사항 - 입력하면 블로그 글에 반영됩니다)"></textarea>
         </div>
-        <button class="btn btn-primary" onclick="addKeyword()" style="width:100%">키워드 추가</button>
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0">
-          <div class="form-row">
-            <label>일괄 등록</label>
-            <textarea id="kwBulkInput" rows="3" placeholder="키워드를 줄바꿈으로 구분하여 입력 (위 상품소개가 모든 키워드에 적용됩니다)"></textarea>
-            <button class="btn btn-secondary btn-sm" onclick="addKeywordsBulk()" style="align-self:flex-start">일괄 등록</button>
-          </div>
-        </div>
+        <button class="btn btn-primary" onclick="addKeywords()" style="width:100%">키워드 등록</button>
       </div>
       <div class="card">
         <h3>키워드 목록</h3>
@@ -1066,30 +1059,20 @@ async function loadKeywords(status) {
   } catch (e) { showToast(e.message, 'error'); }
 }
 
-async function addKeyword() {
-  const kw = document.getElementById('kwInput').value.trim();
+async function addKeywords() {
+  const text = document.getElementById('kwInput').value.trim();
+  if (!text) return showToast('키워드를 입력하세요', 'error');
   const priority = document.getElementById('kwPriority').value;
   const productInfo = document.getElementById('kwProductInfo').value.trim();
-  if (!kw) return;
-  try {
-    await api('/api/keywords', { method: 'POST', body: JSON.stringify({ keyword: kw, product_info: productInfo, priority }) });
-    document.getElementById('kwInput').value = '';
-    showToast('키워드가 추가되었습니다');
-    loadKeywords();
-  } catch (e) { showToast(e.message, 'error'); }
-}
-
-async function addKeywordsBulk() {
-  const text = document.getElementById('kwBulkInput').value.trim();
-  if (!text) return;
-  const productInfo = document.getElementById('kwProductInfo').value.trim();
   const keywords = text.split('\n').map(k => k.trim()).filter(k => k);
-  const payload = { keywords, product_info: productInfo, priority: 'medium' };
-  console.log('[일괄등록] 전송 데이터:', JSON.stringify(payload));
+  if (!keywords.length) return showToast('키워드를 입력하세요', 'error');
   try {
-    const result = await api('/api/keywords/bulk', { method: 'POST', body: JSON.stringify(payload) });
+    const result = await api('/api/keywords/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ keywords, product_info: productInfo, priority })
+    });
     showToast(result.message);
-    document.getElementById('kwBulkInput').value = '';
+    document.getElementById('kwInput').value = '';
     loadKeywords();
   } catch (e) { showToast(e.message, 'error'); }
 }
