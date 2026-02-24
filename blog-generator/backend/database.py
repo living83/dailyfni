@@ -11,8 +11,13 @@ import asyncio
 import aiomysql
 from pathlib import Path
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
 logger = logging.getLogger("database")
+
+# .env 파일을 직접 로드 (임포트 순서에 관계없이 확실하게 환경변수 설정)
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 COOKIE_DIR = DATA_DIR / "cookies"
