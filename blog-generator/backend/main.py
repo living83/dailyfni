@@ -106,14 +106,26 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.on_event("startup")
 async def startup():
-    await db.init_db()
-    logger.info("데이터베이스 초기화 완료")
+    try:
+        await db.init_db()
+        logger.info("데이터베이스 초기화 완료")
+    except Exception as e:
+        logger.error(f"데이터베이스 연결 실패: {e}")
+        logger.error("MySQL이 실행 중인지, .env 파일의 DB 설정이 올바른지 확인하세요.")
+        logger.error(f"  MYSQL_HOST={os.getenv('MYSQL_HOST', '127.0.0.1')}")
+        logger.error(f"  MYSQL_PORT={os.getenv('MYSQL_PORT', '3306')}")
+        logger.error(f"  MYSQL_USER={os.getenv('MYSQL_USER', 'root')}")
+        logger.error(f"  MYSQL_DB={os.getenv('MYSQL_DB', 'dailyfni')}")
+        return  # DB 없이도 서버는 기동 (API 호출 시 에러 반환)
     # 스케줄러 자동 시작
-    config = await db.get_scheduler_config()
-    if config.get("is_active"):
-        from scheduler import start_scheduler
-        await start_scheduler()
-        logger.info("스케줄러 자동 시작")
+    try:
+        config = await db.get_scheduler_config()
+        if config.get("is_active"):
+            from scheduler import start_scheduler
+            await start_scheduler()
+            logger.info("스케줄러 자동 시작")
+    except Exception as e:
+        logger.warning(f"스케줄러 시작 실패: {e}")
 
 
 @app.on_event("shutdown")

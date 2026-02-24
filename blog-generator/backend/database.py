@@ -6,9 +6,13 @@ MySQL 데이터베이스 설정 및 CRUD 유틸리티
 
 import os
 import json
+import logging
+import asyncio
 import aiomysql
 from pathlib import Path
 from datetime import datetime, timedelta
+
+logger = logging.getLogger("database")
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 COOKIE_DIR = DATA_DIR / "cookies"
@@ -25,21 +29,32 @@ _pool: aiomysql.Pool = None
 
 
 async def _get_pool() -> aiomysql.Pool:
-    """커넥션 풀 반환 (싱글톤)"""
+    """커넥션 풀 반환 (싱글톤, 연결 실패 시 재시도)"""
     global _pool
     if _pool is None or _pool.closed:
-        _pool = await aiomysql.create_pool(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            db=MYSQL_DB,
-            charset="utf8mb4",
-            autocommit=True,
-            minsize=2,
-            maxsize=10,
-            cursorclass=aiomysql.DictCursor,
-        )
+        last_error = None
+        for attempt in range(3):
+            try:
+                _pool = await aiomysql.create_pool(
+                    host=MYSQL_HOST,
+                    port=MYSQL_PORT,
+                    user=MYSQL_USER,
+                    password=MYSQL_PASSWORD,
+                    db=MYSQL_DB,
+                    charset="utf8mb4",
+                    autocommit=True,
+                    minsize=1,
+                    maxsize=10,
+                    cursorclass=aiomysql.DictCursor,
+                    connect_timeout=10,
+                )
+                return _pool
+            except Exception as e:
+                last_error = e
+                wait = 2 ** attempt
+                logger.warning(f"MySQL 연결 실패 (시도 {attempt + 1}/3): {e}. {wait}초 후 재시도...")
+                await asyncio.sleep(wait)
+        raise last_error
     return _pool
 
 
