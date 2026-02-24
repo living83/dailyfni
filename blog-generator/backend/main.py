@@ -420,7 +420,9 @@ class SchedulerConfigUpdate(BaseModel):
 
 @app.get("/")
 async def serve_frontend():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+    response = FileResponse(str(FRONTEND_DIR / "index.html"))
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
