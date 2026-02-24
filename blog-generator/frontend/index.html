@@ -281,6 +281,16 @@
       <div id="docResultsSection" style="display:none">
         <div style="text-align:center;margin-bottom:16px"><h3>3개 문서 생성 완료</h3><p style="font-size:13px;color:#636e72">각 문서의 계정/카테고리를 선택하고 발행하세요</p></div>
         <div class="cards-grid" id="docCardsGrid"></div>
+        <div class="card" style="margin-top:16px">
+          <div class="form-row">
+            <label>블로그 하단 링크 (선택)</label>
+            <input type="url" id="footerLink" placeholder="https://example.com (글 하단에 삽입될 링크)" />
+          </div>
+          <div class="form-row">
+            <label>링크 텍스트 (선택)</label>
+            <input type="text" id="footerLinkText" placeholder="자세히 보기 (미입력 시 URL이 표시됩니다)" />
+          </div>
+        </div>
         <div style="text-align:center;margin-top:16px">
           <button class="btn btn-success" onclick="publishGeneratedDocs()" id="btnPublishDocs">즉시 발행</button>
         </div>
@@ -856,6 +866,9 @@ async function publishGeneratedDocs() {
   if (!apiKey) return showToast('API Key가 필요합니다', 'error');
   if (!generatedDocs.length) return showToast('먼저 문서를 생성하세요', 'error');
 
+  const footerLink = (document.getElementById('footerLink').value || '').trim();
+  const footerLinkText = (document.getElementById('footerLinkText').value || '').trim();
+
   const documents = generatedDocs.map((doc, i) => {
     const accSel = document.querySelectorAll('.doc-account-select')[i];
     const catSel = document.querySelectorAll('.doc-category-select')[i];
@@ -874,9 +887,14 @@ async function publishGeneratedDocs() {
   try {
     document.getElementById('btnPublishDocs').disabled = true;
     document.getElementById('btnPublishDocs').textContent = '발행 시작...';
+    const body = { api_key: apiKey, keyword, documents };
+    if (footerLink) {
+      body.footer_link = footerLink;
+      if (footerLinkText) body.footer_link_text = footerLinkText;
+    }
     const result = await api('/api/publish/immediate', {
       method: 'POST',
-      body: JSON.stringify({ api_key: apiKey, keyword, documents }),
+      body: JSON.stringify(body),
     });
     showToast(`발행 시작됨! (배치 #${result.batch_id})`, 'success');
     switchTab('publish');

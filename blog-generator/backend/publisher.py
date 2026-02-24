@@ -157,6 +157,8 @@ async def publish_to_naver(
     category_name: str = "",
     tags: list = None,
     image_path: str = "",
+    footer_link: str = "",
+    footer_link_text: str = "",
 ) -> dict:
     """
     네이버 블로그에 글을 발행합니다.
@@ -311,6 +313,39 @@ async def publish_to_naver(
             if random.random() < 0.1:
                 await asyncio.sleep(random.uniform(0.5, 1.5))
 
+        # 8-1. 하단 링크 삽입
+        if footer_link:
+            await page.keyboard.press("Enter")
+            await page.keyboard.press("Enter")
+            link_display = footer_link_text if footer_link_text else footer_link
+            await page.keyboard.type(link_display, delay=30 + random.randint(-10, 15))
+            await _random_delay(0.3, 0.5)
+            # 입력한 텍스트를 선택하여 링크 설정
+            for _ in range(len(link_display)):
+                await page.keyboard.press("Shift+ArrowLeft")
+            await _random_delay(0.3, 0.5)
+            # Ctrl+K로 링크 삽입 다이얼로그
+            await page.keyboard.press("Control+k")
+            await _random_delay(0.5, 1)
+            try:
+                link_input = await page.wait_for_selector(
+                    'input[placeholder*="URL"], input[placeholder*="url"], input[placeholder*="링크"], .se-link-input input',
+                    timeout=3000,
+                )
+                if link_input:
+                    await link_input.fill("")
+                    await link_input.type(footer_link, delay=20)
+                    await _random_delay(0.3, 0.5)
+                    await page.keyboard.press("Enter")
+                    await _random_delay(0.5, 1)
+                    logger.info(f"하단 링크 삽입 완료: {footer_link}")
+            except Exception as e:
+                logger.warning(f"링크 다이얼로그 입력 실패, 텍스트로 대체: {e}")
+                # 링크 다이얼로그가 안 열리면 텍스트로 URL 추가
+                await page.keyboard.press("Escape")
+                await page.keyboard.press("End")
+                await page.keyboard.type(f" ({footer_link})", delay=20)
+
         await _random_delay(2, 3)
 
         # 9. 태그 입력
@@ -410,6 +445,8 @@ async def run_publish_task(
     category_name: str = "",
     tags: list = None,
     image_path: str = "",
+    footer_link: str = "",
+    footer_link_text: str = "",
 ) -> dict:
     """단일 문서 발행 실행"""
     from playwright.async_api import async_playwright
@@ -426,6 +463,7 @@ async def run_publish_task(
             result = await publish_to_naver(
                 page, account_id, naver_id, naver_password,
                 title, content, category_name, tags, image_path,
+                footer_link, footer_link_text,
             )
             return result
         except Exception as e:

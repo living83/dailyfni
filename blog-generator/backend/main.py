@@ -245,6 +245,8 @@ class PublishRequest(BaseModel):
     api_key: str
     keyword: str
     documents: List[dict]  # [{title, content, format, account_id, category_id, keywords}]
+    footer_link: Optional[str] = None  # 블로그 하단에 삽입할 링크 URL
+    footer_link_text: Optional[str] = None  # 링크 표시 텍스트 (없으면 URL 그대로)
 
     @validator("api_key")
     def check_api_key(cls, v):
@@ -255,6 +257,16 @@ class PublishRequest(BaseModel):
         if len(v) > 10:
             raise ValueError("한 번에 최대 10개 문서만 발행할 수 있습니다.")
         return v
+
+    @validator("footer_link")
+    def check_footer_link(cls, v):
+        if v and not v.startswith(("http://", "https://")):
+            raise ValueError("링크는 http:// 또는 https://로 시작해야 합니다.")
+        return _validate_max_length(v, 500, "하단 링크") if v else v
+
+    @validator("footer_link_text")
+    def check_footer_link_text(cls, v):
+        return _validate_max_length(v, 100, "링크 텍스트") if v else v
 
 
 class KeywordCreate(BaseModel):
@@ -651,7 +663,7 @@ def _cleanup_publish_status():
         _publish_status_timestamps.pop(k, None)
 
 
-async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_key: str):
+async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_key: str, footer_link: str = "", footer_link_text: str = ""):
     """백그라운드에서 3개 문서를 순차 발행"""
     from publisher import run_publish_task
 
@@ -729,6 +741,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 account_id, naver_id, naver_pw,
                 doc.get("title", ""), doc.get("content", ""),
                 cat_name, tags, keyword_image_path,
+                footer_link, footer_link_text,
             )
 
             if pub_result["success"]:
@@ -798,7 +811,10 @@ async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTas
         raise HTTPException(status_code=400, detail="발행할 문서가 없습니다.")
 
     batch = await db.create_batch(req.keyword)
-    background_tasks.add_task(_run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key)
+    background_tasks.add_task(
+        _run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key,
+        req.footer_link or "", req.footer_link_text or "",
+    )
 
     return {"batch_id": batch["id"], "message": "발행이 시작되었습니다.", "status": "publishing"}
 
