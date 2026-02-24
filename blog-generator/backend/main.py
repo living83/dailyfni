@@ -16,6 +16,13 @@ from datetime import datetime, timedelta
 # .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
 def _load_env_file(env_path):
     """load_dotenv 없이 .env 파일을 직접 읽어 환경변수에 설정"""
+    env_path = Path(env_path)
+    # .env 파일이 없으면 .env.example에서 자동 복사
+    if not env_path.exists():
+        example = env_path.parent / ".env.example"
+        if example.exists():
+            import shutil
+            shutil.copy(example, env_path)
     try:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:

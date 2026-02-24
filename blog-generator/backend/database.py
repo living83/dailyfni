@@ -16,6 +16,14 @@ logger = logging.getLogger("database")
 
 # .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
 def _load_env_file(env_path):
+    env_path = Path(env_path)
+    # .env 파일이 없으면 .env.example에서 자동 복사
+    if not env_path.exists():
+        example = env_path.parent / ".env.example"
+        if example.exists():
+            import shutil
+            shutil.copy(example, env_path)
+            logger.info(f".env.example → .env 자동 복사 완료. .env 파일을 수정하세요: {env_path}")
     try:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -29,7 +37,7 @@ def _load_env_file(env_path):
                     if key:
                         os.environ.setdefault(key, value)
     except FileNotFoundError:
-        pass
+        logger.warning(f".env 파일을 찾을 수 없습니다: {env_path}")
 
 _load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
