@@ -220,7 +220,7 @@
   </div>
 
   <nav class="tab-nav" id="tabNav">
-    <button class="active" onclick="switchTab('generate')">글 생성</button>
+    <button class="active" onclick="switchTab('articles')">글 관리</button>
     <button onclick="switchTab('publish')">문서 발행</button>
     <button onclick="switchTab('accounts')">계정 관리</button>
     <button onclick="switchTab('keywords')">키워드 큐</button>
@@ -232,68 +232,35 @@
 
   <div class="container">
 
-    <!-- ═══ 탭 1: 글 생성 ═══ -->
-    <div class="tab-content active" id="tab-generate">
+    <!-- ═══ 탭 1: 글 관리 (사전 생성 + 발행 대기) ═══ -->
+    <div class="tab-content active" id="tab-articles">
       <div class="card">
-        <h3>상품 기반 글 생성 (3가지 톤)</h3>
-        <div class="form-row">
-          <label>API Key</label>
-          <input type="password" id="apiKey" placeholder="Claude API Key (sk-ant-...)" />
+        <h3>글 사전 생성</h3>
+        <p style="font-size:13px;color:#636e72;margin-bottom:14px">
+          키워드 큐에서 다음 키워드를 가져와 3개 글(튜토리얼/후기/분석)을 자동 생성하고 서버에 저장합니다.
+          스케줄러가 설정된 시간에 자동으로 생성하지만, 수동으로도 생성할 수 있습니다.
+        </p>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnAutoGenerate" onclick="triggerBatchGeneration()" style="flex:1">키워드 큐에서 글 생성</button>
+          <button class="btn btn-success" id="btnPublishReady" onclick="triggerPublishNow()">대기 글 즉시 발행</button>
         </div>
-        <div class="form-row">
-          <label>제목 키워드</label>
-          <input type="text" id="titleKeyword" placeholder="제목에 포함할 키워드" />
-        </div>
-        <div class="form-row">
-          <label>상품 정보</label>
-          <textarea id="productInfo" rows="5" placeholder="상품 정보를 붙여넣으세요"></textarea>
-        </div>
-        <button class="btn btn-primary" id="btnGenerate" onclick="startGenerate()" style="width:100%">생성하기</button>
-        <div id="genProgressSection" style="display:none;margin-top:16px">
-          <div class="progress-bar-track"><div class="progress-bar-fill" id="genProgressBar"></div></div>
-          <div class="progress-steps">
-            <div class="progress-step" id="stepResearch"><span class="icon">🔍</span>리서치</div>
-            <div class="progress-step" id="stepSeo"><span class="icon">📊</span>SEO</div>
-            <div class="progress-step" id="stepWriting"><span class="icon">✍️</span>작성</div>
-            <div class="progress-step" id="stepReview"><span class="icon">✅</span>검수</div>
-          </div>
-        </div>
-        <div class="error-box" id="genErrorBox"></div>
-      </div>
-      <div id="genResultsSection" style="display:none">
-        <div style="text-align:center;margin-bottom:16px"><h3>생성 완료</h3><p style="font-size:13px;color:#636e72">원하는 글을 복사하거나 바로 발행하세요</p></div>
-        <div class="cards-grid" id="genCardsGrid"></div>
+        <div id="autoGenMsg" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:13px"></div>
       </div>
 
-      <div class="card" style="margin-top:24px">
-        <h3>키워드 기반 자동 문서 생성 (3가지 관점)</h3>
-        <div class="form-row">
-          <label>키워드</label>
-          <input type="text" id="docKeyword" placeholder="문서를 생성할 키워드 (예: 파이썬 크롤링)" />
-        </div>
-        <button class="btn btn-primary" id="btnDocGenerate" onclick="startDocGenerate()" style="width:100%">3개 문서 생성</button>
-        <div id="docProgressSection" style="display:none;margin-top:16px">
-          <div class="progress-bar-track"><div class="progress-bar-fill" id="docProgressBar"></div></div>
-          <p id="docProgressMsg" style="text-align:center;font-size:13px;color:#636e72;margin-top:8px"></p>
-        </div>
-        <div class="error-box" id="docErrorBox"></div>
+      <div class="card">
+        <h3>발행 대기 중인 배치</h3>
+        <table class="data-table">
+          <thead><tr><th>배치 ID</th><th>키워드</th><th>상태</th><th>생성일</th></tr></thead>
+          <tbody id="readyBatchesBody"><tr><td colspan="4" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
       </div>
-      <div id="docResultsSection" style="display:none">
-        <div style="text-align:center;margin-bottom:16px"><h3>3개 문서 생성 완료</h3><p style="font-size:13px;color:#636e72">각 문서의 계정/카테고리를 선택하고 발행하세요</p></div>
-        <div class="cards-grid" id="docCardsGrid"></div>
-        <div class="card" style="margin-top:16px">
-          <div class="form-row">
-            <label>블로그 하단 링크 (선택)</label>
-            <input type="url" id="footerLink" placeholder="https://example.com (글 하단에 삽입될 링크)" />
-          </div>
-          <div class="form-row">
-            <label>링크 텍스트 (선택)</label>
-            <input type="text" id="footerLinkText" placeholder="자세히 보기 (미입력 시 URL이 표시됩니다)" />
-          </div>
-        </div>
-        <div style="text-align:center;margin-top:16px">
-          <button class="btn btn-success" onclick="publishGeneratedDocs()" id="btnPublishDocs">즉시 발행</button>
-        </div>
+
+      <div class="card">
+        <h3>사전 생성된 글 목록 (발행 대기)</h3>
+        <table class="data-table">
+          <thead><tr><th>키워드</th><th>형식</th><th>제목</th><th>계정</th><th>글자수</th><th>생성일</th></tr></thead>
+          <tbody id="generatedArticlesBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
       </div>
     </div>
 
@@ -489,6 +456,7 @@
             <option value="">전체 상태</option>
             <option value="success">성공</option>
             <option value="failed">실패</option>
+            <option value="generated">생성 완료</option>
             <option value="pending">대기</option>
           </select>
           <select id="histAccount" style="padding:6px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px">
@@ -613,11 +581,12 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-nav button').forEach(el => el.classList.remove('active'));
   document.getElementById(`tab-${tabName}`).classList.add('active');
   const btns = document.querySelectorAll('.tab-nav button');
-  const tabs = ['generate','publish','accounts','keywords','scheduler','history','stats','notifications'];
+  const tabs = ['articles','publish','accounts','keywords','scheduler','history','stats','notifications'];
   const idx = tabs.indexOf(tabName);
   if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
 
   // 탭 전환 시 데이터 로드
+  if (tabName === 'articles') loadGeneratedArticles();
   if (tabName === 'accounts') loadAccounts();
   if (tabName === 'keywords') loadKeywords();
   if (tabName === 'scheduler') loadSchedulerConfig();
@@ -627,279 +596,89 @@ function switchTab(tabName) {
   if (tabName === 'publish') loadBatches();
 }
 
-/* ━━━ 상품 기반 글 생성 ━━━ */
-const STEP_MAP = {
-  researching: { el: 'stepResearch', progress: 15 },
-  research_done: { el: 'stepResearch', progress: 25, done: true },
-  seo: { el: 'stepSeo', progress: 35 },
-  seo_done: { el: 'stepSeo', progress: 45, done: true },
-  writing: { el: 'stepWriting', progress: 55 },
-  writing_done: { el: 'stepWriting', progress: 75, done: true },
-  reviewing: { el: 'stepReview', progress: 85 },
-  reviewing_done: { el: 'stepReview', progress: 95, done: true },
-};
-
-function startGenerate() {
-  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
-  const titleKeyword = document.getElementById('titleKeyword').value.trim();
-  const productInfo = document.getElementById('productInfo').value.trim();
-  if (!apiKey || !titleKeyword || !productInfo) return showToast('모든 필드를 입력하세요', 'error');
-
-  document.getElementById('btnGenerate').disabled = true;
-  document.getElementById('btnGenerate').textContent = '생성 중...';
-  document.getElementById('genProgressSection').style.display = 'block';
-  document.getElementById('genResultsSection').style.display = 'none';
-  document.getElementById('genProgressBar').style.width = '0%';
-  ['stepResearch','stepSeo','stepWriting','stepReview'].forEach(id => {
-    document.getElementById(id).className = 'progress-step';
-  });
-
-  fetch('/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey, title_keyword: titleKeyword, product_info: productInfo }),
-  }).then(response => {
-    if (!response.ok) return response.json().then(e => { throw new Error(e.detail); });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) return;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-          else if (line.startsWith('data: ') && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === 'progress') {
-                const info = STEP_MAP[data.step];
-                if (info) {
-                  document.getElementById('genProgressBar').style.width = info.progress + '%';
-                  if (info.done) { document.getElementById(info.el).className = 'progress-step done'; }
-                  else { document.getElementById(info.el).className = 'progress-step active'; }
-                }
-              } else if (eventType === 'complete') {
-                document.getElementById('genProgressBar').style.width = '100%';
-                setTimeout(() => renderGenResults(data), 400);
-              } else if (eventType === 'error') {
-                showToast(data.message, 'error');
-              }
-            } catch (e) {}
-            eventType = '';
-          }
-        }
-        read();
-      });
-    }
-    read();
-  }).catch(err => showToast(err.message, 'error'))
-    .finally(() => {
-      document.getElementById('btnGenerate').disabled = false;
-      document.getElementById('btnGenerate').textContent = '생성하기';
-    });
-}
-
-const TONE_CFG = {
-  friendly: { label: '친숙형', desc: '~해요체', cls: 'tutorial' },
-  expert: { label: '전문가형', desc: '~입니다체', cls: 'review' },
-  beginner: { label: '초보자형', desc: '쉬운 설명', cls: 'analysis' },
-};
-
-function renderGenResults(data) {
-  const grid = document.getElementById('genCardsGrid');
-  grid.innerHTML = '';
-  for (const [tone, cfg] of Object.entries(TONE_CFG)) {
-    const article = data.articles[tone];
-    if (!article) continue;
-    const review = article.review || {};
-    const card = document.createElement('div');
-    card.className = 'doc-card';
-    card.innerHTML = `
-      <div class="doc-card-header ${cfg.cls}"><h4>${cfg.label}</h4><span class="badge">${cfg.desc}</span></div>
-      <div class="doc-card-title">${escapeHtml(article.title)}</div>
-      <div class="doc-card-content">${markdownToHtml(article.content)}</div>
-      <div class="doc-card-footer">
-        <button class="btn btn-sm btn-secondary" onclick="copyText(this, '${tone}')">복사</button>
-        <span class="tag tag-${review.grade === 'A' ? 'green' : review.grade === 'B' ? 'blue' : review.grade === 'C' ? 'yellow' : 'red'}">${review.grade || '-'} ${review.overall_score || 0}점</span>
-      </div>`;
-    card.dataset.rawContent = article.content;
-    grid.appendChild(card);
-  }
-  document.getElementById('genResultsSection').style.display = 'block';
-  document.getElementById('genProgressSection').style.display = 'none';
-}
-
-function copyText(btn, tone) {
-  const card = btn.closest('.doc-card');
-  navigator.clipboard.writeText(card.dataset.rawContent || '').then(() => {
-    btn.textContent = '복사됨!';
-    setTimeout(() => btn.textContent = '복사', 2000);
-  });
-}
-
-/* ━━━ 키워드 기반 3개 문서 생성 ━━━ */
-function startDocGenerate() {
-  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
-  const keyword = document.getElementById('docKeyword').value.trim();
-  if (!apiKey) return showToast('API Key를 입력하세요 (글 생성 탭 또는 키워드 큐 탭)', 'error');
-  if (!keyword) return showToast('키워드를 입력하세요', 'error');
-
-  document.getElementById('btnDocGenerate').disabled = true;
-  document.getElementById('btnDocGenerate').textContent = '생성 중...';
-  document.getElementById('docProgressSection').style.display = 'block';
-  document.getElementById('docResultsSection').style.display = 'none';
-  document.getElementById('docProgressBar').style.width = '0%';
-
-  generatedDocs = [];
-
-  fetch('/api/documents/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ api_key: apiKey, keyword }),
-  }).then(response => {
-    if (!response.ok) return response.json().then(e => { throw new Error(e.detail); });
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    function read() {
-      reader.read().then(({ done, value }) => {
-        if (done) return;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        let eventType = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-          else if (line.startsWith('data: ') && eventType) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === 'progress') {
-                document.getElementById('docProgressBar').style.width = (data.step / data.total * 100) + '%';
-                document.getElementById('docProgressMsg').textContent = data.message;
-              } else if (eventType === 'warning') {
-                showToast(data.message, 'warning');
-              } else if (eventType === 'complete') {
-                generatedDocs = data.documents;
-                renderDocResults(data);
-              } else if (eventType === 'error') {
-                showToast(data.message, 'error');
-              }
-            } catch (e) {}
-            eventType = '';
-          }
-        }
-        read();
-      });
-    }
-    read();
-  }).catch(err => showToast(err.message, 'error'))
-    .finally(() => {
-      document.getElementById('btnDocGenerate').disabled = false;
-      document.getElementById('btnDocGenerate').textContent = '3개 문서 생성';
-    });
-}
-
+/* ━━━ 글 사전 생성 / 관리 ━━━ */
 const DOC_CFG = { tutorial: { label: '튜토리얼/가이드', cls: 'tutorial' }, review: { label: '경험담/후기', cls: 'review' }, analysis: { label: '비교/분석', cls: 'analysis' } };
 
-function renderDocResults(data) {
-  const grid = document.getElementById('docCardsGrid');
-  grid.innerHTML = '';
-  data.documents.forEach((doc, i) => {
-    const cfg = DOC_CFG[doc.format] || DOC_CFG.tutorial;
-    const charClass = doc.char_count >= 1500 ? 'ok' : 'short';
-    const card = document.createElement('div');
-    card.className = 'doc-card';
-    card.dataset.docIndex = i;
-    card.innerHTML = `
-      <div class="doc-card-header ${cfg.cls}"><h4>문서 ${doc.document_number}</h4><span class="badge">${cfg.label}</span></div>
-      <div class="doc-card-title">${escapeHtml(doc.title)}</div>
-      <div class="doc-card-content">${markdownToHtml(doc.content)}</div>
-      <div style="padding:8px 18px"><span class="char-count ${charClass}">${doc.char_count}자</span></div>
-      <div class="doc-card-footer" style="flex-wrap:wrap;gap:6px">
-        <select class="doc-account-select" data-doc="${i}" onchange="onDocAccountChange(${i}, this.value)">
-          <option value="">계정 선택</option>
-          ${accounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('')}
-        </select>
-        <select class="doc-category-select" data-doc="${i}">
-          <option value="">카테고리</option>
-        </select>
-        <button class="btn btn-sm btn-secondary" onclick="copyText(this)">복사</button>
-      </div>`;
-    card.dataset.rawContent = doc.content;
-    grid.appendChild(card);
-  });
-  document.getElementById('docResultsSection').style.display = 'block';
-  document.getElementById('docProgressSection').style.display = 'none';
-  // 자동 순차 계정 배정
-  accounts.forEach((a, i) => {
-    if (i < 3) {
-      const sel = document.querySelectorAll('.doc-account-select')[i];
-      if (sel) { sel.value = a.id; onDocAccountChange(i, a.id); }
-    }
-  });
-}
-
-async function onDocAccountChange(docIdx, accountId) {
-  const catSel = document.querySelectorAll('.doc-category-select')[docIdx];
-  catSel.innerHTML = '<option value="">카테고리</option>';
-  if (!accountId) return;
-  try {
-    const cats = await api(`/api/categories/${accountId}`);
-    cats.forEach(c => {
-      catSel.innerHTML += `<option value="${c.id}" ${c.is_default ? 'selected' : ''}>${c.category_name}</option>`;
-    });
-  } catch (e) {}
-}
-
-async function publishGeneratedDocs() {
-  const apiKey = document.getElementById('apiKey').value.trim() || document.getElementById('kwApiKey').value.trim();
-  const keyword = document.getElementById('docKeyword').value.trim();
-  if (!apiKey) return showToast('API Key가 필요합니다', 'error');
-  if (!generatedDocs.length) return showToast('먼저 문서를 생성하세요', 'error');
-
-  const footerLink = (document.getElementById('footerLink').value || '').trim();
-  const footerLinkText = (document.getElementById('footerLinkText').value || '').trim();
-
-  const documents = generatedDocs.map((doc, i) => {
-    const accSel = document.querySelectorAll('.doc-account-select')[i];
-    const catSel = document.querySelectorAll('.doc-category-select')[i];
-    return {
-      title: doc.title,
-      content: doc.content,
-      format: doc.format,
-      account_id: accSel ? parseInt(accSel.value) || null : null,
-      category_id: catSel ? parseInt(catSel.value) || null : null,
-      keywords: [keyword],
-    };
-  }).filter(d => d.account_id);
-
-  if (!documents.length) return showToast('계정을 선택하세요', 'error');
+async function triggerBatchGeneration() {
+  const btn = document.getElementById('btnAutoGenerate');
+  const msgBox = document.getElementById('autoGenMsg');
+  btn.disabled = true;
+  btn.textContent = '생성 중...';
+  msgBox.style.display = 'block';
+  msgBox.style.background = '#e8f4fd';
+  msgBox.style.color = '#0984e3';
+  msgBox.textContent = '키워드 큐에서 글을 생성하고 있습니다. 완료 시 알림이 표시됩니다...';
 
   try {
-    document.getElementById('btnPublishDocs').disabled = true;
-    document.getElementById('btnPublishDocs').textContent = '발행 시작...';
-    const body = { api_key: apiKey, keyword, documents };
-    if (footerLink) {
-      body.footer_link = footerLink;
-      if (footerLinkText) body.footer_link_text = footerLinkText;
-    }
-    const result = await api('/api/publish/immediate', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-    showToast(`발행 시작됨! (배치 #${result.batch_id})`, 'success');
+    const result = await api('/api/articles/generate-batch', { method: 'POST' });
+    msgBox.style.background = '#e6fff7';
+    msgBox.style.color = '#00b894';
+    msgBox.textContent = result.message;
+    showToast(result.message, 'success');
+    setTimeout(() => loadGeneratedArticles(), 3000);
+  } catch (e) {
+    msgBox.style.background = '#fff5f5';
+    msgBox.style.color = '#d63031';
+    msgBox.textContent = e.message;
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '키워드 큐에서 글 생성';
+  }
+}
+
+async function triggerPublishNow() {
+  const btn = document.getElementById('btnPublishReady');
+  btn.disabled = true;
+  btn.textContent = '발행 시작 중...';
+  try {
+    const result = await api('/api/articles/publish-now', { method: 'POST' });
+    showToast(result.message, 'success');
     switchTab('publish');
-    pollPublishStatus(result.batch_id);
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
-    document.getElementById('btnPublishDocs').disabled = false;
-    document.getElementById('btnPublishDocs').textContent = '즉시 발행';
+    btn.disabled = false;
+    btn.textContent = '대기 글 즉시 발행';
   }
+}
+
+async function loadGeneratedArticles() {
+  // 발행 대기 배치 로드
+  try {
+    const batches = await api('/api/articles/ready-batches');
+    const batchBody = document.getElementById('readyBatchesBody');
+    if (!batches.length) {
+      batchBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#636e72">발행 대기 중인 배치가 없습니다</td></tr>';
+    } else {
+      batchBody.innerHTML = batches.map(b => `<tr>
+        <td>#${b.id}</td>
+        <td><strong>${escapeHtml(b.keyword)}</strong></td>
+        <td><span class="tag tag-blue">발행 대기</span></td>
+        <td style="font-size:11px">${(b.created_at || '').slice(0,16)}</td>
+      </tr>`).join('');
+    }
+  } catch (e) {}
+
+  // 사전 생성된 글 목록 로드
+  try {
+    const articles = await api('/api/articles/generated');
+    const tbody = document.getElementById('generatedArticlesBody');
+    if (!articles.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">사전 생성된 글이 없습니다. 키워드 큐에서 글을 생성하세요.</td></tr>';
+      return;
+    }
+    const fmtMap = { tutorial: '튜토리얼', review: '후기', analysis: '분석' };
+    const fmtTag = { tutorial: 'tag-green', review: 'tag-blue', analysis: 'tag-yellow' };
+    tbody.innerHTML = articles.map(a => `<tr>
+      <td>${escapeHtml(a.batch_keyword || '')}</td>
+      <td><span class="tag ${fmtTag[a.document_format] || 'tag-gray'}">${fmtMap[a.document_format] || a.document_format}</span></td>
+      <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.title || '')}</td>
+      <td>${a.account_name || '-'}</td>
+      <td>${(a.content || '').length}자</td>
+      <td style="font-size:11px">${(a.created_at || '').slice(0,16)}</td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
 }
 
 /* ━━━ 발행 상태 폴링 ━━━ */
@@ -1109,7 +888,7 @@ async function loadSchedulerConfig() {
     const status = await api('/api/scheduler/status');
     document.getElementById('schedulerStatusInfo').innerHTML = `
       <p>상태: <strong>${status.is_running ? '실행 중' : '중지됨'}</strong></p>
-      ${status.jobs.map(j => `<p>다음 실행: ${j.next_run_time || '-'}</p>`).join('')}`;
+      ${status.jobs.map(j => `<p>${j.name || j.id}: 다음 실행 ${j.next_run_time || '-'}</p>`).join('')}`;
   } catch (e) { showToast(e.message, 'error'); }
 }
 
@@ -1200,8 +979,8 @@ async function loadBatches() {
     const batches = await api('/api/batches');
     const tbody = document.getElementById('batchesTableBody');
     if (!batches.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">배치가 없습니다</td></tr>'; return; }
-    const statusMap = { all_success: '전체 성공', partial_success: '부분 성공', all_failed: '전체 실패', pending: '대기 중', publishing: '발행 중' };
-    const statusTag = { all_success: 'tag-green', partial_success: 'tag-yellow', all_failed: 'tag-red', pending: 'tag-gray' };
+    const statusMap = { all_success: '전체 성공', partial_success: '부분 성공', all_failed: '전체 실패', pending: '대기 중', publishing: '발행 중', articles_ready: '글 생성 완료' };
+    const statusTag = { all_success: 'tag-green', partial_success: 'tag-yellow', all_failed: 'tag-red', pending: 'tag-gray', articles_ready: 'tag-blue' };
     tbody.innerHTML = batches.map(b => `<tr>
       <td>#${b.id}</td>
       <td>${escapeHtml(b.keyword)}</td>
@@ -1314,15 +1093,11 @@ async function deleteNotif(id) {
   try { await api(`/api/notifications/${id}`, { method: 'DELETE' }); loadNotifications(); } catch(e){}
 }
 
-/* ━━━ API Key 동기화 (글 생성 탭 ↔ 키워드 큐 탭) ━━━ */
-function syncApiKeys(sourceId) {
-  const val = document.getElementById(sourceId).value.trim();
+/* ━━━ API Key 저장 (키워드 큐 탭) ━━━ */
+function syncApiKeys() {
+  const val = document.getElementById('kwApiKey').value.trim();
   if (val) localStorage.setItem('claude_api_key', val);
   else localStorage.removeItem('claude_api_key');
-  // 양쪽 입력란 동기화
-  if (sourceId === 'apiKey') document.getElementById('kwApiKey').value = val;
-  else document.getElementById('apiKey').value = val;
-  // 저장 표시
   const badge = document.getElementById('kwApiKeySaved');
   if (val) { badge.style.display = 'inline'; setTimeout(() => badge.style.display = 'none', 2000); }
 }
@@ -1331,14 +1106,13 @@ function syncApiKeys(sourceId) {
 (function() {
   const saved = localStorage.getItem('claude_api_key');
   if (saved) {
-    document.getElementById('apiKey').value = saved;
     document.getElementById('kwApiKey').value = saved;
   }
-  document.getElementById('apiKey').addEventListener('change', function() { syncApiKeys('apiKey'); });
-  document.getElementById('kwApiKey').addEventListener('input', function() { syncApiKeys('kwApiKey'); });
+  document.getElementById('kwApiKey').addEventListener('input', function() { syncApiKeys(); });
   // 초기 데이터 로드
   loadAccounts();
   loadNotifications();
+  loadGeneratedArticles();
 })();
 </script>
 </body>

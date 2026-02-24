@@ -418,7 +418,7 @@ async def create_publish_history(data: dict) -> dict:
 async def update_publish_history(history_id: int, data: dict):
     fields = []
     values = []
-    for key in ["status", "error_message", "naver_post_url", "published_at"]:
+    for key in ["status", "error_message", "naver_post_url", "published_at", "account_id", "category_id", "scheduled_time"]:
         if key in data:
             fields.append(f"{key} = %s")
             values.append(data[key])
@@ -730,6 +730,51 @@ async def update_scheduler_config(data: dict):
 
 
 # ─── 중복 키워드 체크 ──────────────────────────────────
+
+async def get_ready_batches() -> list:
+    """발행 대기 중인 배치 조회 (status='articles_ready')"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
+            )
+            return list(await cur.fetchall())
+
+
+async def get_generated_articles(batch_id: int) -> list:
+    """사전 생성된 글 조회 (status='generated')"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT ph.*, a.account_name, c.category_name
+                   FROM publish_history ph
+                   LEFT JOIN accounts a ON ph.account_id = a.id
+                   LEFT JOIN categories c ON ph.category_id = c.id
+                   WHERE ph.batch_id = %s AND ph.status = 'generated'
+                   ORDER BY ph.document_number""",
+                (batch_id,),
+            )
+            return list(await cur.fetchall())
+
+
+async def get_all_generated_articles() -> list:
+    """모든 사전 생성된 글 조회 (status='generated')"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT ph.*, a.account_name, c.category_name, pb.keyword AS batch_keyword
+                   FROM publish_history ph
+                   LEFT JOIN accounts a ON ph.account_id = a.id
+                   LEFT JOIN categories c ON ph.category_id = c.id
+                   LEFT JOIN publish_batches pb ON ph.batch_id = pb.id
+                   WHERE ph.status = 'generated'
+                   ORDER BY ph.created_at DESC"""
+            )
+            return list(await cur.fetchall())
+
 
 async def check_keyword_duplicate(keyword: str, days: int = 7) -> bool:
     """최근 N일 내에 같은 키워드가 사용되었는지 확인"""

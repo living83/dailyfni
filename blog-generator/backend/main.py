@@ -48,10 +48,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 from typing import Optional, List
 
-from agents import (
-    run_research_agent, run_seo_agent, run_writer_agent, run_reviewer_agent,
-    _call_claude,
-)
+from agents import _call_claude
 from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
@@ -214,24 +211,6 @@ def _validate_priority(v: str) -> str:
     return v
 
 
-class GenerateRequest(BaseModel):
-    api_key: str
-    title_keyword: str
-    product_info: str
-
-    @validator("api_key")
-    def check_api_key(cls, v):
-        return _validate_api_key(v)
-
-    @validator("title_keyword")
-    def check_title(cls, v):
-        return _validate_max_length(v.strip(), 100, "제목 키워드")
-
-    @validator("product_info")
-    def check_product(cls, v):
-        return _validate_max_length(v, 10000, "상품 정보")
-
-
 class AccountCreate(BaseModel):
     account_name: str
     naver_id: str
@@ -282,24 +261,6 @@ class CategoryCreate(BaseModel):
 class CategoryUpdate(BaseModel):
     category_name: Optional[str] = None
     is_default: Optional[bool] = None
-
-
-class DocumentGenerateRequest(BaseModel):
-    api_key: str
-    keyword: str
-    product_info: str = ""
-
-    @validator("api_key")
-    def check_api_key(cls, v):
-        return _validate_api_key(v)
-
-    @validator("keyword")
-    def check_keyword(cls, v):
-        return _validate_max_length(v.strip(), 200, "키워드")
-
-    @validator("product_info")
-    def check_product(cls, v):
-        return _validate_max_length(v, 10000, "상품 정보")
 
 
 class PublishRequest(BaseModel):
@@ -426,86 +387,49 @@ async def serve_frontend():
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 기존 블로그 글 생성 (상품 기반)
+# 글 사전 생성 API (키워드 큐 → 3개 글 생성 후 DB 저장)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-@app.post("/api/generate")
-async def generate(req: GenerateRequest):
-    """SSE 스트림으로 파이프라인 진행 상태 + 최종 결과를 전송"""
-    if not req.api_key or len(req.api_key) < 10:
-        raise HTTPException(status_code=400, detail="유효한 Claude API 키를 입력하세요.")
-    if not req.title_keyword.strip():
-        raise HTTPException(status_code=400, detail="제목에 포함할 키워드를 입력하세요.")
-    if not req.product_info.strip():
-        raise HTTPException(status_code=400, detail="상품 정보를 입력하세요.")
+@app.post("/api/articles/generate-batch")
+async def generate_batch(background_tasks: BackgroundTasks):
+    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장"""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
-    async def event_stream():
-        def send_event(event: str, data: dict) -> str:
-            return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    kw = await db.get_next_keyword()
+    if not kw:
+        raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
 
-        try:
-            yield send_event("progress", {"step": "researching", "message": "상품 정보 분석 중..."})
-            await asyncio.sleep(0)
-            research_data = await asyncio.to_thread(run_research_agent, req.api_key, req.product_info)
-            yield send_event("progress", {"step": "research_done", "message": "상품 분석 완료"})
+    from scheduler import article_generation_job
+    background_tasks.add_task(article_generation_job)
+    return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
 
-            yield send_event("progress", {"step": "seo", "message": "SEO 키워드 분석 중..."})
-            await asyncio.sleep(0)
-            seo_data = await asyncio.to_thread(run_seo_agent, req.api_key, research_data, req.title_keyword)
-            yield send_event("progress", {"step": "seo_done", "message": "SEO 분석 완료"})
 
-            main_keyword = seo_data["main_keyword"]
-            sub_keywords = seo_data["sub_keywords"]
-            titles = seo_data["blog_titles"]
+@app.get("/api/articles/generated")
+async def get_generated_articles():
+    """사전 생성된 글 목록 조회 (발행 대기 중)"""
+    articles = await db.get_all_generated_articles()
+    return articles
 
-            yield send_event("progress", {"step": "writing", "message": "블로그 글 작성 중... (3가지 톤)"})
-            await asyncio.sleep(0)
 
-            articles = {}
-            tones = [
-                ("friendly", titles["friendly"]),
-                ("expert", titles["expert"]),
-                ("beginner", titles["beginner"]),
-            ]
-            for tone, title in tones:
-                articles[tone] = await asyncio.to_thread(
-                    run_writer_agent, req.api_key, tone, title, main_keyword, sub_keywords, research_data
-                )
-            yield send_event("progress", {"step": "writing_done", "message": "글 작성 완료"})
+@app.get("/api/articles/ready-batches")
+async def get_ready_batches():
+    """발행 대기 중인 배치 목록"""
+    batches = await db.get_ready_batches()
+    return batches
 
-            yield send_event("progress", {"step": "reviewing", "message": "품질 검수 중..."})
-            await asyncio.sleep(0)
 
-            reviews = {}
-            for tone, content in articles.items():
-                reviews[tone] = await asyncio.to_thread(
-                    run_reviewer_agent, req.api_key, main_keyword, content
-                )
-            yield send_event("progress", {"step": "reviewing_done", "message": "검수 완료"})
+@app.post("/api/articles/publish-now")
+async def publish_ready_articles(background_tasks: BackgroundTasks):
+    """사전 생성된 글을 즉시 발행 시작"""
+    batches = await db.get_ready_batches()
+    if not batches:
+        raise HTTPException(status_code=404, detail="발행할 사전 생성 글이 없습니다.")
 
-            # 키워드 대표이미지 생성
-            keyword_image = ""
-            try:
-                keyword_image = await asyncio.to_thread(generate_keyword_image, main_keyword)
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-
-            result = {
-                "research": research_data,
-                "seo": seo_data,
-                "keyword_image": keyword_image,
-                "articles": {
-                    "friendly": {"title": titles["friendly"], "content": articles["friendly"], "review": reviews["friendly"]},
-                    "expert": {"title": titles["expert"], "content": articles["expert"], "review": reviews["expert"]},
-                    "beginner": {"title": titles["beginner"], "content": articles["beginner"], "review": reviews["beginner"]},
-                },
-            }
-            yield send_event("complete", result)
-
-        except Exception as e:
-            yield send_event("error", {"message": str(e)})
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    from scheduler import daily_publish_job
+    background_tasks.add_task(daily_publish_job)
+    return {"message": f"{len(batches)}개 배치의 글 발행이 시작되었습니다.", "batch_count": len(batches)}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -629,83 +553,6 @@ async def delete_category(cat_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail="카테고리를 찾을 수 없습니다.")
     return {"message": "카테고리가 삭제되었습니다."}
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 문서 생성 API (키워드 → 3개 문서)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-@app.post("/api/documents/generate")
-async def generate_documents(req: DocumentGenerateRequest):
-    """키워드 하나로 3가지 관점의 문서를 생성"""
-    if not req.api_key or len(req.api_key) < 10:
-        raise HTTPException(status_code=400, detail="유효한 API 키를 입력하세요.")
-    if not req.keyword.strip():
-        raise HTTPException(status_code=400, detail="키워드를 입력하세요.")
-
-    # 중복 키워드 경고
-    is_dup = await db.check_keyword_duplicate(req.keyword, 7)
-
-    async def event_stream():
-        def send_event(event: str, data: dict) -> str:
-            return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-        try:
-            if is_dup:
-                yield send_event("warning", {"message": f"'{req.keyword}'는 최근 7일 내 사용된 키워드입니다."})
-
-            doc_configs = [
-                ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
-                ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
-                ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
-            ]
-
-            # 상품소개가 있으면 프롬프트에 삽입
-            product_info_section = ""
-            if req.product_info.strip():
-                product_info_section = f"\n상품소개:\n{req.product_info.strip()}\n"
-
-            documents = []
-            for i, (fmt, prompt_template, desc) in enumerate(doc_configs):
-                yield send_event("progress", {"step": i + 1, "total": 3, "message": f"문서 {i+1} 생성 중... ({desc})"})
-                await asyncio.sleep(0)
-
-                prompt = prompt_template.format(keyword=req.keyword, product_info_section=product_info_section)
-                result = await asyncio.to_thread(_call_claude, req.api_key, prompt, 4096)
-
-                lines = result.strip().split("\n", 1)
-                title = lines[0].strip().lstrip("# ").strip()
-                body = lines[1].strip() if len(lines) > 1 else result
-
-                documents.append({
-                    "document_number": i + 1,
-                    "format": fmt,
-                    "format_label": desc,
-                    "title": title,
-                    "content": body,
-                    "char_count": len(body),
-                })
-
-                yield send_event("doc_ready", {"document_number": i + 1, "title": title, "format": fmt})
-
-            # 키워드 대표이미지 생성
-            keyword_image = ""
-            try:
-                keyword_image = await asyncio.to_thread(generate_keyword_image, req.keyword)
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-
-            yield send_event("complete", {
-                "keyword": req.keyword,
-                "documents": documents,
-                "keyword_image": keyword_image,
-                "is_duplicate_keyword": is_dup,
-            })
-
-        except Exception as e:
-            yield send_event("error", {"message": str(e)})
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
