@@ -11,23 +11,18 @@ import asyncio
 import aiomysql
 from pathlib import Path
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 
 logger = logging.getLogger("database")
-
-# .env 파일을 직접 로드 (임포트 순서에 관계없이 확실하게 환경변수 설정)
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_env_path)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 COOKIE_DIR = DATA_DIR / "cookies"
 
-# MySQL 연결 설정 (환경변수)
-MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
-MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-MYSQL_USER = os.getenv("MYSQL_USER", "root")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-MYSQL_DB = os.getenv("MYSQL_DB", "dailyfni")
+# MySQL 연결 설정 (직접 설정)
+MYSQL_HOST = "127.0.0.1"
+MYSQL_PORT = 3306
+MYSQL_USER = "root"
+MYSQL_PASSWORD = "Ajtwoddl83!"
+MYSQL_DB = "dailyfni"
 
 # 커넥션 풀
 _pool: aiomysql.Pool = None
