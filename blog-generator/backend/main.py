@@ -321,6 +321,7 @@ class KeywordCreate(BaseModel):
 
 class KeywordBulkCreate(BaseModel):
     keywords: List[str]
+    product_info: str = ""
     priority: str = "medium"
 
     @validator("keywords")
@@ -1035,7 +1036,7 @@ async def create_keyword(req: KeywordCreate):
 
 @app.post("/api/keywords/bulk")
 async def create_keywords_bulk(req: KeywordBulkCreate):
-    keywords = [{"keyword": kw.strip(), "priority": req.priority} for kw in req.keywords if kw.strip()]
+    keywords = [{"keyword": kw.strip(), "product_info": req.product_info, "priority": req.priority} for kw in req.keywords if kw.strip()]
     count = await db.add_keywords_bulk(keywords)
     return {"message": f"{count}개 키워드가 등록되었습니다.", "count": count}
 

@@ -1082,10 +1082,9 @@ async function addKeywordsBulk() {
   const text = document.getElementById('kwBulkInput').value.trim();
   if (!text) return;
   const productInfo = document.getElementById('kwProductInfo').value.trim();
-  const keywords = text.split('\n').map(k => k.trim()).filter(k => k)
-    .map(k => ({ keyword: k, product_info: productInfo, priority: 'medium' }));
+  const keywords = text.split('\n').map(k => k.trim()).filter(k => k);
   try {
-    const result = await api('/api/keywords/bulk', { method: 'POST', body: JSON.stringify({ keywords, priority: 'medium' }) });
+    const result = await api('/api/keywords/bulk', { method: 'POST', body: JSON.stringify({ keywords, product_info: productInfo, priority: 'medium' }) });
     showToast(result.message);
     document.getElementById('kwBulkInput').value = '';
     loadKeywords();
