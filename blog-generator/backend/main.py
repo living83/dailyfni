@@ -1062,8 +1062,42 @@ async def create_keyword(req: KeywordCreate):
 
 
 @app.post("/api/keywords/bulk")
-async def create_keywords_bulk(req: KeywordBulkCreate):
-    keywords = [{"keyword": kw.strip(), "product_info": req.product_info, "priority": req.priority} for kw in req.keywords if kw.strip()]
+async def create_keywords_bulk(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="잘못된 JSON 형식입니다.")
+
+    logger.info(f"[일괄등록] 수신 데이터: {json.dumps(body, ensure_ascii=False)[:500]}")
+
+    raw_keywords = body.get("keywords", [])
+    product_info = body.get("product_info", "")
+    priority = body.get("priority", "medium")
+
+    if priority not in ("high", "medium", "low"):
+        priority = "medium"
+
+    # keywords가 문자열 배열이든 객체 배열이든 모두 처리
+    keywords = []
+    for item in raw_keywords:
+        if isinstance(item, str):
+            kw = item.strip()
+            pi = product_info
+            pr = priority
+        elif isinstance(item, dict):
+            kw = item.get("keyword", "").strip()
+            pi = item.get("product_info", product_info)
+            pr = item.get("priority", priority)
+        else:
+            continue
+        if kw:
+            keywords.append({"keyword": kw, "product_info": pi, "priority": pr})
+
+    if not keywords:
+        raise HTTPException(status_code=400, detail="등록할 키워드가 없습니다.")
+    if len(keywords) > 500:
+        raise HTTPException(status_code=400, detail="한 번에 최대 500개 키워드만 등록할 수 있습니다.")
+
     count = await db.add_keywords_bulk(keywords)
     return {"message": f"{count}개 키워드가 등록되었습니다.", "count": count}
 
