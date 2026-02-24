@@ -41,8 +41,9 @@ def _load_env_file(env_path):
 _load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 from typing import Optional, List
@@ -73,6 +74,30 @@ logger = logging.getLogger("main")
 # ─── FastAPI 앱 ──────────────────────────────────────────
 
 app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
+
+
+# ─── 422 에러 상세 로그 핸들러 ──────────────────────────────
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body = None
+    try:
+        body = await request.body()
+        body = body.decode("utf-8")[:500]
+    except Exception:
+        pass
+    logger.error(f"422 Validation Error on {request.method} {request.url.path}")
+    logger.error(f"  Request body: {body}")
+    logger.error(f"  Errors: {exc.errors()}")
+    # 사용자에게 상세 에러 메시지 반환
+    messages = []
+    for err in exc.errors():
+        loc = " > ".join(str(x) for x in err.get("loc", []))
+        messages.append(f"{loc}: {err.get('msg', '')}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "; ".join(messages) if messages else "입력값 검증 실패"},
+    )
+
 
 # ─── CORS 미들웨어 ──────────────────────────────────────────
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
