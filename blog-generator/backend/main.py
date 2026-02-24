@@ -13,8 +13,25 @@ import random
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
+def _load_env_file(env_path):
+    """load_dotenv 없이 .env 파일을 직접 읽어 환경변수에 설정"""
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key:
+                        os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        pass
+
+_load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles

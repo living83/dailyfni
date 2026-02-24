@@ -14,15 +14,34 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger("database")
 
+# .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
+def _load_env_file(env_path):
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key:
+                        os.environ.setdefault(key, value)
+    except FileNotFoundError:
+        pass
+
+_load_env_file(Path(__file__).resolve().parent.parent / ".env")
+
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 COOKIE_DIR = DATA_DIR / "cookies"
 
-# MySQL 연결 설정 (직접 설정)
-MYSQL_HOST = "127.0.0.1"
-MYSQL_PORT = 3306
-MYSQL_USER = "root"
-MYSQL_PASSWORD = "Ajtwoddl83!"
-MYSQL_DB = "dailyfni"
+# MySQL 연결 설정 (환경변수에서 읽기)
+MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_DB = os.getenv("MYSQL_DB", "dailyfni")
 
 # 커넥션 풀
 _pool: aiomysql.Pool = None
