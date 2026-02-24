@@ -725,10 +725,10 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             "document_format": doc.get("format", "tutorial"),
         })
 
-        # 계정 간 딜레이 (첫 번째 제외)
+        # 계정 간 딜레이 (첫 번째 제외, 저품질 방지를 위해 충분한 간격)
         if i > 0:
-            delay = random.uniform(2, 5)
-            logger.info(f"계정 간 딜레이: {delay:.1f}초")
+            delay = random.uniform(30, 90)
+            logger.info(f"계정 간 딜레이: {delay:.0f}초 (저품질 방지)")
             await asyncio.sleep(delay)
 
         # 발행

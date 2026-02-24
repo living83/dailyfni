@@ -289,29 +289,41 @@ async def publish_to_naver(
             pass
 
         lines = content.split("\n")
+        # 줄마다 다른 기본 타이핑 속도 (사람마다 다른 타이핑 습관)
+        base_delay = random.randint(25, 45)
         for i, line in enumerate(lines):
             if line.strip():
                 # 마크다운 헤딩을 볼드로 변환
                 clean_line = line.strip()
+                # 줄마다 미세한 속도 변화 (피로, 집중도 변화)
+                line_delay = base_delay + random.randint(-8, 12)
                 if clean_line.startswith("## "):
                     clean_line = clean_line[3:]
-                    await page.keyboard.type(clean_line, delay=30 + random.randint(-10, 15))
+                    await page.keyboard.type(clean_line, delay=line_delay)
                 elif clean_line.startswith("# "):
                     clean_line = clean_line[2:]
-                    await page.keyboard.type(clean_line, delay=30 + random.randint(-10, 15))
+                    await page.keyboard.type(clean_line, delay=line_delay)
                 elif clean_line.startswith("- "):
                     clean_line = clean_line[2:]
-                    await page.keyboard.type("• " + clean_line, delay=30 + random.randint(-10, 15))
+                    await page.keyboard.type("• " + clean_line, delay=line_delay)
                 else:
                     # **bold** 마크다운 제거
                     clean_line = clean_line.replace("**", "")
-                    await page.keyboard.type(clean_line, delay=30 + random.randint(-10, 15))
+                    await page.keyboard.type(clean_line, delay=line_delay)
 
             await page.keyboard.press("Enter")
 
-            # 랜덤 타이핑 일시 정지 (자연스러움)
-            if random.random() < 0.1:
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+            # 다양한 일시 정지 패턴 (사람처럼)
+            r = random.random()
+            if r < 0.03:
+                # 긴 멈춤 (생각하는 듯, 또는 다른 일하는 듯)
+                await asyncio.sleep(random.uniform(3.0, 6.0))
+            elif r < 0.10:
+                # 짧은 멈춤 (문단 전환, 내용 확인)
+                await asyncio.sleep(random.uniform(0.8, 2.0))
+            elif r < 0.20:
+                # 미세 멈춤
+                await asyncio.sleep(random.uniform(0.2, 0.5))
 
         # 8-1. 하단 링크 삽입
         if footer_link:

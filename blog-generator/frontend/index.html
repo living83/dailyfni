@@ -815,7 +815,7 @@ function renderDocResults(data) {
   grid.innerHTML = '';
   data.documents.forEach((doc, i) => {
     const cfg = DOC_CFG[doc.format] || DOC_CFG.tutorial;
-    const charClass = doc.char_count >= 1000 ? 'ok' : 'short';
+    const charClass = doc.char_count >= 1500 ? 'ok' : 'short';
     const card = document.createElement('div');
     card.className = 'doc-card';
     card.dataset.docIndex = i;
