@@ -14,10 +14,6 @@ import random
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# Windows에서 Playwright 서브프로세스 실행을 위해 ProactorEventLoop 사용
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
 # .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
 def _load_env_file(env_path):
     """load_dotenv 없이 .env 파일을 직접 읽어 환경변수에 설정"""
