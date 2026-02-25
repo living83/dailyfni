@@ -96,6 +96,10 @@ def generate_keyword_image(keyword: str, width: int = 960, height: int = 540) ->
     Returns:
         생성된 이미지 파일 경로 (절대 경로)
     """
+    # 제목에서 불필요한 접두사 제거 (재발행:, 재시도: 등)
+    import re
+    keyword = re.sub(r'^(재발행|재시도|retry)\s*[:：]\s*', '', keyword).strip()
+
     theme = _get_theme(keyword)
     bg_color = _hex_to_rgb(theme["bg"])
     text_color = _hex_to_rgb(theme["text"])

@@ -680,75 +680,164 @@ async def publish_to_naver(
                         await page.keyboard.type(tag, delay=40)
                         await page.keyboard.press("Enter")
                         await _random_delay(0.3, 0.5)
+                else:
+                    # JS 폴백: iframe 내 태그 입력 찾기
+                    logger.info("태그 입력 JS 폴백 시도")
+                    found = await editor.evaluate("""() => {
+                        const inputs = document.querySelectorAll('input');
+                        for (const inp of inputs) {
+                            const ph = inp.placeholder || '';
+                            if (ph.includes('태그') || ph.includes('tag')) {
+                                inp.focus();
+                                inp.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""")
+                    if found:
+                        for tag in tags[:10]:
+                            await page.keyboard.type(tag, delay=40)
+                            await page.keyboard.press("Enter")
+                            await _random_delay(0.3, 0.5)
+                        logger.info("태그 입력 JS 폴백 성공")
             except Exception as e:
                 logger.warning(f"태그 입력 실패: {e}")
 
         # 11. 발행 버튼 클릭
         await _random_delay(1, 2)
         publish_clicked = False
+        pre_publish_url = page.url  # 발행 전 URL 저장
         try:
-            # 발행 버튼은 page 레벨 (iframe 바깥)에 있을 수 있음
-            publish_btn = await _try_selectors(page, [
-                'button:has-text("발행")',
-                'button:has-text("공개발행")',
-                'button[class*="publish"]',
-                'button[class*="btn_publish"]',
-                '.publish_btn',
-                'button:has-text("등록")',
-            ], timeout=5000, description="발행 버튼(메인)")
-
-            # 메인 페이지에서 못 찾으면 에디터(iframe) 내에서도 시도
-            if not publish_btn and editor != page:
+            # 발행 버튼: 에디터(iframe) → 메인 페이지 순서로 탐색
+            publish_btn = None
+            if editor != page:
                 publish_btn = await _try_selectors(editor, [
                     'button:has-text("발행")',
                     'button:has-text("공개발행")',
                     'button[class*="publish"]',
                     '.publish_btn',
                     'button:has-text("등록")',
-                ], timeout=3000, description="발행 버튼(에디터)")
+                ], timeout=5000, description="발행 버튼(에디터)")
 
-            # JS 폴백: 텍스트로 버튼 찾아 클릭
             if not publish_btn:
-                logger.info("발행 버튼 JS 폴백 시도")
-                js_clicked = await page.evaluate('''() => {
-                    const buttons = document.querySelectorAll('button, a[role="button"]');
-                    for (const btn of buttons) {
-                        const text = (btn.textContent || "").trim();
-                        if (text === '발행' || text === '공개발행' || text === '등록') {
-                            btn.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                }''')
-                if js_clicked:
-                    publish_clicked = True
-                    logger.info("발행 버튼 JS 클릭 성공")
+                publish_btn = await _try_selectors(page, [
+                    'button:has-text("발행")',
+                    'button:has-text("공개발행")',
+                    'button[class*="publish"]',
+                    'button[class*="btn_publish"]',
+                    '.publish_btn',
+                    'button:has-text("등록")',
+                ], timeout=5000, description="발행 버튼(메인)")
 
-            if publish_btn and not publish_clicked:
+            if publish_btn:
                 await publish_btn.click()
                 publish_clicked = True
-
-            if publish_clicked:
-                await _random_delay(2, 3)
-
-                # 발행 확인 다이얼로그
-                try:
-                    confirm_btn = await _try_selectors(page, [
-                        'button:has-text("발행")',
-                        'button:has-text("확인")',
-                        'button:has-text("공개 발행")',
-                        '.confirm_btn',
-                    ], timeout=5000, description="발행 확인 버튼")
-                    if confirm_btn:
-                        await confirm_btn.click()
-                        await _random_delay(3, 5)
-                except Exception:
-                    pass
             else:
+                # JS 폴백: iframe + page 모두에서 발행 버튼 찾기
+                logger.info("발행 버튼 JS 폴백 시도")
+                for target in ([editor, page] if editor != page else [page]):
+                    try:
+                        js_clicked = await target.evaluate('''() => {
+                            const buttons = document.querySelectorAll('button, a[role="button"]');
+                            for (const btn of buttons) {
+                                const text = (btn.textContent || "").trim();
+                                if (text === '발행' || text === '공개발행' || text === '등록') {
+                                    btn.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }''')
+                        if js_clicked:
+                            publish_clicked = True
+                            logger.info("발행 버튼 JS 클릭 성공")
+                            break
+                    except Exception:
+                        continue
+
+            if not publish_clicked:
                 await _capture_debug(page, "publish_btn_not_found")
                 result["error"] = "발행 버튼을 찾을 수 없습니다"
                 return result
+
+            await _random_delay(2, 3)
+
+            # 11-1. 발행 확인 다이얼로그 (설정 패널 → 최종 발행)
+            #       SE ONE: 발행 버튼 → 설정 패널 열림 → "발행" 확인 버튼
+            #       에디터(iframe)과 page 모두 탐색
+            confirm_clicked = False
+
+            # iframe에서 먼저 시도
+            if editor != page:
+                confirm_btn = await _try_selectors(editor, [
+                    '.se-popup-publish-btn',
+                    '.se-publish-popup button:has-text("발행")',
+                    'button.se-popup-button-confirm',
+                    'button:has-text("공개 발행")',
+                    'button:has-text("발행하기")',
+                ], timeout=3000, description="발행 확인(에디터)")
+                if confirm_btn:
+                    await confirm_btn.click()
+                    confirm_clicked = True
+                    logger.info("발행 확인 클릭 (에디터 셀렉터)")
+
+            # page에서도 시도
+            if not confirm_clicked:
+                confirm_btn = await _try_selectors(page, [
+                    'button:has-text("발행")',
+                    'button:has-text("공개 발행")',
+                    'button:has-text("확인")',
+                    '.confirm_btn',
+                ], timeout=3000, description="발행 확인(메인)")
+                if confirm_btn:
+                    await confirm_btn.click()
+                    confirm_clicked = True
+                    logger.info("발행 확인 클릭 (메인 셀렉터)")
+
+            # JS 폴백: 발행 확인 팝업/패널 내 버튼 클릭
+            if not confirm_clicked:
+                logger.info("발행 확인 JS 폴백 시도")
+                for target in ([editor, page] if editor != page else [page]):
+                    try:
+                        js_result = await target.evaluate('''() => {
+                            // 발행 설정 패널/팝업 내에서 "발행" 버튼 찾기
+                            const popups = document.querySelectorAll(
+                                '.se-popup-publish, .se-popup, [class*="publish_layer"], [class*="layer_publish"]'
+                            );
+                            for (const popup of popups) {
+                                const btns = popup.querySelectorAll('button');
+                                for (const btn of btns) {
+                                    const text = (btn.textContent || "").trim();
+                                    if (text === '발행' || text === '발행하기' || text === '공개 발행') {
+                                        btn.click();
+                                        return 'popup_btn';
+                                    }
+                                }
+                            }
+                            // 팝업 못 찾으면 전체에서 "발행" 텍스트 정확히 매치
+                            const allBtns = document.querySelectorAll('button');
+                            for (const btn of allBtns) {
+                                const text = (btn.textContent || "").trim();
+                                if (text === '발행' || text === '발행하기') {
+                                    btn.click();
+                                    return 'global_btn';
+                                }
+                            }
+                            return null;
+                        }''')
+                        if js_result:
+                            confirm_clicked = True
+                            logger.info(f"발행 확인 JS 클릭 성공: {js_result}")
+                            break
+                    except Exception:
+                        continue
+
+            if confirm_clicked:
+                await _random_delay(3, 5)
+            else:
+                logger.warning("발행 확인 버튼 미발견 (자동 발행 가능성)")
+                await _random_delay(5, 8)
 
         except Exception as e:
             await _capture_debug(page, "publish_error")
@@ -756,24 +845,42 @@ async def publish_to_naver(
             return result
 
         # 12. 발행 성공 확인 & URL 수집
+        #     성공 기준: URL이 PostView 또는 postView 포함, 또는 글쓰기 페이지에서 이동
         await _random_delay(3, 5)
         current_url = page.url
-        if "blog.naver.com" in current_url and "PostView" in current_url:
-            result["success"] = True
-            result["url"] = current_url
-        elif "blog.naver.com" in current_url:
-            result["success"] = True
-            result["url"] = current_url
-        else:
-            try:
-                await page.wait_for_url("**/blog.naver.com/**", timeout=10000)
-                result["success"] = True
-                result["url"] = page.url
-            except Exception:
-                result["success"] = True
-                result["url"] = page.url
 
-        logger.info(f"발행 완료: {result['url']}")
+        # 새 탭에서 발행 결과가 열릴 수 있음
+        all_pages = page.context.pages
+        for p in all_pages:
+            p_url = p.url
+            if "PostView" in p_url or "postView" in p_url:
+                current_url = p_url
+                break
+
+        if "PostView" in current_url or "postView" in current_url:
+            result["success"] = True
+            result["url"] = current_url
+            logger.info(f"발행 성공: {result['url']}")
+        elif "Redirect=Write" in current_url or current_url == pre_publish_url:
+            # 아직 글쓰기 페이지 → 발행 실패
+            # 한번 더 대기 후 확인
+            try:
+                await page.wait_for_url(
+                    lambda url: "PostView" in url or "postView" in url,
+                    timeout=15000,
+                )
+                result["success"] = True
+                result["url"] = page.url
+                logger.info(f"발행 성공 (대기 후): {result['url']}")
+            except Exception:
+                await _capture_debug(page, "publish_not_navigated")
+                result["error"] = f"발행 후 페이지 이동 없음 (URL: {current_url})"
+                logger.warning(f"발행 실패: URL이 글쓰기 페이지에 머무름 → {current_url}")
+        else:
+            # blog.naver.com의 다른 페이지로 이동 → 성공 가능성
+            result["success"] = True
+            result["url"] = current_url
+            logger.info(f"발행 완료 (URL 확인 필요): {result['url']}")
 
     except Exception as e:
         result["error"] = str(e)
