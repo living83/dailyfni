@@ -224,40 +224,87 @@ async def publish_to_naver(
 
         await _random_delay(2, 3)
 
-        # 2. 블로그 글쓰기 페이지 이동 (여러 URL 시도)
-        write_urls = [
-            f"https://blog.naver.com/{naver_id}/postwrite",
-            f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}",
-        ]
+        # 2. 블로그 글쓰기 페이지 이동
+        #    방법 A: 블로그 메인에서 "글쓰기" 버튼 클릭 (가장 안정적)
+        #    방법 B: 직접 URL 이동 (폴백)
+        editor_page_reached = False
 
-        page_loaded = False
-        for write_url in write_urls:
-            logger.info(f"글쓰기 페이지 이동 시도: {write_url}")
-            try:
-                await page.goto(
-                    write_url,
-                    wait_until="domcontentloaded",
-                    timeout=20000,
-                )
+        # --- 방법 A: 내 블로그 → 글쓰기 버튼 클릭 ---
+        blog_url = f"https://blog.naver.com/{naver_id}"
+        logger.info(f"블로그 메인 이동: {blog_url}")
+        try:
+            await page.goto(blog_url, wait_until="domcontentloaded", timeout=20000)
+            await _random_delay(2, 3)
+
+            page_content = await page.content()
+            current_url = page.url
+            logger.info(f"블로그 메인 현재 URL: {current_url}")
+
+            if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
+                logger.warning(f"블로그 메인 404: {blog_url} → 블로그 홈에서 시도")
+                # 블로그 홈페이지에서 내 블로그 찾기
+                await page.goto("https://blog.naver.com", wait_until="domcontentloaded", timeout=20000)
+                await _random_delay(2, 3)
+
+            # 글쓰기 버튼 찾기 (다양한 셀렉터)
+            write_btn = await _try_selectors(page, [
+                'a[href*="postwrite"]',
+                'a[href*="PostWriteForm"]',
+                'a:has-text("글쓰기")',
+                '.btn_write',
+                'a.link_write',
+                '#writePostBtn',
+                'button:has-text("글쓰기")',
+            ], timeout=8000, description="글쓰기 버튼")
+
+            if write_btn:
+                logger.info("글쓰기 버튼 발견 → 클릭")
+                # 새 탭이 열릴 수 있으므로 popup 이벤트 감지
+                async with page.context.expect_page(timeout=10000) as new_page_info:
+                    await write_btn.click()
+                try:
+                    new_page = await new_page_info.value
+                    await new_page.wait_for_load_state("domcontentloaded")
+                    page = new_page  # 새 탭으로 전환
+                    logger.info(f"새 탭에서 글쓰기 페이지 열림: {page.url}")
+                except Exception:
+                    logger.info(f"같은 탭에서 글쓰기 페이지 로드: {page.url}")
+                    await page.wait_for_load_state("domcontentloaded")
+
                 await _random_delay(3, 5)
+                editor_page_reached = True
+                logger.info(f"글쓰기 페이지 도달 (버튼 클릭): {page.url}")
+        except Exception as e:
+            logger.warning(f"방법 A (버튼 클릭) 실패: {e}")
 
-                # 에러 페이지 감지 (404, "페이지 주소를 확인해주세요" 등)
-                page_content = await page.content()
-                if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
-                    logger.warning(f"에러 페이지 감지: {write_url}")
-                    await _capture_debug(page, f"write_url_error_{write_url.split('/')[-1]}")
+        # --- 방법 B: 직접 URL 이동 (폴백) ---
+        if not editor_page_reached:
+            write_urls = [
+                f"https://blog.naver.com/{naver_id}/postwrite",
+                f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}",
+            ]
+            for write_url in write_urls:
+                logger.info(f"직접 URL 이동 시도: {write_url}")
+                try:
+                    await page.goto(write_url, wait_until="domcontentloaded", timeout=20000)
+                    await _random_delay(3, 5)
+
+                    page_content = await page.content()
+                    if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
+                        logger.warning(f"에러 페이지 감지: {write_url}")
+                        await _capture_debug(page, f"write_url_error")
+                        continue
+
+                    editor_page_reached = True
+                    logger.info(f"글쓰기 페이지 도달 (URL): {page.url}")
+                    break
+                except Exception as e:
+                    logger.warning(f"URL 이동 실패: {write_url} - {e}")
                     continue
 
-                page_loaded = True
-                logger.info(f"글쓰기 페이지 로드 성공: {write_url}")
-                break
-            except Exception as e:
-                logger.warning(f"글쓰기 페이지 이동 실패: {write_url} - {e}")
-                continue
-
-        if not page_loaded:
-            await _capture_debug(page, "all_write_urls_failed")
-            result["error"] = f"글쓰기 페이지 이동 실패 (모든 URL 시도 완료). 블로그가 개설되어 있는지 확인하세요. (blogId={naver_id})"
+        if not editor_page_reached:
+            await _capture_debug(page, "write_page_unreachable")
+            result["error"] = f"글쓰기 페이지 접근 실패. 블로그가 개설되어 있는지 확인하세요. (blogId={naver_id})"
             return result
 
         # 2-1. iframe 감지 및 전환
@@ -319,15 +366,15 @@ async def publish_to_naver(
         ], timeout=20000, description="에디터")
 
         # 에디터를 못 찾으면 모든 iframe에서도 시도
-        if not editor_loaded and editor == page:
-            logger.info("메인 페이지에서 에디터 미발견 → 모든 iframe 탐색")
+        if not editor_loaded:
+            logger.info("현재 컨텍스트에서 에디터 미발견 → 모든 iframe 탐색")
             for frame in page.frames:
                 if frame == page.main_frame:
                     continue
                 try:
                     el = await frame.wait_for_selector(
                         '.se-component, .se-documentTitle, [contenteditable="true"]',
-                        timeout=3000,
+                        timeout=5000,
                     )
                     if el:
                         editor = frame
@@ -341,7 +388,7 @@ async def publish_to_naver(
             await _capture_debug(page, "editor_not_loaded")
             current_url = page.url
             page_title = await page.title()
-            result["error"] = f"에디터 로딩 실패 - 셀렉터 매칭 없음 (URL: {current_url}, 제목: {page_title})"
+            result["error"] = f"에디터 로딩 실패 (URL: {current_url}, 제목: {page_title})"
             return result
 
         await _random_delay(1, 2)
