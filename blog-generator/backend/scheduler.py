@@ -240,6 +240,28 @@ async def daily_publish_job():
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
+        # 계정 자동 분배: 모든 글이 같은 account_id면 활성 계정들에 순차 분배
+        from database import get_accounts, get_account, get_categories
+        account_ids = [a["account_id"] for a in articles if a.get("account_id")]
+        unique_accounts = set(account_ids)
+        if len(unique_accounts) <= 1 and len(articles) > 1:
+            all_accounts = await get_accounts()
+            active_accounts = [a for a in all_accounts if a.get("is_active")]
+            if len(active_accounts) > 1:
+                logger.info(f"계정 자동 분배: {len(articles)}개 글 → {len(active_accounts)}개 활성 계정")
+                for idx, article in enumerate(articles):
+                    assigned = active_accounts[idx % len(active_accounts)]
+                    article["account_id"] = assigned["id"]
+                    # 카테고리도 해당 계정의 기본 카테고리로 재설정
+                    try:
+                        cats = await get_categories(assigned["id"])
+                        default_cat = next((c for c in cats if c.get("is_default")), None)
+                        if default_cat:
+                            article["category_name"] = default_cat.get("category_name", "")
+                    except Exception:
+                        pass
+                    logger.info(f"  글 {idx+1} → 계정: {assigned.get('account_name', assigned['id'])}")
+
         success_count = 0
         failed_count = 0
 
@@ -250,8 +272,8 @@ async def daily_publish_job():
                 continue
 
             # 계정 정보
-            from database import get_account
             account = await get_account(account_id)
+            logger.info(f"글 {i+1}/{len(articles)} 발행 시작: 계정={account.get('account_name', '?') if account else '미발견'}")
             if not account:
                 await update_publish_history(article["id"], {
                     "status": "failed",

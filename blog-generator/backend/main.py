@@ -605,6 +605,27 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     except Exception as e:
         logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
+    # 계정 자동 분배: 모든 문서가 같은 account_id면 활성 계정들에 순차 분배
+    account_ids = [doc.get("account_id") for doc in documents]
+    unique_accounts = set(aid for aid in account_ids if aid)
+    if len(unique_accounts) <= 1 and len(documents) > 1:
+        all_accounts = await db.get_accounts()
+        active_accounts = [a for a in all_accounts if a.get("is_active")]
+        if len(active_accounts) > 1:
+            logger.info(f"계정 자동 분배: {len(documents)}개 문서 → {len(active_accounts)}개 활성 계정")
+            for i, doc in enumerate(documents):
+                assigned = active_accounts[i % len(active_accounts)]
+                doc["account_id"] = assigned["id"]
+                # 카테고리도 해당 계정의 기본 카테고리로 재설정
+                try:
+                    cats = await db.get_categories(assigned["id"])
+                    default_cat = next((c for c in cats if c.get("is_default")), None)
+                    if default_cat:
+                        doc["category_id"] = default_cat["id"]
+                except Exception:
+                    pass
+                logger.info(f"  문서 {i+1} → 계정: {assigned.get('account_name', assigned['id'])}")
+
     success_count = 0
     failed_count = 0
 
@@ -618,6 +639,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
 
         # 계정 정보 가져오기
         account = await db.get_account(account_id)
+        logger.info(f"문서 {i+1}/{len(documents)} 발행 시작: account_id={account_id}, 계정명={account.get('account_name', '?') if account else '미발견'}")
         if not account:
             failed_count += 1
             _publish_status[batch_id]["documents"].append({
