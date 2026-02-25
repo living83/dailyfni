@@ -61,7 +61,6 @@ class AccountCreate(BaseModel):
     password: str
 
 class CafeBoardCreate(BaseModel):
-    account_id: int
     cafe_url: str
     board_name: str
     menu_id: Optional[str] = ""
@@ -128,15 +127,15 @@ async def delete_account(account_id: int):
 # ─── Cafe Boards API ──────────────────────────────────────
 
 @app.get("/api/boards")
-async def list_boards(account_id: Optional[int] = None):
-    return db.get_cafe_boards(account_id)
+async def list_boards():
+    return db.get_cafe_boards()
 
 
 @app.post("/api/boards")
 async def create_board(req: CafeBoardCreate):
     if not req.cafe_url.strip() or not req.board_name.strip():
-        raise HTTPException(400, "카페 URL과 게시판 이름을 입력하세요.")
-    bid = db.add_cafe_board(req.account_id, req.cafe_url.strip(), req.board_name.strip(), (req.menu_id or "").strip())
+        raise HTTPException(400, "카페 ID와 게시판 이름을 입력하세요.")
+    bid = db.add_cafe_board(req.cafe_url.strip(), req.board_name.strip(), (req.menu_id or "").strip())
     return {"id": bid, "message": "게시판 등록 완료"}
 
 

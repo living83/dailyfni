@@ -78,15 +78,15 @@ def _get_eligible_accounts(config: dict) -> list:
     return eligible
 
 
-def _get_next_board(account_id: int) -> Optional[dict]:
+def _get_next_board() -> Optional[dict]:
     """
-    교차 발행 로직:
+    교차 발행 로직 (공통 게시판):
     - 같은 카페 연속 발행 금지
     - 가장 오래 전에 발행한 게시판 우선
     """
     global _last_published_cafe
 
-    boards = db.get_cafe_boards(account_id)
+    boards = db.get_cafe_boards()
     active_boards = [b for b in boards if b.get("active", 1)]
 
     if not active_boards:
@@ -175,10 +175,10 @@ async def execute_publish_job():
 
     account = random.choice(eligible)
 
-    # 3. 게시판 선택 (교차 발행)
-    board = _get_next_board(account["id"])
+    # 3. 게시판 선택 (교차 발행, 공통 게시판)
+    board = _get_next_board()
     if not board:
-        logger.info(f"계정 {account['username']}에 등록된 활성 게시판 없음")
+        logger.info("등록된 활성 게시판 없음")
         return
 
     # 4. 키워드 선택

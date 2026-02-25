@@ -37,14 +37,12 @@ def init_db():
 
         CREATE TABLE IF NOT EXISTS cafe_boards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL,
             cafe_url TEXT NOT NULL,
             board_name TEXT NOT NULL,
-            menu_id TEXT NOT NULL,
+            menu_id TEXT NOT NULL DEFAULT '',
             active INTEGER DEFAULT 1,
             last_published_at TEXT,
-            created_at TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS keywords (
@@ -172,12 +170,12 @@ def update_account_last_published(account_id: int):
 
 # ─── Cafe Boards CRUD ─────────────────────────────────────
 
-def add_cafe_board(account_id: int, cafe_url: str, board_name: str, menu_id: str) -> int:
+def add_cafe_board(cafe_url: str, board_name: str, menu_id: str = "") -> int:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO cafe_boards (account_id, cafe_url, board_name, menu_id) VALUES (?, ?, ?, ?)",
-        (account_id, cafe_url, board_name, menu_id)
+        "INSERT INTO cafe_boards (cafe_url, board_name, menu_id) VALUES (?, ?, ?)",
+        (cafe_url, board_name, menu_id)
     )
     conn.commit()
     bid = cursor.lastrowid
@@ -185,21 +183,9 @@ def add_cafe_board(account_id: int, cafe_url: str, board_name: str, menu_id: str
     return bid
 
 
-def get_cafe_boards(account_id: int = None):
+def get_cafe_boards():
     conn = get_connection()
-    if account_id:
-        rows = conn.execute(
-            """SELECT cb.*, a.username as account_username
-               FROM cafe_boards cb JOIN accounts a ON cb.account_id = a.id
-               WHERE cb.account_id = ? ORDER BY cb.id""",
-            (account_id,)
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """SELECT cb.*, a.username as account_username
-               FROM cafe_boards cb JOIN accounts a ON cb.account_id = a.id
-               ORDER BY cb.account_id, cb.id"""
-        ).fetchall()
+    rows = conn.execute("SELECT * FROM cafe_boards ORDER BY id").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

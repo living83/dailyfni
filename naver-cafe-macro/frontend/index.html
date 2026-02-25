@@ -434,7 +434,6 @@ function App() {
 function AccountCafeTab({ accounts, boards, reload }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [selAccId, setSelAccId] = useState(null);
   const [cafeUrl, setCafeUrl] = useState('');
   const [boardName, setBoardName] = useState('');
   const [menuId, setMenuId] = useState('');
@@ -461,11 +460,11 @@ function AccountCafeTab({ accounts, boards, reload }) {
   };
 
   const addBoard = async () => {
-    if (!selAccId || !cafeUrl || !boardName || !menuId) return;
+    if (!cafeUrl || !boardName || !menuId) return;
     await fetch(`${API}/api/boards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selAccId, cafe_url: cafeUrl, board_name: boardName, menu_id: menuId })
+      body: JSON.stringify({ cafe_url: cafeUrl, board_name: boardName, menu_id: menuId })
     });
     setCafeUrl(''); setBoardName(''); setMenuId('');
     reload();
@@ -513,15 +512,11 @@ function AccountCafeTab({ accounts, boards, reload }) {
         ))}
       </div>
 
-      {/* 카페 게시판 관리 */}
+      {/* 카페 게시판 관리 (모든 계정 공통) */}
       <div className="card">
         <div className="card-title">카페 게시판</div>
-        <div className="input-group">
-          <label>계정 선택</label>
-          <select value={selAccId || ''} onChange={e => setSelAccId(Number(e.target.value))}>
-            <option value="">-- 계정 선택 --</option>
-            {accounts.map(a => <option key={a.id} value={a.id}>{a.username}</option>)}
-          </select>
+        <div style={{ fontSize: 12, color: '#4a5a7a', marginBottom: 10 }}>
+          등록된 게시판은 모든 활성 계정에 공통 적용됩니다.
         </div>
         <div className="input-row" style={{ marginBottom: 8 }}>
           <input type="text" placeholder="카페 ID (예: 30339285)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
@@ -530,28 +525,17 @@ function AccountCafeTab({ accounts, boards, reload }) {
           <button className="btn btn-primary" onClick={addBoard}>추가</button>
         </div>
         {boards.length === 0 && <div className="empty-state">등록된 게시판이 없습니다</div>}
-        {accounts.map(acc => {
-          const accBoards = boards.filter(b => b.account_id === acc.id);
-          if (accBoards.length === 0) return null;
-          return (
-            <div key={acc.id} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#4a5a7a', marginBottom: 6, paddingLeft: 4 }}>
-                {acc.username}
-              </div>
-              {accBoards.map(b => (
-                <div className="list-item" key={b.id}>
-                  <div className="info">
-                    <div className="name">{b.board_name}</div>
-                    <div className="sub">cafe.naver.com/{b.cafe_url} | menuId: {b.menu_id}</div>
-                  </div>
-                  <div className="actions">
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>
-                  </div>
-                </div>
-              ))}
+        {boards.map(b => (
+          <div className="list-item" key={b.id}>
+            <div className="info">
+              <div className="name">{b.board_name}</div>
+              <div className="sub">카페 ID: {b.cafe_url} | menuId: {b.menu_id}</div>
             </div>
-          );
-        })}
+            <div className="actions">
+              <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
