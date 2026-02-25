@@ -282,10 +282,15 @@ async def daily_publish_job():
                 except Exception:
                     tags = [keyword]
 
+                # 기본 하단 링크
+                footer_link = os.getenv("DEFAULT_FOOTER_LINK", "")
+                footer_link_text = os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
                     article["title"], article["content"],
                     cat_name, tags, keyword_image_path,
+                    footer_link, footer_link_text,
                 )
 
                 if pub_result["success"]:

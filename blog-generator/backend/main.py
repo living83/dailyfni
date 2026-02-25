@@ -69,6 +69,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
+# ─── 기본 하단 링크 설정 ───────────────────────────────────
+DEFAULT_FOOTER_LINK = os.getenv("DEFAULT_FOOTER_LINK", "")
+DEFAULT_FOOTER_LINK_TEXT = os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+
 # ─── FastAPI 앱 ──────────────────────────────────────────
 
 app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
@@ -578,6 +582,12 @@ def _cleanup_publish_status():
 async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_key: str, footer_link: str = "", footer_link_text: str = ""):
     """백그라운드에서 3개 문서를 순차 발행"""
     from publisher import run_publish_task
+
+    # footer_link 미지정 시 기본값 사용
+    if not footer_link:
+        footer_link = DEFAULT_FOOTER_LINK
+    if not footer_link_text:
+        footer_link_text = DEFAULT_FOOTER_LINK_TEXT
 
     _cleanup_publish_status()
     _publish_status[batch_id] = {
