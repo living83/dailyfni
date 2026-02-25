@@ -49,6 +49,34 @@ async def _type_slowly(page_or_frame, selector: str, text: str, delay_ms: int = 
             await asyncio.sleep(random.uniform(0.1, 0.3))
 
 
+async def _try_selectors(target, selectors, timeout=3000, description="요소"):
+    """여러 셀렉터를 순서대로 시도하여 첫 번째 매칭되는 요소 반환"""
+    per_timeout = min(timeout // max(len(selectors), 1), 2000)
+    for selector in selectors:
+        try:
+            el = await target.wait_for_selector(selector, timeout=per_timeout)
+            if el and await el.is_visible():
+                logger.info(f"{description} 발견: {selector}")
+                return el
+        except Exception:
+            continue
+    logger.warning(f"{description}: 모든 셀렉터 시도 완료")
+    return None
+
+
+async def _capture_debug(page, step_name):
+    """디버그용 스크린샷 저장"""
+    try:
+        debug_dir = Path(__file__).resolve().parent.parent / "data" / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = debug_dir / f"{step_name}_{ts}.png"
+        await page.screenshot(path=str(path))
+        logger.info(f"디버그 스크린샷: {path}")
+    except Exception as e:
+        logger.warning(f"스크린샷 저장 실패: {e}")
+
+
 async def save_cookies(page, account_id: int):
     """현재 브라우저 쿠키를 파일로 저장"""
     cookies = await page.context.cookies()
@@ -173,6 +201,7 @@ async def publish_to_naver(
 ) -> dict:
     """
     네이버 블로그에 글을 발행합니다.
+    SmartEditor ONE 기준 셀렉터를 사용하며, 다중 폴백을 지원합니다.
     Returns: {"success": bool, "url": str, "error": str}
     """
     result = {"success": False, "url": "", "error": ""}
@@ -188,111 +217,207 @@ async def publish_to_naver(
         await _random_delay(2, 3)
 
         # 2. 블로그 글쓰기 페이지 이동
-        await page.goto("https://blog.naver.com/PostWriteForm.naver", wait_until="domcontentloaded", timeout=20000)
+        await page.goto(
+            "https://blog.naver.com/PostWriteForm.naver",
+            wait_until="domcontentloaded",
+            timeout=20000,
+        )
         await _random_delay(3, 5)
+
+        # 2-1. iframe 감지 및 전환
+        editor = page
+        for frame_id in ["mainFrame", "se_editFrame"]:
+            try:
+                frame_el = await page.wait_for_selector(
+                    f"iframe#{frame_id}, iframe[name='{frame_id}']",
+                    timeout=3000,
+                )
+                if frame_el:
+                    frame = await frame_el.content_frame()
+                    if frame:
+                        editor = frame
+                        logger.info(f"iframe 전환: {frame_id}")
+                        await _random_delay(1, 2)
+                        break
+            except Exception:
+                continue
 
         # 3. "작성 중인 글이 있습니다" 팝업 처리
         try:
-            popup_btn = await page.wait_for_selector('button:has-text("아니오"), button:has-text("새로 작성")', timeout=3000)
+            popup_btn = await _try_selectors(editor, [
+                'button:has-text("아니오")',
+                'button:has-text("새로 작성")',
+                'button:has-text("아니요")',
+                '.popup_btn_cancel',
+            ], timeout=3000, description="임시저장 팝업")
             if popup_btn:
                 await popup_btn.click()
                 await _random_delay(1, 2)
         except Exception:
             pass
 
-        # 4. 도움말 팝업 닫기
+        # 4. 도움말/공지 팝업 닫기
         try:
-            close_btn = await page.wait_for_selector('.se-popup-button-close, button[aria-label="닫기"]', timeout=2000)
+            close_btn = await _try_selectors(editor, [
+                '.se-popup-button-close',
+                'button[aria-label="닫기"]',
+                '.btn_close',
+                'button:has-text("닫기")',
+            ], timeout=2000, description="도움말 팝업")
             if close_btn:
                 await close_btn.click()
                 await _random_delay(0.5, 1)
         except Exception:
             pass
 
-        # 5. 카테고리 선택
+        # 5. 에디터 로딩 대기 (SE ONE 구조 확인)
+        editor_loaded = await _try_selectors(editor, [
+            '.se-component',
+            '.se-documentTitle',
+            '[contenteditable="true"]',
+            'article',
+            '.editor_area',
+        ], timeout=15000, description="에디터")
+
+        if not editor_loaded:
+            await _capture_debug(page, "editor_not_loaded")
+            result["error"] = "에디터 로딩 실패 - 셀렉터 매칭 없음"
+            return result
+
+        await _random_delay(1, 2)
+
+        # 6. 카테고리 선택
         if category_name:
             try:
-                cat_btn = await page.wait_for_selector('.publish_category_btn, button[class*="category"]', timeout=5000)
+                cat_btn = await _try_selectors(editor, [
+                    'button:has-text("카테고리")',
+                    '.blog_category_btn',
+                    '.publish_category_btn',
+                    'button[class*="category"]',
+                    '[class*="category"] button',
+                ], timeout=3000, description="카테고리 버튼")
                 if cat_btn:
                     await cat_btn.click()
                     await _random_delay(0.5, 1)
-                    cat_item = await page.wait_for_selector(f'li:has-text("{category_name}"), span:has-text("{category_name}")', timeout=3000)
+                    cat_item = await _try_selectors(editor, [
+                        f'li:has-text("{category_name}")',
+                        f'span:has-text("{category_name}")',
+                        f'a:has-text("{category_name}")',
+                    ], timeout=3000, description=f"카테고리 항목({category_name})")
                     if cat_item:
                         await cat_item.click()
                         await _random_delay(0.5, 1)
             except Exception as e:
                 logger.warning(f"카테고리 선택 실패: {e}")
 
-        # 6. 제목 입력
+        # 7. 제목 입력 (SE ONE: se-documentTitle 컴포넌트)
+        title_entered = False
         try:
-            title_selector = '.se-ff-nanumgothic.se-fs32, .se-title-text, [contenteditable="true"][class*="title"]'
-            await page.wait_for_selector(title_selector, timeout=10000)
-            await page.click(title_selector)
-            await _random_delay(0.5, 1)
+            title_el = await _try_selectors(editor, [
+                # SE ONE 제목 셀렉터
+                '.se-documentTitle .se-text-paragraph',
+                '.se-documentTitle [contenteditable="true"]',
+                '.se-section-title .se-text-paragraph',
+                '[data-placeholder="제목"]',
+                # 제네릭 셀렉터
+                '.se-component:first-child [contenteditable="true"]',
+                '.se-title-text',
+                # 구버전 폴백
+                '.se-ff-nanumgothic.se-fs32',
+                '[contenteditable="true"][class*="title"]',
+            ], timeout=10000, description="제목 영역")
 
-            for char in title:
-                await page.keyboard.type(char, delay=50 + random.randint(-20, 30))
-            await _random_delay(1, 2)
+            if title_el:
+                await title_el.click()
+                await _random_delay(0.3, 0.5)
+                for char in title:
+                    await page.keyboard.type(char, delay=50 + random.randint(-20, 30))
+                title_entered = True
+                await _random_delay(1, 2)
         except Exception as e:
-            logger.warning(f"제목 입력 시도 2차: {e}")
+            logger.warning(f"제목 셀렉터 실패: {e}")
+
+        if not title_entered:
+            # 폴백: 첫 번째 contenteditable 요소 클릭 후 타이핑
             try:
+                logger.info("제목 폴백: 첫 번째 contenteditable 클릭 시도")
+                first_editable = await editor.wait_for_selector(
+                    '[contenteditable="true"]', timeout=5000
+                )
+                if first_editable:
+                    await first_editable.click()
+                    await _random_delay(0.3, 0.5)
                 await page.keyboard.type(title, delay=50)
-            except Exception:
+                title_entered = True
+                await _random_delay(1, 2)
+            except Exception as e:
+                await _capture_debug(page, "title_failed")
                 result["error"] = f"제목 입력 실패: {e}"
                 return result
 
-        # 7. 본문 영역으로 이동
+        # 8. 본문 영역으로 이동
         await page.keyboard.press("Tab")
         await _random_delay(1, 2)
 
-        # 7-1. 대표이미지 삽입 (키워드 이미지)
+        # 8-1. 대표이미지 삽입 (키워드 이미지)
         if image_path:
             try:
-                # 이미지 버튼 클릭
-                img_btn = await page.wait_for_selector(
-                    'button.se-image-toolbar-button, button[data-name="image"], '
-                    'button[class*="image"], .se-toolbar-item-image',
-                    timeout=5000,
-                )
+                img_btn = await _try_selectors(editor, [
+                    # SE ONE 툴바 이미지 버튼
+                    'button[data-name="image"]',
+                    '.se-toolbar button[aria-label*="사진"]',
+                    '.se-toolbar button[aria-label*="이미지"]',
+                    'button.se-toolbar-button-image',
+                    '.se-toolbar-item-image button',
+                    # 구버전 폴백
+                    'button.se-image-toolbar-button',
+                    'button[class*="image"]:not([class*="emoji"])',
+                ], timeout=5000, description="이미지 버튼")
+
                 if img_btn:
                     await img_btn.click()
                     await _random_delay(1, 2)
 
                     # 파일 input에 이미지 설정
-                    file_input = await page.wait_for_selector(
+                    file_input = await _try_selectors(editor, [
                         'input[type="file"][accept*="image"]',
-                        timeout=5000,
-                    )
+                        'input[type="file"]',
+                    ], timeout=5000, description="파일 입력")
                     if file_input:
                         await file_input.set_input_files(image_path)
                         await _random_delay(3, 5)
 
                         # 업로드 완료 대기 및 확인 버튼
                         try:
-                            confirm = await page.wait_for_selector(
-                                'button:has-text("확인"), button:has-text("등록"), '
-                                'button:has-text("삽입"), button.se-popup-button-confirm',
-                                timeout=10000,
-                            )
+                            confirm = await _try_selectors(editor, [
+                                'button:has-text("삽입")',
+                                'button:has-text("확인")',
+                                'button:has-text("등록")',
+                                'button.se-popup-button-confirm',
+                            ], timeout=10000, description="이미지 확인 버튼")
                             if confirm:
                                 await confirm.click()
                                 await _random_delay(2, 3)
                         except Exception:
                             pass
 
-                        # 이미지 삽입 후 엔터로 줄바꿈
                         await page.keyboard.press("Enter")
                         await page.keyboard.press("Enter")
                         await _random_delay(1, 2)
 
-                logger.info("대표이미지 삽입 완료")
+                    logger.info("대표이미지 삽입 완료")
             except Exception as e:
                 logger.warning(f"대표이미지 삽입 실패 (계속 진행): {e}")
 
-        # 8. 본문 입력 (줄 단위로 입력하여 자연스럽게)
+        # 9. 본문 입력 (줄 단위로 입력하여 자연스럽게)
         try:
-            body_selector = '.se-text-paragraph, .se-component-content [contenteditable="true"]'
-            body_el = await page.wait_for_selector(body_selector, timeout=5000)
+            body_el = await _try_selectors(editor, [
+                # SE ONE 본문 셀렉터
+                '.se-component.se-text .se-text-paragraph',
+                '.se-section-text .se-text-paragraph',
+                '.se-component-content [contenteditable="true"]',
+                '.se-text-paragraph',
+            ], timeout=5000, description="본문 영역")
             if body_el:
                 await body_el.click()
                 await _random_delay(0.5, 1)
@@ -300,13 +425,10 @@ async def publish_to_naver(
             pass
 
         lines = content.split("\n")
-        # 줄마다 다른 기본 타이핑 속도 (사람마다 다른 타이핑 습관)
         base_delay = random.randint(25, 45)
         for i, line in enumerate(lines):
             if line.strip():
-                # 마크다운 헤딩을 볼드로 변환
                 clean_line = line.strip()
-                # 줄마다 미세한 속도 변화 (피로, 집중도 변화)
                 line_delay = base_delay + random.randint(-8, 12)
                 if clean_line.startswith("## "):
                     clean_line = clean_line[3:]
@@ -318,43 +440,39 @@ async def publish_to_naver(
                     clean_line = clean_line[2:]
                     await page.keyboard.type("• " + clean_line, delay=line_delay)
                 else:
-                    # **bold** 마크다운 제거
                     clean_line = clean_line.replace("**", "")
                     await page.keyboard.type(clean_line, delay=line_delay)
 
             await page.keyboard.press("Enter")
 
-            # 다양한 일시 정지 패턴 (사람처럼)
             r = random.random()
             if r < 0.03:
-                # 긴 멈춤 (생각하는 듯, 또는 다른 일하는 듯)
                 await asyncio.sleep(random.uniform(3.0, 6.0))
             elif r < 0.10:
-                # 짧은 멈춤 (문단 전환, 내용 확인)
                 await asyncio.sleep(random.uniform(0.8, 2.0))
             elif r < 0.20:
-                # 미세 멈춤
                 await asyncio.sleep(random.uniform(0.2, 0.5))
 
-        # 8-1. 하단 링크 삽입
+        # 9-1. 하단 링크 삽입
         if footer_link:
             await page.keyboard.press("Enter")
             await page.keyboard.press("Enter")
             link_display = footer_link_text if footer_link_text else footer_link
             await page.keyboard.type(link_display, delay=30 + random.randint(-10, 15))
             await _random_delay(0.3, 0.5)
-            # 입력한 텍스트를 선택하여 링크 설정
             for _ in range(len(link_display)):
                 await page.keyboard.press("Shift+ArrowLeft")
             await _random_delay(0.3, 0.5)
-            # Ctrl+K로 링크 삽입 다이얼로그
             await page.keyboard.press("Control+k")
             await _random_delay(0.5, 1)
             try:
-                link_input = await page.wait_for_selector(
-                    'input[placeholder*="URL"], input[placeholder*="url"], input[placeholder*="링크"], .se-link-input input',
-                    timeout=3000,
-                )
+                link_input = await _try_selectors(editor, [
+                    'input[placeholder*="URL"]',
+                    'input[placeholder*="url"]',
+                    'input[placeholder*="링크"]',
+                    '.se-link-input input',
+                    'input[type="url"]',
+                ], timeout=3000, description="링크 입력")
                 if link_input:
                     await link_input.fill("")
                     await link_input.type(footer_link, delay=20)
@@ -364,17 +482,22 @@ async def publish_to_naver(
                     logger.info(f"하단 링크 삽입 완료: {footer_link}")
             except Exception as e:
                 logger.warning(f"링크 다이얼로그 입력 실패, 텍스트로 대체: {e}")
-                # 링크 다이얼로그가 안 열리면 텍스트로 URL 추가
                 await page.keyboard.press("Escape")
                 await page.keyboard.press("End")
                 await page.keyboard.type(f" ({footer_link})", delay=20)
 
         await _random_delay(2, 3)
 
-        # 9. 태그 입력
+        # 10. 태그 입력
         if tags:
             try:
-                tag_input = await page.wait_for_selector('.se-tag-input, input[placeholder*="태그"]', timeout=5000)
+                tag_input = await _try_selectors(editor, [
+                    'input[placeholder*="태그"]',
+                    '.se-tag-input',
+                    '.tag_inner input',
+                    'input[class*="tag"]',
+                    '.tag_area input',
+                ], timeout=5000, description="태그 입력")
                 if tag_input:
                     await tag_input.click()
                     for tag in tags[:10]:
@@ -384,33 +507,79 @@ async def publish_to_naver(
             except Exception as e:
                 logger.warning(f"태그 입력 실패: {e}")
 
-        # 10. 발행 버튼 클릭
+        # 11. 발행 버튼 클릭
         await _random_delay(1, 2)
+        publish_clicked = False
         try:
-            publish_btn = await page.wait_for_selector(
-                'button:has-text("발행"), button:has-text("등록"), .publish_btn',
-                timeout=5000,
-            )
-            if publish_btn:
+            # 발행 버튼은 page 레벨 (iframe 바깥)에 있을 수 있음
+            publish_btn = await _try_selectors(page, [
+                'button:has-text("발행")',
+                'button:has-text("공개발행")',
+                'button[class*="publish"]',
+                'button[class*="btn_publish"]',
+                '.publish_btn',
+                'button:has-text("등록")',
+            ], timeout=5000, description="발행 버튼(메인)")
+
+            # 메인 페이지에서 못 찾으면 에디터(iframe) 내에서도 시도
+            if not publish_btn and editor != page:
+                publish_btn = await _try_selectors(editor, [
+                    'button:has-text("발행")',
+                    'button:has-text("공개발행")',
+                    'button[class*="publish"]',
+                    '.publish_btn',
+                    'button:has-text("등록")',
+                ], timeout=3000, description="발행 버튼(에디터)")
+
+            # JS 폴백: 텍스트로 버튼 찾아 클릭
+            if not publish_btn:
+                logger.info("발행 버튼 JS 폴백 시도")
+                js_clicked = await page.evaluate('''() => {
+                    const buttons = document.querySelectorAll('button, a[role="button"]');
+                    for (const btn of buttons) {
+                        const text = (btn.textContent || "").trim();
+                        if (text === '발행' || text === '공개발행' || text === '등록') {
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }''')
+                if js_clicked:
+                    publish_clicked = True
+                    logger.info("발행 버튼 JS 클릭 성공")
+
+            if publish_btn and not publish_clicked:
                 await publish_btn.click()
+                publish_clicked = True
+
+            if publish_clicked:
                 await _random_delay(2, 3)
 
                 # 발행 확인 다이얼로그
                 try:
-                    confirm_btn = await page.wait_for_selector(
-                        'button:has-text("발행"), button:has-text("확인")',
-                        timeout=5000,
-                    )
+                    confirm_btn = await _try_selectors(page, [
+                        'button:has-text("발행")',
+                        'button:has-text("확인")',
+                        'button:has-text("공개 발행")',
+                        '.confirm_btn',
+                    ], timeout=5000, description="발행 확인 버튼")
                     if confirm_btn:
                         await confirm_btn.click()
                         await _random_delay(3, 5)
                 except Exception:
                     pass
+            else:
+                await _capture_debug(page, "publish_btn_not_found")
+                result["error"] = "발행 버튼을 찾을 수 없습니다"
+                return result
+
         except Exception as e:
+            await _capture_debug(page, "publish_error")
             result["error"] = f"발행 버튼 클릭 실패: {e}"
             return result
 
-        # 11. 발행 성공 확인 & URL 수집
+        # 12. 발행 성공 확인 & URL 수집
         await _random_delay(3, 5)
         current_url = page.url
         if "blog.naver.com" in current_url and "PostView" in current_url:
@@ -420,7 +589,6 @@ async def publish_to_naver(
             result["success"] = True
             result["url"] = current_url
         else:
-            # URL에서 확인 시도
             try:
                 await page.wait_for_url("**/blog.naver.com/**", timeout=10000)
                 result["success"] = True
@@ -434,6 +602,7 @@ async def publish_to_naver(
     except Exception as e:
         result["error"] = str(e)
         logger.error(f"발행 중 오류: {e}")
+        await _capture_debug(page, "publish_exception")
 
     return result
 
