@@ -479,10 +479,33 @@ async def publish_to_naver(
                         f'li:has-text("{category_name}")',
                         f'span:has-text("{category_name}")',
                         f'a:has-text("{category_name}")',
+                        f'div:has-text("{category_name}")',
+                        f'button:has-text("{category_name}")',
                     ], timeout=3000, description=f"카테고리 항목({category_name})")
                     if cat_item:
                         await cat_item.click()
                         await _random_delay(0.5, 1)
+                    else:
+                        # JS 폴백: 카테고리 목록에서 텍스트 매칭
+                        cat_name_js = category_name.replace("'", "\\'")
+                        js_clicked = await editor.evaluate(f'''() => {{
+                            const items = document.querySelectorAll(
+                                'li, [class*="category"] span, [class*="category"] a, [role="option"]'
+                            );
+                            for (const item of items) {{
+                                const text = (item.textContent || "").trim();
+                                if (text === '{cat_name_js}' || text.includes('{cat_name_js}')) {{
+                                    item.click();
+                                    return true;
+                                }}
+                            }}
+                            return false;
+                        }}''')
+                        if js_clicked:
+                            logger.info(f"카테고리 JS 폴백 성공: {category_name}")
+                            await _random_delay(0.5, 1)
+                        else:
+                            logger.warning(f"카테고리 항목 미발견: {category_name}")
             except Exception as e:
                 logger.warning(f"카테고리 선택 실패: {e}")
 
@@ -555,10 +578,28 @@ async def publish_to_naver(
                     await _random_delay(1, 2)
 
                     # 파일 input에 이미지 설정
-                    file_input = await _try_selectors(editor, [
-                        'input[type="file"][accept*="image"]',
-                        'input[type="file"]',
-                    ], timeout=5000, description="파일 입력")
+                    # input[type="file"]은 숨김 요소라 is_visible() 실패 → query_selector로 직접 접근
+                    file_input = None
+                    for sel in ['input[type="file"][accept*="image"]', 'input[type="file"]']:
+                        try:
+                            file_input = await editor.query_selector(sel)
+                            if file_input:
+                                logger.info(f"파일 입력 발견 (query_selector): {sel}")
+                                break
+                        except Exception:
+                            continue
+
+                    # page 레벨에서도 시도 (iframe 바깥에 있을 수 있음)
+                    if not file_input:
+                        for sel in ['input[type="file"][accept*="image"]', 'input[type="file"]']:
+                            try:
+                                file_input = await page.query_selector(sel)
+                                if file_input:
+                                    logger.info(f"파일 입력 발견 (page): {sel}")
+                                    break
+                            except Exception:
+                                continue
+
                     if file_input:
                         await file_input.set_input_files(image_path)
                         await _random_delay(3, 5)
@@ -580,6 +621,8 @@ async def publish_to_naver(
                         await page.keyboard.press("Enter")
                         await page.keyboard.press("Enter")
                         await _random_delay(1, 2)
+                    else:
+                        logger.warning("파일 입력 요소 미발견 (숨김 포함)")
 
                     logger.info("대표이미지 삽입 완료")
             except Exception as e:
@@ -772,42 +815,79 @@ async def publish_to_naver(
         await _random_delay(2, 3)
 
         # 10. 태그 입력
+        #     SE ONE: 에디터 하단의 태그 영역 또는 page 레벨에 있을 수 있음
         if tags:
+            tag_entered = False
             try:
+                # 에디터(iframe) 내 태그 입력
                 tag_input = await _try_selectors(editor, [
                     'input[placeholder*="태그"]',
-                    '.se-tag-input',
+                    '.se-tag-input input',
                     '.tag_inner input',
                     'input[class*="tag"]',
                     '.tag_area input',
-                ], timeout=5000, description="태그 입력")
+                    '.se-tag input',
+                ], timeout=3000, description="태그 입력(에디터)")
+
+                # page 레벨 (iframe 바깥)에서도 시도
+                if not tag_input and editor != page:
+                    tag_input = await _try_selectors(page, [
+                        'input[placeholder*="태그"]',
+                        '.se-tag-input input',
+                        '.tag_inner input',
+                        'input[class*="tag"]',
+                        '.tag_area input',
+                    ], timeout=3000, description="태그 입력(메인)")
+
                 if tag_input:
                     await tag_input.click()
+                    await _random_delay(0.3, 0.5)
                     for tag in tags[:10]:
                         await page.keyboard.type(tag, delay=40)
                         await page.keyboard.press("Enter")
                         await _random_delay(0.3, 0.5)
+                    tag_entered = True
+                    logger.info("태그 입력 성공 (셀렉터)")
                 else:
-                    # JS 폴백: iframe 내 태그 입력 찾기
+                    # JS 폴백: editor + page 모두에서 태그 input 찾기
                     logger.info("태그 입력 JS 폴백 시도")
-                    found = await editor.evaluate("""() => {
-                        const inputs = document.querySelectorAll('input');
-                        for (const inp of inputs) {
-                            const ph = inp.placeholder || '';
-                            if (ph.includes('태그') || ph.includes('tag')) {
-                                inp.focus();
-                                inp.click();
-                                return true;
-                            }
-                        }
-                        return false;
-                    }""")
-                    if found:
-                        for tag in tags[:10]:
-                            await page.keyboard.type(tag, delay=40)
-                            await page.keyboard.press("Enter")
-                            await _random_delay(0.3, 0.5)
-                        logger.info("태그 입력 JS 폴백 성공")
+                    for target_name, target in ([("editor", editor)] + ([("page", page)] if editor != page else [])):
+                        try:
+                            found = await target.evaluate("""() => {
+                                const inputs = document.querySelectorAll('input');
+                                for (const inp of inputs) {
+                                    const ph = (inp.placeholder || '').toLowerCase();
+                                    const cls = (inp.className || '').toLowerCase();
+                                    if (ph.includes('태그') || ph.includes('tag') ||
+                                        cls.includes('tag')) {
+                                        inp.focus();
+                                        inp.click();
+                                        return true;
+                                    }
+                                }
+                                // contenteditable 태그 영역
+                                const tagAreas = document.querySelectorAll(
+                                    '[class*="tag"] [contenteditable="true"]'
+                                );
+                                for (const area of tagAreas) {
+                                    area.focus();
+                                    area.click();
+                                    return true;
+                                }
+                                return false;
+                            }""")
+                            if found:
+                                for tag in tags[:10]:
+                                    await page.keyboard.type(tag, delay=40)
+                                    await page.keyboard.press("Enter")
+                                    await _random_delay(0.3, 0.5)
+                                tag_entered = True
+                                logger.info(f"태그 입력 JS 폴백 성공 ({target_name})")
+                                break
+                        except Exception:
+                            continue
+                if not tag_entered:
+                    logger.warning("태그 입력 영역 미발견 (모든 방법 실패)")
             except Exception as e:
                 logger.warning(f"태그 입력 실패: {e}")
 
