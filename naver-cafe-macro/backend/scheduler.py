@@ -229,7 +229,8 @@ async def execute_publish_job():
         title=title,
         content=content,
         headless=True,
-        on_progress=on_publish_progress
+        on_progress=on_publish_progress,
+        structured_content=structured
     )
 
     # 9. 결과 처리

@@ -6,8 +6,12 @@ Selenium 기반 카페 글쓰기 / 댓글 자동화
 1. 로그인: 기존 쿠키 우선 → ID/PW 폴백
 2. 카페 이동: cafe.naver.com/{카페URL} 접속
 3. 게시판 선택: 지정된 게시판(menuId) 클릭
-4. 글쓰기: SE ONE 에디터에서 제목/본문 입력 (가운데 정렬, 문단 여백)
-5. 이미지: 대표이미지 삽입
+4. 글쓰기: SE ONE 에디터에서 구조화된 콘텐츠 입력 (서식 적용)
+   - 폰트: 나눔스퀘어네오
+   - 강조①: 빨강(#ff0010) + 노란배경(#fff8b2) + 볼드
+   - 강조②: 보라(#740060) + 밑줄 + 볼드
+   - CTA 테이블: 1×1 노란배경, 24px 볼드, 링크
+5. 이미지/스티커 삽입
 6. 발행: 등록 버튼 클릭 → URL 확인
 """
 
@@ -22,11 +26,15 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from crypto import decrypt_password
+from content_generator import (
+    STYLE_NORMAL, STYLE_EMPTY, STYLE_HIGHLIGHT_RED, STYLE_HIGHLIGHT_PURPLE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +166,6 @@ def get_login_cookies(driver: webdriver.Chrome) -> str:
 def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
     """카페 글쓰기 페이지로 이동"""
     try:
-        # 카페 글쓰기 URL 직접 접근
         if menu_id:
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L&menuId={menu_id}"
         else:
@@ -166,12 +173,11 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
         driver.get(write_url)
         random_delay(3, 5)
 
-        # iframe 확인 (네이버 카페는 iframe 구조)
         try:
             driver.switch_to.frame("cafe_main")
             random_delay(1, 2)
         except Exception:
-            pass  # iframe이 없을 수도 있음
+            pass
 
         logger.info(f"글쓰기 페이지 이동 완료: {cafe_url}, menuId={menu_id}")
         return True
@@ -181,79 +187,420 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
         return False
 
 
+# ─── SE ONE 에디터 서식 헬퍼 ──────────────────────────────
+
+def _click_toolbar_button(driver, selectors: list) -> bool:
+    """여러 CSS 셀렉터를 순서대로 시도하여 툴바 버튼 클릭"""
+    for sel in selectors:
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, sel)
+            btn.click()
+            random_delay(0.15, 0.3)
+            return True
+        except NoSuchElementException:
+            continue
+    return False
+
+
+def _is_toolbar_active(driver, selectors: list) -> bool:
+    """툴바 버튼이 활성(active) 상태인지 확인"""
+    for sel in selectors:
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, sel)
+            cls = btn.get_attribute("class") or ""
+            aria = btn.get_attribute("aria-pressed") or ""
+            return "active" in cls or "on" in cls or aria == "true"
+        except NoSuchElementException:
+            continue
+    return False
+
+
+def _set_bold(driver, on: bool = True):
+    """볼드 설정/해제"""
+    sels = [
+        "button[data-command='bold']",
+        "button.se-text-style-button-bold",
+        ".se-toolbar button[data-style='bold']",
+    ]
+    is_active = _is_toolbar_active(driver, sels)
+    if on != is_active:
+        if not _click_toolbar_button(driver, sels):
+            ActionChains(driver).key_down(Keys.CONTROL).send_keys("b").key_up(Keys.CONTROL).perform()
+            random_delay(0.1, 0.2)
+
+
+def _set_underline(driver, on: bool = True):
+    """밑줄 설정/해제"""
+    sels = [
+        "button[data-command='underline']",
+        "button.se-text-style-button-underline",
+        ".se-toolbar button[data-style='underline']",
+    ]
+    is_active = _is_toolbar_active(driver, sels)
+    if on != is_active:
+        if not _click_toolbar_button(driver, sels):
+            ActionChains(driver).key_down(Keys.CONTROL).send_keys("u").key_up(Keys.CONTROL).perform()
+            random_delay(0.1, 0.2)
+
+
+def _set_font_color(driver, hex_color: str):
+    """글자색 변경 (SE ONE 컬러피커)"""
+    sels = [
+        "button[data-command='fontColor']",
+        "button.se-toolbar-button-fontcolor",
+        ".se-toolbar button[data-name='fontColor']",
+    ]
+    try:
+        _click_toolbar_button(driver, sels)
+        random_delay(0.3, 0.5)
+        # 컬러피커 HEX 입력
+        hex_input = driver.find_element(
+            By.CSS_SELECTOR, ".se-palette .se-palette-hex-input, "
+                             ".se-color-picker input[type='text'], "
+                             ".se-palette input.se-input-text"
+        )
+        hex_input.clear()
+        hex_input.send_keys(hex_color.lstrip("#"))
+        random_delay(0.1, 0.2)
+        # 적용 버튼
+        _click_toolbar_button(driver, [
+            ".se-palette .se-palette-confirm",
+            ".se-color-picker .se-confirm-button",
+            ".se-palette button.se-button-confirm",
+        ])
+        random_delay(0.2, 0.3)
+    except Exception as e:
+        logger.warning(f"글자색 변경 실패({hex_color}): {e}")
+
+
+def _set_bg_color(driver, hex_color: str):
+    """배경색 변경 (SE ONE 컬러피커)"""
+    sels = [
+        "button[data-command='backgroundColor']",
+        "button.se-toolbar-button-bgcolor",
+        ".se-toolbar button[data-name='backgroundColor']",
+    ]
+    try:
+        _click_toolbar_button(driver, sels)
+        random_delay(0.3, 0.5)
+        hex_input = driver.find_element(
+            By.CSS_SELECTOR, ".se-palette .se-palette-hex-input, "
+                             ".se-color-picker input[type='text'], "
+                             ".se-palette input.se-input-text"
+        )
+        hex_input.clear()
+        hex_input.send_keys(hex_color.lstrip("#"))
+        random_delay(0.1, 0.2)
+        _click_toolbar_button(driver, [
+            ".se-palette .se-palette-confirm",
+            ".se-color-picker .se-confirm-button",
+            ".se-palette button.se-button-confirm",
+        ])
+        random_delay(0.2, 0.3)
+    except Exception as e:
+        logger.warning(f"배경색 변경 실패({hex_color}): {e}")
+
+
+def _set_font_family(driver, font_name: str = "나눔스퀘어네오"):
+    """폰트 변경"""
+    sels = [
+        "button[data-command='fontFamily']",
+        ".se-toolbar .se-font-family-button",
+        "button.se-toolbar-button-font",
+    ]
+    try:
+        _click_toolbar_button(driver, sels)
+        random_delay(0.3, 0.5)
+        # 폰트 목록에서 선택
+        font_item = driver.find_element(
+            By.XPATH,
+            f"//li[contains(@class,'se-font-family-item')]//button[contains(text(),'{font_name}')]"
+            f" | //div[contains(@class,'se-font-family')]//button[contains(text(),'{font_name}')]"
+        )
+        font_item.click()
+        random_delay(0.2, 0.4)
+        logger.info(f"폰트 변경: {font_name}")
+    except Exception as e:
+        logger.warning(f"폰트 변경 실패({font_name}): {e}")
+
+
+def _set_font_size(driver, size: str = "13"):
+    """폰트 사이즈 변경"""
+    sels = [
+        "button[data-command='fontSize']",
+        ".se-toolbar .se-font-size-button",
+        "button.se-toolbar-button-fontsize",
+    ]
+    try:
+        _click_toolbar_button(driver, sels)
+        random_delay(0.3, 0.5)
+        size_item = driver.find_element(
+            By.XPATH,
+            f"//li[contains(@class,'se-font-size-item')]//button[contains(text(),'{size}')]"
+            f" | //div[contains(@class,'se-font-size')]//button[@data-value='{size}']"
+        )
+        size_item.click()
+        random_delay(0.2, 0.4)
+    except Exception as e:
+        logger.warning(f"폰트 사이즈 변경 실패({size}): {e}")
+
+
+def _set_alignment_center(driver):
+    """가운데 정렬"""
+    try:
+        _click_toolbar_button(driver, [
+            "button[data-command='align']",
+            ".se-toolbar button[data-name='align']",
+        ])
+        random_delay(0.2, 0.4)
+        _click_toolbar_button(driver, [
+            "[data-value='center']",
+            "button[data-command='alignCenter']",
+            ".se-toolbar button[data-align='center']",
+        ])
+        random_delay(0.2, 0.4)
+    except Exception:
+        logger.info("정렬 버튼 없음, 기본 정렬 사용")
+
+
+def _reset_formatting(driver):
+    """서식 초기화 (볼드/밑줄 해제, 색상 기본값)"""
+    _set_bold(driver, on=False)
+    _set_underline(driver, on=False)
+    _set_font_color(driver, "000000")
+
+
+def _apply_style_for_line(driver, style: str):
+    """라인 스타일에 따라 서식 적용 (타이핑 전 호출)"""
+    if style == STYLE_HIGHLIGHT_RED:
+        # bold + color:#ff0010 + bg:#fff8b2
+        _set_bold(driver, on=True)
+        _set_font_color(driver, "ff0010")
+        _set_bg_color(driver, "fff8b2")
+    elif style == STYLE_HIGHLIGHT_PURPLE:
+        # bold + color:#740060 + underline
+        _set_bold(driver, on=True)
+        _set_font_color(driver, "740060")
+        _set_underline(driver, on=True)
+
+
+def _reset_style_after_line(driver, style: str):
+    """라인 서식 해제 (타이핑 후 호출)"""
+    if style == STYLE_HIGHLIGHT_RED:
+        _set_bold(driver, on=False)
+        _set_font_color(driver, "000000")
+        _set_bg_color(driver, "ffffff")
+    elif style == STYLE_HIGHLIGHT_PURPLE:
+        _set_bold(driver, on=False)
+        _set_font_color(driver, "000000")
+        _set_underline(driver, on=False)
+
+
+# ─── CTA 테이블 삽입 ─────────────────────────────────────
+
+def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
+    """CTA 테이블 삽입 (1×1, 노란배경, 24px 볼드)"""
+    try:
+        # 테이블 삽입 버튼
+        _click_toolbar_button(driver, [
+            "button[data-command='table']",
+            ".se-toolbar button[data-name='table']",
+            "button.se-toolbar-button-table",
+        ])
+        random_delay(0.5, 1.0)
+
+        # 1×1 셀 선택 (첫 번째 셀 클릭)
+        try:
+            cell = driver.find_element(
+                By.CSS_SELECTOR, ".se-table-size-picker td:first-child, "
+                                 ".se-table-picker .se-table-cell:first-child"
+            )
+            cell.click()
+            random_delay(0.5, 1.0)
+        except NoSuchElementException:
+            # 직접 크기 입력 시도
+            pass
+
+        # 삽입 확인
+        _click_toolbar_button(driver, [
+            ".se-table-size-confirm",
+            ".se-popup-button-confirm",
+        ])
+        random_delay(0.5, 1.0)
+
+        # 테이블 셀에 서식 적용
+        # 셀 배경색: 노란색
+        _set_bg_color(driver, "fff8b2")
+        # 폰트 사이즈 24px
+        _set_font_size(driver, "24")
+        # 볼드
+        _set_bold(driver, on=True)
+        # 가운데 정렬
+        _set_alignment_center(driver)
+
+        # CTA 텍스트 타이핑
+        actions = ActionChains(driver)
+        human_type(driver.switch_to.active_element, cta_text)
+        random_delay(0.3, 0.5)
+
+        # 링크 적용
+        if cta_link:
+            # 텍스트 전체 선택
+            ActionChains(driver).key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
+            random_delay(0.2, 0.3)
+            # 링크 버튼
+            _click_toolbar_button(driver, [
+                "button[data-command='link']",
+                ".se-toolbar button[data-name='link']",
+                "button.se-toolbar-button-link",
+            ])
+            random_delay(0.5, 0.8)
+            # URL 입력
+            try:
+                link_input = driver.find_element(
+                    By.CSS_SELECTOR, ".se-link-input input, "
+                                     ".se-popup-link input[type='text']"
+                )
+                link_input.clear()
+                link_input.send_keys(cta_link)
+                random_delay(0.2, 0.3)
+                _click_toolbar_button(driver, [
+                    ".se-link-confirm",
+                    ".se-popup-button-confirm",
+                ])
+            except Exception as e:
+                logger.warning(f"CTA 링크 적용 실패: {e}")
+
+        # 서식 초기화
+        _set_bold(driver, on=False)
+        random_delay(0.3, 0.5)
+
+        # 테이블 밖으로 나가기 (아래로 이동)
+        ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+        random_delay(0.2, 0.3)
+        ActionChains(driver).send_keys(Keys.ARROW_DOWN).perform()
+        random_delay(0.2, 0.3)
+
+        logger.info(f"CTA 테이블 삽입 완료: {cta_text}")
+
+    except Exception as e:
+        # 테이블 실패 시 폴백: 일반 텍스트로 CTA 작성
+        logger.warning(f"CTA 테이블 삽입 실패, 텍스트 폴백: {e}")
+        active = driver.switch_to.active_element
+        active.send_keys(Keys.ENTER)
+        _set_bold(driver, on=True)
+        _set_font_size(driver, "24")
+        human_type(active, cta_text)
+        _set_bold(driver, on=False)
+        active.send_keys(Keys.ENTER)
+
+
+# ─── 스티커 삽입 ─────────────────────────────────────────
+
+def _insert_sticker(driver, pack: str, seq: str):
+    """SE ONE 스티커 삽입"""
+    try:
+        _click_toolbar_button(driver, [
+            "button[data-command='sticker']",
+            ".se-toolbar button[data-name='sticker']",
+            "button.se-toolbar-button-sticker",
+        ])
+        random_delay(0.8, 1.5)
+
+        # 스티커 팩 선택
+        try:
+            pack_tab = driver.find_element(
+                By.CSS_SELECTOR, f"[data-pack-id='{pack}'], "
+                                  f"[data-id='{pack}']"
+            )
+            pack_tab.click()
+            random_delay(0.5, 0.8)
+        except NoSuchElementException:
+            pass  # 기본 팩이 이미 선택
+
+        # 스티커 선택
+        sticker_el = driver.find_element(
+            By.CSS_SELECTOR, f"[data-seq='{seq}'], "
+                              f"[data-sticker-id='{seq}']"
+        )
+        sticker_el.click()
+        random_delay(0.5, 1.0)
+        logger.info(f"스티커 삽입: {pack}/{seq}")
+
+    except Exception as e:
+        logger.warning(f"스티커 삽입 실패({pack}/{seq}): {e}")
+
+
+# ─── 이미지 삽입 ─────────────────────────────────────────
+
+def _insert_image(driver, image_path: str):
+    """이미지 파일 삽입"""
+    try:
+        _click_toolbar_button(driver, [
+            "button[data-command='image']",
+            ".se-toolbar button[data-name='image']",
+            "button.se-toolbar-button-image",
+        ])
+        random_delay(1, 2)
+
+        file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        file_input.send_keys(image_path)
+        random_delay(3, 5)
+        logger.info(f"이미지 삽입 완료: {image_path}")
+    except Exception as e:
+        logger.warning(f"이미지 삽입 실패: {e}")
+
+
+# ─── 글 작성 (구조화된 콘텐츠) ────────────────────────────
+
 def write_post(
     driver: webdriver.Chrome,
     title: str,
-    content: str,
-    image_path: Optional[str] = None
+    content: str = "",
+    image_path: Optional[str] = None,
+    structured_content: Optional[dict] = None
 ) -> Optional[str]:
     """
     SE ONE 에디터에서 글 작성 후 발행
+
+    structured_content가 있으면 서식 적용, 없으면 content를 plain text로 입력
+
+    Args:
+        title: 글 제목
+        content: 단순 텍스트 본문 (폴백용)
+        image_path: 이미지 파일 경로
+        structured_content: content_generator에서 생성한 구조화된 콘텐츠
+
     Returns: 발행된 글 URL 또는 None
     """
     try:
         wait = WebDriverWait(driver, 15)
 
-        # 제목 입력
+        # ── 제목 입력 ──
         title_area = wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, ".se-ff-system.se-fs28.se-placeholder.__se_title")
+            (By.CSS_SELECTOR, ".se-ff-system.se-fs28.se-placeholder.__se_title, "
+                               ".se-title-text .se-text-paragraph")
         ))
         title_area.click()
         random_delay(0.3, 0.6)
         human_type(title_area, title)
         random_delay(0.5, 1.0)
 
-        # 본문 영역으로 이동
+        # ── 본문 영역 진입 ──
         body_area = wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, ".se-component-content .se-text-paragraph")
         ))
         body_area.click()
         random_delay(0.3, 0.6)
 
-        # 가운데 정렬 설정
-        try:
-            align_btn = driver.find_element(
-                By.CSS_SELECTOR, ".se-toolbar-button[data-command='align']"
-            )
-            align_btn.click()
-            random_delay(0.2, 0.4)
-            center_option = driver.find_element(
-                By.CSS_SELECTOR, "[data-value='center']"
-            )
-            center_option.click()
-            random_delay(0.3, 0.5)
-        except NoSuchElementException:
-            logger.info("정렬 버튼을 찾을 수 없음, 기본 정렬 사용")
+        if structured_content and structured_content.get("sections"):
+            # ── 구조화된 콘텐츠로 서식 적용 ──
+            _write_structured_body(driver, body_area, structured_content, image_path)
+        else:
+            # ── 폴백: 단순 텍스트 입력 ──
+            _write_plain_body(driver, body_area, content, image_path)
 
-        # 본문 입력 (문단별)
-        paragraphs = content.split("\n\n")
-        for i, paragraph in enumerate(paragraphs):
-            if paragraph.strip():
-                human_type(body_area, paragraph.strip())
-                if i < len(paragraphs) - 1:
-                    body_area.send_keys(Keys.ENTER)
-                    body_area.send_keys(Keys.ENTER)
-                    random_delay(0.3, 0.8)
-
-        random_delay(1, 2)
-
-        # 이미지 삽입
-        if image_path:
-            try:
-                image_btn = driver.find_element(
-                    By.CSS_SELECTOR, ".se-toolbar-button[data-command='image']"
-                )
-                image_btn.click()
-                random_delay(1, 2)
-
-                file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-                file_input.send_keys(image_path)
-                random_delay(3, 5)
-                logger.info("이미지 삽입 완료")
-            except Exception as e:
-                logger.warning(f"이미지 삽입 실패: {e}")
-
-        # 등록 버튼 클릭
+        # ── 등록 버튼 클릭 ──
         random_delay(1, 2)
         submit_btn = wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, ".BaseButton.BaseButton--skinGreen.BaseButton--sizeM")
@@ -261,7 +608,7 @@ def write_post(
         submit_btn.click()
         random_delay(3, 5)
 
-        # 발행 확인 - URL에서 articleId 확인
+        # ── 발행 확인 ──
         current_url = driver.current_url
         if "articles" in current_url or "ArticleRead" in current_url:
             logger.info(f"글 발행 성공: {current_url}")
@@ -289,6 +636,91 @@ def write_post(
     except Exception as e:
         logger.error(f"글 작성 중 오류: {e}")
         return None
+
+
+def _write_structured_body(driver, body_area, structured_content: dict, image_path: Optional[str]):
+    """구조화된 콘텐츠로 SE ONE 에디터 본문 작성 (서식 적용)"""
+
+    # 가운데 정렬
+    _set_alignment_center(driver)
+
+    for section in structured_content["sections"]:
+        s_type = section["type"]
+
+        if s_type == "text":
+            # 폰트 설정
+            font = section.get("font", "")
+            if font:
+                _set_font_family(driver, _font_display_name(font))
+
+            for line in section["lines"]:
+                style = line["style"]
+                text = line["text"]
+
+                if style == STYLE_EMPTY:
+                    body_area.send_keys(Keys.ENTER)
+                    random_delay(0.2, 0.4)
+                    continue
+
+                # 강조 스타일 적용 (타이핑 전)
+                if style in (STYLE_HIGHLIGHT_RED, STYLE_HIGHLIGHT_PURPLE):
+                    _apply_style_for_line(driver, style)
+
+                # 텍스트 타이핑
+                active = driver.switch_to.active_element
+                human_type(active, text)
+                random_delay(0.1, 0.3)
+
+                # 강조 스타일 해제 (타이핑 후)
+                if style in (STYLE_HIGHLIGHT_RED, STYLE_HIGHLIGHT_PURPLE):
+                    _reset_style_after_line(driver, style)
+
+                # 줄바꿈
+                active.send_keys(Keys.ENTER)
+                random_delay(0.15, 0.35)
+
+        elif s_type == "cta_table":
+            _insert_cta_table(driver, section["text"], section.get("link", ""))
+
+        elif s_type == "sticker":
+            _insert_sticker(driver, section["pack"], section["seq"])
+
+        elif s_type == "image":
+            if image_path:
+                _insert_image(driver, image_path)
+
+    random_delay(1, 2)
+
+
+def _write_plain_body(driver, body_area, content: str, image_path: Optional[str]):
+    """단순 텍스트로 본문 작성 (폴백)"""
+    # 가운데 정렬
+    _set_alignment_center(driver)
+
+    paragraphs = content.split("\n\n")
+    for i, paragraph in enumerate(paragraphs):
+        if paragraph.strip():
+            human_type(body_area, paragraph.strip())
+            if i < len(paragraphs) - 1:
+                body_area.send_keys(Keys.ENTER)
+                body_area.send_keys(Keys.ENTER)
+                random_delay(0.3, 0.8)
+
+    random_delay(1, 2)
+
+    if image_path:
+        _insert_image(driver, image_path)
+
+
+def _font_display_name(font_key: str) -> str:
+    """폰트 키를 SE ONE 표시명으로 변환"""
+    mapping = {
+        "nanumsquareneo": "나눔스퀘어네오",
+        "nanumgothic": "나눔고딕",
+        "nanummyeongjo": "나눔명조",
+        "maruburiregular": "마루 부리",
+    }
+    return mapping.get(font_key, font_key)
 
 
 # ─── 댓글 작성 ─────────────────────────────────────────────
@@ -342,13 +774,19 @@ def publish_to_cafe(
     cafe_url: str,
     menu_id: str,
     title: str,
-    content: str,
+    content: str = "",
     image_path: Optional[str] = None,
     headless: bool = True,
-    on_progress=None
+    on_progress=None,
+    structured_content: Optional[dict] = None
 ) -> dict:
     """
     전체 카페 글 발행 프로세스
+
+    Args:
+        structured_content: content_generator.generate_content() 결과.
+            있으면 SE ONE 서식 적용, 없으면 content를 plain text로 입력.
+
     Returns: {"success": bool, "url": str|None, "error": str|None, "cookies": str|None}
     """
     driver = None
@@ -391,7 +829,10 @@ def publish_to_cafe(
         if on_progress:
             on_progress("writing", "글 작성 중...")
 
-        published_url = write_post(driver, title, content, image_path)
+        published_url = write_post(
+            driver, title, content, image_path,
+            structured_content=structured_content
+        )
 
         if published_url:
             result["success"] = True
