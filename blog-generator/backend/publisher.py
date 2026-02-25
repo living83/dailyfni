@@ -629,36 +629,143 @@ async def publish_to_naver(
             elif r < 0.20:
                 await asyncio.sleep(random.uniform(0.2, 0.5))
 
-        # 9-1. 하단 링크 삽입
+        # 9-1. 하단 링크 삽입 (SE ONE 링크 다이얼로그)
+        #   흐름: 본문에서 텍스트 입력 → 텍스트 선택 → Ctrl+K → 링크 다이얼로그
+        #         → URL 입력 → 돋보기(검색) 버튼 클릭 → 미리보기 로드 대기 → 확인
         if footer_link:
             await page.keyboard.press("Enter")
             await page.keyboard.press("Enter")
             link_display = footer_link_text if footer_link_text else footer_link
             await page.keyboard.type(link_display, delay=30 + random.randint(-10, 15))
             await _random_delay(0.3, 0.5)
+            # 텍스트 전체 선택
             for _ in range(len(link_display)):
                 await page.keyboard.press("Shift+ArrowLeft")
             await _random_delay(0.3, 0.5)
+            # 링크 다이얼로그 열기
             await page.keyboard.press("Control+k")
-            await _random_delay(0.5, 1)
+            await _random_delay(1, 2)
             try:
+                # 링크 입력 필드 찾기
                 link_input = await _try_selectors(editor, [
                     'input[placeholder*="URL"]',
                     'input[placeholder*="url"]',
                     'input[placeholder*="링크"]',
                     '.se-link-input input',
+                    '.se-popup-link input',
                     'input[type="url"]',
-                ], timeout=3000, description="링크 입력")
+                    'input[type="text"]',
+                ], timeout=5000, description="링크 입력")
+
+                if not link_input:
+                    # JS 폴백: 링크 다이얼로그 내 input 직접 찾기
+                    link_input = await editor.evaluate_handle('''() => {
+                        const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                        if (popup) {
+                            const inp = popup.querySelector('input');
+                            if (inp) return inp;
+                        }
+                        return null;
+                    }''')
+                    if link_input:
+                        link_input = link_input.as_element()
+
                 if link_input:
+                    await link_input.click()
                     await link_input.fill("")
+                    await _random_delay(0.2, 0.3)
                     await link_input.type(footer_link, delay=20)
-                    await _random_delay(0.3, 0.5)
-                    await page.keyboard.press("Enter")
                     await _random_delay(0.5, 1)
-                    logger.info(f"하단 링크 삽입 완료: {footer_link}")
+
+                    # 돋보기(검색) 버튼 클릭 → OG 미리보기 로드
+                    search_btn = await _try_selectors(editor, [
+                        '.se-popup-link button[class*="search"]',
+                        '.se-popup-link button[class*="query"]',
+                        '.se-popup button[class*="search"]',
+                        'button.se-link-preview-btn',
+                    ], timeout=3000, description="링크 돋보기 버튼")
+
+                    if not search_btn:
+                        # JS 폴백: input 옆의 버튼 찾기
+                        search_btn_handle = await editor.evaluate_handle('''() => {
+                            const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                            if (popup) {
+                                const btns = popup.querySelectorAll('button');
+                                for (const btn of btns) {
+                                    // 돋보기 아이콘 버튼 (input 바로 옆)
+                                    if (btn.querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
+                                        return btn;
+                                    }
+                                }
+                                // 첫 번째 버튼이 돋보기일 가능성
+                                if (btns.length > 0) return btns[0];
+                            }
+                            return null;
+                        }''')
+                        if search_btn_handle:
+                            search_btn = search_btn_handle.as_element()
+
+                    if search_btn:
+                        await search_btn.click()
+                        logger.info("링크 돋보기 버튼 클릭")
+                        # 미리보기 로드 대기 (OG 카드가 나타날 때까지)
+                        await _random_delay(3, 5)
+                        try:
+                            await editor.wait_for_selector(
+                                '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
+                                '.se-popup-link [class*="og"], .se-popup [class*="card"], '
+                                '.se-popup-link img',
+                                timeout=10000,
+                            )
+                            logger.info("링크 미리보기 로드 완료")
+                        except Exception:
+                            logger.warning("링크 미리보기 로드 타임아웃 (계속 진행)")
+                        await _random_delay(1, 2)
+                    else:
+                        logger.warning("돋보기 버튼 미발견, Enter로 대체")
+                        await page.keyboard.press("Enter")
+                        await _random_delay(2, 3)
+
+                    # 확인 버튼 클릭
+                    confirm_btn = await _try_selectors(editor, [
+                        '.se-popup-link button:has-text("확인")',
+                        '.se-popup button:has-text("확인")',
+                        'button.se-popup-button-confirm',
+                        'button:has-text("확인")',
+                    ], timeout=5000, description="링크 확인 버튼")
+
+                    if not confirm_btn:
+                        # JS 폴백: 팝업 내 "확인" 텍스트 버튼
+                        confirm_handle = await editor.evaluate_handle('''() => {
+                            const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                            if (popup) {
+                                const btns = popup.querySelectorAll('button');
+                                for (const btn of btns) {
+                                    const text = (btn.textContent || "").trim();
+                                    if (text === '확인' || text.includes('확인')) {
+                                        return btn;
+                                    }
+                                }
+                            }
+                            return null;
+                        }''')
+                        if confirm_handle:
+                            confirm_btn = confirm_handle.as_element()
+
+                    if confirm_btn:
+                        await confirm_btn.click()
+                        await _random_delay(1, 2)
+                        logger.info(f"하단 링크 삽입 완료: {footer_link}")
+                    else:
+                        logger.warning("링크 확인 버튼 미발견, Enter로 대체")
+                        await page.keyboard.press("Enter")
+                        await _random_delay(1, 2)
+                else:
+                    logger.warning("링크 입력 필드 미발견")
             except Exception as e:
-                logger.warning(f"링크 다이얼로그 입력 실패, 텍스트로 대체: {e}")
+                logger.warning(f"링크 다이얼로그 실패, 텍스트로 대체: {e}")
                 await page.keyboard.press("Escape")
+                await _random_delay(0.3, 0.5)
                 await page.keyboard.press("End")
                 await page.keyboard.type(f" ({footer_link})", delay=20)
 
