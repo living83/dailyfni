@@ -20,6 +20,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 import database as db
 from cafe_publisher import publish_to_cafe, post_comment
+from content_generator import generate_content, content_to_plain_text
 from crypto import decrypt_password
 
 logger = logging.getLogger(__name__)
@@ -199,9 +200,9 @@ async def execute_publish_job():
     if not _is_running:
         return
 
-    # 6. 글 제목/내용 (TODO: Claude API 연동 시 자동 생성)
-    title = f"{keyword['text']} - 유용한 정보 공유"
-    content = f"{keyword['text']}에 대한 상세 내용입니다.\n\n이 글은 자동 생성된 테스트 글입니다."
+    # 6. 글 제목/내용 생성 (글2 템플릿 기반)
+    structured = generate_content(keyword["text"])
+    title, content = content_to_plain_text(structured)
 
     # 7. DB에 발행 기록 생성
     publish_id = db.add_publish_record(
