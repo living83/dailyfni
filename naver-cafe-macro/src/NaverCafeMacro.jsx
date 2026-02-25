@@ -17,9 +17,9 @@ const initialBoards = [
 ];
 
 const initialKeywords = [
-  { id: 1, text: "맛집 추천", usedCount: 12, lastUsed: "2026-02-18" },
-  { id: 2, text: "여행 정보", usedCount: 8, lastUsed: "2026-02-17" },
-  { id: 3, text: "부동산 투자", usedCount: 5, lastUsed: "2026-02-15" },
+  { id: 1, text: "맛집 추천", usedCount: 12, lastUsed: "2026-02-18", boardIds: [1] },
+  { id: 2, text: "여행 정보", usedCount: 8, lastUsed: "2026-02-17", boardIds: [2] },
+  { id: 3, text: "부동산 투자", usedCount: 5, lastUsed: "2026-02-15", boardIds: [] },
 ];
 
 const initialCommentTemplates = [
@@ -78,6 +78,7 @@ export default function NaverCafeMacro() {
   const [newBoardLabel, setNewBoardLabel] = useState("");
   const [newKeyword, setNewKeyword] = useState("");
   const [newComment, setNewComment] = useState("");
+  const [expandedKeyword, setExpandedKeyword] = useState(null);
 
   const [claudeApiKey, setClaudeApiKey] = useState("");
   const [claudeModel, setClaudeModel] = useState("claude-sonnet-4-6");
@@ -130,7 +131,14 @@ export default function NaverCafeMacro() {
   const toggleAccount = (id) => setAccounts(accounts.map(a => a.id === id ? {...a, active: !a.active} : a));
   const addBoard = () => { if (!newBoardUrl.trim()) return; setBoards([...boards, { id: genId(), url: newBoardUrl, label: newBoardLabel || "게시판" }]); setNewBoardUrl(""); setNewBoardLabel(""); };
   const removeBoard = (id) => setBoards(boards.filter((b) => b.id !== id));
-  const addKeyword = () => { if (!newKeyword.trim()) return; setKeywords([...keywords, { id: genId(), text: newKeyword, usedCount: 0, lastUsed: "-" }]); setNewKeyword(""); };
+  const addKeyword = () => { if (!newKeyword.trim()) return; setKeywords([...keywords, { id: genId(), text: newKeyword, usedCount: 0, lastUsed: "-", boardIds: [] }]); setNewKeyword(""); };
+  const toggleKeywordBoard = (kwId, boardId) => {
+    setKeywords(keywords.map(kw => {
+      if (kw.id !== kwId) return kw;
+      const ids = kw.boardIds || [];
+      return { ...kw, boardIds: ids.includes(boardId) ? ids.filter(id => id !== boardId) : [...ids, boardId] };
+    }));
+  };
   const removeKeyword = (id) => setKeywords(keywords.filter((k) => k.id !== id));
   const addComment = () => { if (!newComment.trim()) return; setCommentTemplates([...commentTemplates, { id: genId(), text: newComment, active: true }]); setNewComment(""); };
   const removeComment = (id) => setCommentTemplates(commentTemplates.filter(c => c.id !== id));
@@ -366,12 +374,41 @@ export default function NaverCafeMacro() {
             <input className="input-field" placeholder="키워드 입력 (예: 맛집 추천)" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)} style={{ flex: 1 }} onKeyDown={(e) => e.key === "Enter" && addKeyword()} />
             <button className="btn-ghost" onClick={addKeyword} style={{ whiteSpace: "nowrap" }}>+ 추가</button>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {keywords.map((kw) => (
-              <div key={kw.id} className="keyword-tag">
-                <span style={{ color: "#c8dce8", fontWeight: 500 }}>{kw.text}</span>
-                <span style={{ fontSize: 11, color: "#4a5a70" }}>사용 {kw.usedCount}회</span>
-                <button style={{ background: "none", border: "none", color: "#5a6a7a", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }} onClick={() => removeKeyword(kw.id)}>×</button>
+              <div key={kw.id}>
+                <div className="keyword-tag" style={{ cursor: "pointer", justifyContent: "space-between", width: "100%", borderRadius: expandedKeyword === kw.id ? "20px 20px 0 0" : 20 }} onClick={() => setExpandedKeyword(expandedKeyword === kw.id ? null : kw.id)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: "#c8dce8", fontWeight: 500 }}>{kw.text}</span>
+                    <span style={{ fontSize: 11, color: "#4a5a70" }}>사용 {kw.usedCount}회</span>
+                    <span style={{ fontSize: 11, color: (kw.boardIds || []).length > 0 ? "#38bd94" : "#e0a040", fontWeight: 600 }}>
+                      {(kw.boardIds || []).length > 0 ? `게시판 ${(kw.boardIds || []).length}개` : "전체 게시판"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12, color: "#4a5a70", transform: expandedKeyword === kw.id ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }}>▸</span>
+                    <button style={{ background: "none", border: "none", color: "#5a6a7a", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }} onClick={(e) => { e.stopPropagation(); removeKeyword(kw.id); }}>×</button>
+                  </div>
+                </div>
+                {expandedKeyword === kw.id && (
+                  <div style={{ background: "rgba(8,12,24,0.5)", border: "1px solid rgba(56,189,148,0.12)", borderTop: "none", borderRadius: "0 0 14px 14px", padding: "12px 16px" }}>
+                    <div style={{ fontSize: 12, color: "#5a6a80", marginBottom: 8 }}>이 키워드로 발행할 게시판 선택 (미선택 시 전체 게시판에 순환)</div>
+                    {boards.length === 0 ? (
+                      <div style={{ fontSize: 12, color: "#4a5a70" }}>등록된 게시판이 없습니다. "계정 & 카페" 탭에서 게시판을 먼저 추가하세요.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {boards.map(b => {
+                          const selected = (kw.boardIds || []).includes(b.id);
+                          return (
+                            <button key={b.id} onClick={() => toggleKeywordBoard(kw.id, b.id)} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", border: selected ? "1px solid #38bd94" : "1px solid rgba(56,189,148,0.12)", background: selected ? "rgba(56,189,148,0.15)" : "rgba(8,12,24,0.3)", color: selected ? "#38bd94" : "#5a6a80", transition: "all 0.2s ease" }}>
+                              {selected ? "✓ " : ""}{b.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -381,7 +418,7 @@ export default function NaverCafeMacro() {
               <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>글 제목 형식</label><select className="input-field" defaultValue="keyword"><option value="keyword">[키워드] 기반 자동 생성</option><option value="custom">직접 입력</option></select></div>
               <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>키워드 순환 방식</label><select className="input-field" defaultValue="round"><option value="round">순차 반복</option><option value="random">랜덤</option><option value="least">최소 사용 우선</option></select></div>
               <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>글 길이</label><select className="input-field" defaultValue="medium"><option value="short">짧게 (200~500자)</option><option value="medium">보통 (500~1000자)</option><option value="long">길게 (1000~2000자)</option></select></div>
-              <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>게시판 선택</label><select className="input-field" defaultValue="all"><option value="all">전체 게시판 순환</option><option value="random">랜덤 게시판</option></select></div>
+              <div><label style={{ fontSize: 12, color: "#5a6a80", display: "block", marginBottom: 6 }}>게시판 선택</label><div className="info-box" style={{ padding: "10px 16px", fontSize: 12, lineHeight: 1.6 }}>각 키워드를 클릭하여 <strong>게시판을 개별 매핑</strong>하세요. 미설정 시 전체 게시판에 순환 발행됩니다.</div></div>
             </div>
           </div>
           </div>

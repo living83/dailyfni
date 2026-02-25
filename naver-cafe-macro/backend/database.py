@@ -88,6 +88,15 @@ def init_db():
             FOREIGN KEY (account_id) REFERENCES accounts(id)
         );
 
+        CREATE TABLE IF NOT EXISTS keyword_board_mapping (
+            keyword_id INTEGER NOT NULL,
+            board_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (keyword_id, board_id),
+            FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE,
+            FOREIGN KEY (board_id) REFERENCES cafe_boards(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS schedule_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             days TEXT DEFAULT '1,1,1,1,1,0,0',
@@ -222,8 +231,16 @@ def add_keyword(text: str) -> int:
 def get_keywords():
     conn = get_connection()
     rows = conn.execute("SELECT * FROM keywords ORDER BY id").fetchall()
+    keywords = [dict(r) for r in rows]
+    # 각 키워드에 매핑된 게시판 ID 목록 추가
+    for kw in keywords:
+        mapped = conn.execute(
+            "SELECT board_id FROM keyword_board_mapping WHERE keyword_id = ?",
+            (kw["id"],)
+        ).fetchall()
+        kw["board_ids"] = [r["board_id"] for r in mapped]
     conn.close()
-    return [dict(r) for r in rows]
+    return keywords
 
 
 def delete_keyword(keyword_id: int):
@@ -231,6 +248,50 @@ def delete_keyword(keyword_id: int):
     conn.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
     conn.commit()
     conn.close()
+
+
+def get_keyword_boards(keyword_id: int):
+    """키워드에 매핑된 게시판 ID 목록 반환"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT board_id FROM keyword_board_mapping WHERE keyword_id = ?",
+        (keyword_id,)
+    ).fetchall()
+    conn.close()
+    return [r["board_id"] for r in rows]
+
+
+def set_keyword_boards(keyword_id: int, board_ids: list):
+    """키워드-게시판 매핑 설정 (기존 매핑 교체)"""
+    conn = get_connection()
+    conn.execute("DELETE FROM keyword_board_mapping WHERE keyword_id = ?", (keyword_id,))
+    for bid in board_ids:
+        conn.execute(
+            "INSERT INTO keyword_board_mapping (keyword_id, board_id) VALUES (?, ?)",
+            (keyword_id, bid)
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_boards_for_keyword(keyword_id: int):
+    """키워드에 매핑된 게시판 상세 정보 반환. 매핑 없으면 전체 활성 게시판."""
+    conn = get_connection()
+    mapped = conn.execute(
+        """SELECT cb.* FROM cafe_boards cb
+           JOIN keyword_board_mapping kbm ON cb.id = kbm.board_id
+           WHERE kbm.keyword_id = ? AND cb.active = 1""",
+        (keyword_id,)
+    ).fetchall()
+
+    if mapped:
+        conn.close()
+        return [dict(r) for r in mapped]
+
+    # 매핑 없으면 전체 활성 게시판 (하위 호환)
+    rows = conn.execute("SELECT * FROM cafe_boards WHERE active = 1").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def increment_keyword_usage(keyword_id: int):

@@ -71,6 +71,9 @@ class KeywordCreate(BaseModel):
 class CommentTemplateCreate(BaseModel):
     text: str
 
+class KeywordBoardMapping(BaseModel):
+    board_ids: list[int]
+
 class ScheduleConfigUpdate(BaseModel):
     days: Optional[str] = None
     times: Optional[str] = None
@@ -169,6 +172,17 @@ async def create_keyword(req: KeywordCreate):
 async def delete_keyword(keyword_id: int):
     db.delete_keyword(keyword_id)
     return {"message": "키워드 삭제됨"}
+
+
+@app.get("/api/keywords/{keyword_id}/boards")
+async def get_keyword_boards(keyword_id: int):
+    return db.get_keyword_boards(keyword_id)
+
+
+@app.put("/api/keywords/{keyword_id}/boards")
+async def set_keyword_boards(keyword_id: int, req: KeywordBoardMapping):
+    db.set_keyword_boards(keyword_id, req.board_ids)
+    return {"message": "키워드-게시판 매핑 업데이트됨"}
 
 
 # ─── Comment Templates API ────────────────────────────────

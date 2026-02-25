@@ -79,16 +79,20 @@ def _get_eligible_accounts(config: dict) -> list:
     return eligible
 
 
-def _get_next_board() -> Optional[dict]:
+def _get_next_board(keyword_id: int = None) -> Optional[dict]:
     """
-    교차 발행 로직 (공통 게시판):
+    교차 발행 로직:
+    - keyword_id가 있으면 매핑된 게시판에서만 선택
     - 같은 카페 연속 발행 금지
     - 가장 오래 전에 발행한 게시판 우선
     """
     global _last_published_cafe
 
-    boards = db.get_cafe_boards()
-    active_boards = [b for b in boards if b.get("active", 1)]
+    if keyword_id:
+        active_boards = db.get_boards_for_keyword(keyword_id)
+    else:
+        boards = db.get_cafe_boards()
+        active_boards = [b for b in boards if b.get("active", 1)]
 
     if not active_boards:
         return None
@@ -176,17 +180,18 @@ async def execute_publish_job():
 
     account = random.choice(eligible)
 
-    # 3. 게시판 선택 (교차 발행, 공통 게시판)
-    board = _get_next_board()
-    if not board:
-        logger.info("등록된 활성 게시판 없음")
-        return
-
-    # 4. 키워드 선택
+    # 3. 키워드 선택 (먼저 선택 → 매핑된 게시판 결정)
     keyword = _get_next_keyword(config)
     if not keyword:
         logger.info("등록된 키워드 없음")
         await _notify_progress("info", {"message": "등록된 키워드가 없습니다"})
+        return
+
+    # 4. 게시판 선택 (키워드에 매핑된 게시판 중 교차 발행)
+    board = _get_next_board(keyword_id=keyword["id"])
+    if not board:
+        logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음")
+        await _notify_progress("info", {"message": f"키워드 '{keyword['text']}'에 매핑된 게시판이 없습니다"})
         return
 
     # 5. 랜덤 딜레이
