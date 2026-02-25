@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DailyFNI - 네이버 카페 자동 발행</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(180deg, #0a0f1c 0%, #101829 50%, #0d1420 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a3a5c; border-radius: 3px; }
+
+    /* 헤더 */
+    .header {
+      background: linear-gradient(135deg, #0f1a2e 0%, #162040 100%);
+      border-bottom: 1px solid rgba(56, 189, 148, 0.2);
+      padding: 20px 0;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 24px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bd94, #4ecdc4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p { font-size: 13px; color: #6b7b9e; margin-top: 4px; }
+
+    /* 컨테이너 */
+    .container { max-width: 960px; margin: 0 auto; padding: 20px; }
+
+    /* 탭 */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .tab-btn {
+      padding: 10px 16px;
+      border: 1px solid #1e2d4a;
+      border-radius: 8px;
+      background: #0f1a2e;
+      color: #6b7b9e;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { border-color: #38bd94; color: #a0b0c8; }
+    .tab-btn.active {
+      background: linear-gradient(135deg, rgba(56,189,148,0.15), rgba(78,205,196,0.1));
+      border-color: #38bd94;
+      color: #38bd94;
+    }
+
+    /* 카드 */
+    .card {
+      background: #111c30;
+      border: 1px solid #1e2d4a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #c8d6e5;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 입력 필드 */
+    input[type="text"], input[type="password"], input[type="number"], input[type="time"], select {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0a1020;
+      border: 1px solid #1e2d4a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus { border-color: #38bd94; outline: none; }
+    input::placeholder { color: #3a4a6a; }
+
+    /* 입력 그룹 */
+    .input-group { margin-bottom: 12px; }
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7b9e;
+      margin-bottom: 6px;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .input-row input, .input-row select { flex: 1; }
+
+    /* 버튼 */
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #38bd94, #2ea87e);
+      color: #fff;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger {
+      background: rgba(231,76,60,0.15);
+      color: #e74c3c;
+      border: 1px solid rgba(231,76,60,0.3);
+    }
+    .btn-danger:hover { background: rgba(231,76,60,0.25); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-outline {
+      background: transparent;
+      color: #6b7b9e;
+      border: 1px solid #1e2d4a;
+    }
+    .btn-outline:hover { border-color: #38bd94; color: #38bd94; }
+    .btn-full { width: 100%; }
+    .btn-run {
+      background: linear-gradient(135deg, #e67e22, #f39c12);
+      color: #fff;
+      font-size: 15px;
+      padding: 14px 24px;
+    }
+
+    /* 리스트 아이템 */
+    .list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #0a1020;
+      border: 1px solid #1a2540;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .list-item .info { flex: 1; }
+    .list-item .info .name { font-weight: 600; color: #c8d6e5; }
+    .list-item .info .sub { font-size: 11px; color: #4a5a7a; margin-top: 2px; }
+    .list-item .actions { display: flex; gap: 6px; align-items: center; }
+
+    /* 태그/뱃지 */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-success { background: rgba(56,189,148,0.15); color: #38bd94; }
+    .badge-danger { background: rgba(231,76,60,0.15); color: #e74c3c; }
+    .badge-warning { background: rgba(243,156,18,0.15); color: #f39c12; }
+    .badge-info { background: rgba(52,152,219,0.15); color: #3498db; }
+
+    /* 토글 스위치 */
+    .toggle {
+      width: 40px; height: 22px;
+      background: #1e2d4a;
+      border-radius: 11px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle.on { background: #38bd94; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      top: 2px; left: 2px;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* 요일 선택 */
+    .day-selector { display: flex; gap: 6px; }
+    .day-btn {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      border: 1px solid #1e2d4a;
+      background: #0a1020;
+      color: #6b7b9e;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .day-btn.active {
+      background: #38bd94;
+      border-color: #38bd94;
+      color: #fff;
+    }
+
+    /* 히스토리 테이블 */
+    .history-table { width: 100%; border-collapse: collapse; }
+    .history-table th {
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: #4a5a7a;
+      text-transform: uppercase;
+      border-bottom: 1px solid #1e2d4a;
+    }
+    .history-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid #111c30;
+    }
+    .history-table tr:hover td { background: rgba(56,189,148,0.03); }
+    .history-table .expand-btn {
+      cursor: pointer;
+      color: #4a5a7a;
+      transition: transform 0.2s;
+    }
+    .history-table .expand-btn.open { transform: rotate(90deg); }
+
+    .comment-sub-row td {
+      padding: 6px 12px 6px 40px;
+      font-size: 12px;
+      color: #4a5a7a;
+      background: #0a1020;
+    }
+
+    /* 통계 카드 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #0a1020;
+      border: 1px solid #1a2540;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 800;
+      color: #38bd94;
+    }
+    .stat-card .label {
+      font-size: 11px;
+      color: #4a5a7a;
+      margin-top: 4px;
+    }
+    .stat-card.danger .value { color: #e74c3c; }
+
+    /* 필터 칩 */
+    .filter-chips { display: flex; gap: 6px; margin-bottom: 14px; }
+    .chip {
+      padding: 6px 14px;
+      border-radius: 16px;
+      border: 1px solid #1e2d4a;
+      background: transparent;
+      color: #6b7b9e;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip.active {
+      background: rgba(56,189,148,0.15);
+      border-color: #38bd94;
+      color: #38bd94;
+    }
+
+    /* 스케줄러 상태 바 */
+    .scheduler-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0a1020;
+      border: 1px solid #1a2540;
+      border-radius: 10px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
+    }
+    .scheduler-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #e74c3c;
+    }
+    .status-dot.running {
+      background: #38bd94;
+      animation: pulse-dot 1.5s infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #3a4a6a;
+      font-size: 14px;
+    }
+
+    @media (max-width: 700px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .tabs { flex-wrap: nowrap; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+const API = '';
+
+function App() {
+  const [tab, setTab] = useState(0);
+  const [accounts, setAccounts] = useState([]);
+  const [boards, setBoards] = useState([]);
+  const [keywords, setKeywords] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [schedule, setSchedule] = useState({});
+  const [history, setHistory] = useState([]);
+  const [stats, setStats] = useState({});
+  const [events, setEvents] = useState([]);
+
+  // 초기 데이터 로드
+  const loadData = useCallback(async () => {
+    try {
+      const [accRes, boardRes, kwRes, tplRes, schedRes, histRes, statRes] = await Promise.all([
+        fetch(`${API}/api/accounts`).then(r => r.json()),
+        fetch(`${API}/api/boards`).then(r => r.json()),
+        fetch(`${API}/api/keywords`).then(r => r.json()),
+        fetch(`${API}/api/comments/templates`).then(r => r.json()),
+        fetch(`${API}/api/schedule`).then(r => r.json()),
+        fetch(`${API}/api/history`).then(r => r.json()),
+        fetch(`${API}/api/stats`).then(r => r.json()),
+      ]);
+      setAccounts(accRes);
+      setBoards(boardRes);
+      setKeywords(kwRes);
+      setTemplates(tplRes);
+      setSchedule(schedRes);
+      setHistory(histRes);
+      setStats(statRes);
+    } catch (e) {
+      console.error('데이터 로드 실패:', e);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // SSE 연결
+  useEffect(() => {
+    const es = new EventSource(`${API}/api/events`);
+    es.addEventListener('connected', () => console.log('SSE 연결됨'));
+    const handleEvent = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setEvents(prev => [...prev.slice(-49), { event: e.type, ...data, ts: Date.now() }]);
+        if (['published', 'error'].includes(e.type)) loadData();
+      } catch {}
+    };
+    ['publishing', 'published', 'error', 'commenting', 'delay', 'info', 'scheduler'].forEach(evt => {
+      es.addEventListener(evt, handleEvent);
+    });
+    return () => es.close();
+  }, [loadData]);
+
+  const TABS = ['계정 & 카페', '키워드 큐', '댓글 설정', '스케줄', '히스토리'];
+
+  return (
+    <div>
+      <div className="header">
+        <h1>DailyFNI Cafe Macro</h1>
+        <p>네이버 카페 자동 발행 시스템</p>
+      </div>
+      <div className="container">
+        <div className="tabs">
+          {TABS.map((t, i) => (
+            <button key={i} className={`tab-btn ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>{t}</button>
+          ))}
+        </div>
+
+        {tab === 0 && <AccountCafeTab accounts={accounts} boards={boards} reload={loadData} />}
+        {tab === 1 && <KeywordTab keywords={keywords} reload={loadData} />}
+        {tab === 2 && <CommentTab templates={templates} schedule={schedule} reload={loadData} />}
+        {tab === 3 && <ScheduleTab schedule={schedule} events={events} reload={loadData} />}
+        {tab === 4 && <HistoryTab history={history} stats={stats} reload={loadData} />}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 0: 계정 & 카페
+   ═══════════════════════════════════════════════════════════ */
+function AccountCafeTab({ accounts, boards, reload }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [selAccId, setSelAccId] = useState(null);
+  const [cafeUrl, setCafeUrl] = useState('');
+  const [boardName, setBoardName] = useState('');
+  const [menuId, setMenuId] = useState('');
+
+  const addAccount = async () => {
+    if (!username || !password) return;
+    await fetch(`${API}/api/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    setUsername(''); setPassword('');
+    reload();
+  };
+
+  const deleteAccount = async (id) => {
+    await fetch(`${API}/api/accounts/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
+  const toggleAccount = async (id) => {
+    await fetch(`${API}/api/accounts/${id}/toggle`, { method: 'PUT' });
+    reload();
+  };
+
+  const addBoard = async () => {
+    if (!selAccId || !cafeUrl || !boardName || !menuId) return;
+    await fetch(`${API}/api/boards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: selAccId, cafe_url: cafeUrl, board_name: boardName, menu_id: menuId })
+    });
+    setCafeUrl(''); setBoardName(''); setMenuId('');
+    reload();
+  };
+
+  const deleteBoard = async (id) => {
+    await fetch(`${API}/api/boards/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
+  return (
+    <div>
+      {/* 계정 관리 */}
+      <div className="card">
+        <div className="card-title">네이버 계정</div>
+        <div className="input-row" style={{ marginBottom: 12 }}>
+          <input type="text" placeholder="네이버 아이디" value={username} onChange={e => setUsername(e.target.value)} />
+          <input type="password" placeholder="비밀번호" value={password} onChange={e => setPassword(e.target.value)} />
+          <button className="btn btn-primary" onClick={addAccount}>추가</button>
+        </div>
+        {accounts.length === 0 && <div className="empty-state">등록된 계정이 없습니다</div>}
+        {accounts.map(a => (
+          <div className="list-item" key={a.id}>
+            <div className="info">
+              <div className="name">
+                <span style={{
+                  display: 'inline-block', width: 26, height: 26, borderRadius: '50%',
+                  background: a.active ? '#38bd94' : '#3a4a6a', color: '#fff',
+                  textAlign: 'center', lineHeight: '26px', fontSize: 12, fontWeight: 700, marginRight: 8
+                }}>
+                  {a.username[0]?.toUpperCase()}
+                </span>
+                {a.username}
+              </div>
+              <div className="sub">
+                {a.active ? <span className="badge badge-success">활성</span> : <span className="badge badge-danger">비활성</span>}
+                {' '}{a.last_published_at ? `마지막 발행: ${new Date(a.last_published_at).toLocaleString('ko')}` : '발행 이력 없음'}
+              </div>
+            </div>
+            <div className="actions">
+              <div className={`toggle ${a.active ? 'on' : ''}`} onClick={() => toggleAccount(a.id)} />
+              <button className="btn btn-danger btn-sm" onClick={() => deleteAccount(a.id)}>삭제</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 카페 게시판 관리 */}
+      <div className="card">
+        <div className="card-title">카페 게시판</div>
+        <div className="input-group">
+          <label>계정 선택</label>
+          <select value={selAccId || ''} onChange={e => setSelAccId(Number(e.target.value))}>
+            <option value="">-- 계정 선택 --</option>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.username}</option>)}
+          </select>
+        </div>
+        <div className="input-row" style={{ marginBottom: 8 }}>
+          <input type="text" placeholder="카페 URL (예: mycafe123)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
+          <input type="text" placeholder="게시판 이름" value={boardName} onChange={e => setBoardName(e.target.value)} />
+          <input type="text" placeholder="menuId" value={menuId} onChange={e => setMenuId(e.target.value)} style={{ flex: 0.7 }} />
+          <button className="btn btn-primary" onClick={addBoard}>추가</button>
+        </div>
+        {boards.length === 0 && <div className="empty-state">등록된 게시판이 없습니다</div>}
+        {accounts.map(acc => {
+          const accBoards = boards.filter(b => b.account_id === acc.id);
+          if (accBoards.length === 0) return null;
+          return (
+            <div key={acc.id} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#4a5a7a', marginBottom: 6, paddingLeft: 4 }}>
+                {acc.username}
+              </div>
+              {accBoards.map(b => (
+                <div className="list-item" key={b.id}>
+                  <div className="info">
+                    <div className="name">{b.board_name}</div>
+                    <div className="sub">cafe.naver.com/{b.cafe_url} | menuId: {b.menu_id}</div>
+                  </div>
+                  <div className="actions">
+                    <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 1: 키워드 큐
+   ═══════════════════════════════════════════════════════════ */
+function KeywordTab({ keywords, reload }) {
+  const [text, setText] = useState('');
+
+  const addKeyword = async () => {
+    if (!text.trim()) return;
+    // 쉼표/줄바꿈으로 복수 키워드 지원
+    const items = text.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+    for (const item of items) {
+      await fetch(`${API}/api/keywords`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: item })
+      });
+    }
+    setText('');
+    reload();
+  };
+
+  const deleteKeyword = async (id) => {
+    await fetch(`${API}/api/keywords/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
+  return (
+    <div className="card">
+      <div className="card-title">키워드 큐</div>
+      <div className="input-row" style={{ marginBottom: 14 }}>
+        <input
+          type="text"
+          placeholder="키워드 입력 (쉼표로 여러 개 가능)"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addKeyword()}
+        />
+        <button className="btn btn-primary" onClick={addKeyword}>추가</button>
+      </div>
+      <div style={{ fontSize: 12, color: '#4a5a7a', marginBottom: 10 }}>
+        총 {keywords.length}개 | 사용 가능: {keywords.length}개
+      </div>
+      {keywords.length === 0 && <div className="empty-state">등록된 키워드가 없습니다</div>}
+      {keywords.map(k => (
+        <div className="list-item" key={k.id}>
+          <div className="info">
+            <div className="name">{k.text}</div>
+            <div className="sub">사용 {k.used_count}회{k.last_used_at ? ` | 마지막: ${new Date(k.last_used_at).toLocaleString('ko')}` : ''}</div>
+          </div>
+          <div className="actions">
+            <span className="badge badge-info">{k.used_count}회</span>
+            <button className="btn btn-danger btn-sm" onClick={() => deleteKeyword(k.id)}>삭제</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 2: 댓글 설정
+   ═══════════════════════════════════════════════════════════ */
+function CommentTab({ templates, schedule, reload }) {
+  const [text, setText] = useState('');
+
+  const addTemplate = async () => {
+    if (!text.trim()) return;
+    await fetch(`${API}/api/comments/templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.trim() })
+    });
+    setText('');
+    reload();
+  };
+
+  const deleteTemplate = async (id) => {
+    await fetch(`${API}/api/comments/templates/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
+  const toggleTemplate = async (id) => {
+    await fetch(`${API}/api/comments/templates/${id}/toggle`, { method: 'PUT' });
+    reload();
+  };
+
+  const updateConfig = async (key, value) => {
+    await fetch(`${API}/api/schedule`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value })
+    });
+    reload();
+  };
+
+  const activeTemplates = templates.filter(t => t.active);
+  const commentsPerPost = schedule.comments_per_post || 6;
+  const activeAccounts = 1; // placeholder
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">
+          댓글 자동 작성
+          <div style={{ marginLeft: 'auto' }}>
+            <div className={`toggle ${schedule.comment_enabled ? 'on' : ''}`}
+              onClick={() => updateConfig('comment_enabled', schedule.comment_enabled ? 0 : 1)} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div className="input-group">
+            <label>게시글당 댓글 수</label>
+            <input type="number" value={commentsPerPost} min={1} max={50}
+              onChange={e => updateConfig('comments_per_post', parseInt(e.target.value) || 1)} />
+          </div>
+          <div className="input-group">
+            <label>계정 배정 방식</label>
+            <select value={schedule.comment_order || 'random'}
+              onChange={e => updateConfig('comment_order', e.target.value)}>
+              <option value="random">랜덤</option>
+              <option value="round">라운드로빈</option>
+              <option value="least">최소 사용</option>
+            </select>
+          </div>
+          <div className="input-group">
+            <label>댓글 간 최소 딜레이 (초)</label>
+            <input type="number" value={schedule.comment_delay_min || 60}
+              onChange={e => updateConfig('comment_delay_min', parseInt(e.target.value) || 30)} />
+          </div>
+          <div className="input-group">
+            <label>댓글 간 최대 딜레이 (초)</label>
+            <input type="number" value={schedule.comment_delay_max || 300}
+              onChange={e => updateConfig('comment_delay_max', parseInt(e.target.value) || 300)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <div className={`toggle ${schedule.exclude_author ? 'on' : ''}`}
+            onClick={() => updateConfig('exclude_author', schedule.exclude_author ? 0 : 1)} />
+          <span style={{ fontSize: 13, color: '#6b7b9e' }}>글 작성자 계정은 댓글에서 제외</span>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">댓글 템플릿</div>
+        <div className="input-row" style={{ marginBottom: 14 }}>
+          <input type="text" placeholder="댓글 문구 입력" value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addTemplate()} />
+          <button className="btn btn-primary" onClick={addTemplate}>추가</button>
+        </div>
+        <div style={{ fontSize: 12, color: '#4a5a7a', marginBottom: 10 }}>
+          활성: {activeTemplates.length} / 전체: {templates.length}
+        </div>
+        {templates.map(t => (
+          <div className="list-item" key={t.id}>
+            <div className="info">
+              <div className="name" style={{ opacity: t.active ? 1 : 0.4 }}>{t.text}</div>
+            </div>
+            <div className="actions">
+              <div className={`toggle ${t.active ? 'on' : ''}`} onClick={() => toggleTemplate(t.id)} />
+              <button className="btn btn-danger btn-sm" onClick={() => deleteTemplate(t.id)}>삭제</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 3: 스케줄
+   ═══════════════════════════════════════════════════════════ */
+function ScheduleTab({ schedule, events, reload }) {
+  const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
+  const days = (schedule.days || '1,1,1,1,1,0,0').split(',');
+  const times = (schedule.times || '09:00,14:00,19:00').split(',').filter(Boolean);
+
+  const updateConfig = async (key, value) => {
+    await fetch(`${API}/api/schedule`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value })
+    });
+    reload();
+  };
+
+  const toggleDay = (idx) => {
+    const newDays = [...days];
+    newDays[idx] = newDays[idx] === '1' ? '0' : '1';
+    updateConfig('days', newDays.join(','));
+  };
+
+  const addTime = () => {
+    const newTime = prompt('발행 시간 입력 (HH:MM)', '12:00');
+    if (newTime && /^\d{2}:\d{2}$/.test(newTime)) {
+      updateConfig('times', [...times, newTime].join(','));
+    }
+  };
+
+  const removeTime = (idx) => {
+    const newTimes = times.filter((_, i) => i !== idx);
+    updateConfig('times', newTimes.join(','));
+  };
+
+  const startScheduler = async () => {
+    await fetch(`${API}/api/scheduler/start`, { method: 'POST' });
+    reload();
+  };
+
+  const stopScheduler = async () => {
+    await fetch(`${API}/api/scheduler/stop`, { method: 'POST' });
+    reload();
+  };
+
+  const runOnce = async () => {
+    await fetch(`${API}/api/scheduler/run-once`, { method: 'POST' });
+  };
+
+  return (
+    <div>
+      {/* 스케줄러 상태 */}
+      <div className="scheduler-bar">
+        <div className="scheduler-status">
+          <div className={`status-dot ${schedule.is_running ? 'running' : ''}`} />
+          <span style={{ fontWeight: 600, fontSize: 14 }}>
+            {schedule.is_running ? '스케줄러 실행 중' : '스케줄러 중지'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline btn-sm" onClick={runOnce}>1회 실행</button>
+          {schedule.is_running ? (
+            <button className="btn btn-danger btn-sm" onClick={stopScheduler}>중지</button>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={startScheduler}>시작</button>
+          )}
+        </div>
+      </div>
+
+      {/* 요일 선택 */}
+      <div className="card">
+        <div className="card-title">발행 요일</div>
+        <div className="day-selector">
+          {dayLabels.map((d, i) => (
+            <button key={i} className={`day-btn ${days[i] === '1' ? 'active' : ''}`}
+              onClick={() => toggleDay(i)}>{d}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 발행 시간 */}
+      <div className="card">
+        <div className="card-title">발행 시간</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+          {times.map((t, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: '#0a1020', border: '1px solid #1a2540',
+              borderRadius: 8, padding: '6px 12px'
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#38bd94' }}>{t}</span>
+              <span style={{ cursor: 'pointer', color: '#4a5a7a', fontSize: 16 }}
+                onClick={() => removeTime(i)}>x</span>
+            </div>
+          ))}
+          <button className="btn btn-outline btn-sm" onClick={addTime}>+ 시간 추가</button>
+        </div>
+      </div>
+
+      {/* 저품질 방지 설정 */}
+      <div className="card">
+        <div className="card-title">저품질 방지 설정</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="input-group">
+            <label>최소 발행 간격 (분)</label>
+            <input type="number" value={schedule.interval_min || 30}
+              onChange={e => updateConfig('interval_min', parseInt(e.target.value) || 30)} />
+          </div>
+          <div className="input-group">
+            <label>계정 간 최소 간격 (시간)</label>
+            <input type="number" value={schedule.account_interval_hours || 3}
+              onChange={e => updateConfig('account_interval_hours', parseInt(e.target.value) || 3)} />
+          </div>
+          <div className="input-group">
+            <label>랜덤 딜레이 최소 (초)</label>
+            <input type="number" value={schedule.random_delay_min || 10}
+              onChange={e => updateConfig('random_delay_min', parseInt(e.target.value) || 10)} />
+          </div>
+          <div className="input-group">
+            <label>랜덤 딜레이 최대 (초)</label>
+            <input type="number" value={schedule.random_delay_max || 120}
+              onChange={e => updateConfig('random_delay_max', parseInt(e.target.value) || 120)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          <div className={`toggle ${schedule.cross_publish ? 'on' : ''}`}
+            onClick={() => updateConfig('cross_publish', schedule.cross_publish ? 0 : 1)} />
+          <span style={{ fontSize: 13, color: '#6b7b9e' }}>교차 발행 (같은 카페 연속 발행 금지)</span>
+        </div>
+      </div>
+
+      {/* 실시간 로그 */}
+      {events.length > 0 && (
+        <div className="card">
+          <div className="card-title">실시간 로그</div>
+          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            {[...events].reverse().slice(0, 20).map((ev, i) => (
+              <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid #111c30', color: '#6b7b9e' }}>
+                <span style={{ color: '#4a5a7a', marginRight: 8 }}>
+                  {new Date(ev.ts).toLocaleTimeString('ko')}
+                </span>
+                <span style={{ color: ev.event === 'error' ? '#e74c3c' : ev.event === 'published' ? '#38bd94' : '#6b7b9e' }}>
+                  {ev.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 4: 히스토리 & 통계
+   ═══════════════════════════════════════════════════════════ */
+function HistoryTab({ history, stats, reload }) {
+  const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState({});
+
+  const filtered = filter === 'all' ? history
+    : filter === 'success' ? history.filter(h => h.status === '성공')
+    : history.filter(h => h.status === '실패');
+
+  const toggleExpand = (id) => {
+    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  return (
+    <div>
+      {/* 통계 */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="value">{stats.total_posts || 0}</div>
+          <div className="label">전체 발행</div>
+        </div>
+        <div className="stat-card">
+          <div className="value">{stats.success_posts || 0}</div>
+          <div className="label">성공</div>
+        </div>
+        <div className="stat-card danger">
+          <div className="value">{stats.failed_posts || 0}</div>
+          <div className="label">실패</div>
+        </div>
+      </div>
+      <div className="stats-grid" style={{ marginBottom: 16 }}>
+        <div className="stat-card">
+          <div className="value" style={{ color: '#3498db' }}>{stats.total_comments || 0}</div>
+          <div className="label">전체 댓글</div>
+        </div>
+        <div className="stat-card">
+          <div className="value" style={{ color: '#3498db' }}>{stats.success_comments || 0}</div>
+          <div className="label">성공 댓글</div>
+        </div>
+        <div className="stat-card danger">
+          <div className="value">{stats.failed_comments || 0}</div>
+          <div className="label">실패 댓글</div>
+        </div>
+      </div>
+
+      {/* 필터 */}
+      <div className="filter-chips">
+        {[['all', '전체'], ['success', '성공'], ['fail', '실패']].map(([val, label]) => (
+          <button key={val} className={`chip ${filter === val ? 'active' : ''}`}
+            onClick={() => setFilter(val)}>{label}</button>
+        ))}
+      </div>
+
+      {/* 히스토리 테이블 */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {filtered.length === 0 ? (
+          <div className="empty-state">발행 이력이 없습니다</div>
+        ) : (
+          <table className="history-table">
+            <thead>
+              <tr>
+                <th style={{ width: 30 }}></th>
+                <th>키워드</th>
+                <th>게시판</th>
+                <th>계정</th>
+                <th>시간</th>
+                <th>상태</th>
+                <th>댓글</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(h => {
+                const comments = h.comments || [];
+                const isOpen = expanded[h.id];
+                return (
+                  <React.Fragment key={h.id}>
+                    <tr>
+                      <td>
+                        {comments.length > 0 && (
+                          <span className={`expand-btn ${isOpen ? 'open' : ''}`}
+                            onClick={() => toggleExpand(h.id)}>&#9656;</span>
+                        )}
+                      </td>
+                      <td style={{ fontWeight: 600, color: '#c8d6e5' }}>{h.keyword_text || '-'}</td>
+                      <td>
+                        <div style={{ fontSize: 12 }}>{h.board_name || '-'}</div>
+                        <div style={{ fontSize: 10, color: '#3a4a6a' }}>{h.cafe_url || ''}</div>
+                      </td>
+                      <td>{h.account_username || '-'}</td>
+                      <td style={{ fontSize: 12, color: '#4a5a7a' }}>
+                        {h.created_at ? new Date(h.created_at).toLocaleString('ko') : '-'}
+                      </td>
+                      <td>
+                        <span className={`badge ${h.status === '성공' ? 'badge-success' : 'badge-danger'}`}>
+                          {h.status}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                        {comments.filter(c => c.status === '성공').length}/{comments.length}
+                      </td>
+                    </tr>
+                    {isOpen && comments.map((c, ci) => (
+                      <tr key={`c-${c.id}`} className="comment-sub-row">
+                        <td></td>
+                        <td colSpan={2} style={{ color: '#4a5a7a' }}>댓글 #{ci + 1}</td>
+                        <td>{c.account_username}</td>
+                        <td style={{ fontSize: 11 }}>{c.created_at ? new Date(c.created_at).toLocaleTimeString('ko') : ''}</td>
+                        <td>
+                          <span className={`badge ${c.status === '성공' ? 'badge-success' : c.status === '실패' ? 'badge-danger' : 'badge-warning'}`}>
+                            {c.status}
+                          </span>
+                        </td>
+                        <td></td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 렌더링
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
