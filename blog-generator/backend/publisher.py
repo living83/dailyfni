@@ -64,6 +64,58 @@ async def _try_selectors(target, selectors, timeout=3000, description="요소"):
     return None
 
 
+async def _dismiss_blocking_popup(target, description=""):
+    """SE ONE 에디터의 차단 팝업(se-popup-alert-confirm) 강제 제거.
+    '작성 중인 글이 있습니다' 등의 팝업이 오버레이로 클릭을 차단하는 문제 해결.
+    """
+    dismissed = False
+    # 방법 1: JavaScript로 팝업 내 취소 버튼 클릭 (가장 확실)
+    try:
+        result = await target.evaluate("""() => {
+            // se-popup-alert-confirm 팝업 찾기
+            const popup = document.querySelector('.se-popup-alert-confirm, [data-name*="se-popup-alert"]');
+            if (!popup) return 'no_popup';
+            // 취소 버튼 찾기 (첫 번째 버튼이 취소)
+            const buttons = popup.querySelectorAll('button');
+            for (const btn of buttons) {
+                if (btn.textContent.trim() === '취소' || btn.textContent.trim() === '아니오') {
+                    btn.click();
+                    return 'clicked_cancel';
+                }
+            }
+            // 취소 버튼을 못 찾으면 첫 번째 버튼 클릭
+            if (buttons.length > 0) {
+                buttons[0].click();
+                return 'clicked_first';
+            }
+            // 버튼 없으면 팝업 자체를 제거
+            popup.remove();
+            return 'removed';
+        }""")
+        if result != 'no_popup':
+            logger.info(f"차단 팝업 제거 ({description}): {result}")
+            dismissed = True
+            await _random_delay(1, 2)
+    except Exception as e:
+        logger.debug(f"팝업 JS 제거 시도 실패: {e}")
+
+    # 방법 2: dim 오버레이만 남아있을 경우 강제 제거
+    if not dismissed:
+        try:
+            await target.evaluate("""() => {
+                const dims = document.querySelectorAll('.se-popup-dim');
+                dims.forEach(d => {
+                    const parent = d.closest('.se-popup');
+                    if (parent) parent.remove();
+                    else d.remove();
+                });
+            }""")
+        except Exception:
+            pass
+
+    return dismissed
+
+
 async def _capture_debug(page, step_name):
     """디버그용 스크린샷 저장"""
     try:
@@ -340,21 +392,8 @@ async def publish_to_naver(
             except Exception:
                 continue
 
-        # 3. "작성 중인 글이 있습니다" 팝업 처리 → 취소 클릭 후 새로 작성
-        try:
-            popup_btn = await _try_selectors(editor, [
-                'button:has-text("취소")',
-                'button:has-text("아니오")',
-                'button:has-text("아니요")',
-                'button:has-text("새로 작성")',
-                '.popup_btn_cancel',
-            ], timeout=3000, description="임시저장 팝업")
-            if popup_btn:
-                logger.info("임시저장 팝업 → 취소 클릭")
-                await popup_btn.click()
-                await _random_delay(1, 2)
-        except Exception:
-            pass
+        # 3. "작성 중인 글이 있습니다" 팝업 처리 → 취소 클릭
+        await _dismiss_blocking_popup(editor, "에디터 진입 직후")
 
         # 4. 도움말/공지 팝업 닫기
         try:
@@ -369,6 +408,9 @@ async def publish_to_naver(
                 await _random_delay(0.5, 1)
         except Exception:
             pass
+
+        # 4-1. 도움말 팝업 닫기 후 차단 팝업이 나타날 수 있음 → 재확인
+        await _dismiss_blocking_popup(editor, "도움말 닫기 후")
 
         # 5. 에디터 로딩 대기 (SE ONE 구조 확인)
         editor_loaded = await _try_selectors(editor, [
@@ -415,6 +457,10 @@ async def publish_to_naver(
             return result
 
         await _random_delay(1, 2)
+
+        # 5-1. 에디터 로딩 후 차단 팝업 최종 확인 (가장 중요!)
+        #      에디터가 로드된 뒤에 "작성 중인 글이 있습니다" 팝업이 뜨는 경우가 많음
+        await _dismiss_blocking_popup(editor, "에디터 로딩 후")
 
         # 6. 카테고리 선택
         if category_name:
