@@ -437,7 +437,6 @@ function AccountCafeTab({ accounts, boards, reload }) {
   const [selAccId, setSelAccId] = useState(null);
   const [cafeUrl, setCafeUrl] = useState('');
   const [boardName, setBoardName] = useState('');
-  const [menuId, setMenuId] = useState('');
 
   const addAccount = async () => {
     if (!username || !password) return;
@@ -461,13 +460,13 @@ function AccountCafeTab({ accounts, boards, reload }) {
   };
 
   const addBoard = async () => {
-    if (!selAccId || !cafeUrl || !boardName || !menuId) return;
+    if (!selAccId || !cafeUrl || !boardName) return;
     await fetch(`${API}/api/boards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: selAccId, cafe_url: cafeUrl, board_name: boardName, menu_id: menuId })
+      body: JSON.stringify({ account_id: selAccId, cafe_url: cafeUrl, board_name: boardName })
     });
-    setCafeUrl(''); setBoardName(''); setMenuId('');
+    setCafeUrl(''); setBoardName('');
     reload();
   };
 
@@ -526,7 +525,6 @@ function AccountCafeTab({ accounts, boards, reload }) {
         <div className="input-row" style={{ marginBottom: 8 }}>
           <input type="text" placeholder="카페 URL (예: mycafe123)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
           <input type="text" placeholder="게시판 이름" value={boardName} onChange={e => setBoardName(e.target.value)} />
-          <input type="text" placeholder="menuId" value={menuId} onChange={e => setMenuId(e.target.value)} style={{ flex: 0.7 }} />
           <button className="btn btn-primary" onClick={addBoard}>추가</button>
         </div>
         {boards.length === 0 && <div className="empty-state">등록된 게시판이 없습니다</div>}
@@ -542,7 +540,7 @@ function AccountCafeTab({ accounts, boards, reload }) {
                 <div className="list-item" key={b.id}>
                   <div className="info">
                     <div className="name">{b.board_name}</div>
-                    <div className="sub">cafe.naver.com/{b.cafe_url} | menuId: {b.menu_id}</div>
+                    <div className="sub">cafe.naver.com/{b.cafe_url}</div>
                   </div>
                   <div className="actions">
                     <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>

@@ -159,7 +159,10 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
     """카페 글쓰기 페이지로 이동"""
     try:
         # 카페 글쓰기 URL 직접 접근
-        write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L&menuId={menu_id}"
+        if menu_id:
+            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L&menuId={menu_id}"
+        else:
+            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L"
         driver.get(write_url)
         random_delay(3, 5)
 
