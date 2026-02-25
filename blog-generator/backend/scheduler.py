@@ -304,9 +304,9 @@ async def daily_publish_job():
                 except Exception:
                     tags = [keyword]
 
-                # 기본 하단 링크
-                footer_link = os.getenv("DEFAULT_FOOTER_LINK", "")
-                footer_link_text = os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+                # 기본 하단 링크 (DB 설정 → 환경변수 순)
+                footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
+                footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
 
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,

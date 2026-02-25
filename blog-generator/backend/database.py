@@ -219,9 +219,21 @@ async def init_db():
                     force_rest_after_days INT DEFAULT 3,
                     consecutive_publish_days INT DEFAULT 0,
                     last_publish_date VARCHAR(50) DEFAULT '',
+                    footer_link VARCHAR(500) DEFAULT '',
+                    footer_link_text VARCHAR(200) DEFAULT '',
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+
+            # 기존 테이블에 footer_link 컬럼 추가 (없을 때만)
+            for col, col_def in [
+                ("footer_link", "VARCHAR(500) DEFAULT ''"),
+                ("footer_link_text", "VARCHAR(200) DEFAULT ''"),
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
+                except Exception:
+                    pass  # 이미 존재
 
             # 기본 스케줄러 설정 삽입 (없을 때만)
             await cur.execute("SELECT COUNT(*) AS cnt FROM scheduler_config WHERE id = 1")

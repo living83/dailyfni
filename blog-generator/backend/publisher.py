@@ -643,6 +643,10 @@ async def publish_to_naver(
         except Exception:
             pass
 
+        # 가운데 정렬 적용 (Ctrl+E)
+        await page.keyboard.press("Control+e")
+        await _random_delay(0.3, 0.5)
+
         lines = content.split("\n")
         base_delay = random.randint(25, 45)
         for i, line in enumerate(lines):
@@ -662,7 +666,12 @@ async def publish_to_naver(
                     clean_line = clean_line.replace("**", "")
                     await page.keyboard.type(clean_line, delay=line_delay)
 
-            await page.keyboard.press("Enter")
+                # 문단 끝: Enter 2번 → 줄 간격 벌리기 (가독성 향상)
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
+            else:
+                # 빈 줄 (문단 구분): Enter 추가로 여백 확보
+                await page.keyboard.press("Enter")
 
             r = random.random()
             if r < 0.03:
