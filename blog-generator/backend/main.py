@@ -4,6 +4,7 @@ SSE(Server-Sent Events)로 진행 상태를 실시간 전송합니다.
 """
 
 import os
+import sys
 import json
 import asyncio
 import csv
@@ -12,6 +13,10 @@ import logging
 import random
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# Windows에서 Playwright 서브프로세스 실행을 위해 ProactorEventLoop 사용
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 # .env 파일 직접 파싱 (Windows에서 load_dotenv 미동작 문제 해결)
 def _load_env_file(env_path):
