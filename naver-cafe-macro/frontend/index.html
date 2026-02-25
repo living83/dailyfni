@@ -524,7 +524,7 @@ function AccountCafeTab({ accounts, boards, reload }) {
           </select>
         </div>
         <div className="input-row" style={{ marginBottom: 8 }}>
-          <input type="text" placeholder="카페 URL (예: mycafe123)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
+          <input type="text" placeholder="카페 ID (예: 30339285)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
           <input type="text" placeholder="게시판 이름" value={boardName} onChange={e => setBoardName(e.target.value)} />
           <input type="text" placeholder="menuId (숫자)" value={menuId} onChange={e => setMenuId(e.target.value)} style={{ flex: 0.7 }} />
           <button className="btn btn-primary" onClick={addBoard}>추가</button>
