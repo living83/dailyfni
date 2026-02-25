@@ -634,6 +634,22 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                     pass
                 logger.info(f"  문서 {i+1} → 계정: {assigned.get('account_name', assigned['id'])}")
 
+    # 계정 교차 발행: 같은 계정 연속 방지 (저품질 방지)
+    # [acc3, acc3, acc2, acc2, acc1, acc1] → [acc3, acc2, acc1, acc3, acc2, acc1]
+    if len(documents) > 1:
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for doc in documents:
+            groups[doc.get("account_id")].append(doc)
+        if len(groups) > 1:
+            reordered = []
+            while any(groups.values()):
+                for aid in sorted(groups.keys()):
+                    if groups[aid]:
+                        reordered.append(groups[aid].pop(0))
+            documents = reordered
+            logger.info(f"계정 교차 정렬: {' → '.join(str(d.get('account_id')) for d in documents)}")
+
     success_count = 0
     failed_count = 0
 

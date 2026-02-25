@@ -262,6 +262,21 @@ async def daily_publish_job():
                         pass
                     logger.info(f"  글 {idx+1} → 계정: {assigned.get('account_name', assigned['id'])}")
 
+        # 계정 교차 발행: 같은 계정 연속 방지 (저품질 방지)
+        if len(articles) > 1:
+            from collections import defaultdict
+            groups = defaultdict(list)
+            for article in articles:
+                groups[article.get("account_id")].append(article)
+            if len(groups) > 1:
+                reordered = []
+                while any(groups.values()):
+                    for aid in sorted(groups.keys()):
+                        if groups[aid]:
+                            reordered.append(groups[aid].pop(0))
+                articles = reordered
+                logger.info(f"계정 교차 정렬: {' → '.join(str(a.get('account_id')) for a in articles)}")
+
         success_count = 0
         failed_count = 0
 
