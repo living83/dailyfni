@@ -1,20 +1,18 @@
 @echo off
-chcp 65001 >nul
-title DailyFNI - 네이버 카페 매크로
+title DailyFNI Cafe Macro
 
 echo ========================================
 echo   DailyFNI Cafe Macro Server
 echo ========================================
 echo.
 
-:: 의존성 설치 확인
-echo [1/2] 패키지 확인 중...
-pip install -r "%~dp0requirements.txt" --quiet
+echo [1/2] Installing packages...
+pip install -r "%~dp0requirements.txt" -q
 
-echo [2/2] 서버 시작 중...
+echo [2/2] Starting server...
 echo.
-echo   http://localhost:8001 에서 접속하세요
-echo   종료하려면 Ctrl+C 를 누르세요
+echo   Open http://localhost:8001
+echo   Press Ctrl+C to stop
 echo.
 echo ========================================
 
