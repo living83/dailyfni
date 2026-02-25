@@ -131,12 +131,12 @@ async def article_generation_job():
         if product_info.strip():
             product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-        # 키워드 대표이미지 생성
-        keyword_image_path = ""
+        # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+        keyword_image_paths = []
         try:
-            from image_generator import generate_keyword_image
-            keyword_image_path = generate_keyword_image(keyword)
-            logger.info(f"키워드 대표이미지 생성: {keyword_image_path}")
+            from image_generator import generate_keyword_image_variants
+            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
@@ -232,11 +232,12 @@ async def daily_publish_job():
         keyword = batch["keyword"]
         logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
 
-        # 키워드 대표이미지
-        keyword_image_path = ""
+        # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+        keyword_image_paths = []
         try:
-            from image_generator import generate_keyword_image
-            keyword_image_path = generate_keyword_image(keyword)
+            from image_generator import generate_keyword_image_variants
+            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
@@ -326,7 +327,8 @@ async def daily_publish_job():
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
                     article["title"], article["content"],
-                    cat_name, tags, keyword_image_path,
+                    cat_name, tags,
+                    keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else "",
                     footer_link, footer_link_text,
                 )
 

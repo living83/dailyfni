@@ -53,7 +53,7 @@ from agents import _call_claude
 from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
-from image_generator import generate_keyword_image
+from image_generator import generate_keyword_image, generate_keyword_image_variants
 
 # ─── 로깅 설정 ──────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
@@ -605,11 +605,11 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     }
     _publish_status_timestamps[batch_id] = datetime.now().timestamp()
 
-    # 키워드 대표이미지 생성
-    keyword_image_path = ""
+    # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+    keyword_image_paths = []
     try:
-        keyword_image_path = await asyncio.to_thread(generate_keyword_image, keyword)
-        logger.info(f"키워드 대표이미지 생성 완료: {keyword_image_path}")
+        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
+        logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
     except Exception as e:
         logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
@@ -708,7 +708,8 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             pub_result = await run_publish_task(
                 account_id, naver_id, naver_pw,
                 doc.get("title", ""), doc.get("content", ""),
-                cat_name, tags, keyword_image_path,
+                cat_name, tags,
+                keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else "",
                 footer_link, footer_link_text,
             )
 

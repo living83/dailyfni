@@ -84,12 +84,13 @@ def _wrap_text(text: str, font, max_width: int, draw: ImageDraw.Draw) -> list:
     return lines
 
 
-def generate_keyword_image(keyword: str, width: int = 960, height: int = 540) -> str:
+def generate_keyword_image(keyword: str, variant: int = 0, width: int = 960, height: int = 540) -> str:
     """
     키워드 텍스트가 포함된 대표이미지를 생성합니다.
 
     Args:
         keyword: 블로그 키워드
+        variant: 색상 변형 번호 (0, 1, 2). 같은 키워드도 variant가 다르면 다른 색상 테마 적용
         width: 이미지 너비 (기본 960px)
         height: 이미지 높이 (기본 540px)
 
@@ -100,7 +101,11 @@ def generate_keyword_image(keyword: str, width: int = 960, height: int = 540) ->
     import re
     keyword = re.sub(r'^(재발행|재시도|retry)\s*[:：]\s*', '', keyword).strip()
 
-    theme = _get_theme(keyword)
+    # variant별로 다른 색상 테마 선택 (동일 키워드라도 variant가 다르면 다른 색상)
+    base_idx = int(hashlib.md5(keyword.encode()).hexdigest(), 16)
+    theme_idx = (base_idx + variant) % len(COLOR_THEMES)
+    theme = COLOR_THEMES[theme_idx]
+
     bg_color = _hex_to_rgb(theme["bg"])
     text_color = _hex_to_rgb(theme["text"])
     accent_color = _hex_to_rgb(theme["accent"])
@@ -158,10 +163,28 @@ def generate_keyword_image(keyword: str, width: int = 960, height: int = 540) ->
         font=sub_font,
     )
 
-    # 파일 저장
+    # 파일 저장 (variant별로 다른 파일명)
     safe_name = hashlib.md5(keyword.encode()).hexdigest()[:12]
-    filename = f"keyword_{safe_name}.png"
+    suffix = f"_v{variant}" if variant > 0 else ""
+    filename = f"keyword_{safe_name}{suffix}.png"
     filepath = IMAGE_DIR / filename
     img.save(str(filepath), "PNG", quality=95)
 
     return str(filepath)
+
+
+def generate_keyword_image_variants(keyword: str, count: int = 3, width: int = 960, height: int = 540) -> list:
+    """
+    같은 키워드로 색상이 다른 대표이미지 여러 장을 생성합니다.
+    저품질 방지를 위해 계정별로 다른 이미지를 사용할 수 있습니다.
+
+    Args:
+        keyword: 블로그 키워드
+        count: 생성할 이미지 수 (기본 3)
+        width: 이미지 너비
+        height: 이미지 높이
+
+    Returns:
+        생성된 이미지 파일 경로 리스트
+    """
+    return [generate_keyword_image(keyword, variant=i, width=width, height=height) for i in range(count)]
