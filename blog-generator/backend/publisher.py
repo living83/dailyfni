@@ -7,12 +7,23 @@ Playwright 기반 네이버 블로그 자동 발행 엔진
 """
 
 import os
+import sys
 import json
 import asyncio
 import random
 import logging
 from pathlib import Path
 from datetime import datetime
+
+
+def _run_in_proactor_loop(coro_func, *args, **kwargs):
+    """Windows에서 ProactorEventLoop을 사용하여 코루틴 실행.
+    Playwright의 subprocess 생성이 SelectorEventLoop에서 실패하는 문제 해결."""
+    loop = asyncio.ProactorEventLoop()
+    try:
+        return loop.run_until_complete(coro_func(*args, **kwargs))
+    finally:
+        loop.close()
 
 logger = logging.getLogger("publisher")
 
@@ -427,8 +438,8 @@ async def publish_to_naver(
     return result
 
 
-async def test_login(account_id: int, naver_id: str, naver_password: str) -> dict:
-    """로그인 테스트 (실제 발행 안 함)"""
+async def _test_login_impl(account_id: int, naver_id: str, naver_password: str) -> dict:
+    """로그인 테스트 구현부"""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
@@ -448,7 +459,16 @@ async def test_login(account_id: int, naver_id: str, naver_password: str) -> dic
             await browser.close()
 
 
-async def run_publish_task(
+async def test_login(account_id: int, naver_id: str, naver_password: str) -> dict:
+    """로그인 테스트 (Windows ProactorEventLoop 호환)"""
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_in_proactor_loop, _test_login_impl, account_id, naver_id, naver_password
+        )
+    return await _test_login_impl(account_id, naver_id, naver_password)
+
+
+async def _run_publish_task_impl(
     account_id: int,
     naver_id: str,
     naver_password: str,
@@ -460,7 +480,7 @@ async def run_publish_task(
     footer_link: str = "",
     footer_link_text: str = "",
 ) -> dict:
-    """단일 문서 발행 실행"""
+    """단일 문서 발행 구현부"""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
@@ -482,3 +502,30 @@ async def run_publish_task(
             return {"success": False, "url": "", "error": str(e)}
         finally:
             await browser.close()
+
+
+async def run_publish_task(
+    account_id: int,
+    naver_id: str,
+    naver_password: str,
+    title: str,
+    content: str,
+    category_name: str = "",
+    tags: list = None,
+    image_path: str = "",
+    footer_link: str = "",
+    footer_link_text: str = "",
+) -> dict:
+    """단일 문서 발행 실행 (Windows ProactorEventLoop 호환)"""
+    if sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_in_proactor_loop, _run_publish_task_impl,
+            account_id, naver_id, naver_password,
+            title, content, category_name, tags, image_path,
+            footer_link, footer_link_text,
+        )
+    return await _run_publish_task_impl(
+        account_id, naver_id, naver_password,
+        title, content, category_name, tags, image_path,
+        footer_link, footer_link_text,
+    )
