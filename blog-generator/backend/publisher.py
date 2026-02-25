@@ -216,8 +216,8 @@ async def publish_to_naver(
 
         await _random_delay(2, 3)
 
-        # 2. 블로그 글쓰기 페이지 이동 (블로그 ID 필수)
-        write_url = f"https://blog.naver.com/{naver_id}/postwrite"
+        # 2. 블로그 글쓰기 페이지 이동 (blogId 쿼리 파라미터 필수)
+        write_url = f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}"
         logger.info(f"글쓰기 페이지 이동: {write_url}")
         await page.goto(
             write_url,
