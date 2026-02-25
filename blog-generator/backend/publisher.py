@@ -225,63 +225,74 @@ async def publish_to_naver(
         await _random_delay(2, 3)
 
         # 2. 블로그 글쓰기 페이지 이동
-        #    방법 A: 블로그 메인에서 "글쓰기" 버튼 클릭 (가장 안정적)
-        #    방법 B: 직접 URL 이동 (폴백)
+        #    login() 이후 page는 blog.naver.com에 있음
+        #    방법 A: blog.naver.com 메인에서 "글쓰기" 버튼 클릭
+        #    방법 B: 내 블로그(blog.naver.com/{id})에서 "글쓰기" 버튼 클릭
+        #    방법 C: 직접 URL 이동 (폴백)
         editor_page_reached = False
+        original_page = page
 
-        # --- 방법 A: 내 블로그 → 글쓰기 버튼 클릭 ---
-        blog_url = f"https://blog.naver.com/{naver_id}"
-        logger.info(f"블로그 메인 이동: {blog_url}")
-        try:
+        # --- 방법 A: blog.naver.com 메인에서 글쓰기 버튼 ---
+        logger.info(f"현재 페이지 URL: {page.url}")
+        if "blog.naver.com" not in page.url:
+            await page.goto("https://blog.naver.com", wait_until="domcontentloaded", timeout=20000)
+            await _random_delay(2, 3)
+            logger.info(f"blog.naver.com 이동 완료: {page.url}")
+
+        # 글쓰기 버튼/링크 찾기 (네이버 블로그 메인 및 내 블로그 페이지)
+        write_selectors = [
+            'a[href*="/postwrite"]',
+            'a[href*="PostWriteForm"]',
+            'a:has-text("글쓰기")',
+            'button:has-text("글쓰기")',
+            '.btn_write',
+            'a.link_write',
+            '#writePostBtn',
+            '.blog_menu a[href*="write"]',
+        ]
+
+        write_btn = await _try_selectors(page, write_selectors, timeout=5000, description="글쓰기 버튼(메인)")
+        if not write_btn:
+            # 방법 B: 내 블로그 페이지로 이동 후 시도
+            blog_url = f"https://blog.naver.com/{naver_id}"
+            logger.info(f"메인에서 글쓰기 버튼 없음 → 내 블로그 이동: {blog_url}")
             await page.goto(blog_url, wait_until="domcontentloaded", timeout=20000)
             await _random_delay(2, 3)
 
             page_content = await page.content()
-            current_url = page.url
-            logger.info(f"블로그 메인 현재 URL: {current_url}")
+            if "페이지 주소를 확인" in page_content:
+                logger.warning(f"내 블로그 404: {blog_url}")
+                await _capture_debug(page, "my_blog_404")
+            else:
+                write_btn = await _try_selectors(page, write_selectors, timeout=5000, description="글쓰기 버튼(내블로그)")
 
-            if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
-                logger.warning(f"블로그 메인 404: {blog_url} → 블로그 홈에서 시도")
-                # 블로그 홈페이지에서 내 블로그 찾기
-                await page.goto("https://blog.naver.com", wait_until="domcontentloaded", timeout=20000)
-                await _random_delay(2, 3)
-
-            # 글쓰기 버튼 찾기 (다양한 셀렉터)
-            write_btn = await _try_selectors(page, [
-                'a[href*="postwrite"]',
-                'a[href*="PostWriteForm"]',
-                'a:has-text("글쓰기")',
-                '.btn_write',
-                'a.link_write',
-                '#writePostBtn',
-                'button:has-text("글쓰기")',
-            ], timeout=8000, description="글쓰기 버튼")
-
-            if write_btn:
-                logger.info("글쓰기 버튼 발견 → 클릭")
-                # 새 탭이 열릴 수 있으므로 popup 이벤트 감지
+        if write_btn:
+            logger.info("글쓰기 버튼 발견 → 클릭")
+            try:
+                # 새 탭/팝업으로 열릴 수 있음
                 async with page.context.expect_page(timeout=10000) as new_page_info:
                     await write_btn.click()
-                try:
-                    new_page = await new_page_info.value
-                    await new_page.wait_for_load_state("domcontentloaded")
-                    page = new_page  # 새 탭으로 전환
-                    logger.info(f"새 탭에서 글쓰기 페이지 열림: {page.url}")
-                except Exception:
-                    logger.info(f"같은 탭에서 글쓰기 페이지 로드: {page.url}")
-                    await page.wait_for_load_state("domcontentloaded")
+                new_page = await new_page_info.value
+                await new_page.wait_for_load_state("domcontentloaded")
+                page = new_page
+                logger.info(f"새 탭에서 글쓰기 페이지 열림: {page.url}")
+            except Exception:
+                # 같은 탭에서 로드됨
+                await page.wait_for_load_state("domcontentloaded")
+                logger.info(f"같은 탭에서 글쓰기 페이지 로드: {page.url}")
 
-                await _random_delay(3, 5)
+            await _random_delay(3, 5)
+            page_content = await page.content()
+            if "페이지 주소를 확인" not in page_content:
                 editor_page_reached = True
                 logger.info(f"글쓰기 페이지 도달 (버튼 클릭): {page.url}")
-        except Exception as e:
-            logger.warning(f"방법 A (버튼 클릭) 실패: {e}")
 
-        # --- 방법 B: 직접 URL 이동 (폴백) ---
+        # --- 방법 C: 직접 URL 이동 (폴백) ---
         if not editor_page_reached:
             write_urls = [
                 f"https://blog.naver.com/{naver_id}/postwrite",
                 f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}",
+                "https://blog.naver.com/PostWriteForm.naver",
             ]
             for write_url in write_urls:
                 logger.info(f"직접 URL 이동 시도: {write_url}")
@@ -292,7 +303,6 @@ async def publish_to_naver(
                     page_content = await page.content()
                     if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
                         logger.warning(f"에러 페이지 감지: {write_url}")
-                        await _capture_debug(page, f"write_url_error")
                         continue
 
                     editor_page_reached = True
@@ -304,7 +314,12 @@ async def publish_to_naver(
 
         if not editor_page_reached:
             await _capture_debug(page, "write_page_unreachable")
-            result["error"] = f"글쓰기 페이지 접근 실패. 블로그가 개설되어 있는지 확인하세요. (blogId={naver_id})"
+            result["error"] = (
+                f"글쓰기 페이지 접근 실패. "
+                f"① 블로그가 개설되어 있는지 확인하세요. "
+                f"② 브라우저에서 https://blog.naver.com/{naver_id} 접속이 되는지 확인하세요. "
+                f"(blogId={naver_id})"
+            )
             return result
 
         # 2-1. iframe 감지 및 전환
@@ -388,6 +403,12 @@ async def publish_to_naver(
             await _capture_debug(page, "editor_not_loaded")
             current_url = page.url
             page_title = await page.title()
+            # 페이지의 HTML 일부도 로깅 (디버깅용)
+            try:
+                body_text = await page.evaluate("document.body?.innerText?.substring(0, 500) || ''")
+                logger.error(f"에디터 미발견 - URL: {current_url}, 제목: {page_title}, 본문: {body_text[:200]}")
+            except Exception:
+                pass
             result["error"] = f"에디터 로딩 실패 (URL: {current_url}, 제목: {page_title})"
             return result
 
@@ -716,16 +737,36 @@ async def publish_to_naver(
 
 async def _create_stealth_context(playwright_instance):
     """네이버 봇 감지를 우회하기 위한 스텔스 브라우저 컨텍스트 생성"""
-    browser = await playwright_instance.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-infobars",
-            "--window-size=1920,1080",
-        ],
-    )
+    launch_args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-infobars",
+        "--window-size=1920,1080",
+    ]
+
+    # 시스템 Chrome 사용 시도 (chromium_headless_shell 대신 → 봇 감지 우회)
+    browser = None
+    for channel in ["chrome", "msedge", None]:
+        try:
+            if channel:
+                browser = await playwright_instance.chromium.launch(
+                    channel=channel, headless=True, args=launch_args,
+                )
+                logger.info(f"브라우저 시작: channel={channel}")
+            else:
+                browser = await playwright_instance.chromium.launch(
+                    headless=True, args=launch_args,
+                )
+                logger.info("브라우저 시작: 기본 Chromium")
+            break
+        except Exception as e:
+            logger.warning(f"브라우저 시작 실패 (channel={channel}): {e}")
+            continue
+
+    if not browser:
+        raise RuntimeError("사용 가능한 브라우저가 없습니다. Chrome 또는 Edge를 설치하세요.")
+
     context = await browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         viewport={"width": 1920, "height": 1080},
