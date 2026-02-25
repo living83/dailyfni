@@ -340,15 +340,17 @@ async def publish_to_naver(
             except Exception:
                 continue
 
-        # 3. "작성 중인 글이 있습니다" 팝업 처리
+        # 3. "작성 중인 글이 있습니다" 팝업 처리 → 취소 클릭 후 새로 작성
         try:
             popup_btn = await _try_selectors(editor, [
+                'button:has-text("취소")',
                 'button:has-text("아니오")',
-                'button:has-text("새로 작성")',
                 'button:has-text("아니요")',
+                'button:has-text("새로 작성")',
                 '.popup_btn_cancel',
             ], timeout=3000, description="임시저장 팝업")
             if popup_btn:
+                logger.info("임시저장 팝업 → 취소 클릭")
                 await popup_btn.click()
                 await _random_delay(1, 2)
         except Exception:
