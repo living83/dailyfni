@@ -109,11 +109,19 @@ async def check_login_status(page) -> bool:
     """로그인 상태 확인"""
     try:
         await page.goto("https://blog.naver.com", wait_until="domcontentloaded", timeout=15000)
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
+        current_url = page.url
+        # 로그인 페이지로 리다이렉트되면 미로그인
+        if "nidlogin" in current_url:
+            logger.info("로그인 상태 확인: 로그인 페이지로 리다이렉트됨")
+            return False
         # 로그인 상태면 프로필 영역이 있음
-        login_btn = await page.query_selector('a.btn_login, a[href*="nidlogin"]')
-        return login_btn is None
-    except Exception:
+        login_btn = await page.query_selector('a.btn_login, a[href*="nidlogin"], .link_login')
+        is_logged_in = login_btn is None
+        logger.info(f"로그인 상태 확인: {'로그인됨' if is_logged_in else '미로그인'} (URL: {current_url[:60]})")
+        return is_logged_in
+    except Exception as e:
+        logger.warning(f"로그인 상태 확인 오류: {e}")
         return False
 
 
@@ -216,19 +224,45 @@ async def publish_to_naver(
 
         await _random_delay(2, 3)
 
-        # 2. 블로그 글쓰기 페이지 이동 (blogId 쿼리 파라미터 필수)
-        write_url = f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}"
-        logger.info(f"글쓰기 페이지 이동: {write_url}")
-        await page.goto(
-            write_url,
-            wait_until="domcontentloaded",
-            timeout=20000,
-        )
-        await _random_delay(3, 5)
+        # 2. 블로그 글쓰기 페이지 이동 (여러 URL 시도)
+        write_urls = [
+            f"https://blog.naver.com/{naver_id}/postwrite",
+            f"https://blog.naver.com/PostWriteForm.naver?blogId={naver_id}",
+        ]
+
+        page_loaded = False
+        for write_url in write_urls:
+            logger.info(f"글쓰기 페이지 이동 시도: {write_url}")
+            try:
+                await page.goto(
+                    write_url,
+                    wait_until="domcontentloaded",
+                    timeout=20000,
+                )
+                await _random_delay(3, 5)
+
+                # 에러 페이지 감지 (404, "페이지 주소를 확인해주세요" 등)
+                page_content = await page.content()
+                if "페이지 주소를 확인" in page_content or "페이지를 찾을 수 없" in page_content:
+                    logger.warning(f"에러 페이지 감지: {write_url}")
+                    await _capture_debug(page, f"write_url_error_{write_url.split('/')[-1]}")
+                    continue
+
+                page_loaded = True
+                logger.info(f"글쓰기 페이지 로드 성공: {write_url}")
+                break
+            except Exception as e:
+                logger.warning(f"글쓰기 페이지 이동 실패: {write_url} - {e}")
+                continue
+
+        if not page_loaded:
+            await _capture_debug(page, "all_write_urls_failed")
+            result["error"] = f"글쓰기 페이지 이동 실패 (모든 URL 시도 완료). 블로그가 개설되어 있는지 확인하세요. (blogId={naver_id})"
+            return result
 
         # 2-1. iframe 감지 및 전환
         editor = page
-        for frame_id in ["mainFrame", "se_editFrame"]:
+        for frame_id in ["mainFrame", "se_editFrame", "editor_frame"]:
             try:
                 frame_el = await page.wait_for_selector(
                     f"iframe#{frame_id}, iframe[name='{frame_id}']",
@@ -279,11 +313,35 @@ async def publish_to_naver(
             '[contenteditable="true"]',
             'article',
             '.editor_area',
-        ], timeout=15000, description="에디터")
+            '.se-section',
+            '.se-module-text',
+            '#content-area',
+        ], timeout=20000, description="에디터")
+
+        # 에디터를 못 찾으면 모든 iframe에서도 시도
+        if not editor_loaded and editor == page:
+            logger.info("메인 페이지에서 에디터 미발견 → 모든 iframe 탐색")
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                try:
+                    el = await frame.wait_for_selector(
+                        '.se-component, .se-documentTitle, [contenteditable="true"]',
+                        timeout=3000,
+                    )
+                    if el:
+                        editor = frame
+                        editor_loaded = el
+                        logger.info(f"iframe에서 에디터 발견: {frame.url[:80]}")
+                        break
+                except Exception:
+                    continue
 
         if not editor_loaded:
             await _capture_debug(page, "editor_not_loaded")
-            result["error"] = "에디터 로딩 실패 - 셀렉터 매칭 없음"
+            current_url = page.url
+            page_title = await page.title()
+            result["error"] = f"에디터 로딩 실패 - 셀렉터 매칭 없음 (URL: {current_url}, 제목: {page_title})"
             return result
 
         await _random_delay(1, 2)
@@ -609,16 +667,40 @@ async def publish_to_naver(
     return result
 
 
+async def _create_stealth_context(playwright_instance):
+    """네이버 봇 감지를 우회하기 위한 스텔스 브라우저 컨텍스트 생성"""
+    browser = await playwright_instance.chromium.launch(
+        headless=True,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-infobars",
+            "--window-size=1920,1080",
+        ],
+    )
+    context = await browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        viewport={"width": 1920, "height": 1080},
+        locale="ko-KR",
+        timezone_id="Asia/Seoul",
+    )
+    # navigator.webdriver 플래그 제거 (봇 감지 우회)
+    await context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko', 'en-US', 'en'] });
+        window.chrome = { runtime: {} };
+    """)
+    return browser, context
+
+
 async def _test_login_impl(account_id: int, naver_id: str, naver_password: str) -> dict:
     """로그인 테스트 구현부"""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-        )
+        browser, context = await _create_stealth_context(p)
         page = await context.new_page()
 
         try:
@@ -655,11 +737,7 @@ async def _run_publish_task_impl(
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1920, "height": 1080},
-        )
+        browser, context = await _create_stealth_context(p)
         page = await context.new_page()
 
         try:
