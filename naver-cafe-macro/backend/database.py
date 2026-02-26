@@ -111,8 +111,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS schedule_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             days TEXT DEFAULT '1,1,1,1,1,0,0',
-            times TEXT DEFAULT '09:00,14:00,19:00',
-            interval_min INTEGER DEFAULT 30,
+            times TEXT DEFAULT '08:00',
+            interval_min INTEGER DEFAULT 5,
             random_delay_min INTEGER DEFAULT 10,
             random_delay_max INTEGER DEFAULT 120,
             comment_enabled INTEGER DEFAULT 1,
@@ -122,9 +122,29 @@ def init_db():
             comment_order TEXT DEFAULT 'random',
             exclude_author INTEGER DEFAULT 1,
             cross_publish INTEGER DEFAULT 1,
-            account_interval_hours INTEGER DEFAULT 3
+            account_interval_hours INTEGER DEFAULT 3,
+            max_accounts_per_run INTEGER DEFAULT 30,
+            base_start_hour INTEGER DEFAULT 8,
+            base_start_minute INTEGER DEFAULT 0,
+            daily_shift_minutes INTEGER DEFAULT 30
         );
     """)
+
+    # 기존 DB 마이그레이션: 새 컬럼 추가
+    for col, default in [
+        ("max_accounts_per_run", "30"),
+        ("base_start_hour", "8"),
+        ("base_start_minute", "0"),
+        ("daily_shift_minutes", "30"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE schedule_config ADD COLUMN {col} INTEGER DEFAULT {default}")
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
+
+    # 기존 설정값을 새 기본값으로 업데이트 (이전 기본값인 경우에만)
+    cursor.execute("UPDATE schedule_config SET interval_min = 5 WHERE id = 1 AND interval_min = 30")
+    cursor.execute("UPDATE schedule_config SET times = '08:00' WHERE id = 1 AND times = '09:00,14:00,19:00'")
 
     # 기본 스케줄 설정 삽입
     cursor.execute("""
@@ -498,7 +518,8 @@ def update_schedule_config(**kwargs):
     allowed = [
         "days", "times", "interval_min", "random_delay_min", "random_delay_max",
         "comment_enabled", "comments_per_post", "comment_delay_min", "comment_delay_max",
-        "comment_order", "exclude_author", "cross_publish", "account_interval_hours"
+        "comment_order", "exclude_author", "cross_publish", "account_interval_hours",
+        "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes"
     ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:

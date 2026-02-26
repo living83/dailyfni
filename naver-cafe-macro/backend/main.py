@@ -91,6 +91,10 @@ class ScheduleConfigUpdate(BaseModel):
     exclude_author: Optional[int] = None
     cross_publish: Optional[int] = None
     account_interval_hours: Optional[int] = None
+    max_accounts_per_run: Optional[int] = None
+    base_start_hour: Optional[int] = None
+    base_start_minute: Optional[int] = None
+    daily_shift_minutes: Optional[int] = None
 
 
 # ─── Accounts API ──────────────────────────────────────────

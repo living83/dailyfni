@@ -397,7 +397,7 @@ function App() {
         if (['published', 'error'].includes(e.type)) loadData();
       } catch {}
     };
-    ['publishing', 'published', 'error', 'commenting', 'delay', 'info', 'scheduler'].forEach(evt => {
+    ['publishing', 'published', 'error', 'commenting', 'delay', 'info', 'scheduler', 'batch_start', 'batch_progress', 'batch_complete'].forEach(evt => {
       es.addEventListener(evt, handleEvent);
     });
     return () => es.close();
@@ -825,7 +825,6 @@ function CommentTab({ templates, schedule, reload }) {
 function ScheduleTab({ schedule, events, reload }) {
   const dayLabels = ['월', '화', '수', '목', '금', '토', '일'];
   const days = (schedule.days || '1,1,1,1,1,0,0').split(',');
-  const times = (schedule.times || '09:00,14:00,19:00').split(',').filter(Boolean);
 
   const updateConfig = async (key, value) => {
     await fetch(`${API}/api/schedule`, {
@@ -842,18 +841,6 @@ function ScheduleTab({ schedule, events, reload }) {
     updateConfig('days', newDays.join(','));
   };
 
-  const addTime = () => {
-    const newTime = prompt('발행 시간 입력 (HH:MM)', '12:00');
-    if (newTime && /^\d{2}:\d{2}$/.test(newTime)) {
-      updateConfig('times', [...times, newTime].join(','));
-    }
-  };
-
-  const removeTime = (idx) => {
-    const newTimes = times.filter((_, i) => i !== idx);
-    updateConfig('times', newTimes.join(','));
-  };
-
   const startScheduler = async () => {
     await fetch(`${API}/api/scheduler/start`, { method: 'POST' });
     reload();
@@ -867,6 +854,30 @@ function ScheduleTab({ schedule, events, reload }) {
   const runOnce = async () => {
     await fetch(`${API}/api/scheduler/run-once`, { method: 'POST' });
   };
+
+  // 오늘의 실제 시작 시각 계산 (백엔드 로직과 동일)
+  const calcTodayStart = () => {
+    const baseH = schedule.base_start_hour ?? 8;
+    const baseM = schedule.base_start_minute ?? 0;
+    const shift = schedule.daily_shift_minutes ?? 30;
+    if (shift <= 0) return `${String(baseH).padStart(2,'0')}:${String(baseM).padStart(2,'0')}`;
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 0);
+    const dayIndex = Math.floor((now - startOfYear) / 86400000);
+    const maxShift = 4 * 60;
+    const cycle = Math.max(1, Math.floor(maxShift / Math.max(1, shift)));
+    const offsetMin = (dayIndex % cycle) * shift;
+    const totalMin = baseH * 60 + baseM + offsetMin;
+    const h = Math.floor(totalMin / 60) % 24;
+    const m = totalMin % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  };
+
+  const maxAccounts = schedule.max_accounts_per_run || 30;
+  const intervalMin = schedule.interval_min || 5;
+  const estimatedMin = maxAccounts * intervalMin;
+  const estH = Math.floor(estimatedMin / 60);
+  const estM = estimatedMin % 60;
 
   return (
     <div>
@@ -899,22 +910,62 @@ function ScheduleTab({ schedule, events, reload }) {
         </div>
       </div>
 
-      {/* 발행 시간 */}
+      {/* 배치 발행 설정 */}
       <div className="card">
-        <div className="card-title">발행 시간</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {times.map((t, i) => (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: '#0a1020', border: '1px solid #1a2540',
-              borderRadius: 8, padding: '6px 12px'
-            }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#38bd94' }}>{t}</span>
-              <span style={{ cursor: 'pointer', color: '#4a5a7a', fontSize: 16 }}
-                onClick={() => removeTime(i)}>x</span>
+        <div className="card-title">배치 발행 설정</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="input-group">
+            <label>기본 시작 시각 (시)</label>
+            <input type="number" min={0} max={23} value={schedule.base_start_hour ?? 8}
+              onChange={e => updateConfig('base_start_hour', Math.min(23, Math.max(0, parseInt(e.target.value) || 0)))} />
+          </div>
+          <div className="input-group">
+            <label>기본 시작 시각 (분)</label>
+            <input type="number" min={0} max={59} value={schedule.base_start_minute ?? 0}
+              onChange={e => updateConfig('base_start_minute', Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))} />
+          </div>
+          <div className="input-group">
+            <label>일별 지연 (분)</label>
+            <input type="number" min={0} max={120} value={schedule.daily_shift_minutes ?? 30}
+              onChange={e => updateConfig('daily_shift_minutes', Math.max(0, parseInt(e.target.value) || 0))} />
+          </div>
+          <div className="input-group">
+            <label>1회 최대 계정 수</label>
+            <input type="number" min={1} max={100} value={maxAccounts}
+              onChange={e => updateConfig('max_accounts_per_run', Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+          <div className="input-group">
+            <label>계정 간 발행 간격 (분)</label>
+            <input type="number" min={1} max={60} value={intervalMin}
+              onChange={e => updateConfig('interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+          <div className="input-group">
+            <label>계정 재사용 최소 간격 (시간)</label>
+            <input type="number" min={1} max={48} value={schedule.account_interval_hours || 3}
+              onChange={e => updateConfig('account_interval_hours', Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+        </div>
+
+        {/* 오늘의 시작 시간 & 예상 소요 표시 */}
+        <div style={{ marginTop: 14, padding: '12px 16px', background: '#0a1020', borderRadius: 8, border: '1px solid #1a2540' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#4a5a7a', marginBottom: 4 }}>오늘의 발행 시작 시각</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#38bd94' }}>{calcTodayStart()}</div>
             </div>
-          ))}
-          <button className="btn btn-outline btn-sm" onClick={addTime}>+ 시간 추가</button>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: '#4a5a7a', marginBottom: 4 }}>예상 소요 시간</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#c8d6e5' }}>
+                {estH > 0 ? `${estH}시간 ` : ''}{estM}분
+              </div>
+              <div style={{ fontSize: 11, color: '#3a4a6a' }}>
+                {maxAccounts}개 계정 x {intervalMin}분
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#3a4a6a', marginTop: 8, borderTop: '1px solid #1a2540', paddingTop: 8 }}>
+            매일 {schedule.daily_shift_minutes ?? 30}분씩 시작 시각이 밀리며, 최대 4시간 범위 내에서 순환합니다.
+          </div>
         </div>
       </div>
 
@@ -922,16 +973,6 @@ function ScheduleTab({ schedule, events, reload }) {
       <div className="card">
         <div className="card-title">저품질 방지 설정</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div className="input-group">
-            <label>최소 발행 간격 (분)</label>
-            <input type="number" value={schedule.interval_min || 30}
-              onChange={e => updateConfig('interval_min', parseInt(e.target.value) || 30)} />
-          </div>
-          <div className="input-group">
-            <label>계정 간 최소 간격 (시간)</label>
-            <input type="number" value={schedule.account_interval_hours || 3}
-              onChange={e => updateConfig('account_interval_hours', parseInt(e.target.value) || 3)} />
-          </div>
           <div className="input-group">
             <label>랜덤 딜레이 최소 (초)</label>
             <input type="number" value={schedule.random_delay_min || 10}
@@ -954,13 +995,20 @@ function ScheduleTab({ schedule, events, reload }) {
       {events.length > 0 && (
         <div className="card">
           <div className="card-title">실시간 로그</div>
-          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-            {[...events].reverse().slice(0, 20).map((ev, i) => (
+          <div style={{ maxHeight: 250, overflowY: 'auto' }}>
+            {[...events].reverse().slice(0, 30).map((ev, i) => (
               <div key={i} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid #111c30', color: '#6b7b9e' }}>
                 <span style={{ color: '#4a5a7a', marginRight: 8 }}>
                   {new Date(ev.ts).toLocaleTimeString('ko')}
                 </span>
-                <span style={{ color: ev.event === 'error' ? '#e74c3c' : ev.event === 'published' ? '#38bd94' : '#6b7b9e' }}>
+                <span style={{
+                  color: ev.event === 'error' ? '#e74c3c'
+                    : ev.event === 'published' ? '#38bd94'
+                    : ev.event === 'batch_complete' ? '#38bd94'
+                    : ev.event === 'batch_start' ? '#f39c12'
+                    : ev.event === 'batch_progress' ? '#3498db'
+                    : '#6b7b9e'
+                }}>
                   {ev.message}
                 </span>
               </div>

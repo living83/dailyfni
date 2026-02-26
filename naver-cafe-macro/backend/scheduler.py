@@ -2,11 +2,12 @@
 scheduler.py - 스케줄러 & 저품질 방지 로직
 APScheduler 기반 자동 발행 관리
 
-저품질 방지 전략:
-1. 교차 발행: 같은 카페 연속 발행 금지 (다른 카페와 교차)
-2. 계정 간 간격: 같은 계정 최소 2~4시간 대기
-3. 랜덤 딜레이: 스케줄 시간에 랜덤 오프셋 추가
-4. 타이핑 딜레이: cafe_publisher의 human_type으로 처리
+배치 발행 전략:
+1. 매일 1회 배치: base_start_hour:minute 에 시작, 일별 daily_shift_minutes 만큼 지연
+2. 최대 max_accounts_per_run 개 계정이 interval_min 분 간격으로 순차 발행
+3. 교차 발행: 같은 카페 연속 발행 금지 (다른 카페와 교차)
+4. 계정 간 간격: 같은 계정 최소 account_interval_hours 시간 대기
+5. 랜덤 딜레이: 각 발행 전 랜덤 오프셋 추가
 """
 
 import random
@@ -153,48 +154,43 @@ def _select_comment_accounts(
     return selected[:count]
 
 
-# ─── 발행 작업 ─────────────────────────────────────────────
+def _calc_daily_offset_minutes(config: dict) -> int:
+    """
+    일별 지연 오프셋 계산
+    - daily_shift_minutes 만큼 매일 시작 시각이 밀림
+    - 최대 4시간 범위 내에서 순환 (8일 주기 @ 30분 지연)
+    """
+    daily_shift = config.get("daily_shift_minutes", 30)
+    if daily_shift <= 0:
+        return 0
 
-async def execute_publish_job():
-    """단일 발행 작업 실행"""
+    day_index = datetime.now().timetuple().tm_yday  # 1~366 (연 기준)
+    max_shift = 4 * 60  # 최대 4시간 (240분)
+    cycle = max(1, max_shift // max(1, daily_shift))
+    return (day_index % cycle) * daily_shift
+
+
+# ─── 단일 계정 발행 ──────────────────────────────────────────
+
+async def _publish_single(account: dict, config: dict):
+    """단일 계정으로 1건 발행 (키워드 선택 → 게시판 선택 → 발행 → 댓글)"""
     global _last_published_cafe
 
-    if not _is_running:
-        return
-
-    config = db.get_schedule_config()
-
-    # 1. 오늘 요일 체크
-    today_dow = datetime.now().weekday()  # 0=월 ~ 6=일
-    days = config.get("days", "1,1,1,1,1,0,0").split(",")
-    if len(days) > today_dow and days[today_dow] == "0":
-        logger.info(f"오늘은 발행하지 않는 요일 (dow={today_dow})")
-        return
-
-    # 2. 발행 가능한 계정 선택
-    eligible = _get_eligible_accounts(config)
-    if not eligible:
-        logger.info("발행 가능한 계정 없음 (대기 시간 미충족)")
-        await _notify_progress("info", {"message": "발행 가능한 계정 없음 - 대기 시간 미충족"})
-        return
-
-    account = random.choice(eligible)
-
-    # 3. 키워드 선택 (먼저 선택 → 매핑된 게시판 결정)
+    # 1. 키워드 선택
     keyword = _get_next_keyword(config)
     if not keyword:
         logger.info("등록된 키워드 없음")
         await _notify_progress("info", {"message": "등록된 키워드가 없습니다"})
         return
 
-    # 4. 게시판 선택 (키워드에 매핑된 게시판 중 교차 발행)
+    # 2. 게시판 선택 (키워드에 매핑된 게시판 중 교차 발행)
     board = _get_next_board(keyword_id=keyword["id"])
     if not board:
         logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음")
         await _notify_progress("info", {"message": f"키워드 '{keyword['text']}'에 매핑된 게시판이 없습니다"})
         return
 
-    # 5. 랜덤 딜레이
+    # 3. 랜덤 딜레이
     delay_min = config.get("random_delay_min", 10)
     delay_max = config.get("random_delay_max", 120)
     delay = random.randint(delay_min, delay_max)
@@ -205,11 +201,11 @@ async def execute_publish_job():
     if not _is_running:
         return
 
-    # 6. 글 제목/내용 생성 (글2 템플릿 기반)
+    # 4. 글 제목/내용 생성
     structured = generate_content(keyword["text"])
     title, content = content_to_plain_text(structured)
 
-    # 7. DB에 발행 기록 생성
+    # 5. DB에 발행 기록 생성
     publish_id = db.add_publish_record(
         keyword["id"], board["id"], account["id"], title, content
     )
@@ -222,7 +218,7 @@ async def execute_publish_job():
         "publish_id": publish_id
     })
 
-    # 8. 발행 실행
+    # 6. 발행 실행
     def on_publish_progress(step, msg):
         logger.info(f"[{account['username']}] {step}: {msg}")
 
@@ -238,7 +234,7 @@ async def execute_publish_job():
         structured_content=structured
     )
 
-    # 9. 결과 처리
+    # 7. 결과 처리
     if result["success"]:
         db.update_publish_status(publish_id, "성공", result["url"])
         db.update_account_last_published(account["id"])
@@ -255,7 +251,7 @@ async def execute_publish_job():
             "url": result["url"]
         })
 
-        # 10. 댓글 자동 작성
+        # 댓글 자동 작성
         if config.get("comment_enabled"):
             await execute_comment_job(
                 publish_id=publish_id,
@@ -273,6 +269,116 @@ async def execute_publish_job():
 
     logger.info(f"발행 완료: {account['username']} → {board['cafe_url']}/{board['board_name']} "
                 f"결과={'성공' if result['success'] else '실패'}")
+
+
+# ─── 배치 발행 작업 ──────────────────────────────────────────
+
+async def execute_batch_job():
+    """
+    일일 배치 발행 작업 (스케줄러가 호출)
+    - 일별 지연 오프셋만큼 대기 후
+    - 최대 max_accounts_per_run 개 계정이 interval_min 분 간격으로 순차 발행
+    """
+    global _last_published_cafe
+
+    if not _is_running:
+        return
+
+    config = db.get_schedule_config()
+
+    # 1. 오늘 요일 체크
+    today_dow = datetime.now().weekday()  # 0=월 ~ 6=일
+    days = config.get("days", "1,1,1,1,1,0,0").split(",")
+    if len(days) > today_dow and days[today_dow] == "0":
+        logger.info(f"오늘은 발행하지 않는 요일 (dow={today_dow})")
+        return
+
+    # 2. 일별 지연 오프셋 대기
+    offset_minutes = _calc_daily_offset_minutes(config)
+    if offset_minutes > 0:
+        base_h = config.get("base_start_hour", 8)
+        base_m = config.get("base_start_minute", 0)
+        actual_total = base_h * 60 + base_m + offset_minutes
+        actual_h = (actual_total // 60) % 24
+        actual_m = actual_total % 60
+        logger.info(f"일별 지연: {offset_minutes}분 대기 (오늘 시작: {actual_h:02d}:{actual_m:02d})")
+        await _notify_progress("delay", {
+            "message": f"일별 지연 {offset_minutes}분 대기 중... (오늘 시작: {actual_h:02d}:{actual_m:02d})",
+            "seconds": offset_minutes * 60
+        })
+        await asyncio.sleep(offset_minutes * 60)
+
+    if not _is_running:
+        return
+
+    # 3. 발행 가능한 계정 선택 (최대 max_accounts_per_run)
+    max_accounts = config.get("max_accounts_per_run", 30)
+    eligible = _get_eligible_accounts(config)
+    random.shuffle(eligible)
+    batch = eligible[:max_accounts]
+
+    if not batch:
+        logger.info("발행 가능한 계정 없음 (대기 시간 미충족)")
+        await _notify_progress("info", {"message": "발행 가능한 계정 없음 - 대기 시간 미충족"})
+        return
+
+    interval = config.get("interval_min", 5)
+    total = len(batch)
+
+    logger.info(f"배치 발행 시작: {total}개 계정, {interval}분 간격")
+    await _notify_progress("batch_start", {
+        "message": f"배치 발행 시작: {total}개 계정, {interval}분 간격",
+        "total_accounts": total,
+        "interval_min": interval
+    })
+
+    # 4. 순차 발행: 계정마다 interval_min 분 간격 유지
+    success_count = 0
+    fail_count = 0
+
+    for i, account in enumerate(batch):
+        if not _is_running:
+            logger.info("스케줄러 중지됨 - 배치 중단")
+            break
+
+        turn_start = datetime.now()
+
+        await _notify_progress("batch_progress", {
+            "message": f"[{i+1}/{total}] {account['username']} 발행 시작",
+            "current": i + 1,
+            "total": total,
+            "account": account["username"]
+        })
+
+        try:
+            await _publish_single(account, config)
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            logger.error(f"[{account['username']}] 발행 중 예외: {e}")
+            await _notify_progress("error", {
+                "message": f"[{account['username']}] 발행 예외: {str(e)}"
+            })
+
+        # 마지막 계정이 아니면 interval_min 간격 맞추기
+        if i < total - 1 and _is_running:
+            elapsed = (datetime.now() - turn_start).total_seconds()
+            remaining = interval * 60 - elapsed
+            if remaining > 0:
+                logger.info(f"다음 계정까지 {remaining:.0f}초 대기 ({i+2}/{total})")
+                await _notify_progress("delay", {
+                    "message": f"다음 계정까지 {remaining:.0f}초 대기 ({i+2}/{total})",
+                    "seconds": remaining
+                })
+                await asyncio.sleep(remaining)
+
+    logger.info(f"배치 발행 완료: 성공 {success_count}, 실패 {fail_count}")
+    await _notify_progress("batch_complete", {
+        "message": f"배치 발행 완료: 성공 {success_count}, 실패 {fail_count}",
+        "success": success_count,
+        "fail": fail_count,
+        "total": total
+    })
 
 
 async def execute_comment_job(
@@ -350,11 +456,8 @@ async def execute_comment_job(
 
 # ─── 스케줄러 시작/정지 ────────────────────────────────────
 
-def build_cron_triggers(config: dict) -> list:
-    """스케줄 설정으로부터 CronTrigger 목록 생성"""
-    times_str = config.get("times", "09:00,14:00,19:00")
-    times = [t.strip() for t in times_str.split(",") if t.strip()]
-
+def build_cron_trigger(config: dict) -> CronTrigger:
+    """스케줄 설정으로부터 일일 1회 CronTrigger 생성 (base_start_hour:minute)"""
     days_str = config.get("days", "1,1,1,1,1,0,0")
     days_list = days_str.split(",")
 
@@ -365,20 +468,10 @@ def build_cron_triggers(config: dict) -> list:
         active_days = ["mon", "tue", "wed", "thu", "fri"]
 
     dow_str = ",".join(active_days)
+    hour = config.get("base_start_hour", 8)
+    minute = config.get("base_start_minute", 0)
 
-    triggers = []
-    for t in times:
-        try:
-            hour, minute = t.split(":")
-            triggers.append(CronTrigger(
-                day_of_week=dow_str,
-                hour=int(hour),
-                minute=int(minute)
-            ))
-        except ValueError:
-            logger.warning(f"잘못된 시간 형식: {t}")
-
-    return triggers
+    return CronTrigger(day_of_week=dow_str, hour=hour, minute=minute)
 
 
 async def start_scheduler():
@@ -390,26 +483,36 @@ async def start_scheduler():
         return
 
     config = db.get_schedule_config()
-    triggers = build_cron_triggers(config)
+    trigger = build_cron_trigger(config)
 
     # 기존 작업 제거
     scheduler.remove_all_jobs()
 
-    # 각 시간대에 발행 작업 등록
-    for i, trigger in enumerate(triggers):
-        scheduler.add_job(
-            execute_publish_job,
-            trigger=trigger,
-            id=f"publish_job_{i}",
-            replace_existing=True
-        )
+    # 일일 배치 발행 작업 등록
+    scheduler.add_job(
+        execute_batch_job,
+        trigger=trigger,
+        id="batch_publish_job",
+        replace_existing=True
+    )
 
     if not scheduler.running:
         scheduler.start()
 
     _is_running = True
-    logger.info(f"스케줄러 시작됨 ({len(triggers)}개 시간대)")
-    await _notify_progress("scheduler", {"message": "스케줄러 시작됨", "running": True})
+
+    offset = _calc_daily_offset_minutes(config)
+    base_h = config.get("base_start_hour", 8)
+    base_m = config.get("base_start_minute", 0)
+    total = base_h * 60 + base_m + offset
+    actual_h = (total // 60) % 24
+    actual_m = total % 60
+
+    logger.info(f"스케줄러 시작됨 (기본 {base_h:02d}:{base_m:02d}, 오늘 시작: {actual_h:02d}:{actual_m:02d})")
+    await _notify_progress("scheduler", {
+        "message": f"스케줄러 시작됨 (오늘 시작: {actual_h:02d}:{actual_m:02d})",
+        "running": True
+    })
 
 
 async def stop_scheduler():
@@ -433,10 +536,25 @@ def is_running() -> bool:
 
 
 async def run_once_now():
-    """즉시 1회 발행 (테스트/수동 실행용)"""
+    """즉시 1회 발행 (테스트/수동 실행용) - 1개 계정으로 1건만 발행"""
     global _is_running
     was_running = _is_running
     _is_running = True
-    await execute_publish_job()
+
+    config = db.get_schedule_config()
+    eligible = _get_eligible_accounts(config)
+
+    if not eligible:
+        # 대기 시간 미충족이면 활성 계정 중 아무나 선택
+        accounts = db.get_accounts()
+        eligible = [a for a in accounts if a["active"]]
+
+    if eligible:
+        account = random.choice(eligible)
+        await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
+        await _publish_single(account, config)
+    else:
+        await _notify_progress("error", {"message": "활성 계정이 없습니다"})
+
     if not was_running:
         _is_running = False
