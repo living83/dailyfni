@@ -6,26 +6,12 @@ echo   DailyFNI Cafe Macro Server
 echo ========================================
 echo.
 
-:: Find Python 3.12 or 3.13 (avoid 3.14 which lacks wheel support)
+:: Find Python 3.12, 3.13, or python on PATH
 set PYTHON=
-where py >nul 2>nul
-if not errorlevel 1 (
-    py -3.12 --version >nul 2>nul
-    if not errorlevel 1 (
-        set PYTHON=py -3.12
-        goto :found
-    )
-    py -3.13 --version >nul 2>nul
-    if not errorlevel 1 (
-        set PYTHON=py -3.13
-        goto :found
-    )
-)
-python --version >nul 2>nul
-if not errorlevel 1 (
-    set PYTHON=python
-    goto :found
-)
+
+py -3.12 --version >nul 2>nul && set PYTHON=py -3.12 && goto :found
+py -3.13 --version >nul 2>nul && set PYTHON=py -3.13 && goto :found
+python --version >nul 2>nul && set PYTHON=python && goto :found
 
 echo [ERROR] Python not found. Install Python 3.12 from:
 echo   https://www.python.org/downloads/
