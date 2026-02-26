@@ -8,6 +8,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from seed_data import seed as seed_db
+
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cafe_macro.db"
 
 
@@ -130,6 +132,10 @@ def init_db():
     """)
 
     conn.commit()
+
+    # 시드 데이터 삽입 (키워드·댓글 비어 있을 때만)
+    seed_db(conn)
+
     conn.close()
 
 
