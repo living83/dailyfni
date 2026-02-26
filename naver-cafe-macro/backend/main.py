@@ -74,6 +74,9 @@ class CommentTemplateCreate(BaseModel):
 class KeywordBoardMapping(BaseModel):
     board_ids: list[int]
 
+class KeywordCommentMapping(BaseModel):
+    template_ids: list[int]
+
 class ScheduleConfigUpdate(BaseModel):
     days: Optional[str] = None
     times: Optional[str] = None
@@ -183,6 +186,17 @@ async def get_keyword_boards(keyword_id: int):
 async def set_keyword_boards(keyword_id: int, req: KeywordBoardMapping):
     db.set_keyword_boards(keyword_id, req.board_ids)
     return {"message": "키워드-게시판 매핑 업데이트됨"}
+
+
+@app.get("/api/keywords/{keyword_id}/comments")
+async def get_keyword_comments(keyword_id: int):
+    return db.get_keyword_comments(keyword_id)
+
+
+@app.put("/api/keywords/{keyword_id}/comments")
+async def set_keyword_comments(keyword_id: int, req: KeywordCommentMapping):
+    db.set_keyword_comments(keyword_id, req.template_ids)
+    return {"message": "키워드-댓글 템플릿 매핑 업데이트됨"}
 
 
 # ─── Comment Templates API ────────────────────────────────

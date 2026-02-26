@@ -261,7 +261,8 @@ async def execute_publish_job():
                 publish_id=publish_id,
                 post_url=result["url"],
                 author_id=account["id"],
-                config=config
+                config=config,
+                keyword_id=keyword["id"]
             )
     else:
         db.update_publish_status(publish_id, "실패", error_message=result.get("error"))
@@ -278,9 +279,10 @@ async def execute_comment_job(
     publish_id: int,
     post_url: str,
     author_id: int,
-    config: dict
+    config: dict,
+    keyword_id: int = None
 ):
-    """발행 후 댓글 자동 작성"""
+    """발행 후 댓글 자동 작성 (키워드에 매핑된 템플릿 우선 사용)"""
     comments_per_post = config.get("comments_per_post", 6)
     comment_delay_min = config.get("comment_delay_min", 60)
     comment_delay_max = config.get("comment_delay_max", 300)
@@ -288,8 +290,13 @@ async def execute_comment_job(
     exclude_author = bool(config.get("exclude_author", 1))
 
     all_accounts = db.get_accounts()
-    templates = db.get_comment_templates()
-    active_templates = [t for t in templates if t["active"]]
+
+    # 키워드에 매핑된 템플릿 사용 (매핑 없으면 전체 활성 템플릿)
+    if keyword_id:
+        active_templates = db.get_comments_for_keyword(keyword_id)
+    else:
+        templates = db.get_comment_templates()
+        active_templates = [t for t in templates if t["active"]]
 
     if not active_templates:
         logger.info("활성 댓글 템플릿 없음")

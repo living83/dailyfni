@@ -97,6 +97,15 @@ def init_db():
             FOREIGN KEY (board_id) REFERENCES cafe_boards(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS keyword_comment_mapping (
+            keyword_id INTEGER NOT NULL,
+            comment_template_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (keyword_id, comment_template_id),
+            FOREIGN KEY (keyword_id) REFERENCES keywords(id) ON DELETE CASCADE,
+            FOREIGN KEY (comment_template_id) REFERENCES comment_templates(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS schedule_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             days TEXT DEFAULT '1,1,1,1,1,0,0',
@@ -232,13 +241,19 @@ def get_keywords():
     conn = get_connection()
     rows = conn.execute("SELECT * FROM keywords ORDER BY id").fetchall()
     keywords = [dict(r) for r in rows]
-    # 각 키워드에 매핑된 게시판 ID 목록 추가
+    # 각 키워드에 매핑된 게시판/댓글 템플릿 ID 목록 추가
     for kw in keywords:
-        mapped = conn.execute(
+        mapped_boards = conn.execute(
             "SELECT board_id FROM keyword_board_mapping WHERE keyword_id = ?",
             (kw["id"],)
         ).fetchall()
-        kw["board_ids"] = [r["board_id"] for r in mapped]
+        kw["board_ids"] = [r["board_id"] for r in mapped_boards]
+
+        mapped_comments = conn.execute(
+            "SELECT comment_template_id FROM keyword_comment_mapping WHERE keyword_id = ?",
+            (kw["id"],)
+        ).fetchall()
+        kw["comment_template_ids"] = [r["comment_template_id"] for r in mapped_comments]
     conn.close()
     return keywords
 
@@ -302,6 +317,52 @@ def increment_keyword_usage(keyword_id: int):
     )
     conn.commit()
     conn.close()
+
+
+# ─── Keyword-Comment Mapping ──────────────────────────────
+
+def get_keyword_comments(keyword_id: int):
+    """키워드에 매핑된 댓글 템플릿 ID 목록 반환"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT comment_template_id FROM keyword_comment_mapping WHERE keyword_id = ?",
+        (keyword_id,)
+    ).fetchall()
+    conn.close()
+    return [r["comment_template_id"] for r in rows]
+
+
+def set_keyword_comments(keyword_id: int, template_ids: list):
+    """키워드-댓글 템플릿 매핑 설정 (기존 매핑 교체)"""
+    conn = get_connection()
+    conn.execute("DELETE FROM keyword_comment_mapping WHERE keyword_id = ?", (keyword_id,))
+    for tid in template_ids:
+        conn.execute(
+            "INSERT INTO keyword_comment_mapping (keyword_id, comment_template_id) VALUES (?, ?)",
+            (keyword_id, tid)
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_comments_for_keyword(keyword_id: int):
+    """키워드에 매핑된 활성 댓글 템플릿 반환. 매핑 없으면 전체 활성 템플릿."""
+    conn = get_connection()
+    mapped = conn.execute(
+        """SELECT ct.* FROM comment_templates ct
+           JOIN keyword_comment_mapping kcm ON ct.id = kcm.comment_template_id
+           WHERE kcm.keyword_id = ? AND ct.active = 1""",
+        (keyword_id,)
+    ).fetchall()
+
+    if mapped:
+        conn.close()
+        return [dict(r) for r in mapped]
+
+    # 매핑 없으면 전체 활성 템플릿 (하위 호환)
+    rows = conn.execute("SELECT * FROM comment_templates WHERE active = 1").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ─── Comment Templates CRUD ────────────────────────────────
