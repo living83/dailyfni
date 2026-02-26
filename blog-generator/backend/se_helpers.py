@@ -476,8 +476,91 @@ async def se_insert_image(page, editor, image_path: str):
         logger.warning(f"대표이미지 삽입 실패 (계속 진행): {e}")
 
 
-async def se_input_body(page, editor, content: str):
-    """SE ONE 에디터에 본문 입력 (가운데 정렬, 줄 단위)"""
+async def _se_set_font_size(page, editor, size: int) -> bool:
+    """SE ONE 툴바에서 폰트 크기 변경. 성공 여부 반환."""
+    try:
+        # 1. 툴바 폰트 크기 버튼 클릭
+        font_btn = await try_selectors(editor, [
+            'button[data-name="fontSize"]',
+            '.se-toolbar-item-fontSize button',
+            '.se-toolbar button[aria-label*="글자 크기"]',
+            '.se-toolbar button[aria-label*="크기"]',
+            '.se-toolbar button[aria-label*="font size"]',
+        ], timeout=3000, description="폰트 크기 버튼")
+
+        if not font_btn:
+            # JS 폴백: 툴바에서 현재 폰트 크기가 표시된 버튼 찾기
+            font_btn_handle = await editor.evaluate_handle('''() => {
+                const btns = document.querySelectorAll('.se-toolbar button');
+                for (const btn of btns) {
+                    const text = (btn.textContent || "").trim();
+                    if (/^\\d{1,2}$/.test(text) && parseInt(text) >= 10 && parseInt(text) <= 40) {
+                        return btn;
+                    }
+                }
+                return null;
+            }''')
+            if font_btn_handle:
+                font_btn = font_btn_handle.as_element()
+
+        if not font_btn:
+            logger.warning("폰트 크기 버튼 미발견")
+            return False
+
+        await font_btn.click()
+        await random_delay(0.3, 0.5)
+
+        # 2. 드롭다운에서 크기 선택
+        size_str = str(size)
+        size_item = await try_selectors(editor, [
+            f'[data-value="{size_str}"]',
+            f'.se-popup-font-size li[data-value="{size_str}"]',
+            f'button[data-value="{size_str}"]',
+            f'li:has-text("{size_str}")',
+        ], timeout=3000, description=f"폰트 크기 {size}")
+
+        if not size_item:
+            # JS 폴백: 드롭다운/팝업 내에서 크기 값 매칭
+            js_clicked = await editor.evaluate(f'''() => {{
+                const popups = document.querySelectorAll(
+                    '.se-popup, .se-popup-font-size, [class*="font_size"], [class*="fontSize"]'
+                );
+                for (const popup of popups) {{
+                    const items = popup.querySelectorAll('li, button, [data-value]');
+                    for (const item of items) {{
+                        const val = item.dataset?.value || item.textContent?.trim();
+                        if (val === '{size_str}') {{
+                            item.click();
+                            return true;
+                        }}
+                    }}
+                }}
+                return false;
+            }}''')
+            if js_clicked:
+                logger.info(f"폰트 크기 {size} JS 폴백 성공")
+                await random_delay(0.2, 0.3)
+                return True
+
+            # 드롭다운 닫기 (크기를 못 찾은 경우)
+            await page.keyboard.press("Escape")
+            logger.warning(f"폰트 크기 {size} 항목 미발견")
+            return False
+
+        await size_item.click()
+        await random_delay(0.2, 0.3)
+        logger.info(f"폰트 크기 변경: {size}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"폰트 크기 변경 실패: {e}")
+        return False
+
+
+async def se_input_body(page, editor, content: str,
+                        heading_size: int = 24, body_size: int = 15):
+    """SE ONE 에디터에 본문 입력 (가운데 정렬, 줄 단위).
+    소제목(# / ##)은 볼드 + 큰 폰트로 강조."""
     try:
         body_el = await try_selectors(editor, [
             '.se-component.se-text .se-text-paragraph',
@@ -501,21 +584,41 @@ async def se_input_body(page, editor, content: str):
         if line.strip():
             clean_line = line.strip()
             line_delay = base_delay + random.randint(-8, 12)
+            is_heading = False
+
             if clean_line.startswith("## "):
                 clean_line = clean_line[3:]
-                await page.keyboard.type(clean_line, delay=line_delay)
+                is_heading = True
             elif clean_line.startswith("# "):
                 clean_line = clean_line[2:]
+                is_heading = True
+
+            if is_heading:
+                # 소제목: 폰트 크기 확대 + 볼드
+                await _se_set_font_size(page, editor, heading_size)
+                await page.keyboard.press("Control+b")
+                await random_delay(0.2, 0.3)
+
                 await page.keyboard.type(clean_line, delay=line_delay)
+
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
+
+                # 서식 복원: 볼드 해제 + 폰트 크기 원복
+                await page.keyboard.press("Control+b")
+                await _se_set_font_size(page, editor, body_size)
+                await random_delay(0.2, 0.3)
+
             elif clean_line.startswith("- "):
                 clean_line = clean_line[2:]
                 await page.keyboard.type("• " + clean_line, delay=line_delay)
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
             else:
                 clean_line = clean_line.replace("**", "")
                 await page.keyboard.type(clean_line, delay=line_delay)
-
-            await page.keyboard.press("Enter")
-            await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
+                await page.keyboard.press("Enter")
         else:
             await page.keyboard.press("Enter")
 
