@@ -6,12 +6,18 @@ echo   DailyFNI Cafe Macro Server
 echo ========================================
 echo.
 
-:: Find Python 3.12, 3.13, or python on PATH
+:: Find working Python
 set PYTHON=
 
-py -3.12 --version >nul 2>nul && set PYTHON=py -3.12 && goto :found
-py -3.13 --version >nul 2>nul && set PYTHON=py -3.13 && goto :found
-python --version >nul 2>nul && set PYTHON=python && goto :found
+:: Try python on PATH first (most reliable)
+python -c "print()" >nul 2>nul
+if %errorlevel%==0 set PYTHON=python
+if defined PYTHON goto :found
+
+:: Try py launcher without version (picks default)
+py -c "print()" >nul 2>nul
+if %errorlevel%==0 set PYTHON=py
+if defined PYTHON goto :found
 
 echo [ERROR] Python not found. Install Python 3.12 from:
 echo   https://www.python.org/downloads/
@@ -23,8 +29,14 @@ echo Using: %PYTHON%
 %PYTHON% --version
 echo.
 
+:: Use venv to avoid permission issues
+if not exist "%~dp0.venv" (
+    echo [0/2] Creating virtual environment...
+    %PYTHON% -m venv "%~dp0.venv"
+)
+
 echo [1/2] Installing packages...
-%PYTHON% -m pip install -r "%~dp0requirements.txt" -q
+"%~dp0.venv\Scripts\pip" install -r "%~dp0requirements.txt" -q
 
 echo [2/2] Starting server...
 echo.
@@ -34,6 +46,6 @@ echo.
 echo ========================================
 
 cd /d "%~dp0backend"
-%PYTHON% main.py
+"%~dp0.venv\Scripts\python" main.py
 
 pause
