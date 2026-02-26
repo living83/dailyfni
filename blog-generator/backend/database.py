@@ -35,7 +35,7 @@ def _load_env_file(env_path):
                     key = key.strip()
                     value = value.strip().strip('"').strip("'")
                     if key:
-                        os.environ.setdefault(key, value)
+                        os.environ[key] = value
     except FileNotFoundError:
         logger.warning(f".env 파일을 찾을 수 없습니다: {env_path}")
 
@@ -50,6 +50,8 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DB = os.getenv("MYSQL_DB", "dailyfni")
+
+logger.info(f"MySQL 연결 정보: host={MYSQL_HOST}, port={MYSQL_PORT}, user={MYSQL_USER}, db={MYSQL_DB}, password_length={len(MYSQL_PASSWORD)}")
 
 # 커넥션 풀
 _pool: aiomysql.Pool = None
