@@ -226,6 +226,20 @@ async def delete_comment_template(template_id: int):
     return {"message": "댓글 템플릿 삭제됨"}
 
 
+# ─── Seed Reset API ──────────────────────────────────────
+
+@app.post("/api/seed/reset")
+async def reset_seed():
+    """키워드·댓글을 시드 데이터(300개 키워드)로 초기화"""
+    from seed_data import reseed as reseed_db
+    conn = db.get_connection()
+    try:
+        reseed_db(conn)
+    finally:
+        conn.close()
+    return {"message": "시드 데이터 초기화 완료 (300개 키워드, 102개 댓글)"}
+
+
 # ─── Schedule API ──────────────────────────────────────────
 
 @app.get("/api/schedule")

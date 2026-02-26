@@ -592,11 +592,20 @@ function KeywordTab({ keywords, boards, templates, reload }) {
     reload();
   };
 
+  const resetSeed = async () => {
+    if (!confirm('기존 키워드·댓글을 모두 삭제하고\n시드 데이터(300개 키워드)로 초기화합니다.\n\n계속하시겠습니까?')) return;
+    await fetch(`${API}/api/seed/reset`, { method: 'POST' });
+    reload();
+  };
+
   const activeTemplates = templates.filter(t => t.active);
 
   return (
     <div className="card">
-      <div className="card-title">키워드 큐</div>
+      <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        키워드 큐
+        <button className="btn btn-sm" style={{ fontSize: 11, padding: '4px 10px', background: '#1a2540', border: '1px solid #2a3a5c', color: '#6b7b9e' }} onClick={resetSeed}>시드 초기화 (300개)</button>
+      </div>
       <div className="input-row" style={{ marginBottom: 14 }}>
         <input
           type="text"

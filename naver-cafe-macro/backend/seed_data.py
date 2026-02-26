@@ -440,3 +440,14 @@ def seed(conn: sqlite3.Connection):
 
     conn.commit()
     print(f"[seed] 키워드 {kw_total}개, 댓글 {len(tpl_ids)}개, 매핑 {mapping_total}개 삽입 완료")
+
+
+def reseed(conn: sqlite3.Connection):
+    """기존 키워드·댓글·매핑을 모두 삭제하고 시드 데이터를 재삽입"""
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM keyword_comment_mapping")
+    cursor.execute("DELETE FROM keyword_board_mapping")
+    cursor.execute("DELETE FROM comment_templates")
+    cursor.execute("DELETE FROM keywords")
+    conn.commit()
+    seed(conn)

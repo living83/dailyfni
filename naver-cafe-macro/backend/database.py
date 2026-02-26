@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from seed_data import seed as seed_db
+from seed_data import seed as seed_db, reseed as reseed_db
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cafe_macro.db"
 
