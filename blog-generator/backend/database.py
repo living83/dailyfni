@@ -61,28 +61,52 @@ async def _get_pool() -> aiomysql.Pool:
     """커넥션 풀 반환 (싱글톤, 연결 실패 시 재시도)"""
     global _pool
     if _pool is None or _pool.closed:
+        # 기본 연결 설정
+        pool_kwargs = dict(
+            host=MYSQL_HOST,
+            port=MYSQL_PORT,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            db=MYSQL_DB,
+            charset="utf8mb4",
+            autocommit=True,
+            minsize=1,
+            maxsize=10,
+            cursorclass=aiomysql.DictCursor,
+            connect_timeout=10,
+        )
+        # MySQL 8.0 caching_sha2_password 인증 지원 확인
+        try:
+            import cryptography  # noqa: F401
+            _has_cryptography = True
+        except ImportError:
+            _has_cryptography = False
+
+        # 시도할 인증 방식 목록
+        auth_attempts = [{}]  # 기본(서버 기본 플러그인)
+        if not _has_cryptography:
+            # cryptography 없으면 mysql_native_password 폴백 추가
+            auth_attempts.append({"auth_plugin": "mysql_native_password"})
+
         last_error = None
-        for attempt in range(3):
-            try:
-                _pool = await aiomysql.create_pool(
-                    host=MYSQL_HOST,
-                    port=MYSQL_PORT,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD,
-                    db=MYSQL_DB,
-                    charset="utf8mb4",
-                    autocommit=True,
-                    minsize=1,
-                    maxsize=10,
-                    cursorclass=aiomysql.DictCursor,
-                    connect_timeout=10,
-                )
-                return _pool
-            except Exception as e:
-                last_error = e
-                wait = 2 ** attempt
-                logger.warning(f"MySQL 연결 실패 (시도 {attempt + 1}/3): {e}. {wait}초 후 재시도...")
-                await asyncio.sleep(wait)
+        for auth_extra in auth_attempts:
+            kwargs = {**pool_kwargs, **auth_extra}
+            auth_label = auth_extra.get("auth_plugin", "default")
+            for attempt in range(3):
+                try:
+                    _pool = await aiomysql.create_pool(**kwargs)
+                    if auth_extra:
+                        logger.info(f"MySQL 연결 성공 (auth_plugin={auth_label})")
+                    return _pool
+                except Exception as e:
+                    last_error = e
+                    wait = 2 ** attempt
+                    logger.warning(f"MySQL 연결 실패 (auth={auth_label}, 시도 {attempt + 1}/3): {e}. {wait}초 후 재시도...")
+                    await asyncio.sleep(wait)
+
+        # 모든 시도 실패 시 cryptography 안내 추가
+        if not _has_cryptography:
+            logger.error("MySQL 8.0 인증 실패: 'pip install cryptography' 실행 후 재시도하세요.")
         raise last_error
     return _pool
 
