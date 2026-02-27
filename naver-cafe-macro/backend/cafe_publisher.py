@@ -211,6 +211,39 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         return numeric_id
 
     try:
+        # 방법 0 (최우선): Naver API로 숫자 ID 직접 조회 (페이지 이동 불필요)
+        try:
+            numeric_id = driver.execute_script("""
+                var alias = arguments[0];
+                try {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', 'https://apis.naver.com/cafe-web/cafe2/CafeGateInfo.json?cafeUrl=' + alias, false);
+                    xhr.send();
+                    if (xhr.status === 200) {
+                        var data = JSON.parse(xhr.responseText);
+                        var id = data?.message?.result?.cafeId || data?.message?.result?.cafe?.id;
+                        if (id) return String(id);
+                    }
+                } catch(e) {}
+                try {
+                    var xhr2 = new XMLHttpRequest();
+                    xhr2.open('GET', 'https://apis.naver.com/cafe-web/cafe-mobile/CafeMobileInfo.json?cafeUrl=' + alias, false);
+                    xhr2.send();
+                    if (xhr2.status === 200) {
+                        var data2 = JSON.parse(xhr2.responseText);
+                        var id2 = data2?.message?.result?.cafeId;
+                        if (id2) return String(id2);
+                    }
+                } catch(e2) {}
+                return null;
+            """, cafe_alias)
+            if numeric_id and str(numeric_id).isdigit():
+                return _cache_and_return(str(numeric_id), "Naver API")
+            else:
+                logger.warning(f"Naver API 응답에서 숫자 ID 없음: {numeric_id}")
+        except Exception as e:
+            logger.warning(f"Naver API 조회 실패: {e}")
+
         # 카페 메인 페이지 방문
         driver.get(f"https://cafe.naver.com/{cafe_alias}")
         logger.info(f"카페 페이지 방문: https://cafe.naver.com/{cafe_alias}")
@@ -321,13 +354,17 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         logger.error(f"최종 URL: {driver.current_url}")
         logger.error(f"페이지 제목: {driver.title}")
         # 디버그: 페이지 소스 일부 로깅
-        if len(page_source) > 500:
-            logger.error(f"소스 앞부분: {page_source[:500]}")
-        return cafe_alias
+        try:
+            if len(page_source) > 500:
+                logger.error(f"소스 앞부분: {page_source[:500]}")
+        except Exception:
+            pass
+        # 절대 alias를 반환하지 않음 — 빈 문자열 반환하여 isdigit 체크에서 걸리게 함
+        return ""
 
     except Exception as e:
         logger.error(f"카페 ID 조회 중 예외: {e}")
-        return cafe_alias
+        return ""
 
 
 def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
