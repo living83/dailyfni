@@ -50,21 +50,76 @@ def _strip_non_bmp(text: str) -> str:
 
 
 def fast_type(driver, text: str):
-    """JavaScript insertText로 빠른 텍스트 입력 (현재 포커스된 요소에 입력)"""
+    """JavaScript insertText로 빠른 텍스트 입력 (현재 포커스된 요소에 입력)
+
+    SE ONE 에디터에서 contenteditable 부모가 포커스되어야 execCommand가 동작함.
+    실패 시 contenteditable 요소를 직접 찾아 포커스 후 재시도.
+    """
     text = _strip_non_bmp(text)
+
+    # 1차: 그냥 시도
     result = driver.execute_script(
         "return document.execCommand('insertText', false, arguments[0]);",
         text
     )
-    if not result:
-        logger.warning(f"fast_type 실패 (execCommand 반환 false) — 포커스 없을 수 있음. text='{text[:30]}...'")
-        # 폴백: active element에 send_keys
-        try:
-            active = driver.switch_to.active_element
-            active.send_keys(text)
-            logger.info("fast_type 폴백: send_keys로 입력 성공")
-        except Exception as e:
-            logger.error(f"fast_type 폴백 send_keys도 실패: {e}")
+    if result:
+        return
+
+    # 2차: contenteditable 요소에 명시적 포커스 후 재시도
+    result2 = driver.execute_script("""
+        // contenteditable 요소 찾기 (SE ONE 에디터 본문)
+        var ce = document.querySelector(
+            '.se-component-content [contenteditable="true"], ' +
+            '.se-text-paragraph[contenteditable="true"], ' +
+            '[contenteditable="true"]'
+        );
+        if (ce) {
+            ce.focus();
+            // 커서를 끝으로 이동
+            var sel = window.getSelection();
+            if (sel.rangeCount > 0) {
+                var range = sel.getRangeAt(0);
+                range.collapse(false);
+            }
+            return document.execCommand('insertText', false, arguments[0]);
+        }
+        return false;
+    """, text)
+    if result2:
+        return
+
+    # 3차 폴백: clipboard API (Ctrl+V 시뮬레이션)
+    logger.warning(f"fast_type execCommand 2회 실패 — clipboard 폴백. text='{text[:30]}...'")
+    try:
+        driver.execute_script("""
+            var ce = document.querySelector('[contenteditable="true"]');
+            if (!ce) return;
+            ce.focus();
+            // 텍스트 노드 직접 삽입
+            var sel = window.getSelection();
+            if (sel.rangeCount === 0) {
+                // 커서 없으면 끝에 배치
+                var range = document.createRange();
+                range.selectNodeContents(ce);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+            var range = sel.getRangeAt(0);
+            range.deleteContents();
+            var textNode = document.createTextNode(arguments[0]);
+            range.insertNode(textNode);
+            // 커서를 삽입된 텍스트 뒤로 이동
+            range.setStartAfter(textNode);
+            range.setEndAfter(textNode);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            // input 이벤트 발생 (에디터가 변경 감지하도록)
+            ce.dispatchEvent(new Event('input', {bubbles: true}));
+        """, text)
+        logger.info("fast_type 폴백: DOM 직접 삽입 성공")
+    except Exception as e:
+        logger.error(f"fast_type 모든 방법 실패: {e}")
 
 
 def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0.12):
@@ -910,6 +965,15 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                     // 사이드바 메뉴 제외: 카페 메뉴는 보통 많은 항목 + 특정 클래스
                     var isMenu = ul.closest('.cafe-menu, .gnb, #menuList, .sidebar, nav');
                     if (isMenu) continue;
+                    // gnb_lst (네이버 상단바) 제외
+                    if (ul.classList.contains('gnb_lst') || ul.id === 'gnb_lst') continue;
+                    // 에디터 툴바 제외
+                    if (ul.classList.contains('se-toolbar') || ul.classList.contains('se-cell-controlbar')) continue;
+                    // 설정 리스트 제외
+                    if (ul.classList.contains('set_list')) continue;
+
+                    // option_list 클래스 = 게시판 드롭다운 (최우선)
+                    var isOptionList = ul.classList.contains('option_list');
 
                     // Vue 스코프 매칭: 버튼과 같은 data-v-* 속성 가진 ul 우선
                     var vueMatch = false;
@@ -920,12 +984,14 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                         }
                     }
 
-                    candidateLists.push({ul: ul, items: items, vueMatch: vueMatch});
+                    candidateLists.push({ul: ul, items: items, vueMatch: vueMatch, isOptionList: isOptionList});
                 }
 
-                // Vue 매칭 리스트 우선, 그 다음 일반 리스트
+                // option_list 최우선, Vue 매칭 그 다음
                 candidateLists.sort(function(a, b) {
-                    return (b.vueMatch ? 1 : 0) - (a.vueMatch ? 1 : 0);
+                    var aScore = (a.isOptionList ? 10 : 0) + (a.vueMatch ? 1 : 0);
+                    var bScore = (b.isOptionList ? 10 : 0) + (b.vueMatch ? 1 : 0);
+                    return bScore - aScore;
                 });
 
                 // 진단: 후보 리스트 로깅용 데이터 수집
@@ -943,6 +1009,22 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                         cls: (cand.ul.className || '').substring(0, 50),
                         html: cand.ul.outerHTML.substring(0, 150)
                     });
+                }
+
+                // li 안의 클릭 가능한 요소 찾기 헬퍼
+                // option_list: button.option, 일반: a 또는 li 자체
+                function clickItem(li) {
+                    // 1순위: button.option (Naver 게시판 드롭다운)
+                    var btn = li.querySelector('button.option');
+                    if (btn) { btn.click(); return; }
+                    // 2순위: a 태그
+                    var a = li.querySelector('a');
+                    if (a) { a.click(); return; }
+                    // 3순위: 아무 button
+                    var anyBtn = li.querySelector('button');
+                    if (anyBtn) { anyBtn.click(); return; }
+                    // 최종: li 자체
+                    li.click();
                 }
 
                 // 각 후보에서 매칭 시도
@@ -964,7 +1046,7 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                             }
                             if (menuId === targetId ||
                                 href.indexOf('menuId=' + targetId) >= 0) {
-                                (a || li).click();
+                                clickItem(li);
                                 return {method: 'menuId', text: (li.textContent||'').trim(), diag: diagData};
                             }
                         }
@@ -975,8 +1057,7 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                         for (var k = 0; k < list.items.length; k++) {
                             var txt = (list.items[k].textContent || '').trim();
                             if (txt === targetName || txt.indexOf(targetName) >= 0) {
-                                var a2 = list.items[k].querySelector('a');
-                                (a2 || list.items[k]).click();
+                                clickItem(list.items[k]);
                                 return {method: 'name', text: txt, diag: diagData};
                             }
                         }
@@ -989,8 +1070,7 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                     for (var m = 0; m < first.items.length; m++) {
                         var ft = (first.items[m].textContent || '').trim();
                         if (ft && ft.indexOf('전체') < 0 && ft.indexOf('선택') < 0) {
-                            var a3 = first.items[m].querySelector('a');
-                            (a3 || first.items[m]).click();
+                            clickItem(first.items[m]);
                             return {method: 'fallback', text: ft, diag: diagData};
                         }
                     }
@@ -1374,9 +1454,27 @@ def write_post(
 
         # ── 발행 확인 ──
         current_url = driver.current_url
-        if "articles" in current_url or "ArticleRead" in current_url:
+
+        def _is_published_url(url):
+            """발행된 글 URL인지 확인 (write 페이지 제외)"""
+            if "articles/write" in url or "ArticleWrite" in url:
+                return False
+            # 발행된 글: /articles/숫자 패턴
+            import re
+            if re.search(r'/articles/\d+', url):
+                return True
+            if "ArticleRead" in url:
+                return True
+            return False
+
+        if _is_published_url(current_url):
             logger.info(f"글 발행 성공: {current_url}")
             return current_url
+
+        # 아직 write 페이지면 발행 실패
+        if "articles/write" in current_url:
+            logger.error(f"발행 실패 — 여전히 글쓰기 페이지: {current_url}")
+            return None
 
         # 확인 다이얼로그 처리
         try:
@@ -1386,7 +1484,7 @@ def write_post(
             confirm_btn.click()
             random_delay(3, 5)
             current_url = driver.current_url
-            if "articles" in current_url:
+            if _is_published_url(current_url):
                 return current_url
         except NoSuchElementException:
             pass
@@ -1420,12 +1518,40 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
     body_area: 본문 영역의 활성 요소 (contenteditable div 또는 active element)
     """
 
-    # 에디터 포커스
+    # 에디터 포커스: contenteditable 부모를 찾아서 명시적 포커스
     try:
-        body_area.click()
-    except Exception:
-        driver.execute_script("arguments[0].click();", body_area)
-    random_delay(0.2, 0.3)
+        driver.execute_script("""
+            var el = arguments[0];
+            // contenteditable 요소 찾기 (자기 자신 또는 부모)
+            var ce = el.closest('[contenteditable="true"]');
+            if (!ce) {
+                // 부모에 없으면 전체 에디터에서 찾기
+                ce = document.querySelector(
+                    '.se-component-content [contenteditable="true"], ' +
+                    '[contenteditable="true"]'
+                );
+            }
+            if (ce) {
+                ce.focus();
+                // 커서를 끝에 배치
+                var sel = window.getSelection();
+                var range = document.createRange();
+                range.selectNodeContents(ce);
+                range.collapse(false);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else {
+                el.click();
+            }
+        """, body_area)
+        logger.info("본문 contenteditable 포커스 설정 완료")
+    except Exception as e:
+        logger.warning(f"본문 contenteditable 포커스 실패: {e}, click 폴백")
+        try:
+            body_area.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", body_area)
+    random_delay(0.3, 0.5)
 
     for section in structured_content["sections"]:
         s_type = section["type"]
