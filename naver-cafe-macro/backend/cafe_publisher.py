@@ -825,6 +825,28 @@ def _log_editor_diagnostics(driver):
             cls = el.get_attribute("class") or ""
             logger.error(f"  editable[{i}]: {el.tag_name}.{cls}")
 
+        # se-text-paragraph 요소 (제목/본문 핵심 요소)
+        paragraphs = driver.find_elements(By.CSS_SELECTOR, ".se-text-paragraph")
+        logger.error(f"[진단] .se-text-paragraph 수: {len(paragraphs)}")
+        for i, p in enumerate(paragraphs[:5]):
+            cls = p.get_attribute("class") or ""
+            txt = (p.text or "")[:50]
+            parent_cls = ""
+            try:
+                parent = p.find_element(By.XPATH, "./..")
+                parent_cls = parent.get_attribute("class") or ""
+            except Exception:
+                pass
+            logger.error(f"  paragraph[{i}]: class={cls}, parent_class={parent_cls}, text='{txt}'")
+
+        # placeholder 속성 가진 요소
+        ph_els = driver.find_elements(By.CSS_SELECTOR, "[data-placeholder]")
+        logger.error(f"[진단] data-placeholder 요소 수: {len(ph_els)}")
+        for i, el in enumerate(ph_els[:5]):
+            ph = el.get_attribute("data-placeholder") or ""
+            cls = el.get_attribute("class") or ""
+            logger.error(f"  placeholder[{i}]: '{ph}', tag={el.tag_name}.{cls}")
+
         # 게시판 선택 상태
         try:
             board_btn = driver.find_element(
@@ -930,6 +952,146 @@ def _ensure_board_selected(driver):
         logger.warning(f"게시판 선택 확인 중 오류: {e}")
 
 
+# ─── 에디터 요소 탐색 ───────────────────────────────────
+
+def _find_title_element(driver):
+    """SE ONE 에디터에서 제목 입력 영역 찾기 (다중 전략)"""
+
+    # 전략 1: CSS 셀렉터 (기존 SE ONE 클래스)
+    title_selectors = [
+        ".se-ff-system.se-fs28.se-placeholder.__se_title",
+        ".se-title-text .se-text-paragraph",
+        ".__se_title",
+        ".se-documentTitle .se-text-paragraph",
+        ".se-title .se-text-paragraph",
+        ".se-section-title .se-text-paragraph",
+        "span.se-ff-system.se-fs28",
+    ]
+    el = _find_element_multi_selector(driver, title_selectors, timeout=3)
+    if el:
+        return el
+
+    # 전략 2: JavaScript DOM 탐색 (텍스트/속성 기반)
+    logger.info("CSS 셀렉터 실패 → JS DOM 탐색 시도")
+    try:
+        el = driver.execute_script("""
+            // 1. se-text-paragraph 중 제목 영역 찾기
+            var paragraphs = document.querySelectorAll('.se-text-paragraph');
+            for (var p of paragraphs) {
+                var parent = p.closest('.se-section-title, .se-title-text, .se-documentTitle');
+                if (parent) return p;
+            }
+
+            // 2. __se_title 클래스 포함 요소
+            var titleEl = document.querySelector('[class*="__se_title"]');
+            if (titleEl) return titleEl;
+
+            // 3. placeholder에 "제목" 포함 요소
+            var allEls = document.querySelectorAll('[data-placeholder], [placeholder]');
+            for (var el of allEls) {
+                var ph = (el.getAttribute('data-placeholder') || el.getAttribute('placeholder') || '');
+                if (ph.includes('제목')) return el;
+            }
+
+            // 4. "제목을 입력" 텍스트를 포함하는 se-text-paragraph
+            for (var p of paragraphs) {
+                if (p.textContent.includes('제목을 입력') || p.textContent.includes('제목')) {
+                    return p;
+                }
+            }
+
+            // 5. 첫 번째 se-text-paragraph (보통 제목)
+            if (paragraphs.length > 0) return paragraphs[0];
+
+            return null;
+        """)
+        if el:
+            logger.info(f"JS DOM 탐색으로 제목 발견: tag={el.tag_name}, class={el.get_attribute('class')}")
+            return el
+    except Exception as e:
+        logger.warning(f"JS DOM 탐색 실패: {e}")
+
+    # 전략 3: contenteditable div 직접 클릭 (최종 폴백)
+    logger.warning("JS DOM 탐색도 실패 → contenteditable 직접 사용")
+    try:
+        editor_div = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div[contenteditable='true']"))
+        )
+        logger.info("contenteditable div를 제목 영역으로 사용 (커서는 상단=제목에 위치)")
+        return editor_div
+    except TimeoutException:
+        pass
+
+    return None
+
+
+def _find_body_element(driver, title_area):
+    """SE ONE 에디터에서 본문 입력 영역 찾기 (다중 전략)"""
+
+    # 전략 1: CSS 셀렉터
+    body_selectors = [
+        ".se-component-content .se-text-paragraph",
+        ".se-main-container .se-text-paragraph",
+        ".se-section-content .se-text-paragraph",
+        ".se-component .se-text-paragraph",
+        ".se-section-text .se-text-paragraph",
+    ]
+    el = _find_element_multi_selector(driver, body_selectors, timeout=3)
+    if el:
+        return el
+
+    # 전략 2: JavaScript DOM 탐색
+    logger.info("CSS 셀렉터 실패 → JS DOM 탐색으로 본문 찾기")
+    try:
+        el = driver.execute_script("""
+            // 1. se-text-paragraph 중 본문 영역 찾기 (제목이 아닌 것)
+            var paragraphs = document.querySelectorAll('.se-text-paragraph');
+            for (var p of paragraphs) {
+                var parent = p.closest('.se-section-title, .se-title-text, .se-documentTitle');
+                if (!parent) {
+                    // 제목이 아닌 se-text-paragraph = 본문
+                    return p;
+                }
+            }
+
+            // 2. placeholder에 "내용" 포함 요소
+            var allEls = document.querySelectorAll('[data-placeholder], [placeholder]');
+            for (var el of allEls) {
+                var ph = (el.getAttribute('data-placeholder') || el.getAttribute('placeholder') || '');
+                if (ph.includes('내용')) return el;
+            }
+
+            // 3. "내용을 입력" 텍스트 포함 요소
+            for (var p of paragraphs) {
+                if (p.textContent.includes('내용을 입력')) return p;
+            }
+
+            // 4. 두 번째 se-text-paragraph (첫 번째=제목, 두 번째=본문)
+            if (paragraphs.length > 1) return paragraphs[1];
+
+            return null;
+        """)
+        if el:
+            logger.info(f"JS DOM 탐색으로 본문 발견: tag={el.tag_name}, class={el.get_attribute('class')}")
+            return el
+    except Exception as e:
+        logger.warning(f"JS 본문 탐색 실패: {e}")
+
+    # 전략 3: 제목에서 Tab 키로 본문 이동 (최종 폴백)
+    logger.warning("본문 요소 못 찾음 → Tab 키로 본문 이동 시도")
+    try:
+        title_area.send_keys(Keys.TAB)
+        random_delay(0.5, 1.0)
+        body = driver.switch_to.active_element
+        if body:
+            logger.info("Tab 키로 본문 영역 이동 성공")
+            return body
+    except Exception as e:
+        logger.warning(f"Tab 키 본문 이동 실패: {e}")
+
+    return None
+
+
 # ─── 글 작성 (구조화된 콘텐츠) ────────────────────────────
 
 def write_post(
@@ -963,44 +1125,8 @@ def write_post(
         _ensure_board_selected(driver)
         random_delay(1, 2)
 
-        # ── 에디터 iframe 진입 시도 ──
-        switched_iframe = _try_switch_to_editor_iframe(driver)
-
         # ── 제목 입력 ──
-        title_selectors = [
-            ".se-ff-system.se-fs28.se-placeholder.__se_title",
-            ".se-title-text .se-text-paragraph",
-            ".__se_title",
-            ".se-documentTitle .se-text-paragraph",
-            ".se-title .se-text-paragraph",
-            ".se-section-title .se-text-paragraph",
-            "span.se-ff-system.se-fs28",
-        ]
-        title_area = _find_element_multi_selector(driver, title_selectors, timeout=5)
-
-        if not title_area:
-            # iframe에서 못 찾았으면 메인 프레임으로 돌아가서 재시도
-            if switched_iframe:
-                driver.switch_to.default_content()
-                logger.info("iframe에서 제목 못 찾음, 메인 프레임에서 재시도")
-                title_area = _find_element_multi_selector(driver, title_selectors, timeout=5)
-
-        if not title_area:
-            # contenteditable 기반 폴백
-            logger.warning("CSS 셀렉터로 제목 못 찾음, contenteditable 폴백 시도")
-            try:
-                editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
-                for el in editables:
-                    cls = (el.get_attribute("class") or "").lower()
-                    placeholder = (el.get_attribute("data-placeholder") or
-                                   el.get_attribute("placeholder") or "").lower()
-                    if "title" in cls or "제목" in placeholder or "__se_title" in cls:
-                        title_area = el
-                        logger.info(f"contenteditable 제목 발견: class={cls}")
-                        break
-            except Exception:
-                pass
-
+        title_area = _find_title_element(driver)
         if not title_area:
             logger.error("제목 영역을 찾을 수 없음 — 진단 정보 출력")
             _log_editor_diagnostics(driver)
@@ -1012,29 +1138,7 @@ def write_post(
         random_delay(0.5, 1.0)
 
         # ── 본문 영역 진입 ──
-        body_selectors = [
-            ".se-component-content .se-text-paragraph",
-            ".se-main-container .se-text-paragraph",
-            ".se-section-content .se-text-paragraph",
-            ".se-component .se-text-paragraph",
-        ]
-        body_area = _find_element_multi_selector(driver, body_selectors, timeout=5)
-
-        if not body_area:
-            # contenteditable 폴백 (제목이 아닌 두 번째 contenteditable)
-            logger.warning("CSS 셀렉터로 본문 못 찾음, contenteditable 폴백 시도")
-            try:
-                editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
-                for el in editables:
-                    if el != title_area:
-                        cls = (el.get_attribute("class") or "").lower()
-                        if "title" not in cls:
-                            body_area = el
-                            logger.info(f"contenteditable 본문 발견: class={cls}")
-                            break
-            except Exception:
-                pass
-
+        body_area = _find_body_element(driver, title_area)
         if not body_area:
             logger.error("본문 영역을 찾을 수 없음 — 진단 정보 출력")
             _log_editor_diagnostics(driver)
