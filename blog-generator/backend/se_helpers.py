@@ -479,29 +479,64 @@ async def se_insert_image(page, editor, image_path: str):
 async def _se_set_font_size(page, editor, size: int) -> bool:
     """SE ONE 툴바에서 폰트 크기 변경. 성공 여부 반환."""
     try:
-        # 1. 툴바 폰트 크기 버튼 클릭
-        font_btn = await try_selectors(editor, [
+        font_size_selectors = [
             'button[data-name="fontSize"]',
+            'button[data-name="fontsize"]',
+            'button[data-name="font_size"]',
             '.se-toolbar-item-fontSize button',
+            '.se-toolbar-item-fontsize button',
             '.se-toolbar button[aria-label*="글자 크기"]',
             '.se-toolbar button[aria-label*="크기"]',
             '.se-toolbar button[aria-label*="font size"]',
-        ], timeout=3000, description="폰트 크기 버튼")
+            '.se-toolbar button[aria-label*="글꼴 크기"]',
+            'button.se-text-size-button',
+            '.se-toolbar .se-font-size button',
+        ]
+
+        # 1. 툴바 폰트 크기 버튼 클릭 - editor에서 먼저 시도
+        font_btn = await try_selectors(editor, font_size_selectors,
+                                        timeout=2000, description="폰트 크기 버튼(에디터)")
+
+        # editor에서 못 찾으면 page에서 시도
+        if not font_btn and editor != page:
+            font_btn = await try_selectors(page, font_size_selectors,
+                                            timeout=2000, description="폰트 크기 버튼(페이지)")
+
+        # 모든 프레임에서도 시도
+        if not font_btn:
+            for frame in page.frames:
+                if frame == page.main_frame or frame == editor:
+                    continue
+                try:
+                    font_btn = await try_selectors(frame, font_size_selectors,
+                                                    timeout=1500, description="폰트 크기 버튼(프레임)")
+                    if font_btn:
+                        break
+                except Exception:
+                    continue
 
         if not font_btn:
             # JS 폴백: 툴바에서 현재 폰트 크기가 표시된 버튼 찾기
-            font_btn_handle = await editor.evaluate_handle('''() => {
-                const btns = document.querySelectorAll('.se-toolbar button');
-                for (const btn of btns) {
-                    const text = (btn.textContent || "").trim();
-                    if (/^\\d{1,2}$/.test(text) && parseInt(text) >= 10 && parseInt(text) <= 40) {
-                        return btn;
-                    }
-                }
-                return null;
-            }''')
-            if font_btn_handle:
-                font_btn = font_btn_handle.as_element()
+            for target in ([editor, page] if editor != page else [editor]):
+                try:
+                    font_btn_handle = await target.evaluate_handle('''() => {
+                        const btns = document.querySelectorAll('.se-toolbar button, [class*="toolbar"] button');
+                        for (const btn of btns) {
+                            const text = (btn.textContent || "").trim();
+                            if (/^\\d{1,2}$/.test(text) && parseInt(text) >= 10 && parseInt(text) <= 40) {
+                                return btn;
+                            }
+                        }
+                        return null;
+                    }''')
+                    if font_btn_handle:
+                        el = font_btn_handle.as_element()
+                        if el:
+                            font_btn = el
+                            logger.info("폰트 크기 버튼 JS 폴백 발견")
+                            break
+                except Exception:
+                    continue
 
         if not font_btn:
             logger.warning("폰트 크기 버튼 미발견")
@@ -512,31 +547,44 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
 
         # 2. 드롭다운에서 크기 선택
         size_str = str(size)
-        size_item = await try_selectors(editor, [
+        size_selectors = [
             f'[data-value="{size_str}"]',
             f'.se-popup-font-size li[data-value="{size_str}"]',
             f'button[data-value="{size_str}"]',
             f'li:has-text("{size_str}")',
-        ], timeout=3000, description=f"폰트 크기 {size}")
+        ]
+        size_item = await try_selectors(editor, size_selectors,
+                                         timeout=3000, description=f"폰트 크기 {size}(에디터)")
+
+        if not size_item and editor != page:
+            size_item = await try_selectors(page, size_selectors,
+                                             timeout=2000, description=f"폰트 크기 {size}(페이지)")
 
         if not size_item:
             # JS 폴백: 드롭다운/팝업 내에서 크기 값 매칭
-            js_clicked = await editor.evaluate(f'''() => {{
-                const popups = document.querySelectorAll(
-                    '.se-popup, .se-popup-font-size, [class*="font_size"], [class*="fontSize"]'
-                );
-                for (const popup of popups) {{
-                    const items = popup.querySelectorAll('li, button, [data-value]');
-                    for (const item of items) {{
-                        const val = item.dataset?.value || item.textContent?.trim();
-                        if (val === '{size_str}') {{
-                            item.click();
-                            return true;
+            js_clicked = False
+            for target in ([editor, page] if editor != page else [editor]):
+                try:
+                    js_clicked = await target.evaluate(f'''() => {{
+                        const popups = document.querySelectorAll(
+                            '.se-popup, .se-popup-font-size, [class*="font_size"], [class*="fontSize"]'
+                        );
+                        for (const popup of popups) {{
+                            const items = popup.querySelectorAll('li, button, [data-value]');
+                            for (const item of items) {{
+                                const val = item.dataset?.value || item.textContent?.trim();
+                                if (val === '{size_str}') {{
+                                    item.click();
+                                    return true;
+                                }}
+                            }}
                         }}
-                    }}
-                }}
-                return false;
-            }}''')
+                        return false;
+                    }}''')
+                    if js_clicked:
+                        break
+                except Exception:
+                    continue
             if js_clicked:
                 logger.info(f"폰트 크기 {size} JS 폴백 성공")
                 await random_delay(0.2, 0.3)
