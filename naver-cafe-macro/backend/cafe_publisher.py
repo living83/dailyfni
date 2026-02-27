@@ -347,14 +347,26 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L"
         logger.info(f"글쓰기 URL: {write_url}")
         driver.get(write_url)
-        random_delay(3, 5)
 
-        # 글쓰기 페이지 도달 확인
+        # 페이지 로드 + JS 리다이렉트 대기 (충분히 기다려야 JS 리다이렉트 감지 가능)
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+        except TimeoutException:
+            logger.warning("글쓰기 페이지 로드 타임아웃")
+        random_delay(2, 3)
+
+        # 글쓰기 페이지 도달 확인 (JS 리다이렉트 후 URL 재검증)
         current_url = driver.current_url
+        logger.info(f"글쓰기 페이지 이동 후 URL: {current_url}")
+
         if "articles/write" in current_url or "ArticleWrite" in current_url:
             logger.info(f"글쓰기 페이지 이동 성공: url={current_url}")
-        elif "naver.com" == current_url.split("/")[2].replace("www.", ""):
-            logger.error(f"네이버 메인으로 리다이렉트됨! cafe_id={cafe_id}가 잘못된 것으로 보임")
+        elif "cafe.naver.com" not in current_url:
+            # 네이버 메인이나 다른 페이지로 리다이렉트됨
+            logger.error(f"글쓰기 페이지에서 이탈! 현재 URL: {current_url}")
+            logger.error(f"cafe_id={cafe_id} 가 유효하지 않거나 세션 만료")
             # 캐시 무효화
             if cafe_alias in _cafe_id_cache:
                 del _cafe_id_cache[cafe_alias]
@@ -763,7 +775,13 @@ def write_post(
     Returns: 발행된 글 URL 또는 None
     """
     try:
-        wait = WebDriverWait(driver, 15)
+        # ── URL 사전 검증: 글쓰기 페이지가 맞는지 확인 ──
+        current_url = driver.current_url
+        if "articles/write" not in current_url and "ArticleWrite" not in current_url:
+            logger.error(f"글 작성 시작 전 URL이 글쓰기 페이지가 아님: {current_url}")
+            return None
+
+        wait = WebDriverWait(driver, 30)
 
         # ── 제목 입력 ──
         title_area = wait.until(EC.presence_of_element_located(

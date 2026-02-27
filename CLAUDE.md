@@ -7,3 +7,16 @@
 
 ## 안내 시 주의
 - 사용자에게 실행 안내할 때: `git pull` 후 `run.bat` 실행
+
+## 발견된 이슈 & 교훈
+
+### 글쓰기 타임아웃 (2026-02-27)
+- **증상**: 글쓰기 페이지 이동 후 `www.naver.com`으로 리다이렉트 → write_post 타임아웃
+- **원인**: `/ca-fe/cafes/{cafe_id}/articles/write` URL에 숫자 ID가 아닌 문자열 alias(`smartcredit`)가 들어감
+- **Naver /ca-fe/ URL은 반드시 숫자 cafe ID만 지원** — alias 사용 시 메인페이지로 리다이렉트됨
+- **수정 내용**:
+  1. `navigate_to_write_page`: WebDriverWait로 페이지 로드 완전 대기 + JS 리다이렉트 감지
+  2. `navigate_to_write_page`: `cafe.naver.com` 도메인 이탈 감지 시 즉시 실패 반환
+  3. `write_post`: 에디터 요소 탐색 전 URL이 글쓰기 페이지인지 사전 검증
+  4. `write_post`: WebDriverWait 타임아웃 15초 → 30초로 증가
+- **주의**: `_resolve_numeric_cafe_id` 실패 시 alias를 그대로 반환하면 안 됨 (isdigit 체크 필수)
