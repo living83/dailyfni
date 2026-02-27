@@ -1,33 +1,27 @@
 """
 content_generator.py - 키워드 기반 글 내용 자동 생성
 
-글2 템플릿 구조:
-1. 도입부: 인사 + 상황공감 + 키워드 언급 (~10문장, 나눔스퀘어네오)
-2. 핵심부: 정보 + 주의사항 + 강조 (~15문장)
-   - 강조① 빨강+노란배경+볼드 (핵심 경고)
-   - 강조② 보라+밑줄+볼드 (핵심 장점)
-3. CTA 테이블: 키워드+상담 (24px, 볼드, 노란배경, 링크)
+글 템플릿 구조:
+1. 도입부: 인사 + 상황공감 + 키워드 언급 (~10문장)
+2. 핵심부: 정보 + 주의사항 (~15문장)
+3. CTA 테이블: 키워드+상담 (링크)
 4. 마무리부: 추가조언 + 인사 (~7문장)
 5. 스티커 + 이미지
 """
 
 import random
 
-# ─── 스타일 상수 (publisher에서 서식 적용 시 사용) ─────────
+# ─── 스타일 상수 ─────────────────────────────────────────
 
 STYLE_NORMAL = "normal"
 STYLE_EMPTY = "empty"
-STYLE_HIGHLIGHT_RED = "highlight_red"       # bold + color:#ff0010 + bg:#fff8b2
-STYLE_HIGHLIGHT_PURPLE = "highlight_purple"  # bold + color:#740060 + underline
-
-FONT_DEFAULT = "nanumsquareneo"
 
 
 # ─── 제목 템플릿 ─────────────────────────────────────────
 
 TITLE_TEMPLATES = [
-    "{keyword} 안 되는 줄 알았는데 가능했어요ㅠ",
-    "{keyword} 드디어 해결했습니다 ㅎㅎ",
+    "{keyword} 안 되는 줄 알았는데 가능했어요",
+    "{keyword} 드디어 해결했습니다",
     "{keyword} 혼자 고민하지 마세요!",
     "{keyword} 이렇게 하면 된다는 거 아셨나요?",
     "{keyword} 후기 남겨봅니다",
@@ -49,7 +43,7 @@ STORY_TEMPLATES = [
         "intro": [
             ("안녕하세요! 오늘은 제가 직접 경험한 이야기를 해볼까 해요", STYLE_NORMAL),
             ("여러분들에게 도움이 될 만한 꿀팁을 가져와봤거든요", STYLE_NORMAL),
-            ("이렇게 짜잔 하고 등장해봤어요ㅎㅎ", STYLE_NORMAL),
+            ("이렇게 짜잔 하고 등장해봤어요", STYLE_NORMAL),
             ("", STYLE_EMPTY),
             ("누구나 갑자기 어려운 상황에 처할 때가 있잖아요 그죠?", STYLE_NORMAL),
             ("저도 그랬거든요 진짜 막막했었어요", STYLE_NORMAL),
@@ -64,14 +58,14 @@ STORY_TEMPLATES = [
             ("마냥 {keyword} 검색해서 나오는 곳이면", STYLE_NORMAL),
             ("다 괜찮다고 생각하는 분들이 정말 많은데요", STYLE_NORMAL),
             ("이게 가장 위험해요!!!", STYLE_NORMAL),
-            ("만약 이상한 곳이면 어쩌려고 그러세요ㅠ", STYLE_NORMAL),
+            ("만약 이상한 곳이면 어쩌려고 그러세요", STYLE_NORMAL),
             ("{keyword}을 알아보고 있다면", STYLE_NORMAL),
-            ("공식 홈페이지가 있는지 먼저 체크해보고", STYLE_HIGHLIGHT_RED),
-            ("정식 업체가 정말 맞는지를 꼭 확인하세요", STYLE_HIGHLIGHT_RED),
+            ("공식 홈페이지가 있는지 먼저 체크해보고", STYLE_NORMAL),
+            ("정식 업체가 정말 맞는지를 꼭 확인하세요", STYLE_NORMAL),
             ("요즘은 카페에서도 중개를 많이 하다보니", STYLE_NORMAL),
             ("쉽게 접근하는 분들이 많다고 하는데요", STYLE_NORMAL),
             ("검증된 한 곳에서 제공하는 서비스를 받는게 좋더라구요", STYLE_NORMAL),
-            ("후기 확인 + 실제 반응 보기 + 부담없이 알아볼 수 있다는", STYLE_HIGHLIGHT_PURPLE),
+            ("후기 확인 + 실제 반응 보기 + 부담없이 알아볼 수 있다는", STYLE_NORMAL),
             ("장점이 있지만 카페에서만 활동하는 곳은 조심하세요", STYLE_NORMAL),
             ("이런 부분을 잘 따져보는게 {keyword} 과정에서", STYLE_NORMAL),
             ("분명 도움이 될 거에요!", STYLE_NORMAL),
@@ -83,14 +77,14 @@ STORY_TEMPLATES = [
             ("무리하면 오히려 더 힘들어질 수 있거든요", STYLE_NORMAL),
             ("뭐가 됐든 적당한게 최고입니다", STYLE_NORMAL),
             ("혹시 고민되시면 전문 상담부터 받아보세요!", STYLE_NORMAL),
-            ("그럼 오늘도 좋은 하루 보내세용~", STYLE_NORMAL),
+            ("그럼 오늘도 좋은 하루 보내세요", STYLE_NORMAL),
         ],
     },
 
     # ━━━ 스토리 2: 정보 공유형 ━━━
     {
         "intro": [
-            ("안녕하세요 여러분~!", STYLE_NORMAL),
+            ("안녕하세요 여러분!", STYLE_NORMAL),
             ("오늘은 많은 분들이 궁금해하시는 {keyword}에 대해", STYLE_NORMAL),
             ("제가 직접 알아본 내용을 공유해드릴게요", STYLE_NORMAL),
             ("", STYLE_EMPTY),
@@ -108,16 +102,16 @@ STORY_TEMPLATES = [
             ("다 같은 조건이 아니라는 거 알고 계셨나요?", STYLE_NORMAL),
             ("저도 처음에 아무 데나 연락했다가 낭패 볼 뻔했어요", STYLE_NORMAL),
             ("반드시 정식 등록된 업체인지 확인하세요!", STYLE_NORMAL),
-            ("등록 여부를 먼저 확인하는 게 첫 번째 단계에요", STYLE_HIGHLIGHT_RED),
-            ("홈페이지에서 사업자 정보가 공개되어 있는지 보세요", STYLE_HIGHLIGHT_RED),
+            ("등록 여부를 먼저 확인하는 게 첫 번째 단계에요", STYLE_NORMAL),
+            ("홈페이지에서 사업자 정보가 공개되어 있는지 보세요", STYLE_NORMAL),
             ("그리고 {keyword} 조건도 잘 비교해봐야 해요", STYLE_NORMAL),
             ("같은 것 같아도 업체마다 세부 조건이 다르거든요", STYLE_NORMAL),
             ("실제 이용 후기를 꼼꼼히 살펴보는 것도 중요해요", STYLE_NORMAL),
-            ("직접 경험한 사람들의 솔직한 후기가 가장 믿을 만하죠", STYLE_HIGHLIGHT_PURPLE),
+            ("직접 경험한 사람들의 솔직한 후기가 가장 믿을 만하죠", STYLE_NORMAL),
             ("블로그나 카페 후기 중에서도 광고가 아닌 걸 찾아보세요", STYLE_NORMAL),
             ("{keyword} 이용 전에 이 정도만 체크해도", STYLE_NORMAL),
             ("나쁜 곳에 걸릴 확률이 확 줄어들어요", STYLE_NORMAL),
-            ("아는 만큼 보인다고 하잖아요 ㅎㅎ", STYLE_NORMAL),
+            ("아는 만큼 보인다고 하잖아요", STYLE_NORMAL),
         ],
         "closing": [
             ("마지막으로 한 가지만 더 말씀드릴게요", STYLE_NORMAL),
@@ -135,7 +129,7 @@ STORY_TEMPLATES = [
         "intro": [
             ("혹시 저처럼 {keyword} 때문에 고민 중이신 분 계신가요?", STYLE_NORMAL),
             ("저는 한동안 이것 때문에 정말 스트레스를 많이 받았었어요", STYLE_NORMAL),
-            ("밤에 잠도 제대로 못 자고 한숨만 쉬었거든요ㅠ", STYLE_NORMAL),
+            ("밤에 잠도 제대로 못 자고 한숨만 쉬었거든요", STYLE_NORMAL),
             ("", STYLE_EMPTY),
             ("근데 이제는 어느 정도 정리가 돼서 마음이 좀 편해졌어요", STYLE_NORMAL),
             ("제가 겪은 과정을 공유하면", STYLE_NORMAL),
@@ -150,16 +144,16 @@ STORY_TEMPLATES = [
             ("어떤 곳은 조건이 너무 좋아 보여서 오히려 의심이 가고", STYLE_NORMAL),
             ("어떤 곳은 후기가 하나도 없고 그래서 불안했거든요", STYLE_NORMAL),
             ("결론부터 말하면 무조건 검증된 곳으로 가세요", STYLE_NORMAL),
-            ("사업자등록이 되어 있는 정식 업체인지 확인하세요", STYLE_HIGHLIGHT_RED),
-            ("상담받을 때 수수료나 조건을 명확하게 설명해주는 곳이 좋아요", STYLE_HIGHLIGHT_RED),
+            ("사업자등록이 되어 있는 정식 업체인지 확인하세요", STYLE_NORMAL),
+            ("상담받을 때 수수료나 조건을 명확하게 설명해주는 곳이 좋아요", STYLE_NORMAL),
             ("저는 처음에 카페에서 추천받은 곳으로 갔었는데", STYLE_NORMAL),
             ("알고보니 중간에서 수수료만 떼가는 곳이었어요", STYLE_NORMAL),
             ("그래서 다시 {keyword} 제대로 된 곳을 찾았죠", STYLE_NORMAL),
             ("이번에는 공식 홈페이지가 있는 곳으로 직접 상담받았어요", STYLE_NORMAL),
-            ("상담사분이 친절하게 하나하나 설명해주셔서 신뢰가 갔어요", STYLE_HIGHLIGHT_PURPLE),
+            ("상담사분이 친절하게 하나하나 설명해주셔서 신뢰가 갔어요", STYLE_NORMAL),
             ("무엇보다 강제로 진행시키지 않아서 부담이 없었어요", STYLE_NORMAL),
             ("{keyword} 알아볼 때 이런 곳을 찾으셔야 해요", STYLE_NORMAL),
-            ("억지로 밀어붙이는 곳은 피하세요 제발요ㅠ", STYLE_NORMAL),
+            ("억지로 밀어붙이는 곳은 피하세요 제발요", STYLE_NORMAL),
         ],
         "closing": [
             ("아 그리고 하나만 더 말씀드릴게요", STYLE_NORMAL),
@@ -167,7 +161,7 @@ STORY_TEMPLATES = [
             ("부담 없이 물어보고 안 맞으면 안 하면 되는 거예요", STYLE_NORMAL),
             ("{keyword} 혼자 끙끙 앓지 마시고", STYLE_NORMAL),
             ("전문가한테 한번 물어보세요 생각보다 길이 있더라구요", STYLE_NORMAL),
-            ("저도 그랬으니까요 ㅎㅎ", STYLE_NORMAL),
+            ("저도 그랬으니까요", STYLE_NORMAL),
             ("여러분도 잘 해결되실 거예요 화이팅!", STYLE_NORMAL),
         ],
     },
@@ -175,7 +169,7 @@ STORY_TEMPLATES = [
     # ━━━ 스토리 4: 비교 분석형 ━━━
     {
         "intro": [
-            ("안녕하세요~ 요즘 {keyword} 알아보시는 분 많으시죠?", STYLE_NORMAL),
+            ("안녕하세요 요즘 {keyword} 알아보시는 분 많으시죠?", STYLE_NORMAL),
             ("저도 한참 알아보다가 이제 좀 감이 잡혀서", STYLE_NORMAL),
             ("알게 된 내용 정리해서 공유해드리려고 해요!", STYLE_NORMAL),
             ("", STYLE_EMPTY),
@@ -193,14 +187,14 @@ STORY_TEMPLATES = [
             ("하나는 직접 운영하는 정식 업체", STYLE_NORMAL),
             ("다른 하나는 중간에서 연결만 해주는 중개 업체에요", STYLE_NORMAL),
             ("당연히 직접 운영하는 정식 업체가 훨씬 안전하겠죠?", STYLE_NORMAL),
-            ("정식 업체는 홈페이지에 사업자 정보가 공개되어 있어요", STYLE_HIGHLIGHT_RED),
-            ("상담 과정에서 모든 조건을 투명하게 안내해줘요", STYLE_HIGHLIGHT_RED),
+            ("정식 업체는 홈페이지에 사업자 정보가 공개되어 있어요", STYLE_NORMAL),
+            ("상담 과정에서 모든 조건을 투명하게 안내해줘요", STYLE_NORMAL),
             ("반면에 중개 업체는 수수료가 추가로 붙는 경우가 많고", STYLE_NORMAL),
             ("나중에 문제가 생겨도 책임을 안 지려고 하는 경우가 있어요", STYLE_NORMAL),
             ("그러니까 {keyword} 알아보실 때는", STYLE_NORMAL),
             ("꼭 직접 운영하는 곳인지 확인하세요!", STYLE_NORMAL),
-            ("무료 상담을 제공하고 강제 진행이 없는 곳을 선택하세요", STYLE_HIGHLIGHT_PURPLE),
-            ("이것만 기억해도 반은 성공이에요 진짜로요 ㅎㅎ", STYLE_NORMAL),
+            ("무료 상담을 제공하고 강제 진행이 없는 곳을 선택하세요", STYLE_NORMAL),
+            ("이것만 기억해도 반은 성공이에요 진짜로요", STYLE_NORMAL),
         ],
         "closing": [
             ("추가로 한 가지 팁을 더 드리자면", STYLE_NORMAL),
@@ -209,7 +203,7 @@ STORY_TEMPLATES = [
             ("{keyword} 관련 검증된 곳 하나를 골라서", STYLE_NORMAL),
             ("집중적으로 상담받는 게 훨씬 효율적이에요", STYLE_NORMAL),
             ("도움이 되셨으면 좋겠네요!", STYLE_NORMAL),
-            ("다들 좋은 결과 있으시길 바랍니다~", STYLE_NORMAL),
+            ("다들 좋은 결과 있으시길 바랍니다", STYLE_NORMAL),
         ],
     },
 
@@ -230,16 +224,16 @@ STORY_TEMPLATES = [
             ("", STYLE_EMPTY),
             ("근데 아무 곳이나 가면 안 돼요 이건 진짜 중요해요", STYLE_NORMAL),
             ("저도 처음에 검색해서 나온 곳에 무작정 전화했다가", STYLE_NORMAL),
-            ("이상한 곳에 걸릴 뻔했거든요 ㅠㅠ", STYLE_NORMAL),
+            ("이상한 곳에 걸릴 뻔했거든요", STYLE_NORMAL),
             ("{keyword} 알아볼 때 꼭 체크해야 할 것들이 있어요", STYLE_NORMAL),
             ("첫째 정식으로 등록된 업체인지 확인하세요", STYLE_NORMAL),
-            ("사업자 등록 여부와 공식 홈페이지를 반드시 확인하세요!", STYLE_HIGHLIGHT_RED),
-            ("둘째 상담 시 선입금을 요구하면 무조건 피하세요!", STYLE_HIGHLIGHT_RED),
+            ("사업자 등록 여부와 공식 홈페이지를 반드시 확인하세요!", STYLE_NORMAL),
+            ("둘째 상담 시 선입금을 요구하면 무조건 피하세요!", STYLE_NORMAL),
             ("정상적인 곳은 절대 먼저 돈을 요구하지 않아요", STYLE_NORMAL),
             ("셋째 조건을 꼼꼼히 비교해보세요", STYLE_NORMAL),
             ("같은 {keyword}라도 업체마다 조건이 천차만별이거든요", STYLE_NORMAL),
             ("저는 3군데 정도 상담받아보고 비교한 뒤에 결정했어요", STYLE_NORMAL),
-            ("시간은 좀 걸렸지만 덕분에 좋은 조건으로 해결했어요", STYLE_HIGHLIGHT_PURPLE),
+            ("시간은 좀 걸렸지만 덕분에 좋은 조건으로 해결했어요", STYLE_NORMAL),
             ("급하다고 대충 결정하면 나중에 후회해요 진짜로", STYLE_NORMAL),
             ("저도 첫 번째 곳에서 바로 할 뻔했는데 참길 잘했어요", STYLE_NORMAL),
         ],
@@ -288,7 +282,6 @@ def generate_content(keyword: str, cta_link: str = "") -> dict:
             "sections": [
                 {
                     "type": "text",
-                    "font": "nanumsquareneo",
                     "lines": [{"text": str, "style": str}, ...]
                 },
                 {
@@ -298,7 +291,6 @@ def generate_content(keyword: str, cta_link: str = "") -> dict:
                 },
                 {
                     "type": "text",
-                    "font": "nanumsquareneo",
                     "lines": [...]
                 },
                 {"type": "sticker", "pack": str, "seq": str},
@@ -330,10 +322,10 @@ def generate_content(keyword: str, cta_link: str = "") -> dict:
     sticker = random.choice(STICKER_OPTIONS)
 
     sections = [
-        {"type": "text", "font": FONT_DEFAULT, "lines": intro_lines},
-        {"type": "text", "font": FONT_DEFAULT, "lines": body_lines},
+        {"type": "text", "lines": intro_lines},
+        {"type": "text", "lines": body_lines},
         {"type": "cta_table", "text": cta_text, "link": cta_link},
-        {"type": "text", "font": FONT_DEFAULT, "lines": closing_lines},
+        {"type": "text", "lines": closing_lines},
         {"type": "sticker", "pack": sticker["pack"], "seq": sticker["seq"]},
         {"type": "image"},
     ]
@@ -344,7 +336,6 @@ def generate_content(keyword: str, cta_link: str = "") -> dict:
 def content_to_plain_text(content: dict) -> tuple:
     """
     구조화된 콘텐츠를 단순 텍스트로 변환 (기존 publisher 호환용)
-    나중에 SE ONE 에디터 서식 적용이 구현되면 이 함수 대신 직접 사용
 
     Returns: (title, body_text)
     """
