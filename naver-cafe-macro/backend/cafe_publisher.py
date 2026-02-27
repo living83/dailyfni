@@ -22,8 +22,6 @@ import random
 import logging
 from typing import Optional
 
-import requests
-
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -191,8 +189,7 @@ _cafe_id_cache: dict = {}
 def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
     """
     카페 별칭(alias)에서 숫자 카페 ID를 추출.
-    /ca-fe/ URL은 숫자 ID만 지원하므로 requests로 빠르게 조회.
-    이미 숫자인 경우 그대로 반환. 결과는 캐시.
+    /ca-fe/ URL은 숫자 ID만 지원하므로 카페 페이지 방문 후 URL 리다이렉트에서 추출.
     """
     if cafe_alias.isdigit():
         return cafe_alias
@@ -201,46 +198,58 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         logger.info(f"카페 ID 캐시 히트: {cafe_alias} → {_cafe_id_cache[cafe_alias]}")
         return _cafe_id_cache[cafe_alias]
 
-    # 방법 1: requests로 카페 메인 페이지 빠르게 조회 (Selenium 불필요)
+    logger.info(f"카페 숫자 ID 조회 시작: {cafe_alias}")
+
     try:
-        resp = requests.get(
-            f"https://cafe.naver.com/{cafe_alias}",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=10,
-        )
-        patterns = [
-            r'"clubId"\s*:\s*(\d+)',
-            r'clubid[=:]\s*(\d+)',
-            r'"cafeId"\s*:\s*(\d+)',
-            r'/cafes/(\d+)',
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, resp.text, re.IGNORECASE)
+        driver.get(f"https://cafe.naver.com/{cafe_alias}")
+
+        # 방법 1: SPA가 URL을 /ca-fe/cafes/숫자ID/ 로 변경할 때까지 대기
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: re.search(r'/cafes/(\d+)', d.current_url)
+            )
+            match = re.search(r'/cafes/(\d+)', driver.current_url)
             if match:
                 numeric_id = match.group(1)
                 _cafe_id_cache[cafe_alias] = numeric_id
-                logger.info(f"카페 숫자 ID 추출 성공: {cafe_alias} → {numeric_id}")
+                logger.info(f"카페 숫자 ID (URL): {cafe_alias} → {numeric_id}")
                 return numeric_id
-    except Exception as e:
-        logger.warning(f"requests 카페 ID 조회 실패: {e}")
+        except TimeoutException:
+            logger.warning(f"URL 리다이렉트 타임아웃, 페이지 소스에서 시도")
 
-    # 방법 2: 실패 시 Selenium으로 시도 (fallback)
-    try:
-        driver.get(f"https://cafe.naver.com/{cafe_alias}")
-        random_delay(2, 3)
+        # 방법 2: 페이지 소스에서 추출
         page_source = driver.page_source
-        for pattern in [r'"clubId"\s*:\s*(\d+)', r'/cafes/(\d+)']:
+        for pattern in [r'"clubId"\s*:\s*(\d+)', r'"cafeId"\s*:\s*(\d+)', r'clubid[=:]\s*(\d+)', r'/cafes/(\d+)']:
             match = re.search(pattern, page_source, re.IGNORECASE)
             if match:
                 numeric_id = match.group(1)
                 _cafe_id_cache[cafe_alias] = numeric_id
-                logger.info(f"카페 숫자 ID (Selenium fallback): {cafe_alias} → {numeric_id}")
+                logger.info(f"카페 숫자 ID (소스): {cafe_alias} → {numeric_id}")
                 return numeric_id
-    except Exception as e:
-        logger.warning(f"Selenium 카페 ID 조회 실패: {e}")
 
-    logger.warning(f"숫자 카페 ID 추출 실패, alias 그대로 사용: {cafe_alias}")
-    return cafe_alias
+        # 방법 3: JavaScript로 window 객체에서 추출
+        try:
+            numeric_id = driver.execute_script(
+                "try { return document.querySelector('a[href*=\"/cafes/\"]')"
+                "?.href?.match(/\\/cafes\\/(\\d+)/)?.[1] "
+                "|| window.__NEXT_DATA__?.props?.pageProps?.cafeId?.toString() "
+                "|| document.body.innerHTML.match(/\"clubId\"\\s*:\\s*(\\d+)/)?.[1] "
+                "|| null; } catch(e) { return null; }"
+            )
+            if numeric_id:
+                _cafe_id_cache[cafe_alias] = numeric_id
+                logger.info(f"카페 숫자 ID (JS): {cafe_alias} → {numeric_id}")
+                return numeric_id
+        except Exception:
+            pass
+
+        logger.warning(f"숫자 카페 ID 추출 실패, alias 그대로 사용: {cafe_alias}")
+        logger.warning(f"현재 URL: {driver.current_url}")
+        return cafe_alias
+
+    except Exception as e:
+        logger.warning(f"카페 ID 조회 실패: {e}, alias 사용: {cafe_alias}")
+        return cafe_alias
 
 
 def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
