@@ -722,51 +722,96 @@ def _find_element_multi_selector(driver, selectors: list, timeout: int = 5):
 def _ensure_board_selected(driver):
     """게시판이 선택되지 않았으면 드롭다운에서 첫 번째 게시판 선택 시도"""
     try:
-        # 게시판 선택 버튼 찾기 (여러 셀렉터)
-        board_selectors = [
-            "button.select_component",
-            ".board_select button",
-            "button[class*='Board']",
-            "button[class*='board']",
-            ".select_area button",
-            "a.select_component",
-        ]
-        board_btn = None
-        for sel in board_selectors:
-            try:
-                board_btn = driver.find_element(By.CSS_SELECTOR, sel)
-                break
-            except NoSuchElementException:
-                continue
+        # 게시판 선택 버튼 찾기 — JS로 '선택' 텍스트 포함 버튼 직접 탐색
+        board_btn = driver.execute_script("""
+            var btns = document.querySelectorAll('button, a.select_component');
+            for (var i = 0; i < btns.length; i++) {
+                var txt = (btns[i].textContent || '').trim();
+                if (txt.indexOf('게시판') >= 0 && txt.indexOf('선택') >= 0) {
+                    return btns[i];
+                }
+            }
+            return null;
+        """)
+
+        if not board_btn:
+            # CSS 셀렉터 폴백
+            board_selectors = [
+                "button.select_component",
+                ".board_select button",
+                "button[class*='Board']",
+                "button[class*='board']",
+                ".select_area button",
+                "a.select_component",
+            ]
+            for sel in board_selectors:
+                try:
+                    candidate = driver.find_element(By.CSS_SELECTOR, sel)
+                    btn_text = (candidate.text or "").strip()
+                    if "선택" in btn_text or "게시판" in btn_text:
+                        board_btn = candidate
+                        break
+                except NoSuchElementException:
+                    continue
 
         if not board_btn:
             logger.info("게시판 선택 버튼 없음 (이미 선택되었거나 UI 다름)")
             return
 
-        btn_text = board_btn.text.strip()
+        btn_text = (board_btn.text or "").strip()
         if "선택" in btn_text:
             logger.warning(f"게시판 미선택 감지: '{btn_text}' — 드롭다운 클릭 시도")
-            board_btn.click()
+            try:
+                board_btn.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", board_btn)
             random_delay(0.5, 1.0)
 
             # 드롭다운 목록에서 첫 번째 게시판 클릭
             item_selectors = [
-                "ul.select_list li:first-child a",
-                "ul.select_list li:first-child button",
-                ".board_list li:first-child a",
-                ".select_option:first-child",
-                "ul[class*='list'] li:first-child",
+                "ul.select_list li a",
+                "ul.select_list li button",
+                ".board_list li a",
+                ".select_option",
+                "ul[class*='list'] li a",
+                "ul[class*='list'] li",
+                ".layer_select li a",
+                ".layer_select li",
             ]
             for sel in item_selectors:
                 try:
-                    item = driver.find_element(By.CSS_SELECTOR, sel)
-                    item_text = item.text.strip()
-                    item.click()
-                    logger.info(f"게시판 선택 완료: '{item_text}'")
-                    random_delay(0.5, 1.0)
-                    return
+                    items = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for item in items:
+                        item_text = (item.text or "").strip()
+                        if item_text and "전체" not in item_text:
+                            item.click()
+                            logger.info(f"게시판 선택 완료: '{item_text}'")
+                            random_delay(0.5, 1.0)
+                            return
                 except NoSuchElementException:
                     continue
+
+            # JS 폴백: 드롭다운 내 첫 번째 실제 항목 클릭
+            try:
+                selected = driver.execute_script("""
+                    var items = document.querySelectorAll(
+                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a'
+                    );
+                    for (var i = 0; i < items.length; i++) {
+                        var t = (items[i].textContent || '').trim();
+                        if (t && t.indexOf('전체') < 0 && t.indexOf('선택') < 0) {
+                            items[i].click();
+                            return t;
+                        }
+                    }
+                    return null;
+                """)
+                if selected:
+                    logger.info(f"게시판 선택 완료 (JS): '{selected}'")
+                    random_delay(0.5, 1.0)
+                    return
+            except Exception:
+                pass
 
             logger.warning("게시판 드롭다운 항목을 찾을 수 없음")
         else:
@@ -1109,6 +1154,35 @@ def write_post(
             submit_btn.click()
         except Exception:
             driver.execute_script("arguments[0].click();", submit_btn)
+
+        # JS alert 처리 (게시판 미선택 등)
+        random_delay(1, 2)
+        try:
+            alert = driver.switch_to.alert
+            alert_text = alert.text
+            logger.warning(f"등록 후 alert 발생: '{alert_text}'")
+            alert.accept()
+            random_delay(0.5, 1.0)
+            # 게시판 미선택 alert면 게시판 다시 선택 후 재시도
+            if "게시판" in alert_text:
+                logger.info("게시판 재선택 후 등록 재시도")
+                _ensure_board_selected(driver)
+                random_delay(1, 2)
+                try:
+                    submit_btn.click()
+                except Exception:
+                    driver.execute_script("arguments[0].click();", submit_btn)
+                random_delay(1, 2)
+                # 두 번째 alert 확인
+                try:
+                    alert2 = driver.switch_to.alert
+                    logger.warning(f"재시도 후 alert: '{alert2.text}'")
+                    alert2.accept()
+                except Exception:
+                    pass
+        except Exception:
+            pass  # alert 없으면 정상
+
         random_delay(3, 5)
 
         # ── 발행 확인 ──
