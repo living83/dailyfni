@@ -453,6 +453,41 @@ def _click_toolbar_button(driver, selectors: list) -> bool:
     return False
 
 
+# ─── 에디터 포커스 복원 ───────────────────────────────────
+
+def _restore_editor_focus(driver):
+    """CTA/스티커/이미지 삽입 후 에디터 본문에 포커스 복원"""
+    try:
+        # SE ONE 에디터 본문의 contenteditable 영역 클릭
+        restored = driver.execute_script("""
+            // 1차: se-component-content 내부의 text-paragraph
+            var p = document.querySelector('.se-component-content .se-text-paragraph');
+            if (p) { p.click(); return 'se-text-paragraph'; }
+            // 2차: contenteditable 영역
+            var ce = document.querySelector('.se-component-content [contenteditable="true"]');
+            if (ce) { ce.click(); return 'contenteditable'; }
+            // 3차: 에디터 본문 영역
+            var body = document.querySelector('.se-content, .se-section-text');
+            if (body) { body.click(); return 'se-content'; }
+            return null;
+        """)
+        if restored:
+            random_delay(0.2, 0.3)
+            # 포커스 복원 후 커서를 본문 끝으로 이동
+            driver.execute_script("""
+                var sel = window.getSelection();
+                if (sel.rangeCount > 0) {
+                    var range = sel.getRangeAt(0);
+                    range.collapse(false);
+                }
+            """)
+            logger.info(f"에디터 포커스 복원: {restored}")
+        else:
+            logger.warning("에디터 포커스 복원 실패: 본문 영역 못 찾음")
+    except Exception as e:
+        logger.warning(f"에디터 포커스 복원 오류: {e}")
+
+
 # ─── CTA 테이블 삽입 ─────────────────────────────────────
 
 def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
@@ -814,144 +849,115 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
                 driver.execute_script("arguments[0].click();", board_btn)
             random_delay(0.5, 1.0)
 
-            # target_menu_id가 있으면 해당 게시판을 정확히 매칭
-            if target_menu_id:
-                target_id = str(target_menu_id)
-                # JS로 data-menuid 또는 href에서 menuId 매칭
-                matched = driver.execute_script("""
-                    var targetId = arguments[0];
-                    var items = document.querySelectorAll(
-                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a, '
-                        + 'ul.select_list li, .layer_select li, ul[class*="list"] li'
-                    );
-                    for (var i = 0; i < items.length; i++) {
-                        var el = items[i];
-                        var menuId = el.getAttribute('data-menuid') ||
-                                     el.getAttribute('data-menu-id') ||
-                                     el.getAttribute('data-id') || '';
-                        var href = el.getAttribute('href') || '';
-                        var parent = el.closest('li');
-                        var parentMenuId = parent ? (parent.getAttribute('data-menuid') ||
-                                                      parent.getAttribute('data-menu-id') ||
-                                                      parent.getAttribute('data-id') || '') : '';
-                        if (menuId === targetId || parentMenuId === targetId ||
-                            href.indexOf('menuId=' + targetId) >= 0 ||
-                            href.indexOf('menuid=' + targetId) >= 0) {
-                            el.click();
-                            return (el.textContent || '').trim();
-                        }
+            # 드롭다운 항목 탐색: 버튼의 부모 컨테이너 기준으로 li 항목 검색
+            # (알림 목록 등 관계없는 li를 잡지 않도록 board_btn 기준 스코핑)
+            target_id = str(target_menu_id) if target_menu_id else ""
+
+            matched = driver.execute_script("""
+                var btn = arguments[0];
+                var targetId = arguments[1];
+                var targetName = arguments[2];
+
+                // 버튼의 부모를 5단계까지 올라가며 드롭다운 리스트(ul > li) 찾기
+                var container = btn.parentElement;
+                for (var level = 0; level < 8 && container; level++) {
+                    var listItems = container.querySelectorAll('ul li');
+                    // 유효한 게시판 항목인지 확인: cc_mynews_item(알림) 제외
+                    var boardItems = [];
+                    for (var i = 0; i < listItems.length; i++) {
+                        var li = listItems[i];
+                        var a = li.querySelector('a');
+                        // 알림 항목 제외
+                        if (a && a.classList.contains('cc_mynews_item')) continue;
+                        if (li.classList.contains('unread')) continue;
+                        var txt = (li.textContent || '').trim();
+                        if (!txt || txt.indexOf('선택') >= 0) continue;
+                        boardItems.push(li);
                     }
-                    return null;
-                """, target_id)
-                if matched:
-                    logger.info(f"게시판 선택 완료 (menuId={target_id} 매칭): '{matched}'")
-                    random_delay(0.5, 1.0)
-                    return
-                # 진단: 드롭다운 항목의 실제 HTML 속성 덤프
-                try:
-                    items_dump = driver.execute_script("""
-                        var items = document.querySelectorAll(
-                            'ul.select_list li, .layer_select li, ul[class*="list"] li'
-                        );
-                        var dump = [];
-                        for (var i = 0; i < Math.min(items.length, 15); i++) {
-                            var el = items[i];
-                            var attrs = {};
-                            for (var j = 0; j < el.attributes.length; j++) {
-                                attrs[el.attributes[j].name] = el.attributes[j].value;
-                            }
-                            // 자식 a 태그 속성도 확인
-                            var child_a = el.querySelector('a');
-                            var a_attrs = {};
-                            if (child_a) {
-                                for (var k = 0; k < child_a.attributes.length; k++) {
-                                    a_attrs[child_a.attributes[k].name] = child_a.attributes[k].value;
+                    // 최소 2개 이상의 게시판 항목이 있어야 유효한 드롭다운
+                    if (boardItems.length >= 2) {
+                        // 1차: menuId 매칭
+                        if (targetId) {
+                            for (var j = 0; j < boardItems.length; j++) {
+                                var el = boardItems[j];
+                                var a2 = el.querySelector('a');
+                                var menuId = el.getAttribute('data-menuid') ||
+                                             el.getAttribute('data-menu-id') ||
+                                             el.getAttribute('data-id') || '';
+                                var href = a2 ? (a2.getAttribute('href') || '') : '';
+                                if (a2) {
+                                    menuId = menuId || a2.getAttribute('data-menuid') ||
+                                             a2.getAttribute('data-menu-id') || '';
+                                }
+                                if (menuId === targetId ||
+                                    href.indexOf('menuId=' + targetId) >= 0 ||
+                                    href.indexOf('menuid=' + targetId) >= 0) {
+                                    (a2 || el).click();
+                                    return {method: 'menuId', text: (el.textContent || '').trim()};
                                 }
                             }
-                            dump.push({
-                                text: (el.textContent || '').trim().substring(0, 30),
-                                tag: el.tagName,
-                                attrs: JSON.stringify(attrs),
-                                child_a_attrs: JSON.stringify(a_attrs),
-                                outerHTML: el.outerHTML.substring(0, 200)
-                            });
                         }
-                        return dump;
-                    """)
-                    for d in (items_dump or []):
-                        logger.info(f"[게시판 항목] text='{d['text']}' attrs={d['attrs']} a_attrs={d['child_a_attrs']}")
-                except Exception as diag_e:
-                    logger.warning(f"게시판 항목 진단 실패: {diag_e}")
-                logger.warning(f"menuId={target_id} 매칭 실패 — board_name 텍스트 매칭 시도")
-
-            # board_name 텍스트 매칭 (menuId 매칭 실패 또는 target_menu_id 없는 경우)
-            if board_name:
-                matched_by_name = driver.execute_script("""
-                    var targetName = arguments[0];
-                    var items = document.querySelectorAll(
-                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a, '
-                        + 'ul.select_list li, .layer_select li, ul[class*="list"] li'
-                    );
-                    for (var i = 0; i < items.length; i++) {
-                        var txt = (items[i].textContent || '').trim();
-                        if (txt === targetName || txt.indexOf(targetName) >= 0) {
-                            items[i].click();
-                            return txt;
+                        // 2차: board_name 텍스트 매칭
+                        if (targetName) {
+                            for (var k = 0; k < boardItems.length; k++) {
+                                var txt2 = (boardItems[k].textContent || '').trim();
+                                if (txt2 === targetName || txt2.indexOf(targetName) >= 0) {
+                                    var a3 = boardItems[k].querySelector('a');
+                                    (a3 || boardItems[k]).click();
+                                    return {method: 'name', text: txt2};
+                                }
+                            }
+                        }
+                        // 3차: 폴백 — 첫 번째 항목 (전체 제외)
+                        for (var m = 0; m < boardItems.length; m++) {
+                            var txt3 = (boardItems[m].textContent || '').trim();
+                            if (txt3.indexOf('전체') < 0) {
+                                var a4 = boardItems[m].querySelector('a');
+                                (a4 || boardItems[m]).click();
+                                return {method: 'fallback', text: txt3};
+                            }
                         }
                     }
-                    return null;
-                """, board_name)
-                if matched_by_name:
-                    logger.info(f"게시판 선택 완료 (이름 매칭 '{board_name}'): '{matched_by_name}'")
-                    random_delay(0.5, 1.0)
-                    return
-                logger.warning(f"board_name='{board_name}' 텍스트 매칭도 실패 — 폴백")
+                    container = container.parentElement;
+                }
 
-            # 폴백: 첫 번째 게시판 선택 (모든 매칭 실패 시)
-            item_selectors = [
-                "ul.select_list li a",
-                "ul.select_list li button",
-                ".board_list li a",
-                ".select_option",
-                "ul[class*='list'] li a",
-                "ul[class*='list'] li",
-                ".layer_select li a",
-                ".layer_select li",
-            ]
-            for sel in item_selectors:
-                try:
-                    items = driver.find_elements(By.CSS_SELECTOR, sel)
-                    for item in items:
-                        item_text = (item.text or "").strip()
-                        if item_text and "전체" not in item_text:
-                            item.click()
-                            logger.info(f"게시판 선택 완료 (폴백): '{item_text}'")
-                            random_delay(0.5, 1.0)
-                            return
-                except NoSuchElementException:
-                    continue
-
-            # JS 폴백
-            try:
-                selected = driver.execute_script("""
-                    var items = document.querySelectorAll(
-                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a'
-                    );
-                    for (var i = 0; i < items.length; i++) {
-                        var t = (items[i].textContent || '').trim();
-                        if (t && t.indexOf('전체') < 0 && t.indexOf('선택') < 0) {
-                            items[i].click();
-                            return t;
+                // 부모 탐색 실패 시: 페이지 전체에서 드롭다운 찾기 (열려있는 select_list)
+                var globalLists = document.querySelectorAll(
+                    'ul.select_list, .layer_select ul, .select_box ul'
+                );
+                for (var g = 0; g < globalLists.length; g++) {
+                    var gItems = globalLists[g].querySelectorAll('li');
+                    if (gItems.length < 2) continue;
+                    // 알림 항목 제외
+                    var hasNews = globalLists[g].querySelector('.cc_mynews_item');
+                    if (hasNews) continue;
+                    if (targetName) {
+                        for (var n = 0; n < gItems.length; n++) {
+                            var gt = (gItems[n].textContent || '').trim();
+                            if (gt === targetName || gt.indexOf(targetName) >= 0) {
+                                var ga = gItems[n].querySelector('a');
+                                (ga || gItems[n]).click();
+                                return {method: 'global_name', text: gt};
+                            }
                         }
                     }
-                    return null;
-                """)
-                if selected:
-                    logger.info(f"게시판 선택 완료 (JS 폴백): '{selected}'")
-                    random_delay(0.5, 1.0)
-                    return
-            except Exception:
-                pass
+                    // 폴백
+                    for (var p = 0; p < gItems.length; p++) {
+                        var ft = (gItems[p].textContent || '').trim();
+                        if (ft && ft.indexOf('전체') < 0 && ft.indexOf('선택') < 0) {
+                            var fa = gItems[p].querySelector('a');
+                            (fa || gItems[p]).click();
+                            return {method: 'global_fallback', text: ft};
+                        }
+                    }
+                }
+                return null;
+            """, board_btn, target_id, board_name)
+
+            if matched:
+                logger.info(f"게시판 선택 완료 ({matched['method']}): '{matched['text']}'")
+                random_delay(0.5, 1.0)
+                return
 
             logger.warning("게시판 드롭다운 항목을 찾을 수 없음")
         else:
@@ -1289,7 +1295,7 @@ def write_post(
             # 게시판 미선택 alert면 게시판 다시 선택 후 재시도
             if "게시판" in alert_text:
                 logger.info("게시판 재선택 후 등록 재시도")
-                _ensure_board_selected(driver)
+                _ensure_board_selected(driver, target_menu_id=menu_id, board_name=board_name)
                 random_delay(1, 2)
                 try:
                     submit_btn.click()
@@ -1388,13 +1394,19 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
 
         elif s_type == "cta_table":
             _insert_cta_table(driver, section["text"], section.get("link", ""))
+            # CTA 테이블 삽입 후 에디터 본문 포커스 복원
+            _restore_editor_focus(driver)
 
         elif s_type == "sticker":
             _insert_sticker(driver, section["pack"], section["seq"])
+            # 스티커 삽입 후 에디터 본문 포커스 복원
+            _restore_editor_focus(driver)
 
         elif s_type == "image":
             if image_path:
                 _insert_image(driver, image_path)
+                # 이미지 삽입 후 에디터 본문 포커스 복원
+                _restore_editor_focus(driver)
 
     random_delay(1, 2)
 
