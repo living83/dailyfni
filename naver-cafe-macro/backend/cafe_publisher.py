@@ -789,6 +789,147 @@ def _insert_image(driver, image_path: str):
         logger.warning(f"이미지 삽입 실패: {e}")
 
 
+# ─── 에디터 진단 & 게시판 선택 ─────────────────────────────
+
+def _log_editor_diagnostics(driver):
+    """에디터 요소 찾기 실패 시 진단 정보 로깅"""
+    try:
+        logger.error(f"[진단] 현재 URL: {driver.current_url}")
+        logger.error(f"[진단] 페이지 제목: {driver.title}")
+
+        # iframe 목록
+        iframes = driver.find_elements(By.TAG_NAME, "iframe")
+        logger.error(f"[진단] iframe 수: {len(iframes)}")
+        for i, iframe in enumerate(iframes):
+            fid = iframe.get_attribute("id") or ""
+            fcls = iframe.get_attribute("class") or ""
+            fsrc = (iframe.get_attribute("src") or "")[:100]
+            logger.error(f"  iframe[{i}]: id={fid}, class={fcls}, src={fsrc}")
+
+        # SE 관련 요소 확인
+        se_elements = driver.find_elements(By.CSS_SELECTOR, "[class*='se-']")
+        logger.error(f"[진단] 'se-' 클래스 요소 수: {len(se_elements)}")
+        seen_classes = set()
+        for el in se_elements[:30]:
+            cls = el.get_attribute("class") or ""
+            tag = el.tag_name
+            key = f"{tag}.{cls}"
+            if key not in seen_classes:
+                seen_classes.add(key)
+                logger.error(f"  {key}")
+
+        # contenteditable 요소
+        editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
+        logger.error(f"[진단] contenteditable 요소 수: {len(editables)}")
+        for i, el in enumerate(editables[:5]):
+            cls = el.get_attribute("class") or ""
+            logger.error(f"  editable[{i}]: {el.tag_name}.{cls}")
+
+        # 게시판 선택 상태
+        try:
+            board_btn = driver.find_element(
+                By.CSS_SELECTOR,
+                ".board_select, .btn_board, [class*='board'], "
+                "[class*='Board'], [class*='select_board']"
+            )
+            logger.error(f"[진단] 게시판 버튼 텍스트: {board_btn.text}")
+        except NoSuchElementException:
+            logger.error("[진단] 게시판 버튼 요소 못 찾음")
+
+    except Exception as e:
+        logger.error(f"[진단] 진단 정보 수집 실패: {e}")
+
+
+def _try_switch_to_editor_iframe(driver) -> bool:
+    """SE ONE 에디터가 iframe 안에 있는 경우 진입 시도"""
+    iframes = driver.find_elements(By.TAG_NAME, "iframe")
+    for iframe in iframes:
+        fid = iframe.get_attribute("id") or ""
+        fcls = iframe.get_attribute("class") or ""
+        fsrc = iframe.get_attribute("src") or ""
+        # SE ONE 에디터 관련 iframe 식별
+        if any(k in fid.lower() + fcls.lower() + fsrc.lower()
+               for k in ["editor", "se_", "se-", "smarteditor", "write"]):
+            try:
+                driver.switch_to.frame(iframe)
+                logger.info(f"에디터 iframe 진입: id={fid}")
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def _find_element_multi_selector(driver, selectors: list, timeout: int = 5):
+    """여러 CSS 셀렉터를 순차적으로 시도하여 요소 찾기"""
+    for sel in selectors:
+        try:
+            el = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, sel))
+            )
+            logger.info(f"요소 발견: {sel}")
+            return el
+        except TimeoutException:
+            continue
+    return None
+
+
+def _ensure_board_selected(driver):
+    """게시판이 선택되지 않았으면 드롭다운에서 첫 번째 게시판 선택 시도"""
+    try:
+        # 게시판 선택 버튼 찾기 (여러 셀렉터)
+        board_selectors = [
+            "button.select_component",
+            ".board_select button",
+            "button[class*='Board']",
+            "button[class*='board']",
+            ".select_area button",
+            "a.select_component",
+        ]
+        board_btn = None
+        for sel in board_selectors:
+            try:
+                board_btn = driver.find_element(By.CSS_SELECTOR, sel)
+                break
+            except NoSuchElementException:
+                continue
+
+        if not board_btn:
+            logger.info("게시판 선택 버튼 없음 (이미 선택되었거나 UI 다름)")
+            return
+
+        btn_text = board_btn.text.strip()
+        if "선택" in btn_text:
+            logger.warning(f"게시판 미선택 감지: '{btn_text}' — 드롭다운 클릭 시도")
+            board_btn.click()
+            random_delay(0.5, 1.0)
+
+            # 드롭다운 목록에서 첫 번째 게시판 클릭
+            item_selectors = [
+                "ul.select_list li:first-child a",
+                "ul.select_list li:first-child button",
+                ".board_list li:first-child a",
+                ".select_option:first-child",
+                "ul[class*='list'] li:first-child",
+            ]
+            for sel in item_selectors:
+                try:
+                    item = driver.find_element(By.CSS_SELECTOR, sel)
+                    item_text = item.text.strip()
+                    item.click()
+                    logger.info(f"게시판 선택 완료: '{item_text}'")
+                    random_delay(0.5, 1.0)
+                    return
+                except NoSuchElementException:
+                    continue
+
+            logger.warning("게시판 드롭다운 항목을 찾을 수 없음")
+        else:
+            logger.info(f"게시판 이미 선택됨: '{btn_text}'")
+
+    except Exception as e:
+        logger.warning(f"게시판 선택 확인 중 오류: {e}")
+
+
 # ─── 글 작성 (구조화된 콘텐츠) ────────────────────────────
 
 def write_post(
@@ -818,22 +959,87 @@ def write_post(
             logger.error(f"글 작성 시작 전 URL이 글쓰기 페이지가 아님: {current_url}")
             return None
 
-        wait = WebDriverWait(driver, 30)
+        # ── 게시판 선택 확인 ──
+        _ensure_board_selected(driver)
+        random_delay(1, 2)
+
+        # ── 에디터 iframe 진입 시도 ──
+        switched_iframe = _try_switch_to_editor_iframe(driver)
 
         # ── 제목 입력 ──
-        title_area = wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, ".se-ff-system.se-fs28.se-placeholder.__se_title, "
-                               ".se-title-text .se-text-paragraph")
-        ))
+        title_selectors = [
+            ".se-ff-system.se-fs28.se-placeholder.__se_title",
+            ".se-title-text .se-text-paragraph",
+            ".__se_title",
+            ".se-documentTitle .se-text-paragraph",
+            ".se-title .se-text-paragraph",
+            ".se-section-title .se-text-paragraph",
+            "span.se-ff-system.se-fs28",
+        ]
+        title_area = _find_element_multi_selector(driver, title_selectors, timeout=5)
+
+        if not title_area:
+            # iframe에서 못 찾았으면 메인 프레임으로 돌아가서 재시도
+            if switched_iframe:
+                driver.switch_to.default_content()
+                logger.info("iframe에서 제목 못 찾음, 메인 프레임에서 재시도")
+                title_area = _find_element_multi_selector(driver, title_selectors, timeout=5)
+
+        if not title_area:
+            # contenteditable 기반 폴백
+            logger.warning("CSS 셀렉터로 제목 못 찾음, contenteditable 폴백 시도")
+            try:
+                editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
+                for el in editables:
+                    cls = (el.get_attribute("class") or "").lower()
+                    placeholder = (el.get_attribute("data-placeholder") or
+                                   el.get_attribute("placeholder") or "").lower()
+                    if "title" in cls or "제목" in placeholder or "__se_title" in cls:
+                        title_area = el
+                        logger.info(f"contenteditable 제목 발견: class={cls}")
+                        break
+            except Exception:
+                pass
+
+        if not title_area:
+            logger.error("제목 영역을 찾을 수 없음 — 진단 정보 출력")
+            _log_editor_diagnostics(driver)
+            return None
+
         title_area.click()
         random_delay(0.3, 0.6)
         human_type(title_area, title)
         random_delay(0.5, 1.0)
 
         # ── 본문 영역 진입 ──
-        body_area = wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, ".se-component-content .se-text-paragraph")
-        ))
+        body_selectors = [
+            ".se-component-content .se-text-paragraph",
+            ".se-main-container .se-text-paragraph",
+            ".se-section-content .se-text-paragraph",
+            ".se-component .se-text-paragraph",
+        ]
+        body_area = _find_element_multi_selector(driver, body_selectors, timeout=5)
+
+        if not body_area:
+            # contenteditable 폴백 (제목이 아닌 두 번째 contenteditable)
+            logger.warning("CSS 셀렉터로 본문 못 찾음, contenteditable 폴백 시도")
+            try:
+                editables = driver.find_elements(By.CSS_SELECTOR, "[contenteditable='true']")
+                for el in editables:
+                    if el != title_area:
+                        cls = (el.get_attribute("class") or "").lower()
+                        if "title" not in cls:
+                            body_area = el
+                            logger.info(f"contenteditable 본문 발견: class={cls}")
+                            break
+            except Exception:
+                pass
+
+        if not body_area:
+            logger.error("본문 영역을 찾을 수 없음 — 진단 정보 출력")
+            _log_editor_diagnostics(driver)
+            return None
+
         body_area.click()
         random_delay(0.3, 0.6)
 
@@ -846,7 +1052,8 @@ def write_post(
 
         # ── 등록 버튼 클릭 ──
         random_delay(1, 2)
-        submit_btn = wait.until(EC.element_to_be_clickable(
+        submit_wait = WebDriverWait(driver, 30)
+        submit_btn = submit_wait.until(EC.element_to_be_clickable(
             (By.CSS_SELECTOR, ".BaseButton.BaseButton--skinGreen.BaseButton--sizeM")
         ))
         submit_btn.click()
@@ -876,9 +1083,9 @@ def write_post(
 
     except TimeoutException as e:
         logger.error(f"글 작성 타임아웃: {e}")
-        # 디버깅: 현재 페이지 URL과 스크린샷 저장
         try:
             logger.error(f"타임아웃 시 URL: {driver.current_url}")
+            _log_editor_diagnostics(driver)
             screenshot_path = f"debug_timeout_{int(time.time())}.png"
             driver.save_screenshot(screenshot_path)
             logger.error(f"디버그 스크린샷 저장: {screenshot_path}")
@@ -887,6 +1094,10 @@ def write_post(
         return None
     except Exception as e:
         logger.error(f"글 작성 중 오류: {e}")
+        try:
+            _log_editor_diagnostics(driver)
+        except Exception:
+            pass
         return None
 
 
