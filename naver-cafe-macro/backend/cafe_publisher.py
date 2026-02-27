@@ -46,8 +46,14 @@ def random_delay(min_sec: float = 0.5, max_sec: float = 2.0):
     time.sleep(random.uniform(min_sec, max_sec))
 
 
+def _strip_non_bmp(text: str) -> str:
+    """ChromeDriver가 처리할 수 없는 BMP 외 문자(이모지 등)를 제거"""
+    return "".join(c for c in text if ord(c) <= 0xFFFF)
+
+
 def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0.12):
     """한 글자씩 사람처럼 타이핑"""
+    text = _strip_non_bmp(text)
     for char in text:
         element.send_keys(char)
         time.sleep(random.uniform(min_delay, max_delay))

@@ -49,7 +49,7 @@ STORY_TEMPLATES = [
         "intro": [
             ("안녕하세요! 오늘은 제가 직접 경험한 이야기를 해볼까 해요", STYLE_NORMAL),
             ("여러분들에게 도움이 될 만한 꿀팁을 가져와봤거든요", STYLE_NORMAL),
-            ("이렇게 짜잔 하고 등장해봤어요😉", STYLE_NORMAL),
+            ("이렇게 짜잔 하고 등장해봤어요ㅎㅎ", STYLE_NORMAL),
             ("", STYLE_EMPTY),
             ("누구나 갑자기 어려운 상황에 처할 때가 있잖아요 그죠?", STYLE_NORMAL),
             ("저도 그랬거든요 진짜 막막했었어요", STYLE_NORMAL),
@@ -64,7 +64,7 @@ STORY_TEMPLATES = [
             ("마냥 {keyword} 검색해서 나오는 곳이면", STYLE_NORMAL),
             ("다 괜찮다고 생각하는 분들이 정말 많은데요", STYLE_NORMAL),
             ("이게 가장 위험해요!!!", STYLE_NORMAL),
-            ("만약 이상한 곳이면 어쩌려고 그러세요😣", STYLE_NORMAL),
+            ("만약 이상한 곳이면 어쩌려고 그러세요ㅠ", STYLE_NORMAL),
             ("{keyword}을 알아보고 있다면", STYLE_NORMAL),
             ("공식 홈페이지가 있는지 먼저 체크해보고", STYLE_HIGHLIGHT_RED),
             ("정식 업체가 정말 맞는지를 꼭 확인하세요", STYLE_HIGHLIGHT_RED),
