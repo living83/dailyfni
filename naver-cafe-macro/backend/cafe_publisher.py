@@ -516,43 +516,29 @@ def _restore_editor_focus(driver):
 # ─── CTA 테이블 삽입 ─────────────────────────────────────
 
 def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
-    """CTA 테이블 삽입 (기본 셋팅, 서식 없음)"""
+    """CTA 삽입 — 테이블 없이 일반 텍스트로 CTA 작성
+
+    구분선 + 굵은 CTA 텍스트 + 구분선 형태로 강조.
+    """
     try:
-        # 테이블 삽입 버튼
-        _click_toolbar_button(driver, [
-            "button[data-command='table']",
-            ".se-toolbar button[data-name='table']",
-            "button.se-toolbar-button-table",
-        ])
-        random_delay(0.5, 1.0)
+        # 빈 줄 + 구분선 역할 텍스트
+        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
+        random_delay(0.1, 0.2)
+        driver.execute_cdp_cmd('Input.insertText', {'text': '━━━━━━━━━━━━━━━━━━━━'})
+        random_delay(0.1, 0.2)
+        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
+        random_delay(0.1, 0.2)
 
-        # 1×1 셀 선택 (첫 번째 셀 클릭)
-        try:
-            cell = driver.find_element(
-                By.CSS_SELECTOR, ".se-table-size-picker td:first-child, "
-                                 ".se-table-picker .se-table-cell:first-child"
-            )
-            cell.click()
-            random_delay(0.5, 1.0)
-        except NoSuchElementException:
-            # 직접 크기 입력 시도
-            pass
-
-        # 삽입 확인
-        _click_toolbar_button(driver, [
-            ".se-table-size-confirm",
-            ".se-popup-button-confirm",
-        ])
-        random_delay(0.5, 1.0)
-
-        # CTA 텍스트 입력
-        fast_type(driver, cta_text)
-        random_delay(0.3, 0.5)
+        # CTA 텍스트 (화살표로 강조)
+        cta_display = f'▶ {cta_text} ◀'
+        driver.execute_cdp_cmd('Input.insertText', {'text': cta_display})
+        random_delay(0.1, 0.2)
 
         # 링크 적용
         if cta_link:
-            # 텍스트 전체 선택
-            ActionChains(driver).key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
+            # 방금 입력한 CTA 텍스트 전체 선택
+            from selenium.webdriver.common.action_chains import ActionChains
+            ActionChains(driver).key_down(Keys.SHIFT).key_down(Keys.HOME).key_up(Keys.HOME).key_up(Keys.SHIFT).perform()
             random_delay(0.2, 0.3)
             # 링크 버튼
             _click_toolbar_button(driver, [
@@ -577,22 +563,24 @@ def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
             except Exception as e:
                 logger.warning(f"CTA 링크 적용 실패: {e}")
 
-        # 테이블 밖으로 나가기 (아래로 이동)
-        ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-        random_delay(0.2, 0.3)
-        ActionChains(driver).send_keys(Keys.ARROW_DOWN).perform()
-        random_delay(0.2, 0.3)
+        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
+        random_delay(0.1, 0.2)
+        driver.execute_cdp_cmd('Input.insertText', {'text': '━━━━━━━━━━━━━━━━━━━━'})
+        random_delay(0.1, 0.2)
+        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
+        random_delay(0.1, 0.2)
 
-        logger.info(f"CTA 테이블 삽입 완료: {cta_text}")
+        logger.info(f"CTA 텍스트 삽입 완료: {cta_text}")
 
     except Exception as e:
-        # 테이블 실패 시 폴백: 일반 텍스트로 CTA 작성
-        logger.warning(f"CTA 테이블 삽입 실패, 텍스트 폴백: {e}")
-        active = driver.switch_to.active_element
-        active.send_keys(Keys.ENTER)
-        fast_type(driver, cta_text)
-        active = driver.switch_to.active_element
-        active.send_keys(Keys.ENTER)
+        logger.warning(f"CTA 삽입 실패, 텍스트 폴백: {e}")
+        try:
+            driver.execute_cdp_cmd('Input.insertText', {'text': f'\n▶ {cta_text} ◀\n'})
+        except Exception:
+            active = driver.switch_to.active_element
+            active.send_keys(Keys.ENTER)
+            active.send_keys(f'▶ {cta_text} ◀')
+            active.send_keys(Keys.ENTER)
 
 
 # ─── 스티커 삽입 ─────────────────────────────────────────
