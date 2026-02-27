@@ -163,13 +163,33 @@ def get_login_cookies(driver: webdriver.Chrome) -> str:
 
 # ─── 카페 글쓰기 ──────────────────────────────────────────
 
+def _extract_cafe_id(cafe_url: str) -> str:
+    """
+    cafe_url에서 카페 식별자(숫자 ID 또는 alias)만 추출.
+    예: 'https://cafe.naver.com/smartcredit' → 'smartcredit'
+        'cafe.naver.com/smartcredit'         → 'smartcredit'
+        'smartcredit'                        → 'smartcredit'
+        '30339285'                           → '30339285'
+    """
+    val = cafe_url.strip().rstrip("/")
+    # 전체 URL이 들어온 경우 path의 마지막 세그먼트 추출
+    if "cafe.naver.com" in val:
+        # https://cafe.naver.com/smartcredit  →  smartcredit
+        parts = val.split("cafe.naver.com/", 1)
+        if len(parts) == 2 and parts[1]:
+            val = parts[1].split("/")[0].split("?")[0]
+    return val
+
+
 def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
     """카페 글쓰기 페이지로 이동"""
     try:
+        cafe_id = _extract_cafe_id(cafe_url)
         if menu_id:
-            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L&menuId={menu_id}"
+            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L&menuId={menu_id}"
         else:
-            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_url}/articles/write?boardType=L"
+            write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L"
+        logger.info(f"글쓰기 URL: {write_url}")
         driver.get(write_url)
         random_delay(3, 5)
 
@@ -179,7 +199,7 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
         except Exception:
             pass
 
-        logger.info(f"글쓰기 페이지 이동 완료: {cafe_url}, menuId={menu_id}")
+        logger.info(f"글쓰기 페이지 이동 완료: cafe={cafe_id}, menuId={menu_id}")
         return True
 
     except Exception as e:
@@ -632,6 +652,14 @@ def write_post(
 
     except TimeoutException as e:
         logger.error(f"글 작성 타임아웃: {e}")
+        # 디버깅: 현재 페이지 URL과 스크린샷 저장
+        try:
+            logger.error(f"타임아웃 시 URL: {driver.current_url}")
+            screenshot_path = f"debug_timeout_{int(time.time())}.png"
+            driver.save_screenshot(screenshot_path)
+            logger.error(f"디버그 스크린샷 저장: {screenshot_path}")
+        except Exception:
+            pass
         return None
     except Exception as e:
         logger.error(f"글 작성 중 오류: {e}")
