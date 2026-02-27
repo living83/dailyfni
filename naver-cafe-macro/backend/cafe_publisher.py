@@ -957,8 +957,9 @@ def _ensure_board_selected(driver):
 def _find_title_element(driver):
     """SE ONE 에디터에서 제목 입력 영역 찾기 (다중 전략)"""
 
-    # 전략 1: CSS 셀렉터 (기존 SE ONE 클래스)
+    # 전략 1: CSS 셀렉터 (textarea 최우선 + SE ONE 클래스)
     title_selectors = [
+        "textarea.textarea_input",                          # 네이버 카페 글쓰기 textarea
         ".se-ff-system.se-fs28.se-placeholder.__se_title",
         ".se-title-text .se-text-paragraph",
         ".__se_title",
@@ -1144,15 +1145,22 @@ def write_post(
             _log_editor_diagnostics(driver)
             return None
 
-        body_area.click()
+        # 클릭 후 active element 사용 (p 태그는 직접 send_keys 불가)
+        try:
+            body_area.click()
+        except Exception:
+            # element not interactable 시 JS 클릭 폴백
+            logger.warning("body_area.click() 실패 → JS 클릭 시도")
+            driver.execute_script("arguments[0].click();", body_area)
         random_delay(0.3, 0.6)
+        active_body = driver.switch_to.active_element
 
         if structured_content and structured_content.get("sections"):
             # ── 구조화된 콘텐츠로 서식 적용 ──
-            _write_structured_body(driver, body_area, structured_content, image_path)
+            _write_structured_body(driver, active_body, structured_content, image_path)
         else:
             # ── 폴백: 단순 텍스트 입력 ──
-            _write_plain_body(driver, body_area, content, image_path)
+            _write_plain_body(driver, active_body, content, image_path)
 
         # ── 등록 버튼 클릭 ──
         random_delay(1, 2)
@@ -1206,10 +1214,20 @@ def write_post(
 
 
 def _write_structured_body(driver, body_area, structured_content: dict, image_path: Optional[str]):
-    """구조화된 콘텐츠로 SE ONE 에디터 본문 작성 (서식 적용)"""
+    """구조화된 콘텐츠로 SE ONE 에디터 본문 작성 (서식 적용)
+
+    body_area: 본문 영역의 활성 요소 (contenteditable div 또는 active element)
+    """
 
     # 가운데 정렬
     _set_alignment_center(driver)
+
+    # 정렬 버튼 클릭 후 에디터 포커스 복구
+    try:
+        body_area.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", body_area)
+    random_delay(0.2, 0.3)
 
     for section in structured_content["sections"]:
         s_type = section["type"]
@@ -1219,13 +1237,20 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
             font = section.get("font", "")
             if font:
                 _set_font_family(driver, _font_display_name(font))
+                # 폰트 변경 후 에디터 포커스 복구
+                try:
+                    body_area.click()
+                except Exception:
+                    pass
+                random_delay(0.2, 0.3)
 
             for line in section["lines"]:
                 style = line["style"]
                 text = line["text"]
 
                 if style == STYLE_EMPTY:
-                    body_area.send_keys(Keys.ENTER)
+                    active = driver.switch_to.active_element
+                    active.send_keys(Keys.ENTER)
                     random_delay(0.2, 0.4)
                     continue
 
@@ -1233,7 +1258,7 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
                 if style in (STYLE_HIGHLIGHT_RED, STYLE_HIGHLIGHT_PURPLE):
                     _apply_style_for_line(driver, style)
 
-                # 텍스트 타이핑
+                # 텍스트 타이핑 (항상 현재 active element 사용)
                 active = driver.switch_to.active_element
                 human_type(active, text)
                 random_delay(0.1, 0.3)
@@ -1243,6 +1268,7 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
                     _reset_style_after_line(driver, style)
 
                 # 줄바꿈
+                active = driver.switch_to.active_element
                 active.send_keys(Keys.ENTER)
                 random_delay(0.15, 0.35)
 
@@ -1264,13 +1290,22 @@ def _write_plain_body(driver, body_area, content: str, image_path: Optional[str]
     # 가운데 정렬
     _set_alignment_center(driver)
 
+    # 정렬 후 에디터 포커스 복구
+    try:
+        body_area.click()
+    except Exception:
+        pass
+    random_delay(0.2, 0.3)
+
     paragraphs = content.split("\n\n")
     for i, paragraph in enumerate(paragraphs):
         if paragraph.strip():
-            human_type(body_area, paragraph.strip())
+            active = driver.switch_to.active_element
+            human_type(active, paragraph.strip())
             if i < len(paragraphs) - 1:
-                body_area.send_keys(Keys.ENTER)
-                body_area.send_keys(Keys.ENTER)
+                active = driver.switch_to.active_element
+                active.send_keys(Keys.ENTER)
+                active.send_keys(Keys.ENTER)
                 random_delay(0.3, 0.8)
 
     random_delay(1, 2)
