@@ -80,17 +80,90 @@ def _get_eligible_accounts(config: dict) -> list:
     return eligible
 
 
-def _get_next_board(keyword_id: int = None) -> Optional[dict]:
+def _calc_match_score(keyword_text: str, board_name: str) -> int:
+    """
+    키워드 텍스트와 게시판 이름 간 매칭 점수 계산.
+    - 완전 포함: 높은 점수 (길이 × 10)
+    - 부분 매칭: 가장 긴 공통 부분문자열 길이
+    - 최소 2글자 이상 매칭 필요
+    """
+    # 게시판 이름이 키워드에 포함 (예: 게시판 "자동차" ⊂ 키워드 "자동차할부")
+    if board_name in keyword_text:
+        return len(board_name) * 10
+
+    # 키워드가 게시판 이름에 포함 (예: 키워드 "자동차할부" ⊂ 게시판 "자동차할부대출")
+    if keyword_text in board_name:
+        return len(keyword_text) * 10
+
+    # 부분 매칭: 가장 긴 공통 부분문자열
+    shorter = board_name if len(board_name) <= len(keyword_text) else keyword_text
+    longer = keyword_text if shorter == board_name else board_name
+
+    for length in range(len(shorter), 1, -1):
+        for start in range(len(shorter) - length + 1):
+            sub = shorter[start:start + length]
+            if sub in longer:
+                return length
+
+    return 0
+
+
+def _match_boards_by_keyword(keyword_text: str, boards: list) -> list:
+    """
+    키워드 텍스트로 게시판 이름 자동 매칭.
+    최소 2글자 이상 매칭, 최고 점수 게시판만 반환.
+    """
+    scored = []
+    for board in boards:
+        name = board["board_name"]
+        score = _calc_match_score(keyword_text, name)
+        if score >= 2:
+            scored.append((board, score))
+            logger.debug(f"게시판 매칭: '{keyword_text}' ↔ '{name}' = {score}점")
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    best_score = scored[0][1]
+    result = [b for b, s in scored if s == best_score]
+
+    logger.info(f"키워드 '{keyword_text}' → 자동 매칭 게시판: "
+                f"{[b['board_name'] for b in result]} (점수: {best_score})")
+    return result
+
+
+def _get_next_board(keyword_id: int = None, keyword_text: str = "") -> Optional[dict]:
     """
     교차 발행 로직:
-    - keyword_id가 있으면 매핑된 게시판에서만 선택
-    - 같은 카페 연속 발행 금지
-    - 가장 오래 전에 발행한 게시판 우선
+    1. keyword_id에 명시적 게시판 매핑이 있으면 해당 게시판만 사용
+    2. 매핑 없으면 keyword_text로 게시판 이름 자동 매칭
+    3. 자동 매칭도 없으면 전체 활성 게시판 사용
+    4. 같은 카페 연속 발행 금지
+    5. 가장 오래 전에 발행한 게시판 우선
     """
     global _last_published_cafe
 
     if keyword_id:
-        active_boards = db.get_boards_for_keyword(keyword_id)
+        # 명시적 keyword-board 매핑 확인
+        explicit_ids = db.get_keyword_boards(keyword_id)
+        if explicit_ids:
+            active_boards = db.get_boards_for_keyword(keyword_id)
+            logger.info(f"키워드 ID {keyword_id}: 명시적 매핑 게시판 {len(active_boards)}개")
+        else:
+            # 매핑 없음 → 키워드 텍스트로 자동 매칭
+            boards = db.get_cafe_boards()
+            all_active = [b for b in boards if b.get("active", 1)]
+
+            if keyword_text and all_active:
+                matched = _match_boards_by_keyword(keyword_text, all_active)
+                if matched:
+                    active_boards = matched
+                else:
+                    logger.info(f"키워드 '{keyword_text}': 자동 매칭 실패 → 전체 게시판 사용")
+                    active_boards = all_active
+            else:
+                active_boards = all_active
     else:
         boards = db.get_cafe_boards()
         active_boards = [b for b in boards if b.get("active", 1)]
@@ -183,8 +256,8 @@ async def _publish_single(account: dict, config: dict):
         await _notify_progress("info", {"message": "등록된 키워드가 없습니다"})
         return
 
-    # 2. 게시판 선택 (키워드에 매핑된 게시판 중 교차 발행)
-    board = _get_next_board(keyword_id=keyword["id"])
+    # 2. 게시판 선택 (명시적 매핑 → 키워드 텍스트 자동 매칭 → 전체 게시판)
+    board = _get_next_board(keyword_id=keyword["id"], keyword_text=keyword["text"])
     if not board:
         logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음")
         await _notify_progress("info", {"message": f"키워드 '{keyword['text']}'에 매핑된 게시판이 없습니다"})
