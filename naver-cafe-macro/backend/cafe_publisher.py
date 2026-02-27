@@ -578,7 +578,8 @@ def _insert_sticker(driver, pack: str, seq: str):
                 var btn = document.querySelector('button.se-sticker-toolbar-button.se-is-selected');
                 if (btn) { btn.click(); }
                 // 스티커 팝업 패널 숨기기
-                var panels = document.querySelectorAll('.se-sticker-panel, .se-popup-sticker, .se-layer');
+                // se-layer는 에디터 콘텐츠 레이어와 충돌 가능하므로 제외
+                var panels = document.querySelectorAll('.se-sticker-panel, .se-popup-sticker');
                 panels.forEach(function(p) { p.style.display = 'none'; });
             """)
             random_delay(0.3, 0.5)
@@ -719,8 +720,8 @@ def _find_element_multi_selector(driver, selectors: list, timeout: int = 5):
     return None
 
 
-def _ensure_board_selected(driver):
-    """게시판이 선택되지 않았으면 드롭다운에서 첫 번째 게시판 선택 시도"""
+def _ensure_board_selected(driver, target_menu_id=None):
+    """게시판이 선택되지 않았으면 드롭다운에서 target_menu_id에 해당하는 게시판 선택"""
     try:
         # 게시판 선택 버튼 찾기 — JS로 '선택' 텍스트 포함 버튼 직접 탐색
         board_btn = driver.execute_script("""
@@ -760,14 +761,49 @@ def _ensure_board_selected(driver):
 
         btn_text = (board_btn.text or "").strip()
         if "선택" in btn_text:
-            logger.warning(f"게시판 미선택 감지: '{btn_text}' — 드롭다운 클릭 시도")
+            logger.warning(f"게시판 미선택 감지: '{btn_text}' — 드롭다운 클릭 시도 (target_menu_id={target_menu_id})")
             try:
                 board_btn.click()
             except Exception:
                 driver.execute_script("arguments[0].click();", board_btn)
             random_delay(0.5, 1.0)
 
-            # 드롭다운 목록에서 첫 번째 게시판 클릭
+            # target_menu_id가 있으면 해당 게시판을 정확히 매칭
+            if target_menu_id:
+                target_id = str(target_menu_id)
+                # JS로 data-menuid 또는 href에서 menuId 매칭
+                matched = driver.execute_script("""
+                    var targetId = arguments[0];
+                    var items = document.querySelectorAll(
+                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a, '
+                        + 'ul.select_list li, .layer_select li, ul[class*="list"] li'
+                    );
+                    for (var i = 0; i < items.length; i++) {
+                        var el = items[i];
+                        var menuId = el.getAttribute('data-menuid') ||
+                                     el.getAttribute('data-menu-id') ||
+                                     el.getAttribute('data-id') || '';
+                        var href = el.getAttribute('href') || '';
+                        var parent = el.closest('li');
+                        var parentMenuId = parent ? (parent.getAttribute('data-menuid') ||
+                                                      parent.getAttribute('data-menu-id') ||
+                                                      parent.getAttribute('data-id') || '') : '';
+                        if (menuId === targetId || parentMenuId === targetId ||
+                            href.indexOf('menuId=' + targetId) >= 0 ||
+                            href.indexOf('menuid=' + targetId) >= 0) {
+                            el.click();
+                            return (el.textContent || '').trim();
+                        }
+                    }
+                    return null;
+                """, target_id)
+                if matched:
+                    logger.info(f"게시판 선택 완료 (menuId={target_id} 매칭): '{matched}'")
+                    random_delay(0.5, 1.0)
+                    return
+                logger.warning(f"menuId={target_id} 매칭 실패 — 폴백으로 첫 번째 게시판 선택")
+
+            # 폴백: 첫 번째 게시판 선택 (target_menu_id 없거나 매칭 실패 시)
             item_selectors = [
                 "ul.select_list li a",
                 "ul.select_list li button",
@@ -785,13 +821,13 @@ def _ensure_board_selected(driver):
                         item_text = (item.text or "").strip()
                         if item_text and "전체" not in item_text:
                             item.click()
-                            logger.info(f"게시판 선택 완료: '{item_text}'")
+                            logger.info(f"게시판 선택 완료 (폴백): '{item_text}'")
                             random_delay(0.5, 1.0)
                             return
                 except NoSuchElementException:
                     continue
 
-            # JS 폴백: 드롭다운 내 첫 번째 실제 항목 클릭
+            # JS 폴백
             try:
                 selected = driver.execute_script("""
                     var items = document.querySelectorAll(
@@ -807,7 +843,7 @@ def _ensure_board_selected(driver):
                     return null;
                 """)
                 if selected:
-                    logger.info(f"게시판 선택 완료 (JS): '{selected}'")
+                    logger.info(f"게시판 선택 완료 (JS 폴백): '{selected}'")
                     random_delay(0.5, 1.0)
                     return
             except Exception:
@@ -969,7 +1005,8 @@ def write_post(
     title: str,
     content: str = "",
     image_path: Optional[str] = None,
-    structured_content: Optional[dict] = None
+    structured_content: Optional[dict] = None,
+    menu_id: Optional[str] = None
 ) -> Optional[str]:
     """
     SE ONE 에디터에서 글 작성 후 발행
@@ -992,7 +1029,7 @@ def write_post(
             return None
 
         # ── 게시판 선택 확인 ──
-        _ensure_board_selected(driver)
+        _ensure_board_selected(driver, target_menu_id=menu_id)
         random_delay(1, 2)
 
         # ── 제목 입력 ──
@@ -1045,8 +1082,8 @@ def write_post(
                         dismissed.push(txt);
                     }
                 });
-                // 오버레이/모달 닫기
-                var overlays = document.querySelectorAll('.modal_dimmed, .Layer__overlay, [class*="dimmed"]');
+                // 오버레이/모달 닫기 (에디터 영역 제외)
+                var overlays = document.querySelectorAll('.modal_dimmed, .Layer__overlay');
                 overlays.forEach(function(o) { o.click(); });
                 return dismissed;
             """)
@@ -1409,7 +1446,8 @@ def publish_to_cafe(
 
         published_url = write_post(
             driver, title, content, image_path,
-            structured_content=structured_content
+            structured_content=structured_content,
+            menu_id=menu_id
         )
 
         if published_url:
