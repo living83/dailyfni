@@ -544,6 +544,7 @@ def _insert_sticker(driver, pack: str, seq: str):
             "button[data-command='sticker']",
             ".se-toolbar button[data-name='sticker']",
             "button.se-toolbar-button-sticker",
+            "button.se-sticker-toolbar-button",
         ])
         random_delay(0.8, 1.5)
 
@@ -569,6 +570,13 @@ def _insert_sticker(driver, pack: str, seq: str):
 
     except Exception as e:
         logger.warning(f"스티커 삽입 실패({pack}/{seq}): {e}")
+    finally:
+        # 스티커 팝업 닫기 (ESC 또는 버튼 재클릭)
+        try:
+            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            random_delay(0.3, 0.5)
+        except Exception:
+            pass
 
 
 # ─── 이미지 삽입 ─────────────────────────────────────────
@@ -966,10 +974,36 @@ def write_post(
 
         # ── 등록 버튼 클릭 ──
         random_delay(1, 2)
-        submit_wait = WebDriverWait(driver, 30)
-        submit_btn = submit_wait.until(EC.element_to_be_clickable(
-            (By.CSS_SELECTOR, ".BaseButton.BaseButton--skinGreen.BaseButton--sizeM")
-        ))
+        submit_selectors = [
+            ".BaseButton.BaseButton--skinGreen.BaseButton--sizeM",
+            ".BaseButton.BaseButton--skinRed.BaseButton--sizeM",
+            "button.BaseButton--skinGreen",
+            "button.BaseButton--skinRed",
+        ]
+        submit_btn = None
+        submit_wait = WebDriverWait(driver, 10)
+        for sel in submit_selectors:
+            try:
+                submit_btn = submit_wait.until(EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, sel)
+                ))
+                logger.info(f"등록 버튼 발견: {sel}")
+                break
+            except TimeoutException:
+                continue
+
+        if not submit_btn:
+            # XPATH 폴백: 텍스트로 찾기
+            try:
+                submit_btn = driver.find_element(
+                    By.XPATH, "//button[contains(text(),'등록') and not(contains(text(),'임시'))]"
+                )
+                logger.info("등록 버튼 발견: XPATH 텍스트 매칭")
+            except NoSuchElementException:
+                logger.error("등록 버튼을 찾을 수 없음")
+                _log_editor_diagnostics(driver)
+                return None
+
         submit_btn.click()
         random_delay(3, 5)
 
@@ -982,7 +1016,7 @@ def write_post(
         # 확인 다이얼로그 처리
         try:
             confirm_btn = driver.find_element(
-                By.CSS_SELECTOR, ".BaseButton.BaseButton--skinGreen"
+                By.XPATH, "//button[contains(text(),'등록') or contains(text(),'확인')]"
             )
             confirm_btn.click()
             random_delay(3, 5)
