@@ -571,27 +571,26 @@ def _insert_sticker(driver, pack: str, seq: str):
     except Exception as e:
         logger.warning(f"스티커 삽입 실패({pack}/{seq}): {e}")
     finally:
-        # 스티커 팝업 닫기: 버튼 재클릭(토글 해제) → 본문 클릭 → ESC
+        # 스티커 팝업 강제 닫기: JS로 selected 클래스 제거 + 팝업 요소 숨김
         try:
-            sticker_btn = driver.find_element(
-                By.CSS_SELECTOR, "button.se-sticker-toolbar-button.se-is-selected, "
-                                  "button.se-sticker-toolbar-button"
-            )
-            sticker_btn.click()
+            driver.execute_script("""
+                // 스티커 버튼 selected 해제 후 클릭
+                var btn = document.querySelector('button.se-sticker-toolbar-button.se-is-selected');
+                if (btn) { btn.click(); }
+                // 스티커 팝업 패널 숨기기
+                var panels = document.querySelectorAll('.se-sticker-panel, .se-popup-sticker, .se-layer');
+                panels.forEach(function(p) { p.style.display = 'none'; });
+            """)
             random_delay(0.3, 0.5)
         except Exception:
             pass
+        # 에디터 본문 클릭으로 포커스 복원
         try:
-            # 에디터 본문 클릭으로 포커스 이동 (팝업 닫힘 유도)
             body = driver.find_element(By.CSS_SELECTOR, "[contenteditable='true']")
             body.click()
             random_delay(0.2, 0.3)
         except Exception:
-            try:
-                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-                random_delay(0.2, 0.3)
-            except Exception:
-                pass
+            pass
 
 
 # ─── 이미지 삽입 ─────────────────────────────────────────
@@ -987,21 +986,49 @@ def write_post(
             # ── 폴백: 단순 텍스트 입력 ──
             _write_plain_body(driver, active_body, content, image_path)
 
-        # ── 등록 버튼 클릭 ──
+        # ── 팝업 다이얼로그 닫기 (네이버 알림 등) ──
         random_delay(1, 2)
+        try:
+            dismissed = driver.execute_script("""
+                var dismissed = [];
+                // '닫기' 버튼 클릭 (BaseButton--gray)
+                var closeBtns = document.querySelectorAll('button.BaseButton--gray, button.BaseButton');
+                closeBtns.forEach(function(btn) {
+                    var txt = (btn.textContent || '').trim();
+                    if (txt === '닫기' || txt === 'X') {
+                        btn.click();
+                        dismissed.push(txt);
+                    }
+                });
+                // 오버레이/모달 닫기
+                var overlays = document.querySelectorAll('.modal_dimmed, .Layer__overlay, [class*="dimmed"]');
+                overlays.forEach(function(o) { o.click(); });
+                return dismissed;
+            """)
+            if dismissed:
+                logger.info(f"팝업 다이얼로그 닫기: {dismissed}")
+                random_delay(0.5, 1.0)
+        except Exception:
+            pass
 
-        # JS로 페이지 내 모든 버튼 진단 로깅
+        # ── 등록 버튼 클릭 ──
+
+        # JS로 페이지 내 모든 클릭 가능 요소 진단 로깅
         try:
             btn_info = driver.execute_script("""
-                var btns = document.querySelectorAll('button');
                 var info = [];
-                btns.forEach(function(b) {
-                    var txt = (b.textContent || '').trim().substring(0, 30);
-                    var cls = (b.className || '').substring(0, 80);
+                // button, a, [role=button] 모두 탐색
+                var els = document.querySelectorAll('button, a, [role="button"]');
+                els.forEach(function(b) {
+                    var txt = (b.textContent || '').trim().substring(0, 40);
+                    var cls = (b.className || '').substring(0, 100);
+                    var tag = b.tagName;
                     if (txt.indexOf('등록') >= 0 || txt.indexOf('발행') >= 0 ||
+                        txt.indexOf('게시') >= 0 || txt.indexOf('작성') >= 0 ||
                         cls.indexOf('publish') >= 0 || cls.indexOf('submit') >= 0 ||
+                        cls.indexOf('register') >= 0 || cls.indexOf('btn_') >= 0 ||
                         cls.indexOf('BaseButton') >= 0) {
-                        info.push(txt + ' | class=' + cls);
+                        info.push(tag + ': ' + txt + ' | class=' + cls);
                     }
                 });
                 return info;
@@ -1013,18 +1040,22 @@ def write_post(
 
         submit_btn = None
 
-        # 1단계: CSS 셀렉터 시도
+        # 1단계: 다양한 CSS 셀렉터 시도
         submit_selectors = [
             "button.BaseButton--skinGreen",
             "button.BaseButton--skinRed",
             "button[class*='BaseButton--skin']",
+            "button[class*='btn_publish']",
+            "button[class*='publish']",
+            "a[class*='btn_publish']",
+            "a[class*='publish']",
         ]
         for sel in submit_selectors:
             try:
                 candidates = driver.find_elements(By.CSS_SELECTOR, sel)
                 for btn in candidates:
                     txt = (btn.text or "").strip()
-                    if "등록" in txt and "임시" not in txt:
+                    if ("등록" in txt or "발행" in txt or "게시" in txt) and "임시" not in txt:
                         submit_btn = btn
                         logger.info(f"등록 버튼 발견 (CSS): {sel}, text={txt}")
                         break
@@ -1033,26 +1064,32 @@ def write_post(
             except Exception:
                 continue
 
-        # 2단계: XPATH로 하위 요소 텍스트까지 검색
+        # 2단계: XPATH로 하위 요소 텍스트까지 검색 (button + a)
         if not submit_btn:
-            try:
-                submit_btn = driver.find_element(
-                    By.XPATH,
-                    "//button[.//text()[contains(.,'등록')] and not(.//text()[contains(.,'임시')])]"
-                )
-                logger.info("등록 버튼 발견 (XPATH 하위 텍스트)")
-            except NoSuchElementException:
-                pass
+            xpath_patterns = [
+                "//button[.//text()[contains(.,'등록')] and not(.//text()[contains(.,'임시')])]",
+                "//a[.//text()[contains(.,'등록')] and not(.//text()[contains(.,'임시')])]",
+                "//button[.//text()[contains(.,'발행')]]",
+                "//*[@role='button'][.//text()[contains(.,'등록')]]",
+            ]
+            for xp in xpath_patterns:
+                try:
+                    submit_btn = driver.find_element(By.XPATH, xp)
+                    logger.info(f"등록 버튼 발견 (XPATH): {xp}")
+                    break
+                except NoSuchElementException:
+                    continue
 
-        # 3단계: JS로 직접 찾기
+        # 3단계: JS로 모든 요소에서 직접 찾기
         if not submit_btn:
             try:
                 submit_btn = driver.execute_script("""
-                    var btns = document.querySelectorAll('button');
-                    for (var i = 0; i < btns.length; i++) {
-                        var txt = (btns[i].textContent || '').trim();
-                        if (txt.indexOf('등록') >= 0 && txt.indexOf('임시') < 0) {
-                            return btns[i];
+                    var els = document.querySelectorAll('button, a, [role="button"]');
+                    for (var i = 0; i < els.length; i++) {
+                        var txt = (els[i].textContent || '').trim();
+                        if ((txt.indexOf('등록') >= 0 || txt.indexOf('발행') >= 0) &&
+                            txt.indexOf('임시') < 0 && txt.length < 10) {
+                            return els[i];
                         }
                     }
                     return null;
