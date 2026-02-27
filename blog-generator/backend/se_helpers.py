@@ -690,35 +690,56 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
     await page.keyboard.type(link_display, delay=30 + random.randint(-10, 15))
     await random_delay(0.3, 0.5)
 
-    for _ in range(len(link_display)):
-        await page.keyboard.press("Shift+ArrowLeft")
+    # 텍스트 전체 선택: Shift+Home으로 현재 줄 시작까지 선택 (글자 수 반복보다 안정적)
+    await page.keyboard.press("End")
+    await random_delay(0.1, 0.2)
+    await page.keyboard.press("Shift+Home")
     await random_delay(0.3, 0.5)
 
     await page.keyboard.press("Control+k")
     await random_delay(1, 2)
 
+    # 검색 대상: editor + page (iframe 밖에 팝업이 뜰 수 있음)
+    targets = [editor, page] if editor != page else [editor]
+
     try:
-        link_input = await try_selectors(editor, [
+        link_input_selectors = [
             'input[placeholder*="URL"]',
             'input[placeholder*="url"]',
             'input[placeholder*="링크"]',
+            'input[placeholder*="주소"]',
             '.se-link-input input',
             '.se-popup-link input',
             'input[type="url"]',
             'input[type="text"]',
-        ], timeout=5000, description="링크 입력")
+        ]
+
+        link_input = None
+        for target in targets:
+            link_input = await try_selectors(target, link_input_selectors,
+                                              timeout=3000, description=f"링크 입력({'에디터' if target == editor else '페이지'})")
+            if link_input:
+                break
 
         if not link_input:
-            link_input = await editor.evaluate_handle('''() => {
-                const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
-                if (popup) {
-                    const inp = popup.querySelector('input');
-                    if (inp) return inp;
-                }
-                return null;
-            }''')
-            if link_input:
-                link_input = link_input.as_element()
+            for target in targets:
+                try:
+                    handle = await target.evaluate_handle('''() => {
+                        const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                        if (popup) {
+                            const inp = popup.querySelector('input');
+                            if (inp) return inp;
+                        }
+                        return null;
+                    }''')
+                    if handle:
+                        el = handle.as_element()
+                        if el:
+                            link_input = el
+                            logger.info(f"링크 입력 JS 폴백 발견")
+                            break
+                except Exception:
+                    continue
 
         if link_input:
             await link_input.click()
@@ -728,43 +749,63 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
             await random_delay(0.5, 1)
 
             # 돋보기(검색) 버튼
-            search_btn = await try_selectors(editor, [
+            search_selectors = [
                 '.se-popup-link button[class*="search"]',
                 '.se-popup-link button[class*="query"]',
                 '.se-popup button[class*="search"]',
                 'button.se-link-preview-btn',
-            ], timeout=3000, description="링크 돋보기 버튼")
+            ]
+            search_btn = None
+            for target in targets:
+                search_btn = await try_selectors(target, search_selectors,
+                                                  timeout=2000, description=f"링크 돋보기({'에디터' if target == editor else '페이지'})")
+                if search_btn:
+                    break
 
             if not search_btn:
-                search_btn_handle = await editor.evaluate_handle('''() => {
-                    const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
-                    if (popup) {
-                        const btns = popup.querySelectorAll('button');
-                        for (const btn of btns) {
-                            if (btn.querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
-                                return btn;
+                for target in targets:
+                    try:
+                        search_btn_handle = await target.evaluate_handle('''() => {
+                            const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                            if (popup) {
+                                const btns = popup.querySelectorAll('button');
+                                for (const btn of btns) {
+                                    if (btn.querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
+                                        return btn;
+                                    }
+                                }
+                                if (btns.length > 0) return btns[0];
                             }
-                        }
-                        if (btns.length > 0) return btns[0];
-                    }
-                    return null;
-                }''')
-                if search_btn_handle:
-                    search_btn = search_btn_handle.as_element()
+                            return null;
+                        }''')
+                        if search_btn_handle:
+                            el = search_btn_handle.as_element()
+                            if el:
+                                search_btn = el
+                                break
+                    except Exception:
+                        continue
 
             if search_btn:
                 await search_btn.click()
                 logger.info("링크 돋보기 버튼 클릭")
                 await random_delay(3, 5)
-                try:
-                    await editor.wait_for_selector(
-                        '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
-                        '.se-popup-link [class*="og"], .se-popup [class*="card"], '
-                        '.se-popup-link img',
-                        timeout=10000,
-                    )
-                    logger.info("링크 미리보기 로드 완료")
-                except Exception:
+                # 미리보기 로드 대기
+                preview_loaded = False
+                for target in targets:
+                    try:
+                        await target.wait_for_selector(
+                            '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
+                            '.se-popup-link [class*="og"], .se-popup [class*="card"], '
+                            '.se-popup-link img',
+                            timeout=10000,
+                        )
+                        logger.info("링크 미리보기 로드 완료")
+                        preview_loaded = True
+                        break
+                    except Exception:
+                        continue
+                if not preview_loaded:
                     logger.warning("링크 미리보기 로드 타임아웃 (계속 진행)")
                 await random_delay(1, 2)
             else:
@@ -773,29 +814,42 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                 await random_delay(2, 3)
 
             # 확인 버튼
-            confirm_btn = await try_selectors(editor, [
+            confirm_selectors = [
                 '.se-popup-link button:has-text("확인")',
                 '.se-popup button:has-text("확인")',
                 'button.se-popup-button-confirm',
                 'button:has-text("확인")',
-            ], timeout=5000, description="링크 확인 버튼")
+            ]
+            confirm_btn = None
+            for target in targets:
+                confirm_btn = await try_selectors(target, confirm_selectors,
+                                                   timeout=3000, description=f"링크 확인({'에디터' if target == editor else '페이지'})")
+                if confirm_btn:
+                    break
 
             if not confirm_btn:
-                confirm_handle = await editor.evaluate_handle('''() => {
-                    const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
-                    if (popup) {
-                        const btns = popup.querySelectorAll('button');
-                        for (const btn of btns) {
-                            const text = (btn.textContent || "").trim();
-                            if (text === '확인' || text.includes('확인')) {
-                                return btn;
+                for target in targets:
+                    try:
+                        confirm_handle = await target.evaluate_handle('''() => {
+                            const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                            if (popup) {
+                                const btns = popup.querySelectorAll('button');
+                                for (const btn of btns) {
+                                    const text = (btn.textContent || "").trim();
+                                    if (text === '확인' || text.includes('확인')) {
+                                        return btn;
+                                    }
+                                }
                             }
-                        }
-                    }
-                    return null;
-                }''')
-                if confirm_handle:
-                    confirm_btn = confirm_handle.as_element()
+                            return null;
+                        }''')
+                        if confirm_handle:
+                            el = confirm_handle.as_element()
+                            if el:
+                                confirm_btn = el
+                                break
+                    except Exception:
+                        continue
 
             if confirm_btn:
                 await confirm_btn.click()
