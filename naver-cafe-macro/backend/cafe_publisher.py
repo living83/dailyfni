@@ -50,31 +50,23 @@ def _strip_non_bmp(text: str) -> str:
 
 
 def fast_type(driver, text: str):
-    """텍스트 입력 — Chrome DevTools Protocol 사용
+    """텍스트 입력 — ActionChains (브라우저 네이티브 키보드 이벤트)
 
-    SE ONE 에디터는 내부 모델을 별도 관리하므로, execCommand나 DOM 조작은
-    화면에만 보이고 에디터 모델에 반영 안 됨. CDP Input.insertText는 Chrome의
-    네이티브 입력 파이프라인을 거치므로 에디터가 실제 키보드 입력으로 인식.
+    SE ONE 에디터는 내부 모델을 별도 관리. execCommand, CDP Input.insertText,
+    DOM 조작 모두 에디터 모델에 반영 안 됨 (DOM에만 텍스트 추가됨).
+    ActionChains.send_keys()는 실제 키보드 이벤트를 보내므로
+    에디터가 진짜 타이핑으로 인식하여 모델 업데이트.
     """
     text = _strip_non_bmp(text)
 
-    # 1차: CDP Input.insertText (가장 안정적)
+    # ActionChains send_keys (브라우저 네이티브 키보드 이벤트)
     try:
-        driver.execute_cdp_cmd('Input.insertText', {'text': text})
-        return
-    except Exception as e:
-        logger.warning(f"CDP insertText 실패: {e}")
-
-    # 2차: ActionChains send_keys (실제 키보드 이벤트)
-    try:
-        from selenium.webdriver.common.action_chains import ActionChains
         ActionChains(driver).send_keys(text).perform()
-        logger.info("fast_type 폴백: ActionChains send_keys 성공")
         return
     except Exception as e:
         logger.warning(f"ActionChains send_keys 실패: {e}")
 
-    # 3차: active element send_keys
+    # 폴백: active element send_keys
     try:
         active = driver.switch_to.active_element
         active.send_keys(text)
@@ -518,69 +510,33 @@ def _restore_editor_focus(driver):
 def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
     """CTA 삽입 — 테이블 없이 일반 텍스트로 CTA 작성
 
-    구분선 + 굵은 CTA 텍스트 + 구분선 형태로 강조.
+    구분선 + CTA 텍스트 + 구분선 형태로 강조.
+    ActionChains로 실제 키보드 이벤트 전송 (에디터 모델 반영).
     """
     try:
-        # 빈 줄 + 구분선 역할 텍스트
-        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
-        random_delay(0.1, 0.2)
-        driver.execute_cdp_cmd('Input.insertText', {'text': '━━━━━━━━━━━━━━━━━━━━'})
-        random_delay(0.1, 0.2)
-        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
-        random_delay(0.1, 0.2)
-
-        # CTA 텍스트 (화살표로 강조)
+        actions = ActionChains(driver)
+        # 빈 줄 + 구분선
+        actions.send_keys(Keys.ENTER)
+        actions.send_keys('━━━━━━━━━━━━━━━━━━━━')
+        actions.send_keys(Keys.ENTER)
+        # CTA 텍스트
         cta_display = f'▶ {cta_text} ◀'
-        driver.execute_cdp_cmd('Input.insertText', {'text': cta_display})
-        random_delay(0.1, 0.2)
-
-        # 링크 적용
-        if cta_link:
-            # 방금 입력한 CTA 텍스트 전체 선택
-            from selenium.webdriver.common.action_chains import ActionChains
-            ActionChains(driver).key_down(Keys.SHIFT).key_down(Keys.HOME).key_up(Keys.HOME).key_up(Keys.SHIFT).perform()
-            random_delay(0.2, 0.3)
-            # 링크 버튼
-            _click_toolbar_button(driver, [
-                "button[data-command='link']",
-                ".se-toolbar button[data-name='link']",
-                "button.se-toolbar-button-link",
-            ])
-            random_delay(0.5, 0.8)
-            # URL 입력
-            try:
-                link_input = driver.find_element(
-                    By.CSS_SELECTOR, ".se-link-input input, "
-                                     ".se-popup-link input[type='text']"
-                )
-                link_input.clear()
-                link_input.send_keys(cta_link)
-                random_delay(0.2, 0.3)
-                _click_toolbar_button(driver, [
-                    ".se-link-confirm",
-                    ".se-popup-button-confirm",
-                ])
-            except Exception as e:
-                logger.warning(f"CTA 링크 적용 실패: {e}")
-
-        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
-        random_delay(0.1, 0.2)
-        driver.execute_cdp_cmd('Input.insertText', {'text': '━━━━━━━━━━━━━━━━━━━━'})
-        random_delay(0.1, 0.2)
-        driver.execute_cdp_cmd('Input.insertText', {'text': '\n'})
-        random_delay(0.1, 0.2)
+        actions.send_keys(cta_display)
+        actions.send_keys(Keys.ENTER)
+        # 하단 구분선
+        actions.send_keys('━━━━━━━━━━━━━━━━━━━━')
+        actions.send_keys(Keys.ENTER)
+        actions.perform()
+        random_delay(0.3, 0.5)
 
         logger.info(f"CTA 텍스트 삽입 완료: {cta_text}")
 
     except Exception as e:
-        logger.warning(f"CTA 삽입 실패, 텍스트 폴백: {e}")
+        logger.warning(f"CTA 삽입 실패: {e}")
         try:
-            driver.execute_cdp_cmd('Input.insertText', {'text': f'\n▶ {cta_text} ◀\n'})
+            fast_type(driver, f'\n━━━━━━━━━━━━━━━━━━━━\n▶ {cta_text} ◀\n━━━━━━━━━━━━━━━━━━━━\n')
         except Exception:
-            active = driver.switch_to.active_element
-            active.send_keys(Keys.ENTER)
-            active.send_keys(f'▶ {cta_text} ◀')
-            active.send_keys(Keys.ENTER)
+            pass
 
 
 # ─── 스티커 삽입 ─────────────────────────────────────────
@@ -1467,27 +1423,17 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
     body_area: 본문 영역의 활성 요소 (contenteditable div 또는 active element)
     """
 
-    # 에디터 포커스: Selenium 클릭 → JS로 커서 배치
+    # 에디터 포커스: ActionChains 클릭 (실제 마우스 이벤트로 에디터 활성화)
     try:
-        body_area.click()
+        ActionChains(driver).click(body_area).perform()
+        logger.info("본문 ActionChains 클릭 포커스 완료")
     except Exception:
-        driver.execute_script("arguments[0].click();", body_area)
-    random_delay(0.2, 0.3)
-
-    # contenteditable 요소에 포커스 확인
-    try:
-        driver.execute_script("""
-            var el = arguments[0];
-            var ce = el.closest('[contenteditable="true"]') || el;
-            if (!ce.getAttribute('contenteditable')) {
-                ce = document.querySelector('[contenteditable="true"]');
-            }
-            if (ce) { ce.focus(); }
-        """, body_area)
-        logger.info("본문 contenteditable 포커스 설정 완료")
-    except Exception as e:
-        logger.warning(f"본문 contenteditable 포커스 실패: {e}")
-    random_delay(0.2, 0.3)
+        try:
+            body_area.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", body_area)
+        logger.info("본문 click 포커스 완료 (폴백)")
+    random_delay(0.3, 0.5)
 
     for section in structured_content["sections"]:
         s_type = section["type"]
@@ -1498,18 +1444,16 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
                 text = line["text"]
 
                 if style == STYLE_EMPTY:
-                    active = driver.switch_to.active_element
-                    active.send_keys(Keys.ENTER)
+                    ActionChains(driver).send_keys(Keys.ENTER).perform()
                     random_delay(0.2, 0.4)
                     continue
 
-                # 텍스트 입력 (JS insertText로 빠르게)
+                # 텍스트 입력 (ActionChains 키보드 이벤트)
                 fast_type(driver, text)
                 random_delay(0.3, 0.8)
 
                 # 줄바꿈
-                active = driver.switch_to.active_element
-                active.send_keys(Keys.ENTER)
+                ActionChains(driver).send_keys(Keys.ENTER).perform()
                 random_delay(0.15, 0.35)
 
         elif s_type == "cta_table":
