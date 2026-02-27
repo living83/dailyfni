@@ -130,7 +130,10 @@ async def toggle_account(account_id: int):
 
 @app.delete("/api/accounts/{account_id}")
 async def delete_account(account_id: int):
-    db.delete_account(account_id)
+    try:
+        db.delete_account(account_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"계정 삭제 실패: {e}")
     return {"message": "계정 삭제됨"}
 
 

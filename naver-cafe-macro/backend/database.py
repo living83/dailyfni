@@ -190,6 +190,9 @@ def toggle_account(account_id: int):
 
 def delete_account(account_id: int):
     conn = get_connection()
+    # 외래 키 참조 해제 후 계정 삭제
+    conn.execute("DELETE FROM comment_history WHERE account_id = ?", (account_id,))
+    conn.execute("UPDATE publish_history SET account_id = NULL WHERE account_id = ?", (account_id,))
     conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
     conn.commit()
     conn.close()
