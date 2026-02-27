@@ -50,74 +50,35 @@ def _strip_non_bmp(text: str) -> str:
 
 
 def fast_type(driver, text: str):
-    """JavaScript insertText로 빠른 텍스트 입력 (현재 포커스된 요소에 입력)
+    """텍스트 입력 — Chrome DevTools Protocol 사용
 
-    SE ONE 에디터에서 contenteditable 부모가 포커스되어야 execCommand가 동작함.
-    실패 시 contenteditable 요소를 직접 찾아 포커스 후 재시도.
+    SE ONE 에디터는 내부 모델을 별도 관리하므로, execCommand나 DOM 조작은
+    화면에만 보이고 에디터 모델에 반영 안 됨. CDP Input.insertText는 Chrome의
+    네이티브 입력 파이프라인을 거치므로 에디터가 실제 키보드 입력으로 인식.
     """
     text = _strip_non_bmp(text)
 
-    # 1차: 그냥 시도
-    result = driver.execute_script(
-        "return document.execCommand('insertText', false, arguments[0]);",
-        text
-    )
-    if result:
-        return
-
-    # 2차: contenteditable 요소에 명시적 포커스 후 재시도
-    result2 = driver.execute_script("""
-        // contenteditable 요소 찾기 (SE ONE 에디터 본문)
-        var ce = document.querySelector(
-            '.se-component-content [contenteditable="true"], ' +
-            '.se-text-paragraph[contenteditable="true"], ' +
-            '[contenteditable="true"]'
-        );
-        if (ce) {
-            ce.focus();
-            // 커서를 끝으로 이동
-            var sel = window.getSelection();
-            if (sel.rangeCount > 0) {
-                var range = sel.getRangeAt(0);
-                range.collapse(false);
-            }
-            return document.execCommand('insertText', false, arguments[0]);
-        }
-        return false;
-    """, text)
-    if result2:
-        return
-
-    # 3차 폴백: clipboard API (Ctrl+V 시뮬레이션)
-    logger.warning(f"fast_type execCommand 2회 실패 — clipboard 폴백. text='{text[:30]}...'")
+    # 1차: CDP Input.insertText (가장 안정적)
     try:
-        driver.execute_script("""
-            var ce = document.querySelector('[contenteditable="true"]');
-            if (!ce) return;
-            ce.focus();
-            // 텍스트 노드 직접 삽입
-            var sel = window.getSelection();
-            if (sel.rangeCount === 0) {
-                // 커서 없으면 끝에 배치
-                var range = document.createRange();
-                range.selectNodeContents(ce);
-                range.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(range);
-            }
-            var range = sel.getRangeAt(0);
-            range.deleteContents();
-            var textNode = document.createTextNode(arguments[0]);
-            range.insertNode(textNode);
-            // 커서를 삽입된 텍스트 뒤로 이동
-            range.setStartAfter(textNode);
-            range.setEndAfter(textNode);
-            sel.removeAllRanges();
-            sel.addRange(range);
-            // input 이벤트 발생 (에디터가 변경 감지하도록)
-            ce.dispatchEvent(new Event('input', {bubbles: true}));
-        """, text)
-        logger.info("fast_type 폴백: DOM 직접 삽입 성공")
+        driver.execute_cdp_cmd('Input.insertText', {'text': text})
+        return
+    except Exception as e:
+        logger.warning(f"CDP insertText 실패: {e}")
+
+    # 2차: ActionChains send_keys (실제 키보드 이벤트)
+    try:
+        from selenium.webdriver.common.action_chains import ActionChains
+        ActionChains(driver).send_keys(text).perform()
+        logger.info("fast_type 폴백: ActionChains send_keys 성공")
+        return
+    except Exception as e:
+        logger.warning(f"ActionChains send_keys 실패: {e}")
+
+    # 3차: active element send_keys
+    try:
+        active = driver.switch_to.active_element
+        active.send_keys(text)
+        logger.info("fast_type 폴백: active_element send_keys 성공")
     except Exception as e:
         logger.error(f"fast_type 모든 방법 실패: {e}")
 
@@ -1518,40 +1479,27 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
     body_area: 본문 영역의 활성 요소 (contenteditable div 또는 active element)
     """
 
-    # 에디터 포커스: contenteditable 부모를 찾아서 명시적 포커스
+    # 에디터 포커스: Selenium 클릭 → JS로 커서 배치
+    try:
+        body_area.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", body_area)
+    random_delay(0.2, 0.3)
+
+    # contenteditable 요소에 포커스 확인
     try:
         driver.execute_script("""
             var el = arguments[0];
-            // contenteditable 요소 찾기 (자기 자신 또는 부모)
-            var ce = el.closest('[contenteditable="true"]');
-            if (!ce) {
-                // 부모에 없으면 전체 에디터에서 찾기
-                ce = document.querySelector(
-                    '.se-component-content [contenteditable="true"], ' +
-                    '[contenteditable="true"]'
-                );
+            var ce = el.closest('[contenteditable="true"]') || el;
+            if (!ce.getAttribute('contenteditable')) {
+                ce = document.querySelector('[contenteditable="true"]');
             }
-            if (ce) {
-                ce.focus();
-                // 커서를 끝에 배치
-                var sel = window.getSelection();
-                var range = document.createRange();
-                range.selectNodeContents(ce);
-                range.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(range);
-            } else {
-                el.click();
-            }
+            if (ce) { ce.focus(); }
         """, body_area)
         logger.info("본문 contenteditable 포커스 설정 완료")
     except Exception as e:
-        logger.warning(f"본문 contenteditable 포커스 실패: {e}, click 폴백")
-        try:
-            body_area.click()
-        except Exception:
-            driver.execute_script("arguments[0].click();", body_area)
-    random_delay(0.3, 0.5)
+        logger.warning(f"본문 contenteditable 포커스 실패: {e}")
+    random_delay(0.2, 0.3)
 
     for section in structured_content["sections"]:
         s_type = section["type"]
