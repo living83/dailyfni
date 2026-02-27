@@ -52,10 +52,19 @@ def _strip_non_bmp(text: str) -> str:
 def fast_type(driver, text: str):
     """JavaScript insertText로 빠른 텍스트 입력 (현재 포커스된 요소에 입력)"""
     text = _strip_non_bmp(text)
-    driver.execute_script(
-        "document.execCommand('insertText', false, arguments[0]);",
+    result = driver.execute_script(
+        "return document.execCommand('insertText', false, arguments[0]);",
         text
     )
+    if not result:
+        logger.warning(f"fast_type 실패 (execCommand 반환 false) — 포커스 없을 수 있음. text='{text[:30]}...'")
+        # 폴백: active element에 send_keys
+        try:
+            active = driver.switch_to.active_element
+            active.send_keys(text)
+            logger.info("fast_type 폴백: send_keys로 입력 성공")
+        except Exception as e:
+            logger.error(f"fast_type 폴백 send_keys도 실패: {e}")
 
 
 def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0.12):
@@ -843,121 +852,170 @@ def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
         btn_text = (board_btn.text or "").strip()
         if "선택" in btn_text:
             logger.warning(f"게시판 미선택 감지: '{btn_text}' — 드롭다운 클릭 시도 (target_menu_id={target_menu_id})")
+
+            # 클릭 전: 현재 보이는 모든 li 요소의 ID 수집 (비교용)
+            before_ids = driver.execute_script("""
+                var ids = new Set();
+                document.querySelectorAll('li').forEach(function(li) {
+                    ids.add(li);
+                });
+                window.__board_before_li_count = ids.size;
+                return ids.size;
+            """)
+
             try:
                 board_btn.click()
             except Exception:
                 driver.execute_script("arguments[0].click();", board_btn)
-            random_delay(0.5, 1.0)
+            random_delay(0.8, 1.2)
 
-            # 드롭다운 항목 탐색: 버튼의 부모 컨테이너 기준으로 li 항목 검색
-            # (알림 목록 등 관계없는 li를 잡지 않도록 board_btn 기준 스코핑)
             target_id = str(target_menu_id) if target_menu_id else ""
 
+            # 드롭다운 찾기: 버튼 클릭 후 나타난 새로운 visible 요소 탐색
+            # Vue 포탈(teleport) 대응: 전체 DOM에서 탐색하되, 드롭다운 특성으로 필터링
             matched = driver.execute_script("""
-                var btn = arguments[0];
-                var targetId = arguments[1];
-                var targetName = arguments[2];
+                var targetId = arguments[0];
+                var targetName = arguments[1];
+                var btn = arguments[2];
 
-                // 버튼의 부모를 5단계까지 올라가며 드롭다운 리스트(ul > li) 찾기
-                var container = btn.parentElement;
-                for (var level = 0; level < 8 && container; level++) {
-                    var listItems = container.querySelectorAll('ul li');
-                    // 유효한 게시판 항목인지 확인: cc_mynews_item(알림) 제외
-                    var boardItems = [];
-                    for (var i = 0; i < listItems.length; i++) {
-                        var li = listItems[i];
-                        var a = li.querySelector('a');
-                        // 알림 항목 제외
-                        if (a && a.classList.contains('cc_mynews_item')) continue;
-                        if (li.classList.contains('unread')) continue;
-                        var txt = (li.textContent || '').trim();
-                        if (!txt || txt.indexOf('선택') >= 0) continue;
-                        boardItems.push(li);
+                // 전략 1: 게시판 버튼과 같은 Vue 컴포넌트 스코프의 드롭다운
+                // data-v-* 속성이 버튼과 동일한 요소 찾기
+                var btnVueAttrs = [];
+                for (var i = 0; i < btn.attributes.length; i++) {
+                    var attrName = btn.attributes[i].name;
+                    if (attrName.startsWith('data-v-')) {
+                        btnVueAttrs.push(attrName);
                     }
-                    // 최소 2개 이상의 게시판 항목이 있어야 유효한 드롭다운
-                    if (boardItems.length >= 2) {
-                        // 1차: menuId 매칭
-                        if (targetId) {
-                            for (var j = 0; j < boardItems.length; j++) {
-                                var el = boardItems[j];
-                                var a2 = el.querySelector('a');
-                                var menuId = el.getAttribute('data-menuid') ||
-                                             el.getAttribute('data-menu-id') ||
-                                             el.getAttribute('data-id') || '';
-                                var href = a2 ? (a2.getAttribute('href') || '') : '';
-                                if (a2) {
-                                    menuId = menuId || a2.getAttribute('data-menuid') ||
-                                             a2.getAttribute('data-menu-id') || '';
-                                }
-                                if (menuId === targetId ||
-                                    href.indexOf('menuId=' + targetId) >= 0 ||
-                                    href.indexOf('menuid=' + targetId) >= 0) {
-                                    (a2 || el).click();
-                                    return {method: 'menuId', text: (el.textContent || '').trim()};
-                                }
-                            }
-                        }
-                        // 2차: board_name 텍스트 매칭
-                        if (targetName) {
-                            for (var k = 0; k < boardItems.length; k++) {
-                                var txt2 = (boardItems[k].textContent || '').trim();
-                                if (txt2 === targetName || txt2.indexOf(targetName) >= 0) {
-                                    var a3 = boardItems[k].querySelector('a');
-                                    (a3 || boardItems[k]).click();
-                                    return {method: 'name', text: txt2};
-                                }
-                            }
-                        }
-                        // 3차: 폴백 — 첫 번째 항목 (전체 제외)
-                        for (var m = 0; m < boardItems.length; m++) {
-                            var txt3 = (boardItems[m].textContent || '').trim();
-                            if (txt3.indexOf('전체') < 0) {
-                                var a4 = boardItems[m].querySelector('a');
-                                (a4 || boardItems[m]).click();
-                                return {method: 'fallback', text: txt3};
-                            }
-                        }
-                    }
-                    container = container.parentElement;
                 }
 
-                // 부모 탐색 실패 시: 페이지 전체에서 드롭다운 찾기 (열려있는 select_list)
-                var globalLists = document.querySelectorAll(
-                    'ul.select_list, .layer_select ul, .select_box ul'
-                );
-                for (var g = 0; g < globalLists.length; g++) {
-                    var gItems = globalLists[g].querySelectorAll('li');
-                    if (gItems.length < 2) continue;
-                    // 알림 항목 제외
-                    var hasNews = globalLists[g].querySelector('.cc_mynews_item');
+                // 모든 visible ul 중 드롭다운 후보 찾기
+                var allULs = document.querySelectorAll('ul');
+                var candidateLists = [];
+
+                for (var u = 0; u < allULs.length; u++) {
+                    var ul = allULs[u];
+                    // 보이지 않는 ul 제외
+                    var rect = ul.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) continue;
+                    var style = window.getComputedStyle(ul);
+                    if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+                    var items = ul.querySelectorAll(':scope > li');
+                    if (items.length < 2) continue;
+
+                    // 알림 목록 제외: cc_mynews_item 포함 여부
+                    var hasNews = ul.querySelector('.cc_mynews_item');
                     if (hasNews) continue;
-                    if (targetName) {
-                        for (var n = 0; n < gItems.length; n++) {
-                            var gt = (gItems[n].textContent || '').trim();
-                            if (gt === targetName || gt.indexOf(targetName) >= 0) {
-                                var ga = gItems[n].querySelector('a');
-                                (ga || gItems[n]).click();
-                                return {method: 'global_name', text: gt};
+
+                    // 사이드바 메뉴 제외: 카페 메뉴는 보통 많은 항목 + 특정 클래스
+                    var isMenu = ul.closest('.cafe-menu, .gnb, #menuList, .sidebar, nav');
+                    if (isMenu) continue;
+
+                    // Vue 스코프 매칭: 버튼과 같은 data-v-* 속성 가진 ul 우선
+                    var vueMatch = false;
+                    for (var v = 0; v < btnVueAttrs.length; v++) {
+                        if (ul.hasAttribute(btnVueAttrs[v])) {
+                            vueMatch = true;
+                            break;
+                        }
+                    }
+
+                    candidateLists.push({ul: ul, items: items, vueMatch: vueMatch});
+                }
+
+                // Vue 매칭 리스트 우선, 그 다음 일반 리스트
+                candidateLists.sort(function(a, b) {
+                    return (b.vueMatch ? 1 : 0) - (a.vueMatch ? 1 : 0);
+                });
+
+                // 진단: 후보 리스트 로깅용 데이터 수집
+                var diagData = [];
+                for (var c = 0; c < candidateLists.length; c++) {
+                    var cand = candidateLists[c];
+                    var itemTexts = [];
+                    for (var t = 0; t < Math.min(cand.items.length, 5); t++) {
+                        itemTexts.push((cand.items[t].textContent || '').trim().substring(0, 30));
+                    }
+                    diagData.push({
+                        count: cand.items.length,
+                        vue: cand.vueMatch,
+                        texts: itemTexts,
+                        cls: (cand.ul.className || '').substring(0, 50),
+                        html: cand.ul.outerHTML.substring(0, 150)
+                    });
+                }
+
+                // 각 후보에서 매칭 시도
+                for (var d = 0; d < candidateLists.length; d++) {
+                    var list = candidateLists[d];
+
+                    // 1차: menuId 매칭
+                    if (targetId) {
+                        for (var j = 0; j < list.items.length; j++) {
+                            var li = list.items[j];
+                            var a = li.querySelector('a');
+                            var menuId = li.getAttribute('data-menuid') ||
+                                         li.getAttribute('data-menu-id') ||
+                                         li.getAttribute('data-id') || '';
+                            var href = a ? (a.getAttribute('href') || '') : '';
+                            if (a) {
+                                menuId = menuId || a.getAttribute('data-menuid') ||
+                                         a.getAttribute('data-menu-id') || '';
+                            }
+                            if (menuId === targetId ||
+                                href.indexOf('menuId=' + targetId) >= 0) {
+                                (a || li).click();
+                                return {method: 'menuId', text: (li.textContent||'').trim(), diag: diagData};
                             }
                         }
                     }
-                    // 폴백
-                    for (var p = 0; p < gItems.length; p++) {
-                        var ft = (gItems[p].textContent || '').trim();
-                        if (ft && ft.indexOf('전체') < 0 && ft.indexOf('선택') < 0) {
-                            var fa = gItems[p].querySelector('a');
-                            (fa || gItems[p]).click();
-                            return {method: 'global_fallback', text: ft};
+
+                    // 2차: board_name 텍스트 매칭
+                    if (targetName) {
+                        for (var k = 0; k < list.items.length; k++) {
+                            var txt = (list.items[k].textContent || '').trim();
+                            if (txt === targetName || txt.indexOf(targetName) >= 0) {
+                                var a2 = list.items[k].querySelector('a');
+                                (a2 || list.items[k]).click();
+                                return {method: 'name', text: txt, diag: diagData};
+                            }
                         }
                     }
                 }
-                return null;
-            """, board_btn, target_id, board_name)
+
+                // 3차: 폴백 — 첫 번째 후보 리스트의 첫 항목 (전체/공지 제외)
+                if (candidateLists.length > 0) {
+                    var first = candidateLists[0];
+                    for (var m = 0; m < first.items.length; m++) {
+                        var ft = (first.items[m].textContent || '').trim();
+                        if (ft && ft.indexOf('전체') < 0 && ft.indexOf('선택') < 0) {
+                            var a3 = first.items[m].querySelector('a');
+                            (a3 || first.items[m]).click();
+                            return {method: 'fallback', text: ft, diag: diagData};
+                        }
+                    }
+                }
+
+                return {method: 'none', text: '', diag: diagData};
+            """, target_id, board_name, board_btn)
 
             if matched:
-                logger.info(f"게시판 선택 완료 ({matched['method']}): '{matched['text']}'")
-                random_delay(0.5, 1.0)
-                return
+                # 진단 로깅
+                for i, d in enumerate(matched.get('diag', [])):
+                    logger.info(f"[드롭다운 후보 {i}] vue={d['vue']} items={d['count']} cls='{d['cls']}' texts={d['texts']}")
+                    logger.info(f"  html: {d['html']}")
+
+                if matched['method'] != 'none':
+                    logger.info(f"게시판 선택 완료 ({matched['method']}): '{matched['text']}'")
+                    random_delay(0.5, 1.0)
+
+                    # 선택 후 버튼 텍스트 확인
+                    btn_after = (board_btn.text or "").strip()
+                    if "선택" in btn_after:
+                        logger.warning(f"선택 후에도 버튼 텍스트 변경 안 됨: '{btn_after}' — 클릭이 잘못된 요소에 갔을 수 있음")
+                    else:
+                        logger.info(f"선택 후 버튼 텍스트: '{btn_after}'")
+                    return
 
             logger.warning("게시판 드롭다운 항목을 찾을 수 없음")
         else:
@@ -1409,6 +1467,24 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
                 _restore_editor_focus(driver)
 
     random_delay(1, 2)
+
+    # 내용 입력 검증: 에디터 본문에 실제로 텍스트가 있는지 확인
+    try:
+        body_text = driver.execute_script("""
+            var bodies = document.querySelectorAll(
+                '.se-component-content .se-text-paragraph, [contenteditable="true"]'
+            );
+            var allText = '';
+            bodies.forEach(function(b) { allText += (b.textContent || ''); });
+            return allText.trim();
+        """)
+        text_len = len(body_text) if body_text else 0
+        if text_len > 0:
+            logger.info(f"본문 내용 검증 OK: {text_len}자 (처음 50자: '{body_text[:50]}')")
+        else:
+            logger.error("본문 내용 검증 실패: 에디터에 텍스트가 없음!")
+    except Exception as e:
+        logger.warning(f"본문 내용 검증 오류: {e}")
 
 
 def _write_plain_body(driver, body_area, content: str, image_path: Optional[str]):
