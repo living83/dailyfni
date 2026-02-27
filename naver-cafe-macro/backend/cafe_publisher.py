@@ -49,8 +49,17 @@ def _strip_non_bmp(text: str) -> str:
     return "".join(c for c in text if ord(c) <= 0xFFFF)
 
 
+def fast_type(driver, text: str):
+    """JavaScript insertText로 빠른 텍스트 입력 (현재 포커스된 요소에 입력)"""
+    text = _strip_non_bmp(text)
+    driver.execute_script(
+        "document.execCommand('insertText', false, arguments[0]);",
+        text
+    )
+
+
 def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0.12):
-    """한 글자씩 사람처럼 타이핑"""
+    """한 글자씩 사람처럼 타이핑 (제목 등 짧은 텍스트용)"""
     text = _strip_non_bmp(text)
     for char in text:
         element.send_keys(char)
@@ -476,8 +485,8 @@ def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
         ])
         random_delay(0.5, 1.0)
 
-        # CTA 텍스트 타이핑
-        human_type(driver.switch_to.active_element, cta_text)
+        # CTA 텍스트 입력
+        fast_type(driver, cta_text)
         random_delay(0.3, 0.5)
 
         # 링크 적용
@@ -521,7 +530,8 @@ def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
         logger.warning(f"CTA 테이블 삽입 실패, 텍스트 폴백: {e}")
         active = driver.switch_to.active_element
         active.send_keys(Keys.ENTER)
-        human_type(active, cta_text)
+        fast_type(driver, cta_text)
+        active = driver.switch_to.active_element
         active.send_keys(Keys.ENTER)
 
 
@@ -1032,10 +1042,9 @@ def _write_structured_body(driver, body_area, structured_content: dict, image_pa
                     random_delay(0.2, 0.4)
                     continue
 
-                # 텍스트 타이핑 (항상 현재 active element 사용)
-                active = driver.switch_to.active_element
-                human_type(active, text)
-                random_delay(0.1, 0.3)
+                # 텍스트 입력 (JS insertText로 빠르게)
+                fast_type(driver, text)
+                random_delay(0.3, 0.8)
 
                 # 줄바꿈
                 active = driver.switch_to.active_element
@@ -1066,8 +1075,8 @@ def _write_plain_body(driver, body_area, content: str, image_path: Optional[str]
     paragraphs = content.split("\n\n")
     for i, paragraph in enumerate(paragraphs):
         if paragraph.strip():
-            active = driver.switch_to.active_element
-            human_type(active, paragraph.strip())
+            fast_type(driver, paragraph.strip())
+            random_delay(0.3, 0.8)
             if i < len(paragraphs) - 1:
                 active = driver.switch_to.active_element
                 active.send_keys(Keys.ENTER)
