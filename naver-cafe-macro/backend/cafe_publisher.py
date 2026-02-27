@@ -189,7 +189,12 @@ _cafe_id_cache: dict = {}
 def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
     """
     카페 별칭(alias)에서 숫자 카페 ID를 추출.
-    /ca-fe/ URL은 숫자 ID만 지원하므로 카페 페이지 방문 후 URL 리다이렉트에서 추출.
+    /ca-fe/ URL은 숫자 ID만 지원하므로 반드시 숫자 ID가 필요.
+
+    전략:
+    1. 카페 페이지 방문 → URL 리다이렉트 감지
+    2. 페이지 소스에서 clubId 패턴 추출
+    3. JavaScript 동기 XHR로 Naver API 직접 호출
     """
     if cafe_alias.isdigit():
         return cafe_alias
@@ -198,57 +203,130 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         logger.info(f"카페 ID 캐시 히트: {cafe_alias} → {_cafe_id_cache[cafe_alias]}")
         return _cafe_id_cache[cafe_alias]
 
-    logger.info(f"카페 숫자 ID 조회 시작: {cafe_alias}")
+    logger.info(f"========== 카페 숫자 ID 조회 시작: {cafe_alias} ==========")
+
+    def _cache_and_return(numeric_id: str, method: str) -> str:
+        _cafe_id_cache[cafe_alias] = numeric_id
+        logger.info(f"카페 숫자 ID 성공 ({method}): {cafe_alias} → {numeric_id}")
+        return numeric_id
 
     try:
+        # 카페 메인 페이지 방문
         driver.get(f"https://cafe.naver.com/{cafe_alias}")
+        logger.info(f"카페 페이지 방문: https://cafe.naver.com/{cafe_alias}")
 
-        # 방법 1: SPA가 URL을 /ca-fe/cafes/숫자ID/ 로 변경할 때까지 대기
+        # 페이지 로드 대기
         try:
             WebDriverWait(driver, 10).until(
-                lambda d: re.search(r'/cafes/(\d+)', d.current_url)
+                lambda d: d.execute_script("return document.readyState") == "complete"
             )
-            match = re.search(r'/cafes/(\d+)', driver.current_url)
-            if match:
-                numeric_id = match.group(1)
-                _cafe_id_cache[cafe_alias] = numeric_id
-                logger.info(f"카페 숫자 ID (URL): {cafe_alias} → {numeric_id}")
-                return numeric_id
         except TimeoutException:
-            logger.warning(f"URL 리다이렉트 타임아웃, 페이지 소스에서 시도")
+            logger.warning("페이지 로드 타임아웃")
+        random_delay(2, 3)
+
+        logger.info(f"현재 URL: {driver.current_url}")
+
+        # 방법 1: URL에서 /cafes/숫자ID 추출
+        match = re.search(r'/cafes/(\d+)', driver.current_url)
+        if match:
+            return _cache_and_return(match.group(1), "URL 리다이렉트")
 
         # 방법 2: 페이지 소스에서 추출
         page_source = driver.page_source
-        for pattern in [r'"clubId"\s*:\s*(\d+)', r'"cafeId"\s*:\s*(\d+)', r'clubid[=:]\s*(\d+)', r'/cafes/(\d+)']:
+        logger.info(f"페이지 소스 길이: {len(page_source)}")
+        for pattern in [
+            r'"clubId"\s*:\s*(\d+)',
+            r'"cafeId"\s*:\s*(\d+)',
+            r"'clubId'\s*:\s*(\d+)",
+            r'clubid[=:]\s*["\']?(\d+)',
+            r'/cafes/(\d+)',
+            r'cafeId=(\d+)',
+            r'club_id["\s:=]+(\d+)',
+        ]:
             match = re.search(pattern, page_source, re.IGNORECASE)
             if match:
-                numeric_id = match.group(1)
-                _cafe_id_cache[cafe_alias] = numeric_id
-                logger.info(f"카페 숫자 ID (소스): {cafe_alias} → {numeric_id}")
-                return numeric_id
+                return _cache_and_return(match.group(1), f"소스 패턴 {pattern}")
 
-        # 방법 3: JavaScript로 window 객체에서 추출
+        # 방법 3: JavaScript로 다양한 방법 시도
         try:
-            numeric_id = driver.execute_script(
-                "try { return document.querySelector('a[href*=\"/cafes/\"]')"
-                "?.href?.match(/\\/cafes\\/(\\d+)/)?.[1] "
-                "|| window.__NEXT_DATA__?.props?.pageProps?.cafeId?.toString() "
-                "|| document.body.innerHTML.match(/\"clubId\"\\s*:\\s*(\\d+)/)?.[1] "
-                "|| null; } catch(e) { return null; }"
-            )
+            numeric_id = driver.execute_script("""
+                try {
+                    // __NEXT_DATA__ 에서 추출
+                    if (window.__NEXT_DATA__) {
+                        var pp = window.__NEXT_DATA__.props?.pageProps;
+                        if (pp?.cafeId) return String(pp.cafeId);
+                        if (pp?.cafe?.id) return String(pp.cafe.id);
+                        if (pp?.clubId) return String(pp.clubId);
+                        // __NEXT_DATA__ 전체에서 검색
+                        var txt = JSON.stringify(window.__NEXT_DATA__);
+                        var m = txt.match(/"(?:cafeId|clubId)"\\s*:\\s*(\\d+)/);
+                        if (m) return m[1];
+                    }
+                    // URL에서 추출
+                    var m2 = window.location.href.match(/\\/cafes\\/(\\d+)/);
+                    if (m2) return m2[1];
+                    // 페이지 내 링크에서 추출
+                    var links = document.querySelectorAll('a[href*="/cafes/"]');
+                    for (var i = 0; i < links.length; i++) {
+                        var m3 = links[i].href.match(/\\/cafes\\/(\\d+)/);
+                        if (m3) return m3[1];
+                    }
+                    return null;
+                } catch(e) { return null; }
+            """)
             if numeric_id:
-                _cafe_id_cache[cafe_alias] = numeric_id
-                logger.info(f"카페 숫자 ID (JS): {cafe_alias} → {numeric_id}")
-                return numeric_id
-        except Exception:
-            pass
+                return _cache_and_return(str(numeric_id), "JS DOM")
+        except Exception as e:
+            logger.warning(f"JS DOM 추출 실패: {e}")
 
-        logger.warning(f"숫자 카페 ID 추출 실패, alias 그대로 사용: {cafe_alias}")
-        logger.warning(f"현재 URL: {driver.current_url}")
+        # 방법 4: 동기 XHR로 Naver 내부 API 호출 (브라우저 쿠키 자동 포함)
+        try:
+            numeric_id = driver.execute_script("""
+                var alias = arguments[0];
+                try {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', 'https://cafe.naver.com/' + alias, false);
+                    xhr.send();
+                    if (xhr.status === 200) {
+                        var patterns = [
+                            /"clubId"\\s*:\\s*(\\d+)/,
+                            /"cafeId"\\s*:\\s*(\\d+)/,
+                            /clubid[=:]\\s*(\\d+)/i,
+                            /\\/cafes\\/(\\d+)/
+                        ];
+                        for (var i = 0; i < patterns.length; i++) {
+                            var m = xhr.responseText.match(patterns[i]);
+                            if (m) return m[1];
+                        }
+                    }
+                } catch(e) {}
+                // API 2차 시도
+                try {
+                    var xhr2 = new XMLHttpRequest();
+                    xhr2.open('GET', 'https://cafe.naver.com/CafeProfileView.nhn?cluburl=' + alias, false);
+                    xhr2.send();
+                    if (xhr2.status === 200) {
+                        var m2 = xhr2.responseText.match(/clubid[=:"\\s]+(\\d+)/i);
+                        if (m2) return m2[1];
+                    }
+                } catch(e2) {}
+                return null;
+            """, cafe_alias)
+            if numeric_id:
+                return _cache_and_return(str(numeric_id), "XHR API")
+        except Exception as e:
+            logger.warning(f"XHR API 추출 실패: {e}")
+
+        logger.error(f"========== 숫자 카페 ID 추출 실패: {cafe_alias} ==========")
+        logger.error(f"최종 URL: {driver.current_url}")
+        logger.error(f"페이지 제목: {driver.title}")
+        # 디버그: 페이지 소스 일부 로깅
+        if len(page_source) > 500:
+            logger.error(f"소스 앞부분: {page_source[:500]}")
         return cafe_alias
 
     except Exception as e:
-        logger.warning(f"카페 ID 조회 실패: {e}, alias 사용: {cafe_alias}")
+        logger.error(f"카페 ID 조회 중 예외: {e}")
         return cafe_alias
 
 
@@ -257,6 +335,11 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
     try:
         cafe_alias = _extract_cafe_id(cafe_url)
         cafe_id = _resolve_numeric_cafe_id(driver, cafe_alias)
+
+        if not cafe_id.isdigit():
+            logger.error(f"카페 숫자 ID 변환 실패! alias={cafe_alias}, 반환값={cafe_id}")
+            logger.error("숫자 ID 없이는 /ca-fe/ URL 접근 불가")
+            return False
 
         if menu_id:
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L&menuId={menu_id}"
@@ -268,8 +351,16 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
 
         # 글쓰기 페이지 도달 확인
         current_url = driver.current_url
-        if "articles/write" not in current_url and "ArticleWrite" not in current_url:
-            logger.warning(f"글쓰기 페이지 아닌 곳으로 이동됨: {current_url}")
+        if "articles/write" in current_url or "ArticleWrite" in current_url:
+            logger.info(f"글쓰기 페이지 이동 성공: url={current_url}")
+        elif "naver.com" == current_url.split("/")[2].replace("www.", ""):
+            logger.error(f"네이버 메인으로 리다이렉트됨! cafe_id={cafe_id}가 잘못된 것으로 보임")
+            # 캐시 무효화
+            if cafe_alias in _cafe_id_cache:
+                del _cafe_id_cache[cafe_alias]
+            return False
+        else:
+            logger.warning(f"예상과 다른 URL로 이동됨: {current_url}")
 
         try:
             driver.switch_to.frame("cafe_main")
@@ -277,7 +368,7 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
         except Exception:
             pass
 
-        logger.info(f"글쓰기 페이지 이동 완료: cafe={cafe_id}, menuId={menu_id}, url={driver.current_url}")
+        logger.info(f"글쓰기 페이지 이동 완료: cafe={cafe_id}, menuId={menu_id}")
         return True
 
     except Exception as e:
