@@ -227,6 +227,7 @@ async def _publish_single(account: dict, config: dict):
         account=account,
         cafe_url=board["cafe_url"],
         menu_id=board["menu_id"],
+        board_name=board.get("board_name", ""),
         title=title,
         content=content,
         headless=True,

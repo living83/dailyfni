@@ -766,8 +766,8 @@ def _dismiss_popups(driver):
         pass
 
 
-def _ensure_board_selected(driver, target_menu_id=None):
-    """게시판이 선택되지 않았으면 드롭다운에서 target_menu_id에 해당하는 게시판 선택"""
+def _ensure_board_selected(driver, target_menu_id=None, board_name=""):
+    """게시판이 선택되지 않았으면 드롭다운에서 target_menu_id 또는 board_name으로 게시판 선택"""
     try:
         # 게시판 선택 버튼 찾기 — JS로 '선택' 텍스트 포함 버튼 직접 탐색
         board_btn = driver.execute_script("""
@@ -882,9 +882,32 @@ def _ensure_board_selected(driver, target_menu_id=None):
                         logger.info(f"[게시판 항목] text='{d['text']}' attrs={d['attrs']} a_attrs={d['child_a_attrs']}")
                 except Exception as diag_e:
                     logger.warning(f"게시판 항목 진단 실패: {diag_e}")
-                logger.warning(f"menuId={target_id} 매칭 실패 — 폴백으로 첫 번째 게시판 선택")
+                logger.warning(f"menuId={target_id} 매칭 실패 — board_name 텍스트 매칭 시도")
 
-            # 폴백: 첫 번째 게시판 선택 (target_menu_id 없거나 매칭 실패 시)
+            # board_name 텍스트 매칭 (menuId 매칭 실패 또는 target_menu_id 없는 경우)
+            if board_name:
+                matched_by_name = driver.execute_script("""
+                    var targetName = arguments[0];
+                    var items = document.querySelectorAll(
+                        'ul.select_list li a, .layer_select li a, ul[class*="list"] li a, '
+                        + 'ul.select_list li, .layer_select li, ul[class*="list"] li'
+                    );
+                    for (var i = 0; i < items.length; i++) {
+                        var txt = (items[i].textContent || '').trim();
+                        if (txt === targetName || txt.indexOf(targetName) >= 0) {
+                            items[i].click();
+                            return txt;
+                        }
+                    }
+                    return null;
+                """, board_name)
+                if matched_by_name:
+                    logger.info(f"게시판 선택 완료 (이름 매칭 '{board_name}'): '{matched_by_name}'")
+                    random_delay(0.5, 1.0)
+                    return
+                logger.warning(f"board_name='{board_name}' 텍스트 매칭도 실패 — 폴백")
+
+            # 폴백: 첫 번째 게시판 선택 (모든 매칭 실패 시)
             item_selectors = [
                 "ul.select_list li a",
                 "ul.select_list li button",
@@ -1087,7 +1110,8 @@ def write_post(
     content: str = "",
     image_path: Optional[str] = None,
     structured_content: Optional[dict] = None,
-    menu_id: Optional[str] = None
+    menu_id: Optional[str] = None,
+    board_name: str = ""
 ) -> Optional[str]:
     """
     SE ONE 에디터에서 글 작성 후 발행
@@ -1110,7 +1134,7 @@ def write_post(
             return None
 
         # ── 게시판 선택 확인 ──
-        _ensure_board_selected(driver, target_menu_id=menu_id)
+        _ensure_board_selected(driver, target_menu_id=menu_id, board_name=board_name)
         random_delay(1, 2)
 
         # ── 팝업 다이얼로그 닫기 (네이버 알림 등) — 콘텐츠 작성 전에 반드시 닫기 ──
@@ -1455,7 +1479,8 @@ def publish_to_cafe(
     image_path: Optional[str] = None,
     headless: bool = True,
     on_progress=None,
-    structured_content: Optional[dict] = None
+    structured_content: Optional[dict] = None,
+    board_name: str = ""
 ) -> dict:
     """
     전체 카페 글 발행 프로세스
@@ -1509,7 +1534,8 @@ def publish_to_cafe(
         published_url = write_post(
             driver, title, content, image_path,
             structured_content=structured_content,
-            menu_id=menu_id
+            menu_id=menu_id,
+            board_name=board_name
         )
 
         if published_url:
