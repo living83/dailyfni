@@ -483,6 +483,8 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
             'button[data-name="fontSize"]',
             'button[data-name="fontsize"]',
             'button[data-name="font_size"]',
+            'button[data-name="textSize"]',
+            'button[data-name="size"]',
             '.se-toolbar-item-fontSize button',
             '.se-toolbar-item-fontsize button',
             '.se-toolbar button[aria-label*="글자 크기"]',
@@ -491,16 +493,27 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
             '.se-toolbar button[aria-label*="글꼴 크기"]',
             'button.se-text-size-button',
             '.se-toolbar .se-font-size button',
+            # 추가: SE ONE 에디터 다양한 변형
+            '.se-toolbar button[class*="font_size"]',
+            '.se-toolbar button[class*="fontSize"]',
+            '.se-toolbar button[class*="text_size"]',
+            '.se-toolbar button[class*="textsize"]',
+            '[class*="toolbar"] [class*="font_size"] button',
+            '[class*="toolbar"] [class*="fontSize"] button',
         ]
 
-        # 1. 툴바 폰트 크기 버튼 클릭 - editor에서 먼저 시도
-        font_btn = await try_selectors(editor, font_size_selectors,
-                                        timeout=2000, description="폰트 크기 버튼(에디터)")
+        targets = [editor]
+        if editor != page:
+            targets.append(page)
 
-        # editor에서 못 찾으면 page에서 시도
-        if not font_btn and editor != page:
-            font_btn = await try_selectors(page, font_size_selectors,
-                                            timeout=2000, description="폰트 크기 버튼(페이지)")
+        # 1. 툴바 폰트 크기 버튼 클릭
+        font_btn = None
+        for target in targets:
+            desc = "폰트 크기 버튼(에디터)" if target == editor else "폰트 크기 버튼(페이지)"
+            font_btn = await try_selectors(target, font_size_selectors,
+                                            timeout=2000, description=desc)
+            if font_btn:
+                break
 
         # 모든 프레임에서도 시도
         if not font_btn:
@@ -516,14 +529,34 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                     continue
 
         if not font_btn:
-            # JS 폴백: 툴바에서 현재 폰트 크기가 표시된 버튼 찾기
-            for target in ([editor, page] if editor != page else [editor]):
+            # JS 폴백: 툴바에서 폰트 크기 관련 버튼 찾기 (숫자 텍스트 or 특정 클래스)
+            for target in targets:
                 try:
                     font_btn_handle = await target.evaluate_handle('''() => {
-                        const btns = document.querySelectorAll('.se-toolbar button, [class*="toolbar"] button');
-                        for (const btn of btns) {
+                        // 방법1: 숫자만 있는 버튼 (현재 폰트 크기 표시)
+                        const allBtns = document.querySelectorAll(
+                            '.se-toolbar button, [class*="toolbar"] button, [class*="tool_bar"] button'
+                        );
+                        for (const btn of allBtns) {
                             const text = (btn.textContent || "").trim();
                             if (/^\\d{1,2}$/.test(text) && parseInt(text) >= 10 && parseInt(text) <= 40) {
+                                return btn;
+                            }
+                        }
+                        // 방법2: span 안에 숫자가 있는 버튼 (중첩 구조)
+                        for (const btn of allBtns) {
+                            const span = btn.querySelector('span');
+                            if (span) {
+                                const text = span.textContent.trim();
+                                if (/^\\d{1,2}$/.test(text) && parseInt(text) >= 10 && parseInt(text) <= 40) {
+                                    return btn;
+                                }
+                            }
+                        }
+                        // 방법3: data-name에 font/size가 포함된 버튼
+                        for (const btn of allBtns) {
+                            const name = (btn.dataset.name || "").toLowerCase();
+                            if (name.includes("font") || name.includes("size")) {
                                 return btn;
                             }
                         }
@@ -539,6 +572,39 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                     continue
 
         if not font_btn:
+            # 진단: 툴바 구조 덤프 (첫 실패 시 1회만)
+            if not getattr(_se_set_font_size, '_toolbar_dumped', False):
+                _se_set_font_size._toolbar_dumped = True
+                for target in targets:
+                    try:
+                        toolbar_info = await target.evaluate('''() => {
+                            const toolbar = document.querySelector(
+                                '.se-toolbar, [class*="toolbar"], [class*="tool_bar"]'
+                            );
+                            if (!toolbar) return "툴바 요소 미발견";
+                            const btns = toolbar.querySelectorAll('button');
+                            const info = [];
+                            for (let i = 0; i < Math.min(btns.length, 30); i++) {
+                                const btn = btns[i];
+                                info.push({
+                                    tag: btn.tagName,
+                                    dataName: btn.dataset.name || "",
+                                    className: btn.className.substring(0, 80),
+                                    ariaLabel: btn.getAttribute("aria-label") || "",
+                                    text: btn.textContent.trim().substring(0, 20),
+                                });
+                            }
+                            return JSON.stringify({
+                                toolbarClass: toolbar.className.substring(0, 100),
+                                buttonCount: btns.length,
+                                buttons: info
+                            });
+                        }''')
+                        logger.warning(f"[진단] 툴바 구조: {toolbar_info}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"[진단] 툴바 덤프 실패: {e}")
+
             logger.warning("폰트 크기 버튼 미발견")
             return False
 
@@ -682,6 +748,8 @@ async def se_input_body(page, editor, content: str,
 async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text: str = ""):
     """SE ONE 에디터에 하단 링크 삽입 (Ctrl+K 링크 다이얼로그)"""
     if not footer_link:
+        logger.warning("하단 링크 미설정 (footer_link 빈 값) → 링크 삽입 건너뜀. "
+                       "스케줄러 설정 또는 .env의 DEFAULT_FOOTER_LINK를 확인하세요.")
         return
 
     await page.keyboard.press("Enter")

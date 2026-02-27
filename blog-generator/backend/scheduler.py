@@ -323,6 +323,7 @@ async def daily_publish_job():
                 # 기본 하단 링크 (DB 설정 → 환경변수 순)
                 footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
                 footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+                logger.info(f"하단 링크: footer_link={footer_link!r}, footer_link_text={footer_link_text!r}")
 
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
