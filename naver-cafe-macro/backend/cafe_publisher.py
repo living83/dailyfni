@@ -16,10 +16,13 @@ Selenium 기반 카페 글쓰기 / 댓글 자동화
 """
 
 import json
+import re
 import time
 import random
 import logging
 from typing import Optional
+
+import requests
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -181,50 +184,63 @@ def _extract_cafe_id(cafe_url: str) -> str:
     return val
 
 
+# 카페 숫자 ID 캐시 (alias → numeric_id)
+_cafe_id_cache: dict = {}
+
+
 def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
     """
     카페 별칭(alias)에서 숫자 카페 ID를 추출.
-    /ca-fe/ URL은 숫자 ID만 지원하므로 카페 메인 페이지에서 clubid를 가져옴.
-    이미 숫자인 경우 그대로 반환.
+    /ca-fe/ URL은 숫자 ID만 지원하므로 requests로 빠르게 조회.
+    이미 숫자인 경우 그대로 반환. 결과는 캐시.
     """
     if cafe_alias.isdigit():
         return cafe_alias
 
-    try:
-        driver.get(f"https://cafe.naver.com/{cafe_alias}")
-        random_delay(2, 3)
+    if cafe_alias in _cafe_id_cache:
+        logger.info(f"카페 ID 캐시 히트: {cafe_alias} → {_cafe_id_cache[cafe_alias]}")
+        return _cafe_id_cache[cafe_alias]
 
-        # 방법 1: 페이지 소스에서 clubid 추출
-        import re
-        page_source = driver.page_source
+    # 방법 1: requests로 카페 메인 페이지 빠르게 조회 (Selenium 불필요)
+    try:
+        resp = requests.get(
+            f"https://cafe.naver.com/{cafe_alias}",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            timeout=10,
+        )
         patterns = [
             r'"clubId"\s*:\s*(\d+)',
-            r'clubid=(\d+)',
+            r'clubid[=:]\s*(\d+)',
             r'"cafeId"\s*:\s*(\d+)',
-            r'cafe_id["\s:=]+(\d+)',
             r'/cafes/(\d+)',
         ]
         for pattern in patterns:
+            match = re.search(pattern, resp.text, re.IGNORECASE)
+            if match:
+                numeric_id = match.group(1)
+                _cafe_id_cache[cafe_alias] = numeric_id
+                logger.info(f"카페 숫자 ID 추출 성공: {cafe_alias} → {numeric_id}")
+                return numeric_id
+    except Exception as e:
+        logger.warning(f"requests 카페 ID 조회 실패: {e}")
+
+    # 방법 2: 실패 시 Selenium으로 시도 (fallback)
+    try:
+        driver.get(f"https://cafe.naver.com/{cafe_alias}")
+        random_delay(2, 3)
+        page_source = driver.page_source
+        for pattern in [r'"clubId"\s*:\s*(\d+)', r'/cafes/(\d+)']:
             match = re.search(pattern, page_source, re.IGNORECASE)
             if match:
                 numeric_id = match.group(1)
-                logger.info(f"카페 숫자 ID 추출 성공: {cafe_alias} → {numeric_id}")
+                _cafe_id_cache[cafe_alias] = numeric_id
+                logger.info(f"카페 숫자 ID (Selenium fallback): {cafe_alias} → {numeric_id}")
                 return numeric_id
-
-        # 방법 2: 현재 URL에서 추출 (리다이렉트 후)
-        current = driver.current_url
-        url_match = re.search(r'/cafes/(\d+)', current)
-        if url_match:
-            numeric_id = url_match.group(1)
-            logger.info(f"카페 숫자 ID (URL에서): {cafe_alias} → {numeric_id}")
-            return numeric_id
-
-        logger.warning(f"숫자 카페 ID 추출 실패, alias 그대로 사용: {cafe_alias}")
-        return cafe_alias
-
     except Exception as e:
-        logger.warning(f"카페 ID 조회 실패: {e}, alias 사용: {cafe_alias}")
-        return cafe_alias
+        logger.warning(f"Selenium 카페 ID 조회 실패: {e}")
+
+    logger.warning(f"숫자 카페 ID 추출 실패, alias 그대로 사용: {cafe_alias}")
+    return cafe_alias
 
 
 def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
