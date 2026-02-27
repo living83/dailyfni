@@ -720,6 +720,52 @@ def _find_element_multi_selector(driver, selectors: list, timeout: int = 5):
     return None
 
 
+def _dismiss_popups(driver):
+    """네이버 알림/관리 팝업 다이얼로그 닫기 — 콘텐츠 작성 전에 호출"""
+    random_delay(0.5, 1.0)
+    try:
+        dismissed = driver.execute_script("""
+            var dismissed = [];
+            // '닫기' 버튼 클릭
+            var closeBtns = document.querySelectorAll('button.BaseButton--gray, button.BaseButton');
+            closeBtns.forEach(function(btn) {
+                var txt = (btn.textContent || '').trim();
+                if (txt === '닫기' || txt === 'X') {
+                    btn.click();
+                    dismissed.push(txt);
+                }
+            });
+            // 오버레이/모달 닫기
+            var overlays = document.querySelectorAll('.modal_dimmed, .Layer__overlay');
+            overlays.forEach(function(o) { o.click(); });
+            return dismissed;
+        """)
+        if dismissed:
+            logger.info(f"팝업 다이얼로그 닫기: {dismissed}")
+            random_delay(0.5, 1.0)
+            # 팝업이 여러 개일 수 있으므로 한 번 더 시도
+            try:
+                dismissed2 = driver.execute_script("""
+                    var dismissed = [];
+                    var closeBtns = document.querySelectorAll('button.BaseButton--gray, button.BaseButton');
+                    closeBtns.forEach(function(btn) {
+                        var txt = (btn.textContent || '').trim();
+                        if (txt === '닫기' || txt === 'X') {
+                            btn.click();
+                            dismissed.push(txt);
+                        }
+                    });
+                    return dismissed;
+                """)
+                if dismissed2:
+                    logger.info(f"팝업 다이얼로그 추가 닫기: {dismissed2}")
+                    random_delay(0.3, 0.5)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _ensure_board_selected(driver, target_menu_id=None):
     """게시판이 선택되지 않았으면 드롭다운에서 target_menu_id에 해당하는 게시판 선택"""
     try:
@@ -801,6 +847,41 @@ def _ensure_board_selected(driver, target_menu_id=None):
                     logger.info(f"게시판 선택 완료 (menuId={target_id} 매칭): '{matched}'")
                     random_delay(0.5, 1.0)
                     return
+                # 진단: 드롭다운 항목의 실제 HTML 속성 덤프
+                try:
+                    items_dump = driver.execute_script("""
+                        var items = document.querySelectorAll(
+                            'ul.select_list li, .layer_select li, ul[class*="list"] li'
+                        );
+                        var dump = [];
+                        for (var i = 0; i < Math.min(items.length, 15); i++) {
+                            var el = items[i];
+                            var attrs = {};
+                            for (var j = 0; j < el.attributes.length; j++) {
+                                attrs[el.attributes[j].name] = el.attributes[j].value;
+                            }
+                            // 자식 a 태그 속성도 확인
+                            var child_a = el.querySelector('a');
+                            var a_attrs = {};
+                            if (child_a) {
+                                for (var k = 0; k < child_a.attributes.length; k++) {
+                                    a_attrs[child_a.attributes[k].name] = child_a.attributes[k].value;
+                                }
+                            }
+                            dump.push({
+                                text: (el.textContent || '').trim().substring(0, 30),
+                                tag: el.tagName,
+                                attrs: JSON.stringify(attrs),
+                                child_a_attrs: JSON.stringify(a_attrs),
+                                outerHTML: el.outerHTML.substring(0, 200)
+                            });
+                        }
+                        return dump;
+                    """)
+                    for d in (items_dump or []):
+                        logger.info(f"[게시판 항목] text='{d['text']}' attrs={d['attrs']} a_attrs={d['child_a_attrs']}")
+                except Exception as diag_e:
+                    logger.warning(f"게시판 항목 진단 실패: {diag_e}")
                 logger.warning(f"menuId={target_id} 매칭 실패 — 폴백으로 첫 번째 게시판 선택")
 
             # 폴백: 첫 번째 게시판 선택 (target_menu_id 없거나 매칭 실패 시)
@@ -1032,6 +1113,9 @@ def write_post(
         _ensure_board_selected(driver, target_menu_id=menu_id)
         random_delay(1, 2)
 
+        # ── 팝업 다이얼로그 닫기 (네이버 알림 등) — 콘텐츠 작성 전에 반드시 닫기 ──
+        _dismiss_popups(driver)
+
         # ── 제목 입력 ──
         title_area = _find_title_element(driver)
         if not title_area:
@@ -1068,30 +1152,8 @@ def write_post(
             # ── 폴백: 단순 텍스트 입력 ──
             _write_plain_body(driver, active_body, content, image_path)
 
-        # ── 팝업 다이얼로그 닫기 (네이버 알림 등) ──
-        random_delay(1, 2)
-        try:
-            dismissed = driver.execute_script("""
-                var dismissed = [];
-                // '닫기' 버튼 클릭 (BaseButton--gray)
-                var closeBtns = document.querySelectorAll('button.BaseButton--gray, button.BaseButton');
-                closeBtns.forEach(function(btn) {
-                    var txt = (btn.textContent || '').trim();
-                    if (txt === '닫기' || txt === 'X') {
-                        btn.click();
-                        dismissed.push(txt);
-                    }
-                });
-                // 오버레이/모달 닫기 (에디터 영역 제외)
-                var overlays = document.querySelectorAll('.modal_dimmed, .Layer__overlay');
-                overlays.forEach(function(o) { o.click(); });
-                return dismissed;
-            """)
-            if dismissed:
-                logger.info(f"팝업 다이얼로그 닫기: {dismissed}")
-                random_delay(0.5, 1.0)
-        except Exception:
-            pass
+        # ── 등록 전 팝업 재확인 ──
+        _dismiss_popups(driver)
 
         # ── 등록 버튼 클릭 ──
 
