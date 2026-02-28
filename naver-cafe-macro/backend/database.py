@@ -112,7 +112,8 @@ def init_db():
             id INTEGER PRIMARY KEY CHECK (id = 1),
             days TEXT DEFAULT '1,1,1,1,1,0,0',
             times TEXT DEFAULT '08:00',
-            interval_min INTEGER DEFAULT 5,
+            interval_min INTEGER DEFAULT 3,
+            interval_max INTEGER DEFAULT 15,
             random_delay_min INTEGER DEFAULT 10,
             random_delay_max INTEGER DEFAULT 120,
             comment_enabled INTEGER DEFAULT 1,
@@ -126,7 +127,9 @@ def init_db():
             max_accounts_per_run INTEGER DEFAULT 30,
             base_start_hour INTEGER DEFAULT 8,
             base_start_minute INTEGER DEFAULT 0,
-            daily_shift_minutes INTEGER DEFAULT 30
+            daily_shift_minutes INTEGER DEFAULT 30,
+            daily_post_limit INTEGER DEFAULT 3,
+            daily_comment_limit INTEGER DEFAULT 10
         );
     """)
 
@@ -136,6 +139,9 @@ def init_db():
         ("base_start_hour", "8"),
         ("base_start_minute", "0"),
         ("daily_shift_minutes", "30"),
+        ("interval_max", "15"),
+        ("daily_post_limit", "3"),
+        ("daily_comment_limit", "10"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE schedule_config ADD COLUMN {col} INTEGER DEFAULT {default}")
@@ -516,13 +522,39 @@ def get_schedule_config():
     return dict(row) if row else {}
 
 
+def get_today_post_count(account_id: int) -> int:
+    """오늘 해당 계정의 게시 횟수 반환"""
+    conn = get_connection()
+    today = datetime.now().strftime("%Y-%m-%d")
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM publish_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
+        (account_id, f"{today}%")
+    ).fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
+def get_today_comment_count(account_id: int) -> int:
+    """오늘 해당 계정의 댓글 횟수 반환"""
+    conn = get_connection()
+    today = datetime.now().strftime("%Y-%m-%d")
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM comment_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
+        (account_id, f"{today}%")
+    ).fetchone()
+    conn.close()
+    return row["cnt"] if row else 0
+
+
 def update_schedule_config(**kwargs):
     conn = get_connection()
     allowed = [
-        "days", "times", "interval_min", "random_delay_min", "random_delay_max",
+        "days", "times", "interval_min", "interval_max",
+        "random_delay_min", "random_delay_max",
         "comment_enabled", "comments_per_post", "comment_delay_min", "comment_delay_max",
         "comment_order", "exclude_author", "cross_publish", "account_interval_hours",
-        "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes"
+        "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes",
+        "daily_post_limit", "daily_comment_limit"
     ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:

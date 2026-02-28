@@ -59,15 +59,24 @@ def _get_eligible_accounts(config: dict) -> list:
     발행 가능한 계정 목록 반환
     - 활성 상태인 계정
     - 최소 대기 시간(account_interval_hours) 경과한 계정
+    - 일일 게시 한도(daily_post_limit) 미달 계정
     """
     accounts = db.get_accounts()
     active_accounts = [a for a in accounts if a["active"]]
 
     interval_hours = config.get("account_interval_hours", 3)
+    daily_post_limit = config.get("daily_post_limit", 3)
     now = datetime.now()
 
     eligible = []
     for acc in active_accounts:
+        # 일일 게시 한도 체크
+        if daily_post_limit > 0:
+            today_count = db.get_today_post_count(acc["id"])
+            if today_count >= daily_post_limit:
+                logger.debug(f"[{acc['username']}] 일일 게시 한도 도달 ({today_count}/{daily_post_limit})")
+                continue
+
         if acc["last_published_at"]:
             last_pub = datetime.fromisoformat(acc["last_published_at"])
             # 최소 interval_hours 시간 경과 필요, ±30분 랜덤
@@ -203,12 +212,17 @@ def _select_comment_accounts(
     author_id: int,
     count: int,
     order: str = "random",
-    exclude_author: bool = True
+    exclude_author: bool = True,
+    daily_comment_limit: int = 10
 ) -> list:
-    """댓글 작성할 계정 선택"""
+    """댓글 작성할 계정 선택 (일일 댓글 한도 초과 계정 제외)"""
     pool = [a for a in all_accounts if a["active"]]
     if exclude_author:
         pool = [a for a in pool if a["id"] != author_id]
+
+    # 일일 댓글 한도 초과 계정 제외
+    if daily_comment_limit > 0:
+        pool = [a for a in pool if db.get_today_comment_count(a["id"]) < daily_comment_limit]
 
     if not pool:
         return []
@@ -397,14 +411,18 @@ async def execute_batch_job():
         await _notify_progress("info", {"message": "발행 가능한 계정 없음 - 대기 시간 미충족"})
         return
 
-    interval = config.get("interval_min", 5)
+    interval_lo = config.get("interval_min", 3)
+    interval_hi = config.get("interval_max", 15)
+    if interval_hi < interval_lo:
+        interval_hi = interval_lo
     total = len(batch)
 
-    logger.info(f"배치 발행 시작: {total}개 계정, {interval}분 간격")
+    logger.info(f"배치 발행 시작: {total}개 계정, {interval_lo}~{interval_hi}분 랜덤 간격")
     await _notify_progress("batch_start", {
-        "message": f"배치 발행 시작: {total}개 계정, {interval}분 간격",
+        "message": f"배치 발행 시작: {total}개 계정, {interval_lo}~{interval_hi}분 랜덤 간격",
         "total_accounts": total,
-        "interval_min": interval
+        "interval_min": interval_lo,
+        "interval_max": interval_hi
     })
 
     # 4. 순차 발행: 계정마다 interval_min 분 간격 유지
@@ -435,14 +453,15 @@ async def execute_batch_job():
                 "message": f"[{account['username']}] 발행 예외: {str(e)}"
             })
 
-        # 마지막 계정이 아니면 interval_min 간격 맞추기
+        # 마지막 계정이 아니면 랜덤 간격 대기
         if i < total - 1 and _is_running:
+            interval = random.randint(interval_lo, interval_hi)
             elapsed = (datetime.now() - turn_start).total_seconds()
             remaining = interval * 60 - elapsed
             if remaining > 0:
-                logger.info(f"다음 계정까지 {remaining:.0f}초 대기 ({i+2}/{total})")
+                logger.info(f"다음 계정까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})")
                 await _notify_progress("delay", {
-                    "message": f"다음 계정까지 {remaining:.0f}초 대기 ({i+2}/{total})",
+                    "message": f"다음 계정까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})",
                     "seconds": remaining
                 })
                 await asyncio.sleep(remaining)
@@ -484,16 +503,22 @@ async def execute_comment_job(
         return
 
     # 댓글 작성 계정 선택
+    daily_comment_limit = config.get("daily_comment_limit", 10)
     comment_accounts = _select_comment_accounts(
-        all_accounts, author_id, comments_per_post, comment_order, exclude_author
+        all_accounts, author_id, comments_per_post, comment_order, exclude_author,
+        daily_comment_limit=daily_comment_limit
     )
+
+    # 템플릿 중복 방지: 셔플 후 순차 사용
+    shuffled_templates = list(active_templates)
+    random.shuffle(shuffled_templates)
 
     for i, acc in enumerate(comment_accounts):
         if not _is_running:
             break
 
-        # 랜덤 템플릿 선택
-        template = random.choice(active_templates)
+        # 중복 없이 순차 선택 (템플릿 소진 시 재셔플)
+        template = shuffled_templates[i % len(shuffled_templates)]
         comment_text = template["text"]
 
         # 댓글 기록 생성

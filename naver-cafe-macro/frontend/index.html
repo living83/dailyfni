@@ -879,10 +879,14 @@ function ScheduleTab({ schedule, events, reload }) {
   };
 
   const maxAccounts = schedule.max_accounts_per_run || 30;
-  const intervalMin = schedule.interval_min || 5;
-  const estimatedMin = maxAccounts * intervalMin;
-  const estH = Math.floor(estimatedMin / 60);
-  const estM = estimatedMin % 60;
+  const intervalMin = schedule.interval_min || 3;
+  const intervalMax = schedule.interval_max || 15;
+  const estMinLo = maxAccounts * intervalMin;
+  const estMinHi = maxAccounts * intervalMax;
+  const estLoH = Math.floor(estMinLo / 60);
+  const estLoM = estMinLo % 60;
+  const estHiH = Math.floor(estMinHi / 60);
+  const estHiM = estMinHi % 60;
 
   return (
     <div>
@@ -940,14 +944,29 @@ function ScheduleTab({ schedule, events, reload }) {
               onChange={e => updateConfig('max_accounts_per_run', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
           <div className="input-group">
-            <label>계정 간 발행 간격 (분)</label>
+            <label>계정 간 간격 최소 (분)</label>
             <input type="number" min={1} max={60} value={intervalMin}
               onChange={e => updateConfig('interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+          <div className="input-group">
+            <label>계정 간 간격 최대 (분)</label>
+            <input type="number" min={1} max={60} value={schedule.interval_max || 15}
+              onChange={e => updateConfig('interval_max', Math.max(1, parseInt(e.target.value) || 15))} />
           </div>
           <div className="input-group">
             <label>계정 재사용 최소 간격 (시간)</label>
             <input type="number" min={1} max={48} value={schedule.account_interval_hours || 3}
               onChange={e => updateConfig('account_interval_hours', Math.max(1, parseInt(e.target.value) || 1))} />
+          </div>
+          <div className="input-group">
+            <label>일일 게시 한도 (계정당)</label>
+            <input type="number" min={0} max={50} value={schedule.daily_post_limit ?? 3}
+              onChange={e => updateConfig('daily_post_limit', Math.max(0, parseInt(e.target.value) || 0))} />
+          </div>
+          <div className="input-group">
+            <label>일일 댓글 한도 (계정당)</label>
+            <input type="number" min={0} max={100} value={schedule.daily_comment_limit ?? 10}
+              onChange={e => updateConfig('daily_comment_limit', Math.max(0, parseInt(e.target.value) || 0))} />
           </div>
         </div>
 
@@ -961,10 +980,10 @@ function ScheduleTab({ schedule, events, reload }) {
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 11, color: '#4a5a7a', marginBottom: 4 }}>예상 소요 시간</div>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#c8d6e5' }}>
-                {estH > 0 ? `${estH}시간 ` : ''}{estM}분
+                {estLoH > 0 ? `${estLoH}시간 ` : ''}{estLoM}분 ~ {estHiH > 0 ? `${estHiH}시간 ` : ''}{estHiM}분
               </div>
               <div style={{ fontSize: 11, color: '#3a4a6a' }}>
-                {maxAccounts}개 계정 x {intervalMin}분
+                {maxAccounts}개 계정 x {intervalMin}~{intervalMax}분
               </div>
             </div>
           </div>

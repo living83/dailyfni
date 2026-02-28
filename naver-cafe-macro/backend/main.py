@@ -81,6 +81,7 @@ class ScheduleConfigUpdate(BaseModel):
     days: Optional[str] = None
     times: Optional[str] = None
     interval_min: Optional[int] = None
+    interval_max: Optional[int] = None
     random_delay_min: Optional[int] = None
     random_delay_max: Optional[int] = None
     comment_enabled: Optional[int] = None
@@ -95,6 +96,8 @@ class ScheduleConfigUpdate(BaseModel):
     base_start_hour: Optional[int] = None
     base_start_minute: Optional[int] = None
     daily_shift_minutes: Optional[int] = None
+    daily_post_limit: Optional[int] = None
+    daily_comment_limit: Optional[int] = None
 
 
 # ─── Accounts API ──────────────────────────────────────────
