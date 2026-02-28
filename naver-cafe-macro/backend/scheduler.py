@@ -245,8 +245,12 @@ def _calc_daily_offset_minutes(config: dict) -> int:
 
 # ─── 단일 계정 발행 ──────────────────────────────────────────
 
-async def _publish_single(account: dict, config: dict):
-    """단일 계정으로 1건 발행 (키워드 선택 → 게시판 선택 → 발행 → 댓글)"""
+async def _publish_single(account: dict, config: dict, skip_comment: bool = False):
+    """단일 계정으로 1건 발행 (키워드 선택 → 게시판 선택 → 발행 → 댓글)
+
+    Args:
+        skip_comment: True이면 댓글 작성 건너뜀 (1회 수동 실행용)
+    """
     global _last_published_cafe
 
     # 1. 키워드 선택
@@ -325,8 +329,8 @@ async def _publish_single(account: dict, config: dict):
             "url": result["url"]
         })
 
-        # 댓글 자동 작성
-        if config.get("comment_enabled"):
+        # 댓글 자동 작성 (1회 수동 실행에서는 건너뜀)
+        if not skip_comment and config.get("comment_enabled"):
             await execute_comment_job(
                 publish_id=publish_id,
                 post_url=result["url"],
@@ -626,7 +630,7 @@ async def run_once_now():
     if eligible:
         account = random.choice(eligible)
         await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
-        await _publish_single(account, config)
+        await _publish_single(account, config, skip_comment=True)
     else:
         await _notify_progress("error", {"message": "활성 계정이 없습니다"})
 
