@@ -430,6 +430,10 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
 
         if "articles/write" in current_url or "ArticleWrite" in current_url:
             logger.info(f"글쓰기 페이지 이동 성공: url={current_url}")
+        elif "nid.naver.com" in current_url:
+            # 로그인 페이지로 리다이렉트됨 — 쿠키/세션 만료
+            logger.error(f"로그인 페이지로 리다이렉트됨 — 세션 만료: {current_url}")
+            return False
         elif "cafe.naver.com" not in current_url:
             # 네이버 메인이나 다른 페이지로 리다이렉트됨
             logger.error(f"글쓰기 페이지에서 이탈! 현재 URL: {current_url}")
@@ -1618,8 +1622,23 @@ def publish_to_cafe(
             on_progress("navigate", f"카페 이동 중... ({cafe_url})")
 
         if not navigate_to_write_page(driver, cafe_url, menu_id):
-            result["error"] = "글쓰기 페이지 이동 실패"
-            return result
+            # 세션 만료일 수 있으므로 ID/PW 재로그인 후 재시도
+            logger.info("글쓰기 페이지 이동 실패 — ID/PW 재로그인 후 재시도")
+            if on_progress:
+                on_progress("login", "세션 만료, 재로그인 중...")
+            re_logged_in = login_with_credentials(
+                driver, account["username"], account["password_enc"]
+            )
+            if re_logged_in:
+                result["cookies"] = get_login_cookies(driver)
+                if on_progress:
+                    on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
+                if not navigate_to_write_page(driver, cafe_url, menu_id):
+                    result["error"] = "글쓰기 페이지 이동 실패 (재로그인 후에도)"
+                    return result
+            else:
+                result["error"] = "재로그인 실패"
+                return result
 
         # 3. 글 작성 & 발행
         if on_progress:
