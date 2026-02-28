@@ -20,6 +20,8 @@ import re
 import time
 import random
 import logging
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from selenium import webdriver
@@ -101,8 +103,11 @@ def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0
         time.sleep(random.uniform(min_delay, max_delay))
 
 
-def create_driver(headless: bool = True) -> webdriver.Chrome:
-    """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent)"""
+_PROFILE_BASE = Path(__file__).resolve().parent.parent / "data" / "chrome_profiles"
+
+
+def create_driver(headless: bool = True, account_id: int = None) -> webdriver.Chrome:
+    """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent, 계정별 독립 프로파일)"""
     ua = random.choice(_USER_AGENTS)
     logger.debug(f"User-Agent: {ua}")
 
@@ -116,6 +121,13 @@ def create_driver(headless: bool = True) -> webdriver.Chrome:
     options.add_argument(f"--user-agent={ua}")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+
+    # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
+    if account_id is not None:
+        profile_dir = _PROFILE_BASE / f"account_{account_id}"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        options.add_argument(f"--user-data-dir={profile_dir}")
+        logger.debug(f"Chrome 프로파일: {profile_dir}")
 
     driver = webdriver.Chrome(options=options)
     driver.execute_cdp_cmd(
@@ -1613,7 +1625,7 @@ def publish_to_cafe(
     try:
         if on_progress:
             on_progress("driver", "브라우저 시작 중...")
-        driver = create_driver(headless=headless)
+        driver = create_driver(headless=headless, account_id=account.get("id"))
 
         # 1. 로그인
         if on_progress:
@@ -1706,7 +1718,7 @@ def post_comment(
     result = {"success": False, "error": None, "cookies": None}
 
     try:
-        driver = create_driver(headless=headless)
+        driver = create_driver(headless=headless, account_id=account.get("id"))
 
         # 로그인
         logged_in = False
