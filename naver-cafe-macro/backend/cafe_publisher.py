@@ -139,6 +139,28 @@ def create_driver(headless: bool = True, account_id: int = None) -> webdriver.Ch
 
 # ─── 로그인 ────────────────────────────────────────────────
 
+def _is_logged_in(driver: webdriver.Chrome) -> bool:
+    """현재 브라우저가 네이버에 로그인되어 있는지 확인"""
+    try:
+        driver.get("https://www.naver.com")
+        random_delay(2, 3)
+        try:
+            driver.find_element(By.CSS_SELECTOR, ".MyView-module__link_login___HpHMW")
+            return False  # 로그인 버튼이 보이면 미로그인
+        except NoSuchElementException:
+            return True  # 로그인 버튼 없으면 로그인 상태
+    except Exception:
+        return False
+
+
+def check_profile_login(driver: webdriver.Chrome) -> bool:
+    """user-data-dir 프로파일의 기존 세션으로 로그인 확인"""
+    if _is_logged_in(driver):
+        logger.info("프로파일 세션 로그인 확인 — 재로그인 불필요")
+        return True
+    return False
+
+
 def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
     """저장된 쿠키로 로그인 시도"""
     try:
@@ -175,7 +197,7 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
 
 
 def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc: str) -> bool:
-    """ID/PW로 네이버 로그인"""
+    """ID/PW로 네이버 로그인 (2FA 대기 포함)"""
     try:
         password = decrypt_password(password_enc)
         driver.get("https://nid.naver.com/nidlogin.login")
@@ -200,16 +222,39 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         # 로그인 버튼 클릭
         login_btn = driver.find_element(By.ID, "log.login")
         login_btn.click()
-        random_delay(3, 5)
 
-        # 캡챠/2차 인증 체크
+        # 2FA/캡챠 포함 최대 90초 대기 (5초 간격 폴링)
+        max_wait = 90
+        poll_interval = 5
+        elapsed = 0
+        logged_in = False
+
+        while elapsed < max_wait:
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+            current_url = driver.current_url
+
+            # 로그인 성공: nidlogin/captcha 페이지를 벗어남
+            if "nidlogin" not in current_url and "captcha" not in current_url:
+                logged_in = True
+                break
+
+            # 2FA 페이지 감지 시 로그 출력
+            if "2step" in current_url or "deviceConfirm" in current_url or "protect" in current_url:
+                if elapsed == poll_interval:  # 첫 감지 시에만
+                    logger.info(f"2단계 인증 대기 중... (최대 {max_wait}초): {current_url}")
+            elif elapsed >= 15:
+                # 15초 경과 후에도 nidlogin이면 실패 가능성 높음
+                logger.warning(f"로그인 {elapsed}초 경과, 여전히 로그인 페이지: {current_url}")
+                # 다만 2FA는 더 기다려야 하므로 계속 폴링
+
+        if logged_in:
+            logger.info(f"ID/PW 로그인 성공 ({elapsed}초): {username}")
+            return True
+
         current_url = driver.current_url
-        if "nidlogin" in current_url or "captcha" in current_url:
-            logger.warning(f"로그인 실패 또는 캡챠 발생: {current_url}")
-            return False
-
-        logger.info(f"ID/PW 로그인 성공: {username}")
-        return True
+        logger.warning(f"로그인 {max_wait}초 대기 후 실패: {current_url}")
+        return False
 
     except Exception as e:
         logger.error(f"로그인 중 오류: {e}")
@@ -1627,12 +1672,13 @@ def publish_to_cafe(
             on_progress("driver", "브라우저 시작 중...")
         driver = create_driver(headless=headless, account_id=account.get("id"))
 
-        # 1. 로그인
+        # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         if on_progress:
             on_progress("login", "로그인 시도 중...")
 
-        logged_in = False
-        if account.get("cookie_data"):
+        logged_in = check_profile_login(driver)
+
+        if not logged_in and account.get("cookie_data"):
             logged_in = login_with_cookie(driver, account["cookie_data"])
 
         if not logged_in:
@@ -1720,9 +1766,10 @@ def post_comment(
     try:
         driver = create_driver(headless=headless, account_id=account.get("id"))
 
-        # 로그인
-        logged_in = False
-        if account.get("cookie_data"):
+        # 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
+        logged_in = check_profile_login(driver)
+
+        if not logged_in and account.get("cookie_data"):
             logged_in = login_with_cookie(driver, account["cookie_data"])
 
         if not logged_in:
