@@ -220,11 +220,8 @@ def _select_comment_accounts(
     elif order == "least":
         pool.sort(key=lambda a: a.get("used_count", 0))
 
-    # count보다 pool이 적으면 중복 허용
-    selected = []
-    while len(selected) < count and pool:
-        selected.extend(pool)
-    return selected[:count]
+    # 한 글에 같은 계정이 중복 댓글 불가 — 계정 수까지만
+    return pool[:count]
 
 
 def _calc_daily_offset_minutes(config: dict) -> int:
