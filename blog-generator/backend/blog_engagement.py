@@ -40,6 +40,25 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
         # 포스팅 목록 추출
         posts = await page.evaluate(f'''() => {{
             const results = [];
+
+            // 포스팅 URL 검증: blog.naver.com/username/숫자 또는 PostView.naver 형태만
+            function isPostUrl(url) {{
+                if (!url || !url.includes('blog.naver.com')) return false;
+                // seller, section 등 비포스팅 도메인 제외
+                if (url.includes('seller.blog.naver.com')) return false;
+                if (url.includes('section.blog.naver.com')) return false;
+                // PostView.naver 형태
+                if (url.includes('/PostView.naver')) return true;
+                if (url.includes('/PostList.naver')) return false;
+                if (url.includes('/BlogHome')) return false;
+                if (url.includes('/my-log')) return false;
+                if (url.includes('/market')) return false;
+                // blog.naver.com/username/숫자 형태
+                const match = url.match(/blog\\.naver\\.com\\/([^\\/\\?]+)\\/([0-9]+)/);
+                if (match) return true;
+                return false;
+            }}
+
             // 블로그 피드의 포스팅 링크 수집
             const selectors = [
                 '.desc_inner a.desc_txt',
@@ -56,7 +75,7 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 for (const link of links) {{
                     const href = link.href || link.getAttribute('href') || '';
                     const title = (link.textContent || '').trim().substring(0, 100);
-                    if (href && href.includes('blog.naver.com') && title &&
+                    if (isPostUrl(href) && title &&
                         !results.some(r => r.url === href)) {{
                         results.push({{ url: href, title: title }});
                     }}
@@ -65,14 +84,13 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 if (results.length >= {max_posts}) break;
             }}
 
-            // 폴백: 모든 블로그 링크 수집
+            // 폴백: 모든 블로그 링크 중 포스팅 URL만 수집
             if (results.length === 0) {{
                 const allLinks = document.querySelectorAll('a[href*="blog.naver.com"]');
                 for (const link of allLinks) {{
                     const href = link.href || '';
                     const title = (link.textContent || '').trim().substring(0, 100);
-                    if (href && title && title.length > 5 &&
-                        !href.includes('BlogHome') && !href.includes('my-log') &&
+                    if (isPostUrl(href) && title && title.length > 5 &&
                         !results.some(r => r.url === href)) {{
                         results.push({{ url: href, title: title }});
                     }}
@@ -131,16 +149,24 @@ async def read_post_content(page, post_url: str) -> dict:
             return { title, content };
         }''')
 
-        # iframe 내부에서도 시도
+        # iframe 내부에서도 시도 (mainFrame 우선)
         if not content_data.get("content"):
-            for frame in page.frames:
+            # mainFrame을 우선 탐색
+            sorted_frames = sorted(
+                page.frames,
+                key=lambda f: (0 if 'mainFrame' in (f.name or '') else 1),
+            )
+            for frame in sorted_frames:
+                if frame == page.main_frame:
+                    continue  # 이미 위에서 시도함
                 try:
                     frame_data = await frame.evaluate('''() => {
                         let title = '';
                         let content = '';
 
                         const titleEls = document.querySelectorAll(
-                            '.se-title-text, .pcol1, h3.se_textarea, [class*="title"]'
+                            '.se-title-text, .pcol1, h3.se_textarea, ' +
+                            '[class*="title"] span, .se-fs-, .tit_h3'
                         );
                         for (const el of titleEls) {
                             const t = el.textContent.trim();
@@ -148,7 +174,8 @@ async def read_post_content(page, post_url: str) -> dict:
                         }
 
                         const contentEls = document.querySelectorAll(
-                            '.se-main-container, #postViewArea, .post_ct'
+                            '.se-main-container, #postViewArea, .post_ct, ' +
+                            '.se-component.se-text, #post-view'
                         );
                         for (const el of contentEls) {
                             const t = el.innerText.trim();
@@ -186,10 +213,6 @@ async def click_like(page) -> dict:
     result = {"success": False, "already_liked": False, "error": ""}
 
     try:
-        # 페이지 하단으로 스크롤 (공감 버튼이 하단에 있음)
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await random_delay(1, 2)
-
         # iframe 내부에서 공감 버튼 찾기 (네이버 블로그는 iframe 구조)
         like_target = page
         for frame in page.frames:
@@ -205,6 +228,17 @@ async def click_like(page) -> dict:
                     break
             except Exception:
                 continue
+
+        # 공감 영역으로 스크롤 (iframe 내부에서 스크롤)
+        await like_target.evaluate('''() => {
+            const btn = document.querySelector(
+                '.u_likeit_btn, [class*="sympathy"], [class*="like_it"], ' +
+                '.btn_sympathize, [data-type="sympathy"]'
+            );
+            if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
+            else window.scrollTo(0, document.body.scrollHeight);
+        }''')
+        await random_delay(1, 2)
 
         # 이미 공감 눌렀는지 확인
         already_liked = await like_target.evaluate('''() => {
@@ -235,33 +269,44 @@ async def click_like(page) -> dict:
             'a[class*="btn_like"]',
         ], timeout=5000, description="공감 버튼")
 
-        if not like_btn:
-            # JS 폴백
-            clicked = await like_target.evaluate('''() => {
-                const selectors = [
-                    '.u_likeit_btn', '.btn_sympathize',
-                    '[class*="sympathy"] button', '[class*="like_it"] a',
-                    'a[class*="btn_like"]'
-                ];
-                for (const sel of selectors) {
-                    const el = document.querySelector(sel);
-                    if (el) { el.click(); return true; }
-                }
-                return false;
-            }''')
-            if clicked:
-                result["success"] = True
-                logger.info("공감 클릭 성공 (JS 폴백)")
-                await random_delay(1, 2)
-                return result
-
-            result["error"] = "공감 버튼 미발견"
+        if like_btn:
+            # 클릭 전 viewport 내로 스크롤
+            await like_btn.scroll_into_view_if_needed()
+            await random_delay(0.3, 0.5)
+            try:
+                await like_btn.click(timeout=5000)
+            except Exception:
+                # viewport 밖 등 클릭 실패 시 JS로 직접 클릭
+                await like_target.evaluate('''(el) => { el.click(); }''', like_btn)
+            await random_delay(1, 2)
+            result["success"] = True
+            logger.info("공감 클릭 성공")
             return result
 
-        await like_btn.click()
-        await random_delay(1, 2)
-        result["success"] = True
-        logger.info("공감 클릭 성공")
+        # JS 폴백
+        clicked = await like_target.evaluate('''() => {
+            const selectors = [
+                '.u_likeit_btn', '.btn_sympathize',
+                '[class*="sympathy"] button', '[class*="like_it"] a',
+                'a[class*="btn_like"]'
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    el.scrollIntoView({ block: "center" });
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        }''')
+        if clicked:
+            result["success"] = True
+            logger.info("공감 클릭 성공 (JS 폴백)")
+            await random_delay(1, 2)
+            return result
+
+        result["error"] = "공감 버튼 미발견"
 
     except Exception as e:
         result["error"] = str(e)
@@ -329,10 +374,6 @@ async def write_comment(page, comment_text: str) -> dict:
         return result
 
     try:
-        # 페이지 하단 댓글 영역으로 스크롤
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await random_delay(1, 2)
-
         # iframe 내부에서 댓글 입력 영역 찾기
         comment_target = page
         for frame in page.frames:
@@ -341,7 +382,7 @@ async def write_comment(page, comment_text: str) -> dict:
                     return !!document.querySelector(
                         '.u_cbox_write_wrap, [class*="comment_write"], ' +
                         '[class*="reply_write"], textarea[class*="comment"], ' +
-                        '.comment_inbox'
+                        '.comment_inbox, .u_cbox_area'
                     );
                 }''')
                 if has_comment:
@@ -350,34 +391,55 @@ async def write_comment(page, comment_text: str) -> dict:
             except Exception:
                 continue
 
-        # 댓글 입력 영역 클릭 (포커스)
+        # 댓글 영역으로 스크롤
+        await comment_target.evaluate('''() => {
+            const area = document.querySelector(
+                '.u_cbox_write_wrap, .u_cbox_area, [class*="comment_write"], .comment_inbox'
+            );
+            if (area) area.scrollIntoView({ block: "center", behavior: "smooth" });
+            else window.scrollTo(0, document.body.scrollHeight);
+        }''')
+        await random_delay(1, 2)
+
+        # 댓글 입력 영역 클릭 (포커스) - 클릭 가능한 placeholder 포함
         comment_input = await try_selectors(comment_target, [
             '.u_cbox_write_wrap textarea',
             'textarea.u_cbox_text',
             '.u_cbox_text',
             'textarea[class*="comment"]',
             '[class*="comment_write"] textarea',
-            '[class*="reply_write"] textarea',
             '.comment_inbox textarea',
             'textarea[placeholder*="댓글"]',
+            '.u_cbox_write_wrap .u_cbox_inbox',
+            '.u_cbox_inbox',
         ], timeout=5000, description="댓글 입력 영역")
 
         if not comment_input:
-            # JS 폴백: 댓글 영역 찾아서 클릭
-            found = await comment_target.evaluate('''() => {
-                const areas = document.querySelectorAll(
-                    '.u_cbox_write_wrap, [class*="comment_write"], .comment_inbox'
+            # JS 폴백: 댓글 placeholder 클릭하여 textarea 활성화
+            activated = await comment_target.evaluate('''() => {
+                // placeholder 영역 클릭으로 textarea 활성화
+                const placeholders = document.querySelectorAll(
+                    '.u_cbox_inbox, .u_cbox_write_wrap, ' +
+                    '[class*="comment_write"], .comment_inbox'
                 );
-                for (const area of areas) {
-                    const ta = area.querySelector('textarea');
-                    if (ta) { ta.click(); ta.focus(); return true; }
+                for (const ph of placeholders) {
+                    ph.click();
+                    const ta = ph.querySelector('textarea');
+                    if (ta) { ta.click(); ta.focus(); return "textarea"; }
+                    // contenteditable div인 경우
+                    const editable = ph.querySelector('[contenteditable="true"]');
+                    if (editable) { editable.click(); editable.focus(); return "editable"; }
+                    return "clicked";
                 }
-                return false;
+                return "";
             }''')
-            if found:
+
+            if activated:
                 await random_delay(0.5, 1)
                 comment_input = await try_selectors(comment_target, [
                     'textarea:focus', 'textarea.u_cbox_text',
+                    'textarea[class*="comment"]',
+                    '[contenteditable="true"]:focus',
                 ], timeout=3000, description="댓글 입력(포커스 후)")
 
         if not comment_input:
@@ -388,6 +450,7 @@ async def write_comment(page, comment_text: str) -> dict:
         await random_delay(0.5, 1)
 
         # 댓글 타이핑 (자연스러운 속도)
+        # contenteditable인 경우에도 type()이 동작함
         await comment_input.type(comment_text,
                                  delay=50 + random.randint(-15, 25))
         await random_delay(1, 2)
@@ -396,6 +459,7 @@ async def write_comment(page, comment_text: str) -> dict:
         submit_btn = await try_selectors(comment_target, [
             'button.u_cbox_btn_upload',
             'a.u_cbox_btn_upload',
+            '.u_cbox_btn_upload',
             'button:has-text("등록")',
             'a:has-text("등록")',
             '[class*="comment"] button[class*="submit"]',
@@ -410,7 +474,8 @@ async def write_comment(page, comment_text: str) -> dict:
                 for (const btn of btns) {
                     const text = (btn.textContent || '').trim();
                     const cls = btn.className || '';
-                    if (text === '등록' || cls.includes('upload') || cls.includes('submit')) {
+                    if (text === '등록' || cls.includes('upload') ||
+                        cls.includes('submit') || cls.includes('btn_register')) {
                         btn.click();
                         return true;
                     }
