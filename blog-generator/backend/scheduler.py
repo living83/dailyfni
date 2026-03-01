@@ -94,8 +94,8 @@ async def article_generation_job(manual: bool = False):
     # 활성 계정 가져오기
     accounts = await get_accounts()
     active_accounts = [a for a in accounts if a.get("is_active")]
-    if len(active_accounts) < 3:
-        await create_notification("error", "계정 부족", f"활성 계정이 {len(active_accounts)}개입니다. 최소 3개 필요합니다.")
+    if len(active_accounts) == 0:
+        await create_notification("error", "계정 없음", "활성 계정이 없습니다. 계정을 추가해주세요.")
         return
 
     accounts_to_use = active_accounts[:3]
@@ -123,11 +123,13 @@ async def article_generation_job(manual: bool = False):
         from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
         from agents import _call_claude
 
-        doc_formats = [
+        all_doc_formats = [
             ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
             ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
             ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
         ]
+        # 활성 계정 수만큼만 생성
+        doc_formats = all_doc_formats[:len(accounts_to_use)]
 
         product_info_section = ""
         if product_info.strip():
@@ -175,7 +177,7 @@ async def article_generation_job(manual: bool = False):
             from database import update_publish_history
             await update_publish_history(history["id"], {"status": "generated"})
 
-            logger.info(f"글 생성 완료 [{i+1}/3]: {title[:30]}... → 계정: {account['account_name']}")
+            logger.info(f"글 생성 완료 [{i+1}/{len(doc_formats)}]: {title[:30]}... → 계정: {account['account_name']}")
 
         # 배치 상태를 articles_ready로 업데이트
         await update_batch(batch["id"], {"status": "articles_ready"})
@@ -183,7 +185,7 @@ async def article_generation_job(manual: bool = False):
         await create_notification(
             "success",
             f"글 사전 생성 완료 ({keyword})",
-            f"3개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']}",
+            f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']}",
         )
 
         logger.info(f"글 사전 생성 완료: 키워드={keyword}, 배치 #{batch['id']}")
