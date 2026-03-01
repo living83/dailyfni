@@ -709,6 +709,28 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
     except Exception as e:
         logger.warning(f"폰트 크기 변경 실패: {e}")
         return False
+    finally:
+        # ★ 핵심: 드롭다운 조작 후 에디터 본문에 포커스/커서 복원
+        # 드롭다운 클릭으로 포커스가 툴바에 남으면 이후 keyboard.type()이
+        # 에디터가 아닌 곳으로 전송되어 본문이 사라짐
+        try:
+            await editor.evaluate('''() => {
+                const paragraphs = document.querySelectorAll('.se-text-paragraph');
+                if (paragraphs.length > 0) {
+                    const last = paragraphs[paragraphs.length - 1];
+                    last.focus();
+                    const sel = window.getSelection();
+                    if (sel) {
+                        const range = document.createRange();
+                        range.selectNodeContents(last);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }
+            }''')
+        except Exception:
+            pass
 
 
 async def se_input_body(page, editor, content: str,
@@ -932,6 +954,18 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                 logger.warning("돋보기 버튼 미발견, Enter로 대체")
                 await page.keyboard.press("Enter")
                 await random_delay(2, 3)
+
+            # 확인 버튼 클릭 전 플로팅 메뉴 재거 (대기 중 다시 나타날 수 있음)
+            for target in targets:
+                try:
+                    await target.evaluate('''() => {
+                        const menus = document.querySelectorAll(
+                            '.se-floating-material-menu, .se-floating-material-menu-buttons'
+                        );
+                        menus.forEach(m => m.remove());
+                    }''')
+                except Exception:
+                    pass
 
             # 확인 버튼
             confirm_selectors = [
