@@ -403,7 +403,7 @@ async def serve_frontend():
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.post("/api/articles/generate-batch")
-async def generate_batch(background_tasks: BackgroundTasks):
+async def generate_batch():
     """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -414,7 +414,7 @@ async def generate_batch(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
 
     from scheduler import article_generation_job
-    background_tasks.add_task(article_generation_job, manual=True)
+    asyncio.create_task(article_generation_job(manual=True))
     return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
 
 
@@ -433,14 +433,14 @@ async def get_ready_batches():
 
 
 @app.post("/api/articles/publish-now")
-async def publish_ready_articles(background_tasks: BackgroundTasks):
+async def publish_ready_articles():
     """사전 생성된 글을 즉시 발행 시작"""
     batches = await db.get_ready_batches()
     if not batches:
         raise HTTPException(status_code=404, detail="발행할 사전 생성 글이 없습니다.")
 
     from scheduler import daily_publish_job
-    background_tasks.add_task(daily_publish_job, manual=True)
+    asyncio.create_task(daily_publish_job(manual=True))
     return {"message": f"{len(batches)}개 배치의 글 발행이 시작되었습니다.", "batch_count": len(batches)}
 
 
