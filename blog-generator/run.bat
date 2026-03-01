@@ -1,6 +1,9 @@
 @echo off
 chcp 65001 >nul 2>&1
 
+REM Change to script's own directory
+cd /d "%~dp0"
+
 echo ================================================
 echo   DailyFNI - Blog Generator
 echo ================================================
