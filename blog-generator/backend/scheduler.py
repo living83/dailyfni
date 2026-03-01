@@ -65,135 +65,143 @@ async def _should_skip_today(config: dict) -> bool:
 async def article_generation_job(manual: bool = False):
     """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
     manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다."""
-    from database import (
-        get_next_keyword, update_keyword, get_accounts,
-        create_batch, create_publish_history, update_batch,
-        create_notification, get_categories,
-    )
-
-    if not manual:
-        config = await _get_config()
-        if not config.get("is_active"):
-            return
-
-        # 오늘 건너뛸지 확인
-        if await _should_skip_today(config):
-            await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
-            return
-
-    # 다음 키워드 가져오기
-    kw = await get_next_keyword()
-    if not kw:
-        await create_notification("warning", "키워드 부족", "발행할 키워드가 없습니다. 키워드를 추가해주세요.")
-        return
-
-    keyword = kw["keyword"]
-    product_info = kw.get("product_info", "")
-    logger.info(f"글 사전 생성 시작: 키워드 = {keyword}")
-
-    # 활성 계정 가져오기
-    accounts = await get_accounts()
-    active_accounts = [a for a in accounts if a.get("is_active")]
-    if len(active_accounts) == 0:
-        await create_notification("error", "계정 없음", "활성 계정이 없습니다. 계정을 추가해주세요.")
-        return
-
-    accounts_to_use = active_accounts[:3]
-
-    # 키워드 상태 업데이트
-    now = datetime.now()
-    await update_keyword(kw["id"], {
-        "status": "used",
-        "last_used_at": now.isoformat(),
-        "next_available_at": (now + timedelta(days=30)).isoformat(),
-        "used_count": kw["used_count"] + 1,
-    })
-
-    # 배치 생성 (status = articles_ready)
-    batch = await create_batch(keyword)
-
-    # API 키 (환경변수에서)
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        await create_notification("error", "API 키 없음", "ANTHROPIC_API_KEY가 설정되지 않았습니다.")
-        return
-
-    # 문서 3개 생성
     try:
-        from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
-        from agents import _call_claude
-
-        all_doc_formats = [
-            ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
-            ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
-            ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
-        ]
-        # 활성 계정 수만큼만 생성
-        doc_formats = all_doc_formats[:len(accounts_to_use)]
-
-        product_info_section = ""
-        if product_info.strip():
-            product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
-
-        # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
-        keyword_image_paths = []
-        try:
-            from image_generator import generate_keyword_image_variants
-            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-        except Exception as e:
-            logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-
-        for i, (fmt, prompt_template, desc) in enumerate(doc_formats):
-            account = accounts_to_use[i]
-
-            # 카테고리 가져오기
-            categories = await get_categories(account["id"])
-            default_cat = next((c for c in categories if c.get("is_default")), None)
-            cat_id = default_cat["id"] if default_cat else None
-
-            # 글 생성
-            prompt = prompt_template.format(keyword=keyword, product_info_section=product_info_section)
-            result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
-
-            # 제목과 본문 분리
-            lines = result.strip().split("\n", 1)
-            title = lines[0].strip().lstrip("# ").strip()
-            body = lines[1].strip() if len(lines) > 1 else result
-
-            # DB에 저장 (status = 'generated')
-            history = await create_publish_history({
-                "batch_id": batch["id"],
-                "document_number": i + 1,
-                "account_id": account["id"],
-                "category_id": cat_id,
-                "title": title,
-                "content": body,
-                "keywords": [keyword],
-                "document_format": fmt,
-            })
-
-            # status를 generated로 업데이트
-            from database import update_publish_history
-            await update_publish_history(history["id"], {"status": "generated"})
-
-            logger.info(f"글 생성 완료 [{i+1}/{len(doc_formats)}]: {title[:30]}... → 계정: {account['account_name']}")
-
-        # 배치 상태를 articles_ready로 업데이트
-        await update_batch(batch["id"], {"status": "articles_ready"})
-
-        await create_notification(
-            "success",
-            f"글 사전 생성 완료 ({keyword})",
-            f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']}",
+        logger.info(f"article_generation_job 시작 (manual={manual})")
+        from database import (
+            get_next_keyword, update_keyword, get_accounts,
+            create_batch, create_publish_history, update_batch,
+            create_notification, get_categories,
         )
 
-        logger.info(f"글 사전 생성 완료: 키워드={keyword}, 배치 #{batch['id']}")
+        if not manual:
+            config = await _get_config()
+            if not config.get("is_active"):
+                logger.info("스케줄러 비활성 → 생성 건너뜀")
+                return
+
+            # 오늘 건너뛸지 확인
+            if await _should_skip_today(config):
+                await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
+                return
+
+        # 다음 키워드 가져오기
+        kw = await get_next_keyword()
+        if not kw:
+            logger.warning("발행할 키워드가 없습니다")
+            await create_notification("warning", "키워드 부족", "발행할 키워드가 없습니다. 키워드를 추가해주세요.")
+            return
+
+        keyword = kw["keyword"]
+        product_info = kw.get("product_info", "")
+        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}")
+
+        # 활성 계정 가져오기
+        accounts = await get_accounts()
+        active_accounts = [a for a in accounts if a.get("is_active")]
+        logger.info(f"활성 계정 수: {len(active_accounts)}")
+        if len(active_accounts) == 0:
+            await create_notification("error", "계정 없음", "활성 계정이 없습니다. 계정을 추가해주세요.")
+            return
+
+        accounts_to_use = active_accounts[:3]
+
+        # 키워드 상태 업데이트
+        now = datetime.now()
+        await update_keyword(kw["id"], {
+            "status": "used",
+            "last_used_at": now.isoformat(),
+            "next_available_at": (now + timedelta(days=30)).isoformat(),
+            "used_count": kw["used_count"] + 1,
+        })
+
+        # 배치 생성 (status = articles_ready)
+        batch = await create_batch(keyword)
+
+        # API 키 (환경변수에서)
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            await create_notification("error", "API 키 없음", "ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+            return
+
+        # 문서 생성
+        try:
+            from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
+            from agents import _call_claude
+
+            all_doc_formats = [
+                ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
+                ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
+                ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
+            ]
+            # 활성 계정 수만큼만 생성
+            doc_formats = all_doc_formats[:len(accounts_to_use)]
+
+            product_info_section = ""
+            if product_info.strip():
+                product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
+
+            # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+            keyword_image_paths = []
+            try:
+                from image_generator import generate_keyword_image_variants
+                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+            except Exception as e:
+                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
+            for i, (fmt, prompt_template, desc) in enumerate(doc_formats):
+                account = accounts_to_use[i]
+
+                # 카테고리 가져오기
+                categories = await get_categories(account["id"])
+                default_cat = next((c for c in categories if c.get("is_default")), None)
+                cat_id = default_cat["id"] if default_cat else None
+
+                # 글 생성
+                prompt = prompt_template.format(keyword=keyword, product_info_section=product_info_section)
+                result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
+
+                # 제목과 본문 분리
+                lines = result.strip().split("\n", 1)
+                title = lines[0].strip().lstrip("# ").strip()
+                body = lines[1].strip() if len(lines) > 1 else result
+
+                # DB에 저장 (status = 'generated')
+                history = await create_publish_history({
+                    "batch_id": batch["id"],
+                    "document_number": i + 1,
+                    "account_id": account["id"],
+                    "category_id": cat_id,
+                    "title": title,
+                    "content": body,
+                    "keywords": [keyword],
+                    "document_format": fmt,
+                })
+
+                # status를 generated로 업데이트
+                from database import update_publish_history
+                await update_publish_history(history["id"], {"status": "generated"})
+
+                logger.info(f"글 생성 완료 [{i+1}/{len(doc_formats)}]: {title[:30]}... → 계정: {account['account_name']}")
+
+            # 배치 상태를 articles_ready로 업데이트
+            await update_batch(batch["id"], {"status": "articles_ready"})
+
+            await create_notification(
+                "success",
+                f"글 사전 생성 완료 ({keyword})",
+                f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']}",
+            )
+
+            logger.info(f"글 사전 생성 완료: 키워드={keyword}, 배치 #{batch['id']}")
+
+        except Exception as e:
+            logger.error(f"글 사전 생성 오류: {e}")
+            await update_batch(batch["id"], {"status": "all_failed"})
+            await create_notification("error", "글 사전 생성 실패", str(e))
 
     except Exception as e:
-        logger.error(f"글 사전 생성 오류: {e}")
-        await update_batch(batch["id"], {"status": "all_failed"})
-        await create_notification("error", "글 사전 생성 실패", str(e))
+        logger.error(f"article_generation_job 예외: {e}", exc_info=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
