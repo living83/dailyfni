@@ -476,8 +476,13 @@ async def se_insert_image(page, editor, image_path: str):
         logger.warning(f"대표이미지 삽입 실패 (계속 진행): {e}")
 
 
+# 폰트 크기 버튼 탐색 캐시: CSS 셀렉터가 모두 실패하면 JS 폴백만 사용
+_font_btn_use_js = False
+
+
 async def _se_set_font_size(page, editor, size: int) -> bool:
     """SE ONE 툴바에서 폰트 크기 변경. 성공 여부 반환."""
+    global _font_btn_use_js
     try:
         font_size_selectors = [
             'button[data-name="fontSize"]',
@@ -508,25 +513,28 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
 
         # 1. 툴바 폰트 크기 버튼 클릭
         font_btn = None
-        for target in targets:
-            desc = "폰트 크기 버튼(에디터)" if target == editor else "폰트 크기 버튼(페이지)"
-            font_btn = await try_selectors(target, font_size_selectors,
-                                            timeout=2000, description=desc)
-            if font_btn:
-                break
 
-        # 모든 프레임에서도 시도
-        if not font_btn:
-            for frame in page.frames:
-                if frame == page.main_frame or frame == editor:
-                    continue
-                try:
-                    font_btn = await try_selectors(frame, font_size_selectors,
-                                                    timeout=1500, description="폰트 크기 버튼(프레임)")
-                    if font_btn:
-                        break
-                except Exception:
-                    continue
+        # CSS 셀렉터가 이전에 모두 실패했으면 바로 JS 폴백으로 건너뜀
+        if not _font_btn_use_js:
+            for target in targets:
+                desc = "폰트 크기 버튼(에디터)" if target == editor else "폰트 크기 버튼(페이지)"
+                font_btn = await try_selectors(target, font_size_selectors,
+                                                timeout=2000, description=desc)
+                if font_btn:
+                    break
+
+            # 모든 프레임에서도 시도
+            if not font_btn:
+                for frame in page.frames:
+                    if frame == page.main_frame or frame == editor:
+                        continue
+                    try:
+                        font_btn = await try_selectors(frame, font_size_selectors,
+                                                        timeout=1500, description="폰트 크기 버튼(프레임)")
+                        if font_btn:
+                            break
+                    except Exception:
+                        continue
 
         if not font_btn:
             # JS 폴백: 툴바에서 폰트 크기 관련 버튼 찾기 (숫자 텍스트 or 특정 클래스)
@@ -566,7 +574,8 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                         el = font_btn_handle.as_element()
                         if el:
                             font_btn = el
-                            logger.info("폰트 크기 버튼 JS 폴백 발견")
+                            _font_btn_use_js = True
+                            logger.info("폰트 크기 버튼 JS 폴백 발견 (이후 CSS 건너뜀)")
                             break
                 except Exception:
                     continue
@@ -609,7 +618,7 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
             return False
 
         await font_btn.click()
-        await random_delay(0.3, 0.5)
+        await random_delay(0.6, 1.0)  # 드롭다운 렌더링 충분히 대기
 
         # 2. 드롭다운에서 크기 선택
         size_str = str(size)
@@ -656,9 +665,40 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                 await random_delay(0.2, 0.3)
                 return True
 
-            # 드롭다운 닫기 (크기를 못 찾은 경우)
+            # 드롭다운 닫기 후 1회 재시도
             await page.keyboard.press("Escape")
-            logger.warning(f"폰트 크기 {size} 항목 미발견")
+            await random_delay(0.3, 0.5)
+
+            # 재시도: 폰트 버튼 다시 클릭 + JS로 직접 선택
+            try:
+                await font_btn.click()
+                await random_delay(0.8, 1.2)
+                for target in ([editor, page] if editor != page else [editor]):
+                    js_retry = await target.evaluate(f'''() => {{
+                        // 모든 li, button 중 텍스트가 정확히 일치하는 항목 클릭
+                        const items = document.querySelectorAll(
+                            '.se-popup li, .se-popup button, [class*="font"] li, '
+                            + '[class*="font"] button, [data-value], [role="option"]'
+                        );
+                        for (const item of items) {{
+                            const val = (item.dataset?.value || '').trim();
+                            const text = (item.textContent || '').trim();
+                            if (val === '{size_str}' || text === '{size_str}') {{
+                                item.click();
+                                return true;
+                            }}
+                        }}
+                        return false;
+                    }}''')
+                    if js_retry:
+                        logger.info(f"폰트 크기 {size} 재시도 JS 성공")
+                        await random_delay(0.2, 0.3)
+                        return True
+            except Exception:
+                pass
+
+            await page.keyboard.press("Escape")
+            logger.warning(f"폰트 크기 {size} 항목 미발견 (재시도 포함)")
             return False
 
         await size_item.click()
@@ -764,6 +804,18 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
     await page.keyboard.press("Shift+Home")
     await random_delay(0.3, 0.5)
 
+    # 플로팅 머티리얼 메뉴 제거 (pointer events 차단 방지)
+    for target in ([editor, page] if editor != page else [editor]):
+        try:
+            await target.evaluate('''() => {
+                const menus = document.querySelectorAll(
+                    '.se-floating-material-menu, .se-floating-material-menu-buttons'
+                );
+                menus.forEach(m => m.remove());
+            }''')
+        except Exception:
+            pass
+
     await page.keyboard.press("Control+k")
     await random_delay(1, 2)
 
@@ -855,7 +907,7 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                         continue
 
             if search_btn:
-                await search_btn.click()
+                await search_btn.click(force=True)
                 logger.info("링크 돋보기 버튼 클릭")
                 await random_delay(3, 5)
                 # 미리보기 로드 대기
@@ -920,7 +972,30 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                         continue
 
             if confirm_btn:
-                await confirm_btn.click()
+                try:
+                    await confirm_btn.click(force=True)
+                except Exception:
+                    # force 클릭도 실패 시 JS로 직접 클릭
+                    for target in targets:
+                        try:
+                            await target.evaluate('''() => {
+                                const popup = document.querySelector(
+                                    '.se-popup-link, .se-popup, [class*="link_layer"]'
+                                );
+                                if (popup) {
+                                    const btns = popup.querySelectorAll('button');
+                                    for (const btn of btns) {
+                                        if ((btn.textContent || '').trim().includes('확인')) {
+                                            btn.click();
+                                            return true;
+                                        }
+                                    }
+                                }
+                                return false;
+                            }''')
+                            break
+                        except Exception:
+                            continue
                 await random_delay(1, 2)
                 logger.info(f"하단 링크 삽입 완료: {footer_link}")
             else:
@@ -944,23 +1019,44 @@ async def se_input_tags(page, editor, tags: list):
 
     tag_entered = False
     try:
-        tag_input = await try_selectors(editor, [
+        # 태그 영역은 에디터 하단에 위치 → 스크롤 다운 필요
+        try:
+            await page.keyboard.press("Control+End")
+            await random_delay(0.5, 1.0)
+        except Exception:
+            pass
+
+        # 플로팅 메뉴 제거 (태그 입력 방해 방지)
+        for target in ([editor, page] if editor != page else [editor]):
+            try:
+                await target.evaluate('''() => {
+                    const menus = document.querySelectorAll(
+                        '.se-floating-material-menu, .se-floating-material-menu-buttons'
+                    );
+                    menus.forEach(m => m.remove());
+                }''')
+            except Exception:
+                pass
+
+        tag_selectors = [
             'input[placeholder*="태그"]',
+            'input[placeholder*="태그 입력"]',
+            'input[placeholder*="tag"]',
             '.se-tag-input input',
             '.tag_inner input',
             'input[class*="tag"]',
             '.tag_area input',
             '.se-tag input',
-        ], timeout=3000, description="태그 입력(에디터)")
+            '.se-section-tag input',
+            '.se-component-tag input',
+        ]
+
+        tag_input = await try_selectors(editor, tag_selectors,
+                                         timeout=3000, description="태그 입력(에디터)")
 
         if not tag_input and editor != page:
-            tag_input = await try_selectors(page, [
-                'input[placeholder*="태그"]',
-                '.se-tag-input input',
-                '.tag_inner input',
-                'input[class*="tag"]',
-                '.tag_area input',
-            ], timeout=3000, description="태그 입력(메인)")
+            tag_input = await try_selectors(page, tag_selectors,
+                                             timeout=3000, description="태그 입력(메인)")
 
         if tag_input:
             await tag_input.click()
@@ -976,24 +1072,41 @@ async def se_input_tags(page, editor, tags: list):
             for target_name, target in ([("editor", editor)] + ([("page", page)] if editor != page else [])):
                 try:
                     found = await target.evaluate("""() => {
+                        // 방법1: input 태그에서 placeholder/class로 찾기
                         const inputs = document.querySelectorAll('input');
                         for (const inp of inputs) {
                             const ph = (inp.placeholder || '').toLowerCase();
                             const cls = (inp.className || '').toLowerCase();
                             if (ph.includes('태그') || ph.includes('tag') ||
                                 cls.includes('tag')) {
+                                inp.scrollIntoView({block: 'center'});
                                 inp.focus();
                                 inp.click();
                                 return true;
                             }
                         }
+                        // 방법2: contenteditable 태그 영역
                         const tagAreas = document.querySelectorAll(
-                            '[class*="tag"] [contenteditable="true"]'
+                            '[class*="tag"] [contenteditable="true"], '
+                            + '.se-section-tag [contenteditable="true"], '
+                            + '.se-component-tag [contenteditable="true"]'
                         );
                         for (const area of tagAreas) {
+                            area.scrollIntoView({block: 'center'});
                             area.focus();
                             area.click();
                             return true;
+                        }
+                        // 방법3: 에디터 하단 영역의 모든 input 중 빈 input
+                        const allInputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                        for (const inp of allInputs) {
+                            const rect = inp.getBoundingClientRect();
+                            if (rect.top > window.innerHeight * 0.7) {
+                                inp.scrollIntoView({block: 'center'});
+                                inp.focus();
+                                inp.click();
+                                return true;
+                            }
                         }
                         return false;
                     }""")
