@@ -64,6 +64,24 @@ class CafeBoardCreate(BaseModel):
     cafe_url: str
     board_name: str
     menu_id: Optional[str] = ""
+    cafe_group_id: Optional[int] = None
+
+class CafeCreate(BaseModel):
+    cafe_id: str
+    name: Optional[str] = ""
+
+class CafeSettingsUpdate(BaseModel):
+    name: Optional[str] = None
+    active: Optional[int] = None
+    interval_min: Optional[int] = None
+    interval_max: Optional[int] = None
+    daily_post_limit: Optional[int] = None
+    daily_comment_limit: Optional[int] = None
+    comments_per_post: Optional[int] = None
+    comment_delay_min: Optional[int] = None
+    comment_delay_max: Optional[int] = None
+    comment_order: Optional[str] = None
+    exclude_author: Optional[int] = None
 
 class KeywordCreate(BaseModel):
     text: str
@@ -140,6 +158,40 @@ async def delete_account(account_id: int):
     return {"message": "계정 삭제됨"}
 
 
+# ─── Cafes API ────────────────────────────────────────────
+
+@app.get("/api/cafes")
+async def list_cafes():
+    return db.get_cafes()
+
+
+@app.post("/api/cafes")
+async def create_cafe(req: CafeCreate):
+    if not req.cafe_id.strip():
+        raise HTTPException(400, "카페 ID를 입력하세요.")
+    try:
+        cid = db.add_cafe(req.cafe_id.strip(), (req.name or "").strip())
+        return {"id": cid, "message": "카페 등록 완료"}
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(400, "이미 등록된 카페입니다.")
+        raise HTTPException(500, str(e))
+
+
+@app.put("/api/cafes/{cafe_id}")
+async def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
+    updates = {k: v for k, v in req.dict().items() if v is not None}
+    if updates:
+        db.update_cafe_settings(cafe_id, **updates)
+    return {"message": "카페 설정 업데이트됨"}
+
+
+@app.delete("/api/cafes/{cafe_id}")
+async def delete_cafe(cafe_id: int):
+    db.delete_cafe(cafe_id)
+    return {"message": "카페 삭제됨"}
+
+
 # ─── Cafe Boards API ──────────────────────────────────────
 
 @app.get("/api/boards")
@@ -151,7 +203,10 @@ async def list_boards():
 async def create_board(req: CafeBoardCreate):
     if not req.cafe_url.strip() or not req.board_name.strip():
         raise HTTPException(400, "카페 ID와 게시판 이름을 입력하세요.")
-    bid = db.add_cafe_board(req.cafe_url.strip(), req.board_name.strip(), (req.menu_id or "").strip())
+    bid = db.add_cafe_board(
+        req.cafe_url.strip(), req.board_name.strip(),
+        (req.menu_id or "").strip(), req.cafe_group_id
+    )
     return {"id": bid, "message": "게시판 등록 완료"}
 
 

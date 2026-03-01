@@ -352,6 +352,7 @@ const API = '';
 function App() {
   const [tab, setTab] = useState(0);
   const [accounts, setAccounts] = useState([]);
+  const [cafes, setCafes] = useState([]);
   const [boards, setBoards] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -363,8 +364,9 @@ function App() {
   // 초기 데이터 로드
   const loadData = useCallback(async () => {
     try {
-      const [accRes, boardRes, kwRes, tplRes, schedRes, histRes, statRes] = await Promise.all([
+      const [accRes, cafeRes, boardRes, kwRes, tplRes, schedRes, histRes, statRes] = await Promise.all([
         fetch(`${API}/api/accounts`).then(r => r.json()),
+        fetch(`${API}/api/cafes`).then(r => r.json()),
         fetch(`${API}/api/boards`).then(r => r.json()),
         fetch(`${API}/api/keywords`).then(r => r.json()),
         fetch(`${API}/api/comments/templates`).then(r => r.json()),
@@ -373,6 +375,7 @@ function App() {
         fetch(`${API}/api/stats`).then(r => r.json()),
       ]);
       setAccounts(accRes);
+      setCafes(cafeRes);
       setBoards(boardRes);
       setKeywords(kwRes);
       setTemplates(tplRes);
@@ -418,8 +421,8 @@ function App() {
           ))}
         </div>
 
-        {tab === 0 && <AccountCafeTab accounts={accounts} boards={boards} reload={loadData} />}
-        {tab === 1 && <KeywordTab keywords={keywords} boards={boards} templates={templates} reload={loadData} />}
+        {tab === 0 && <AccountCafeTab accounts={accounts} cafes={cafes} reload={loadData} />}
+        {tab === 1 && <KeywordTab keywords={keywords} boards={boards} cafes={cafes} templates={templates} reload={loadData} />}
         {tab === 2 && <CommentTab templates={templates} schedule={schedule} reload={loadData} />}
         {tab === 3 && <ScheduleTab schedule={schedule} events={events} reload={loadData} />}
         {tab === 4 && <HistoryTab history={history} stats={stats} reload={loadData} />}
@@ -431,12 +434,14 @@ function App() {
 /* ═══════════════════════════════════════════════════════════
    탭 0: 계정 & 카페
    ═══════════════════════════════════════════════════════════ */
-function AccountCafeTab({ accounts, boards, reload }) {
+function AccountCafeTab({ accounts, cafes, reload }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [cafeUrl, setCafeUrl] = useState('');
-  const [boardName, setBoardName] = useState('');
-  const [menuId, setMenuId] = useState('');
+  const [newCafeId, setNewCafeId] = useState('');
+  const [newCafeName, setNewCafeName] = useState('');
+  const [expandedCafe, setExpandedCafe] = useState(null);
+  const [showSettings, setShowSettings] = useState({});
+  const [boardForms, setBoardForms] = useState({});
 
   const addAccount = async () => {
     if (!username || !password) return;
@@ -452,10 +457,7 @@ function AccountCafeTab({ accounts, boards, reload }) {
   const deleteAccount = async (id) => {
     if (!confirm('계정을 삭제하시겠습니까?')) return;
     const res = await fetch(`${API}/api/accounts/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      alert('계정 삭제에 실패했습니다.');
-      return;
-    }
+    if (!res.ok) { alert('계정 삭제에 실패했습니다.'); return; }
     reload();
   };
 
@@ -464,20 +466,58 @@ function AccountCafeTab({ accounts, boards, reload }) {
     reload();
   };
 
-  const addBoard = async () => {
-    if (!cafeUrl || !boardName || !menuId) return;
+  const addCafe = async () => {
+    if (!newCafeId.trim()) return;
+    const res = await fetch(`${API}/api/cafes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cafe_id: newCafeId.trim(), name: newCafeName.trim() || newCafeId.trim() })
+    });
+    if (!res.ok) { const d = await res.json(); alert(d.detail || '등록 실패'); return; }
+    setNewCafeId(''); setNewCafeName('');
+    reload();
+  };
+
+  const deleteCafe = async (id) => {
+    if (!confirm('이 카페와 소속 게시판을 모두 삭제하시겠습니까?')) return;
+    await fetch(`${API}/api/cafes/${id}`, { method: 'DELETE' });
+    reload();
+  };
+
+  const updateCafe = async (cafeId, key, value) => {
+    await fetch(`${API}/api/cafes/${cafeId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value })
+    });
+    reload();
+  };
+
+  const addBoard = async (cafeGroupId, cafeIdStr) => {
+    const form = boardForms[cafeGroupId] || {};
+    if (!form.boardName?.trim() || !form.menuId?.trim()) return;
     await fetch(`${API}/api/boards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cafe_url: cafeUrl, board_name: boardName, menu_id: menuId })
+      body: JSON.stringify({
+        cafe_url: cafeIdStr,
+        board_name: form.boardName.trim(),
+        menu_id: form.menuId.trim(),
+        cafe_group_id: cafeGroupId
+      })
     });
-    setCafeUrl(''); setBoardName(''); setMenuId('');
+    setBoardForms(prev => ({ ...prev, [cafeGroupId]: { boardName: '', menuId: '' } }));
     reload();
   };
 
   const deleteBoard = async (id) => {
     await fetch(`${API}/api/boards/${id}`, { method: 'DELETE' });
     reload();
+  };
+
+  const getBoardForm = (cafeId) => boardForms[cafeId] || { boardName: '', menuId: '' };
+  const setBoardForm = (cafeId, field, value) => {
+    setBoardForms(prev => ({ ...prev, [cafeId]: { ...getBoardForm(cafeId), [field]: value } }));
   };
 
   return (
@@ -517,30 +557,160 @@ function AccountCafeTab({ accounts, boards, reload }) {
         ))}
       </div>
 
-      {/* 카페 게시판 관리 (모든 계정 공통) */}
+      {/* 카페 관리 */}
       <div className="card">
-        <div className="card-title">카페 게시판</div>
+        <div className="card-title">카페 관리</div>
         <div style={{ fontSize: 12, color: '#4a5a7a', marginBottom: 10 }}>
-          등록된 게시판은 모든 활성 계정에 공통 적용됩니다.
+          카페별로 게시판과 발행 설정을 독립적으로 관리합니다.
         </div>
-        <div className="input-row" style={{ marginBottom: 8 }}>
-          <input type="text" placeholder="카페 ID (예: 30339285)" value={cafeUrl} onChange={e => setCafeUrl(e.target.value)} style={{ flex: 2 }} />
-          <input type="text" placeholder="게시판 이름" value={boardName} onChange={e => setBoardName(e.target.value)} />
-          <input type="text" placeholder="menuId (숫자)" value={menuId} onChange={e => setMenuId(e.target.value)} style={{ flex: 0.7 }} />
-          <button className="btn btn-primary" onClick={addBoard}>추가</button>
+        <div className="input-row" style={{ marginBottom: 14 }}>
+          <input type="text" placeholder="카페 ID (숫자, 예: 30339285)" value={newCafeId}
+            onChange={e => setNewCafeId(e.target.value)} style={{ flex: 1.2 }} />
+          <input type="text" placeholder="카페 이름 (선택)" value={newCafeName}
+            onChange={e => setNewCafeName(e.target.value)} />
+          <button className="btn btn-primary" onClick={addCafe}>추가</button>
         </div>
-        {boards.length === 0 && <div className="empty-state">등록된 게시판이 없습니다</div>}
-        {boards.map(b => (
-          <div className="list-item" key={b.id}>
-            <div className="info">
-              <div className="name">{b.board_name}</div>
-              <div className="sub">카페 ID: {b.cafe_url} | menuId: {b.menu_id}</div>
+
+        {cafes.length === 0 && <div className="empty-state">등록된 카페가 없습니다</div>}
+
+        {cafes.map(cafe => {
+          const isExpanded = expandedCafe === cafe.id;
+          const isSettingsOpen = showSettings[cafe.id];
+          const form = getBoardForm(cafe.id);
+          const boards = cafe.boards || [];
+
+          return (
+            <div key={cafe.id} style={{
+              marginBottom: 10, border: `1px solid ${isExpanded ? '#38bd94' : '#1a2540'}`,
+              borderRadius: 10, overflow: 'hidden', transition: 'border-color 0.2s'
+            }}>
+              {/* 카페 헤더 */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 16px', background: '#0d1526', cursor: 'pointer'
+              }} onClick={() => setExpandedCafe(isExpanded ? null : cafe.id)}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: '#c8d6e5', fontSize: 14, display: 'flex', alignItems: 'center' }}>
+                    <span style={{
+                      display: 'inline-block', transition: 'transform 0.2s',
+                      transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      marginRight: 8, fontSize: 12, color: '#4a5a7a'
+                    }}>&#9656;</span>
+                    {cafe.name || cafe.cafe_id}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#4a5a7a', marginTop: 2, marginLeft: 20 }}>
+                    카페 ID: {cafe.cafe_id} | 게시판 {boards.length}개
+                    {!cafe.active && <span className="badge badge-danger" style={{ marginLeft: 6 }}>비활성</span>}
+                  </div>
+                </div>
+                <div className="actions" onClick={e => e.stopPropagation()}>
+                  <div className={`toggle ${cafe.active ? 'on' : ''}`}
+                    onClick={() => updateCafe(cafe.id, 'active', cafe.active ? 0 : 1)} />
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteCafe(cafe.id)}>삭제</button>
+                </div>
+              </div>
+
+              {/* 카페 확장 패널 */}
+              {isExpanded && (
+                <div style={{ padding: 16, background: '#0a1020', borderTop: '1px solid #1a2540' }}>
+                  {/* 게시판 목록 + 추가 */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e', marginBottom: 8 }}>게시판</div>
+                    <div className="input-row" style={{ marginBottom: 8 }}>
+                      <input type="text" placeholder="게시판 이름" value={form.boardName}
+                        onChange={e => setBoardForm(cafe.id, 'boardName', e.target.value)} />
+                      <input type="text" placeholder="menuId (숫자)" value={form.menuId}
+                        onChange={e => setBoardForm(cafe.id, 'menuId', e.target.value)} style={{ flex: 0.6 }} />
+                      <button className="btn btn-primary btn-sm" onClick={() => addBoard(cafe.id, cafe.cafe_id)}>추가</button>
+                    </div>
+                    {boards.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#3a4a6a', textAlign: 'center', padding: 10 }}>등록된 게시판이 없습니다</div>
+                    )}
+                    {boards.map(b => (
+                      <div className="list-item" key={b.id}>
+                        <div className="info">
+                          <div className="name">{b.board_name}</div>
+                          <div className="sub">menuId: {b.menu_id}</div>
+                        </div>
+                        <div className="actions">
+                          <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 카페별 설정 토글 */}
+                  <div>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      cursor: 'pointer', padding: '8px 0', borderTop: '1px solid #1a2540'
+                    }} onClick={() => setShowSettings(prev => ({ ...prev, [cafe.id]: !prev[cafe.id] }))}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e' }}>카페별 발행 설정</span>
+                      <span style={{
+                        fontSize: 12, color: '#4a5a7a', transition: 'transform 0.2s',
+                        transform: isSettingsOpen ? 'rotate(90deg)' : 'rotate(0deg)'
+                      }}>&#9656;</span>
+                    </div>
+
+                    {isSettingsOpen && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
+                        <div className="input-group">
+                          <label>계정 간 간격 최소 (분)</label>
+                          <input type="number" min={1} max={60} value={cafe.interval_min ?? 3}
+                            onChange={e => updateCafe(cafe.id, 'interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
+                        </div>
+                        <div className="input-group">
+                          <label>계정 간 간격 최대 (분)</label>
+                          <input type="number" min={1} max={60} value={cafe.interval_max ?? 15}
+                            onChange={e => updateCafe(cafe.id, 'interval_max', Math.max(1, parseInt(e.target.value) || 15))} />
+                        </div>
+                        <div className="input-group">
+                          <label>일일 게시 한도 (계정당)</label>
+                          <input type="number" min={0} max={50} value={cafe.daily_post_limit ?? 3}
+                            onChange={e => updateCafe(cafe.id, 'daily_post_limit', Math.max(0, parseInt(e.target.value) || 0))} />
+                        </div>
+                        <div className="input-group">
+                          <label>일일 댓글 한도 (계정당)</label>
+                          <input type="number" min={0} max={100} value={cafe.daily_comment_limit ?? 10}
+                            onChange={e => updateCafe(cafe.id, 'daily_comment_limit', Math.max(0, parseInt(e.target.value) || 0))} />
+                        </div>
+                        <div className="input-group">
+                          <label>게시글당 댓글 수</label>
+                          <input type="number" min={0} max={50} value={cafe.comments_per_post ?? 6}
+                            onChange={e => updateCafe(cafe.id, 'comments_per_post', Math.max(0, parseInt(e.target.value) || 0))} />
+                        </div>
+                        <div className="input-group">
+                          <label>댓글 배정 방식</label>
+                          <select value={cafe.comment_order || 'random'}
+                            onChange={e => updateCafe(cafe.id, 'comment_order', e.target.value)}>
+                            <option value="random">랜덤</option>
+                            <option value="round">라운드로빈</option>
+                            <option value="least">최소 사용</option>
+                          </select>
+                        </div>
+                        <div className="input-group">
+                          <label>댓글 간 최소 딜레이 (초)</label>
+                          <input type="number" min={10} max={600} value={cafe.comment_delay_min ?? 60}
+                            onChange={e => updateCafe(cafe.id, 'comment_delay_min', Math.max(10, parseInt(e.target.value) || 60))} />
+                        </div>
+                        <div className="input-group">
+                          <label>댓글 간 최대 딜레이 (초)</label>
+                          <input type="number" min={10} max={600} value={cafe.comment_delay_max ?? 300}
+                            onChange={e => updateCafe(cafe.id, 'comment_delay_max', Math.max(10, parseInt(e.target.value) || 300))} />
+                        </div>
+                        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div className={`toggle ${cafe.exclude_author ? 'on' : ''}`}
+                            onClick={() => updateCafe(cafe.id, 'exclude_author', cafe.exclude_author ? 0 : 1)} />
+                          <span style={{ fontSize: 13, color: '#6b7b9e' }}>글 작성자 계정은 댓글에서 제외</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="actions">
-              <button className="btn btn-danger btn-sm" onClick={() => deleteBoard(b.id)}>삭제</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -549,7 +719,7 @@ function AccountCafeTab({ accounts, boards, reload }) {
 /* ═══════════════════════════════════════════════════════════
    탭 1: 키워드 큐
    ═══════════════════════════════════════════════════════════ */
-function KeywordTab({ keywords, boards, templates, reload }) {
+function KeywordTab({ keywords, boards, cafes, templates, reload }) {
   const [text, setText] = useState('');
   const [expandedKw, setExpandedKw] = useState(null);
 
@@ -651,24 +821,33 @@ function KeywordTab({ keywords, boards, templates, reload }) {
             </div>
             {isOpen && (
               <div style={{ background: '#0a1020', border: '1px solid #1a2540', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: 14 }}>
-                {/* 게시판 매핑 */}
+                {/* 게시판 매핑 (카페별 그룹) */}
                 <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7b9e', marginBottom: 8 }}>
                     게시판 지정 <span style={{ fontWeight: 400, color: '#3a4a6a' }}>(미선택 시 전체 게시판)</span>
                   </div>
                   {boards.length === 0 && <div style={{ fontSize: 12, color: '#3a4a6a' }}>등록된 게시판 없음</div>}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {boards.map(b => {
-                      const selected = mappedBoards.includes(b.id);
-                      return (
-                        <button key={b.id}
-                          className={`chip ${selected ? 'active' : ''}`}
-                          onClick={() => toggleBoard(k.id, b.id, mappedBoards)}>
-                          {b.board_name}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {cafes.map(cafe => {
+                    const cafeBoards = (cafe.boards || []);
+                    if (cafeBoards.length === 0) return null;
+                    return (
+                      <div key={cafe.id} style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, color: '#4a5a7a', marginBottom: 4 }}>{cafe.name || cafe.cafe_id}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {cafeBoards.map(b => {
+                            const selected = mappedBoards.includes(b.id);
+                            return (
+                              <button key={b.id}
+                                className={`chip ${selected ? 'active' : ''}`}
+                                onClick={() => toggleBoard(k.id, b.id, mappedBoards)}>
+                                {b.board_name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
                 {/* 댓글 템플릿 매핑 */}
                 <div>
@@ -764,14 +943,18 @@ function CommentTab({ templates, schedule, reload }) {
           </div>
         </div>
 
+        <div style={{ fontSize: 11, color: '#4a5a7a', marginBottom: 10, padding: '6px 10px', background: '#0d1526', borderRadius: 6, border: '1px solid #1a2540' }}>
+          아래는 글로벌 기본값입니다. 카페별 설정은 [계정 &amp; 카페] 탭에서 카페를 펼친 뒤 개별 설정할 수 있습니다.
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
           <div className="input-group">
-            <label>게시글당 댓글 수</label>
+            <label>게시글당 댓글 수 (기본값)</label>
             <input type="number" value={commentsPerPost} min={1} max={50}
               onChange={e => updateConfig('comments_per_post', parseInt(e.target.value) || 1)} />
           </div>
           <div className="input-group">
-            <label>계정 배정 방식</label>
+            <label>계정 배정 방식 (기본값)</label>
             <select value={schedule.comment_order || 'random'}
               onChange={e => updateConfig('comment_order', e.target.value)}>
               <option value="random">랜덤</option>
@@ -780,12 +963,12 @@ function CommentTab({ templates, schedule, reload }) {
             </select>
           </div>
           <div className="input-group">
-            <label>댓글 간 최소 딜레이 (초)</label>
+            <label>댓글 간 최소 딜레이 (기본값, 초)</label>
             <input type="number" value={schedule.comment_delay_min || 60}
               onChange={e => updateConfig('comment_delay_min', parseInt(e.target.value) || 30)} />
           </div>
           <div className="input-group">
-            <label>댓글 간 최대 딜레이 (초)</label>
+            <label>댓글 간 최대 딜레이 (기본값, 초)</label>
             <input type="number" value={schedule.comment_delay_max || 300}
               onChange={e => updateConfig('comment_delay_max', parseInt(e.target.value) || 300)} />
           </div>
@@ -793,7 +976,7 @@ function CommentTab({ templates, schedule, reload }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <div className={`toggle ${schedule.exclude_author ? 'on' : ''}`}
             onClick={() => updateConfig('exclude_author', schedule.exclude_author ? 0 : 1)} />
-          <span style={{ fontSize: 13, color: '#6b7b9e' }}>글 작성자 계정은 댓글에서 제외</span>
+          <span style={{ fontSize: 13, color: '#6b7b9e' }}>글 작성자 계정은 댓글에서 제외 (기본값)</span>
         </div>
       </div>
 
@@ -944,12 +1127,12 @@ function ScheduleTab({ schedule, events, reload }) {
               onChange={e => updateConfig('max_accounts_per_run', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
           <div className="input-group">
-            <label>계정 간 간격 최소 (분)</label>
+            <label>계정 간 간격 최소 (기본값, 분)</label>
             <input type="number" min={1} max={60} value={intervalMin}
               onChange={e => updateConfig('interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
           <div className="input-group">
-            <label>계정 간 간격 최대 (분)</label>
+            <label>계정 간 간격 최대 (기본값, 분)</label>
             <input type="number" min={1} max={60} value={schedule.interval_max || 15}
               onChange={e => updateConfig('interval_max', Math.max(1, parseInt(e.target.value) || 15))} />
           </div>
@@ -959,12 +1142,12 @@ function ScheduleTab({ schedule, events, reload }) {
               onChange={e => updateConfig('account_interval_hours', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
           <div className="input-group">
-            <label>일일 게시 한도 (계정당)</label>
+            <label>일일 게시 한도 (기본값)</label>
             <input type="number" min={0} max={50} value={schedule.daily_post_limit ?? 3}
               onChange={e => updateConfig('daily_post_limit', Math.max(0, parseInt(e.target.value) || 0))} />
           </div>
           <div className="input-group">
-            <label>일일 댓글 한도 (계정당)</label>
+            <label>일일 댓글 한도 (기본값)</label>
             <input type="number" min={0} max={100} value={schedule.daily_comment_limit ?? 10}
               onChange={e => updateConfig('daily_comment_limit', Math.max(0, parseInt(e.target.value) || 0))} />
           </div>

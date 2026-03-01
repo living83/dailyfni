@@ -4,8 +4,8 @@ APScheduler 기반 자동 발행 관리
 
 배치 발행 전략:
 1. 매일 1회 배치: base_start_hour:minute 에 시작, 일별 daily_shift_minutes 만큼 지연
-2. 최대 max_accounts_per_run 개 계정이 interval_min 분 간격으로 순차 발행
-3. 교차 발행: 같은 카페 연속 발행 금지 (다른 카페와 교차)
+2. 카페별 독립 설정: 각 카페의 interval, 일일 한도, 댓글 설정 사용
+3. 교차 발행: 카페 간 교차하여 같은 카페 연속 발행 금지
 4. 계정 간 간격: 같은 계정 최소 account_interval_hours 시간 대기
 5. 랜덤 딜레이: 각 발행 전 랜덤 오프셋 추가
 """
@@ -54,27 +54,28 @@ async def _notify_progress(event: str, data: dict):
 
 # ─── 저품질 방지 로직 ─────────────────────────────────────
 
-def _get_eligible_accounts(config: dict) -> list:
+def _get_eligible_accounts(config: dict, cafe_group_id: int = None, cafe_config: dict = None) -> list:
     """
     발행 가능한 계정 목록 반환
     - 활성 상태인 계정
     - 최소 대기 시간(account_interval_hours) 경과한 계정
-    - 일일 게시 한도(daily_post_limit) 미달 계정
+    - 카페별 일일 게시 한도(daily_post_limit) 미달 계정
     """
     accounts = db.get_accounts()
     active_accounts = [a for a in accounts if a["active"]]
 
     interval_hours = config.get("account_interval_hours", 3)
-    daily_post_limit = config.get("daily_post_limit", 3)
+    # 카페별 설정 우선, 없으면 글로벌
+    daily_post_limit = (cafe_config or config).get("daily_post_limit", 3)
     now = datetime.now()
 
     eligible = []
     for acc in active_accounts:
-        # 일일 게시 한도 체크
+        # 카페별 일일 게시 한도 체크
         if daily_post_limit > 0:
-            today_count = db.get_today_post_count(acc["id"])
+            today_count = db.get_today_post_count(acc["id"], cafe_group_id=cafe_group_id)
             if today_count >= daily_post_limit:
-                logger.debug(f"[{acc['username']}] 일일 게시 한도 도달 ({today_count}/{daily_post_limit})")
+                logger.debug(f"[{acc['username']}] 카페 {cafe_group_id} 일일 게시 한도 도달 ({today_count}/{daily_post_limit})")
                 continue
 
         if acc["last_published_at"]:
@@ -142,13 +143,14 @@ def _match_boards_by_keyword(keyword_text: str, boards: list) -> list:
     return result
 
 
-def _get_next_board(keyword_id: int = None, keyword_text: str = "") -> Optional[dict]:
+def _get_next_board(keyword_id: int = None, keyword_text: str = "",
+                    cafe_group_id: int = None) -> Optional[dict]:
     """
-    교차 발행 로직:
+    교차 발행 로직 (카페 그룹 필터 지원):
     1. keyword_id에 명시적 게시판 매핑이 있으면 해당 게시판만 사용
     2. 매핑 없으면 keyword_text로 게시판 이름 자동 매칭
     3. 자동 매칭도 없으면 전체 활성 게시판 사용
-    4. 같은 카페 연속 발행 금지
+    4. cafe_group_id 지정 시 해당 카페 게시판만 필터
     5. 가장 오래 전에 발행한 게시판 우선
     """
     global _last_published_cafe
@@ -177,10 +179,14 @@ def _get_next_board(keyword_id: int = None, keyword_text: str = "") -> Optional[
         boards = db.get_cafe_boards()
         active_boards = [b for b in boards if b.get("active", 1)]
 
+    # 카페 그룹 필터
+    if cafe_group_id is not None:
+        active_boards = [b for b in active_boards if b.get("cafe_group_id") == cafe_group_id]
+
     if not active_boards:
         return None
 
-    # 같은 카페가 아닌 게시판 우선
+    # 같은 카페가 아닌 게시판 우선 (교차 발행)
     if _last_published_cafe:
         diff_cafe = [b for b in active_boards if b["cafe_url"] != _last_published_cafe]
         if diff_cafe:
@@ -213,16 +219,18 @@ def _select_comment_accounts(
     count: int,
     order: str = "random",
     exclude_author: bool = True,
-    daily_comment_limit: int = 10
+    daily_comment_limit: int = 10,
+    cafe_group_id: int = None
 ) -> list:
-    """댓글 작성할 계정 선택 (일일 댓글 한도 초과 계정 제외)"""
+    """댓글 작성할 계정 선택 (카페별 일일 댓글 한도 초과 계정 제외)"""
     pool = [a for a in all_accounts if a["active"]]
     if exclude_author:
         pool = [a for a in pool if a["id"] != author_id]
 
-    # 일일 댓글 한도 초과 계정 제외
+    # 카페별 일일 댓글 한도 초과 계정 제외
     if daily_comment_limit > 0:
-        pool = [a for a in pool if db.get_today_comment_count(a["id"]) < daily_comment_limit]
+        pool = [a for a in pool
+                if db.get_today_comment_count(a["id"], cafe_group_id=cafe_group_id) < daily_comment_limit]
 
     if not pool:
         return []
@@ -254,12 +262,29 @@ def _calc_daily_offset_minutes(config: dict) -> int:
     return (day_index % cycle) * daily_shift
 
 
+def _get_cafe_config(cafe: dict, global_config: dict) -> dict:
+    """카페별 설정과 글로벌 설정 병합 (카페 설정 우선)"""
+    merged = dict(global_config)
+    # 카페별 설정으로 덮어쓰기
+    cafe_keys = [
+        "interval_min", "interval_max", "daily_post_limit", "daily_comment_limit",
+        "comments_per_post", "comment_delay_min", "comment_delay_max",
+        "comment_order", "exclude_author"
+    ]
+    for key in cafe_keys:
+        if key in cafe and cafe[key] is not None:
+            merged[key] = cafe[key]
+    return merged
+
+
 # ─── 단일 계정 발행 ──────────────────────────────────────────
 
-async def _publish_single(account: dict, config: dict, skip_comment: bool = False):
+async def _publish_single(account: dict, config: dict, cafe_group_id: int = None,
+                          skip_comment: bool = False):
     """단일 계정으로 1건 발행 (키워드 선택 → 게시판 선택 → 발행 → 댓글)
 
     Args:
+        cafe_group_id: 특정 카페 그룹으로 제한 (None이면 전체)
         skip_comment: True이면 댓글 작성 건너뜀 (1회 수동 실행용)
     """
     global _last_published_cafe
@@ -271,10 +296,11 @@ async def _publish_single(account: dict, config: dict, skip_comment: bool = Fals
         await _notify_progress("info", {"message": "등록된 키워드가 없습니다"})
         return
 
-    # 2. 게시판 선택 (명시적 매핑 → 키워드 텍스트 자동 매칭 → 전체 게시판)
-    board = _get_next_board(keyword_id=keyword["id"], keyword_text=keyword["text"])
+    # 2. 게시판 선택 (카페 그룹 필터 적용)
+    board = _get_next_board(keyword_id=keyword["id"], keyword_text=keyword["text"],
+                            cafe_group_id=cafe_group_id)
     if not board:
-        logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음")
+        logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음 (카페 {cafe_group_id})")
         await _notify_progress("info", {"message": f"키워드 '{keyword['text']}'에 매핑된 게시판이 없습니다"})
         return
 
@@ -340,14 +366,15 @@ async def _publish_single(account: dict, config: dict, skip_comment: bool = Fals
             "url": result["url"]
         })
 
-        # 댓글 자동 작성 (1회 수동 실행에서는 건너뜀)
+        # 댓글 자동 작성 (카페별 설정 사용)
         if not skip_comment and config.get("comment_enabled"):
             await execute_comment_job(
                 publish_id=publish_id,
                 post_url=result["url"],
                 author_id=account["id"],
                 config=config,
-                keyword_id=keyword["id"]
+                keyword_id=keyword["id"],
+                cafe_group_id=board.get("cafe_group_id")
             )
     else:
         db.update_publish_status(publish_id, "실패", error_message=result.get("error"))
@@ -365,28 +392,28 @@ async def _publish_single(account: dict, config: dict, skip_comment: bool = Fals
 async def execute_batch_job():
     """
     일일 배치 발행 작업 (스케줄러가 호출)
-    - 일별 지연 오프셋만큼 대기 후
-    - 최대 max_accounts_per_run 개 계정이 interval_min 분 간격으로 순차 발행
+    - 카페별 독립 설정으로 순차 발행
+    - 카페 간 교차하여 계정-카페 쌍을 인터리브
     """
     global _last_published_cafe
 
     if not _is_running:
         return
 
-    config = db.get_schedule_config()
+    global_config = db.get_schedule_config()
 
     # 1. 오늘 요일 체크
     today_dow = datetime.now().weekday()  # 0=월 ~ 6=일
-    days = config.get("days", "1,1,1,1,1,0,0").split(",")
+    days = global_config.get("days", "1,1,1,1,1,0,0").split(",")
     if len(days) > today_dow and days[today_dow] == "0":
         logger.info(f"오늘은 발행하지 않는 요일 (dow={today_dow})")
         return
 
     # 2. 일별 지연 오프셋 대기
-    offset_minutes = _calc_daily_offset_minutes(config)
+    offset_minutes = _calc_daily_offset_minutes(global_config)
     if offset_minutes > 0:
-        base_h = config.get("base_start_hour", 8)
-        base_m = config.get("base_start_minute", 0)
+        base_h = global_config.get("base_start_hour", 8)
+        base_m = global_config.get("base_start_minute", 0)
         actual_total = base_h * 60 + base_m + offset_minutes
         actual_h = (actual_total // 60) % 24
         actual_m = actual_total % 60
@@ -400,36 +427,48 @@ async def execute_batch_job():
     if not _is_running:
         return
 
-    # 3. 발행 가능한 계정 선택 (최대 max_accounts_per_run)
-    max_accounts = config.get("max_accounts_per_run", 30)
-    eligible = _get_eligible_accounts(config)
-    random.shuffle(eligible)
-    batch = eligible[:max_accounts]
+    # 3. 활성 카페 목록
+    cafes = db.get_cafes()
+    active_cafes = [c for c in cafes if c.get("active", 1)]
 
-    if not batch:
-        logger.info("발행 가능한 계정 없음 (대기 시간 미충족)")
-        await _notify_progress("info", {"message": "발행 가능한 계정 없음 - 대기 시간 미충족"})
+    if not active_cafes:
+        logger.info("활성 카페 없음")
+        await _notify_progress("info", {"message": "활성 카페가 없습니다"})
         return
 
-    interval_lo = config.get("interval_min", 3)
-    interval_hi = config.get("interval_max", 15)
-    if interval_hi < interval_lo:
-        interval_hi = interval_lo
-    total = len(batch)
+    max_accounts = global_config.get("max_accounts_per_run", 30)
 
-    logger.info(f"배치 발행 시작: {total}개 계정, {interval_lo}~{interval_hi}분 랜덤 간격")
+    # 4. 카페별 발행 작업 빌드 — (account, cafe_config, cafe_group_id) 튜플 목록
+    tasks = []
+    for cafe in active_cafes:
+        cafe_cfg = _get_cafe_config(cafe, global_config)
+        eligible = _get_eligible_accounts(global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
+        random.shuffle(eligible)
+        # 카페당 max_accounts_per_run 적용
+        for acc in eligible[:max_accounts]:
+            tasks.append((acc, cafe_cfg, cafe["id"], cafe.get("name", cafe["cafe_id"])))
+
+    if not tasks:
+        logger.info("발행 가능한 계정-카페 조합 없음")
+        await _notify_progress("info", {"message": "발행 가능한 계정-카페 조합 없음"})
+        return
+
+    # 교차 발행: 카페별 작업을 인터리브 (같은 카페 연속 방지)
+    if global_config.get("cross_publish", 1):
+        tasks = _interleave_tasks(tasks)
+
+    total = len(tasks)
+    logger.info(f"배치 발행 시작: {total}건 ({len(active_cafes)}개 카페)")
     await _notify_progress("batch_start", {
-        "message": f"배치 발행 시작: {total}개 계정, {interval_lo}~{interval_hi}분 랜덤 간격",
-        "total_accounts": total,
-        "interval_min": interval_lo,
-        "interval_max": interval_hi
+        "message": f"배치 발행 시작: {total}건 ({len(active_cafes)}개 카페)",
+        "total_accounts": total
     })
 
-    # 4. 순차 발행: 계정마다 interval_min 분 간격 유지
+    # 5. 순차 발행
     success_count = 0
     fail_count = 0
 
-    for i, account in enumerate(batch):
+    for i, (account, cafe_cfg, cafe_gid, cafe_name) in enumerate(tasks):
         if not _is_running:
             logger.info("스케줄러 중지됨 - 배치 중단")
             break
@@ -437,14 +476,14 @@ async def execute_batch_job():
         turn_start = datetime.now()
 
         await _notify_progress("batch_progress", {
-            "message": f"[{i+1}/{total}] {account['username']} 발행 시작",
+            "message": f"[{i+1}/{total}] {account['username']} → {cafe_name}",
             "current": i + 1,
             "total": total,
             "account": account["username"]
         })
 
         try:
-            await _publish_single(account, config)
+            await _publish_single(account, cafe_cfg, cafe_group_id=cafe_gid)
             success_count += 1
         except Exception as e:
             fail_count += 1
@@ -453,15 +492,19 @@ async def execute_batch_job():
                 "message": f"[{account['username']}] 발행 예외: {str(e)}"
             })
 
-        # 마지막 계정이 아니면 랜덤 간격 대기
+        # 다음 작업까지 카페별 랜덤 간격 대기
         if i < total - 1 and _is_running:
+            interval_lo = cafe_cfg.get("interval_min", 3)
+            interval_hi = cafe_cfg.get("interval_max", 15)
+            if interval_hi < interval_lo:
+                interval_hi = interval_lo
             interval = random.randint(interval_lo, interval_hi)
             elapsed = (datetime.now() - turn_start).total_seconds()
             remaining = interval * 60 - elapsed
             if remaining > 0:
-                logger.info(f"다음 계정까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})")
+                logger.info(f"다음까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})")
                 await _notify_progress("delay", {
-                    "message": f"다음 계정까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})",
+                    "message": f"다음까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})",
                     "seconds": remaining
                 })
                 await asyncio.sleep(remaining)
@@ -475,19 +518,39 @@ async def execute_batch_job():
     })
 
 
+def _interleave_tasks(tasks: list) -> list:
+    """카페별 작업을 인터리브하여 같은 카페 연속 발행 방지"""
+    from collections import defaultdict
+    by_cafe = defaultdict(list)
+    for t in tasks:
+        by_cafe[t[2]].append(t)  # t[2] = cafe_group_id
+
+    result = []
+    queues = list(by_cafe.values())
+    while queues:
+        for q in list(queues):
+            if q:
+                result.append(q.pop(0))
+            else:
+                queues.remove(q)
+    return result
+
+
 async def execute_comment_job(
     publish_id: int,
     post_url: str,
     author_id: int,
     config: dict,
-    keyword_id: int = None
+    keyword_id: int = None,
+    cafe_group_id: int = None
 ):
-    """발행 후 댓글 자동 작성 (키워드에 매핑된 템플릿 우선 사용)"""
+    """발행 후 댓글 자동 작성 (카페별 설정 사용, 키워드 매핑 템플릿 우선)"""
     comments_per_post = config.get("comments_per_post", 6)
     comment_delay_min = config.get("comment_delay_min", 60)
     comment_delay_max = config.get("comment_delay_max", 300)
     comment_order = config.get("comment_order", "random")
     exclude_author = bool(config.get("exclude_author", 1))
+    daily_comment_limit = config.get("daily_comment_limit", 10)
 
     all_accounts = db.get_accounts()
 
@@ -502,11 +565,11 @@ async def execute_comment_job(
         logger.info("활성 댓글 템플릿 없음")
         return
 
-    # 댓글 작성 계정 선택
-    daily_comment_limit = config.get("daily_comment_limit", 10)
+    # 댓글 작성 계정 선택 (카페별 일일 댓글 한도 적용)
     comment_accounts = _select_comment_accounts(
         all_accounts, author_id, comments_per_post, comment_order, exclude_author,
-        daily_comment_limit=daily_comment_limit
+        daily_comment_limit=daily_comment_limit,
+        cafe_group_id=cafe_group_id
     )
 
     # 템플릿 중복 방지: 셔플 후 순차 사용

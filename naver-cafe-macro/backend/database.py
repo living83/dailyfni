@@ -1,6 +1,6 @@
 """
 database.py - SQLite 데이터베이스 관리
-계정, 카페 게시판, 키워드, 발행 이력 테이블
+계정, 카페, 게시판, 키워드, 발행 이력 테이블
 """
 
 import sqlite3
@@ -37,14 +37,33 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now', 'localtime'))
         );
 
+        CREATE TABLE IF NOT EXISTS cafes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cafe_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL DEFAULT '',
+            active INTEGER DEFAULT 1,
+            interval_min INTEGER DEFAULT 3,
+            interval_max INTEGER DEFAULT 15,
+            daily_post_limit INTEGER DEFAULT 3,
+            daily_comment_limit INTEGER DEFAULT 10,
+            comments_per_post INTEGER DEFAULT 6,
+            comment_delay_min INTEGER DEFAULT 60,
+            comment_delay_max INTEGER DEFAULT 300,
+            comment_order TEXT DEFAULT 'random',
+            exclude_author INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS cafe_boards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cafe_url TEXT NOT NULL,
             board_name TEXT NOT NULL,
             menu_id TEXT NOT NULL DEFAULT '',
+            cafe_group_id INTEGER,
             active INTEGER DEFAULT 1,
             last_published_at TEXT,
-            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (cafe_group_id) REFERENCES cafes(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS keywords (
@@ -134,17 +153,21 @@ def init_db():
     """)
 
     # 기존 DB 마이그레이션: 새 컬럼 추가
-    for col, default in [
-        ("max_accounts_per_run", "30"),
-        ("base_start_hour", "8"),
-        ("base_start_minute", "0"),
-        ("daily_shift_minutes", "30"),
-        ("interval_max", "15"),
-        ("daily_post_limit", "3"),
-        ("daily_comment_limit", "10"),
+    for tbl, col, default in [
+        ("schedule_config", "max_accounts_per_run", "30"),
+        ("schedule_config", "base_start_hour", "8"),
+        ("schedule_config", "base_start_minute", "0"),
+        ("schedule_config", "daily_shift_minutes", "30"),
+        ("schedule_config", "interval_max", "15"),
+        ("schedule_config", "daily_post_limit", "3"),
+        ("schedule_config", "daily_comment_limit", "10"),
+        ("cafe_boards", "cafe_group_id", "NULL"),
     ]:
         try:
-            cursor.execute(f"ALTER TABLE schedule_config ADD COLUMN {col} INTEGER DEFAULT {default}")
+            if default == "NULL":
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER")
+            else:
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER DEFAULT {default}")
         except sqlite3.OperationalError:
             pass  # 이미 존재
 
@@ -159,10 +182,47 @@ def init_db():
 
     conn.commit()
 
+    # ── 마이그레이션: 기존 cafe_boards → cafes 테이블 자동 생성 ──
+    _migrate_boards_to_cafes(conn)
+
     # 시드 데이터 삽입 (키워드·댓글 비어 있을 때만)
     seed_db(conn)
 
     conn.close()
+
+
+def _migrate_boards_to_cafes(conn):
+    """기존 cafe_boards에서 cafe_group_id가 없는 보드를 cafes 그룹으로 자동 마이그레이션"""
+    cursor = conn.cursor()
+    orphans = cursor.execute(
+        "SELECT DISTINCT cafe_url FROM cafe_boards WHERE cafe_group_id IS NULL"
+    ).fetchall()
+
+    if not orphans:
+        return
+
+    for row in orphans:
+        cafe_url = row["cafe_url"]
+        # cafes에 이미 있으면 사용, 없으면 생성
+        existing = cursor.execute(
+            "SELECT id FROM cafes WHERE cafe_id = ?", (cafe_url,)
+        ).fetchone()
+
+        if existing:
+            cafe_group_id = existing["id"]
+        else:
+            cursor.execute(
+                "INSERT INTO cafes (cafe_id, name) VALUES (?, ?)",
+                (cafe_url, cafe_url)
+            )
+            cafe_group_id = cursor.lastrowid
+
+        cursor.execute(
+            "UPDATE cafe_boards SET cafe_group_id = ? WHERE cafe_url = ? AND cafe_group_id IS NULL",
+            (cafe_group_id, cafe_url)
+        )
+
+    conn.commit()
 
 
 # ─── Accounts CRUD ────────────────────────────────────────
@@ -221,14 +281,77 @@ def update_account_last_published(account_id: int):
     conn.close()
 
 
-# ─── Cafe Boards CRUD ─────────────────────────────────────
+# ─── Cafes CRUD ──────────────────────────────────────────
 
-def add_cafe_board(cafe_url: str, board_name: str, menu_id: str = "") -> int:
+def add_cafe(cafe_id: str, name: str = "") -> int:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO cafe_boards (cafe_url, board_name, menu_id) VALUES (?, ?, ?)",
-        (cafe_url, board_name, menu_id)
+        "INSERT INTO cafes (cafe_id, name) VALUES (?, ?)",
+        (cafe_id, name or cafe_id)
+    )
+    conn.commit()
+    cid = cursor.lastrowid
+    conn.close()
+    return cid
+
+
+def get_cafes():
+    """모든 카페 + 소속 게시판 목록 반환"""
+    conn = get_connection()
+    cafes = [dict(r) for r in conn.execute("SELECT * FROM cafes ORDER BY id").fetchall()]
+    for cafe in cafes:
+        boards = conn.execute(
+            "SELECT * FROM cafe_boards WHERE cafe_group_id = ? ORDER BY id",
+            (cafe["id"],)
+        ).fetchall()
+        cafe["boards"] = [dict(b) for b in boards]
+    conn.close()
+    return cafes
+
+
+def get_cafe(cafe_id: int) -> dict:
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM cafes WHERE id = ?", (cafe_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def update_cafe_settings(cafe_id: int, **kwargs):
+    conn = get_connection()
+    allowed = [
+        "name", "active", "interval_min", "interval_max",
+        "daily_post_limit", "daily_comment_limit",
+        "comments_per_post", "comment_delay_min", "comment_delay_max",
+        "comment_order", "exclude_author"
+    ]
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        conn.close()
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn.execute(f"UPDATE cafes SET {set_clause} WHERE id = ?",
+                 list(updates.values()) + [cafe_id])
+    conn.commit()
+    conn.close()
+
+
+def delete_cafe(cafe_id: int):
+    conn = get_connection()
+    # 소속 게시판도 삭제 (ON DELETE CASCADE)
+    conn.execute("DELETE FROM cafes WHERE id = ?", (cafe_id,))
+    conn.commit()
+    conn.close()
+
+
+# ─── Cafe Boards CRUD ─────────────────────────────────────
+
+def add_cafe_board(cafe_url: str, board_name: str, menu_id: str = "", cafe_group_id: int = None) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO cafe_boards (cafe_url, board_name, menu_id, cafe_group_id) VALUES (?, ?, ?, ?)",
+        (cafe_url, board_name, menu_id, cafe_group_id)
     )
     conn.commit()
     bid = cursor.lastrowid
@@ -239,6 +362,16 @@ def add_cafe_board(cafe_url: str, board_name: str, menu_id: str = "") -> int:
 def get_cafe_boards():
     conn = get_connection()
     rows = conn.execute("SELECT * FROM cafe_boards ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_boards_by_cafe(cafe_group_id: int):
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM cafe_boards WHERE cafe_group_id = ? ORDER BY id",
+        (cafe_group_id,)
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -522,26 +655,45 @@ def get_schedule_config():
     return dict(row) if row else {}
 
 
-def get_today_post_count(account_id: int) -> int:
-    """오늘 해당 계정의 게시 횟수 반환"""
+def get_today_post_count(account_id: int, cafe_group_id: int = None) -> int:
+    """오늘 해당 계정의 게시 횟수 반환 (카페별 필터 가능)"""
     conn = get_connection()
     today = datetime.now().strftime("%Y-%m-%d")
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM publish_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
-        (account_id, f"{today}%")
-    ).fetchone()
+    if cafe_group_id is not None:
+        row = conn.execute(
+            """SELECT COUNT(*) as cnt FROM publish_history ph
+               JOIN cafe_boards cb ON ph.board_id = cb.id
+               WHERE ph.account_id = ? AND ph.status = '성공'
+               AND ph.created_at LIKE ? AND cb.cafe_group_id = ?""",
+            (account_id, f"{today}%", cafe_group_id)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM publish_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
+            (account_id, f"{today}%")
+        ).fetchone()
     conn.close()
     return row["cnt"] if row else 0
 
 
-def get_today_comment_count(account_id: int) -> int:
-    """오늘 해당 계정의 댓글 횟수 반환"""
+def get_today_comment_count(account_id: int, cafe_group_id: int = None) -> int:
+    """오늘 해당 계정의 댓글 횟수 반환 (카페별 필터 가능)"""
     conn = get_connection()
     today = datetime.now().strftime("%Y-%m-%d")
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM comment_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
-        (account_id, f"{today}%")
-    ).fetchone()
+    if cafe_group_id is not None:
+        row = conn.execute(
+            """SELECT COUNT(*) as cnt FROM comment_history ch
+               JOIN publish_history ph ON ch.publish_id = ph.id
+               JOIN cafe_boards cb ON ph.board_id = cb.id
+               WHERE ch.account_id = ? AND ch.status = '성공'
+               AND ch.created_at LIKE ? AND cb.cafe_group_id = ?""",
+            (account_id, f"{today}%", cafe_group_id)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM comment_history WHERE account_id = ? AND status = '성공' AND created_at LIKE ?",
+            (account_id, f"{today}%")
+        ).fetchone()
     conn.close()
     return row["cnt"] if row else 0
 
