@@ -226,6 +226,7 @@
     <button onclick="switchTab('keywords')">키워드 큐</button>
     <button onclick="switchTab('scheduler')">자동 스케줄</button>
     <button onclick="switchTab('history')">발행 이력</button>
+    <button onclick="switchTab('engagement')">참여 관리</button>
     <button onclick="switchTab('stats')">통계</button>
     <button onclick="switchTab('notifications')">알림</button>
   </nav>
@@ -480,6 +481,65 @@
       </div>
     </div>
 
+    <!-- ═══ 탭: 참여 관리 (공감/댓글) ═══ -->
+    <div class="tab-content" id="tab-engagement">
+      <div class="cards-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">오늘 공감</div>
+          <div id="engTodayLikes" style="font-size:24px;font-weight:800;color:#e17055">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">오늘 댓글</div>
+          <div id="engTodayComments" style="font-size:24px;font-weight:800;color:#0984e3">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">전체 참여</div>
+          <div id="engTotal" style="font-size:24px;font-weight:800;color:#6c5ce7">0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>참여 설정</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engDoLike" checked /> 공감(하트) 클릭
+          </label>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engDoComment" checked /> AI 댓글 작성
+          </label>
+          <label style="font-size:13px">
+            포스팅 수 (최대)
+            <input type="number" id="engMaxPosts" value="10" min="1" max="20"
+                   style="width:60px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />
+          </label>
+          <div></div>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engScheduleEnabled" /> 자동 스케줄 활성화
+          </label>
+          <label style="font-size:13px">
+            실행 시간
+            <input type="number" id="engHour" value="14" min="0" max="23"
+                   style="width:50px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />시
+            <input type="number" id="engMinute" value="0" min="0" max="59"
+                   style="width:50px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />분
+          </label>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="saveEngagementConfig()">설정 저장</button>
+          <button class="btn btn-secondary" onclick="runEngagementNow()" id="engRunBtn">지금 실행</button>
+        </div>
+        <div id="engRunStatus" style="margin-top:10px;font-size:13px;color:#636e72"></div>
+      </div>
+
+      <div class="card">
+        <h3>참여 이력</h3>
+        <table class="data-table">
+          <thead><tr><th>날짜</th><th>계정</th><th>글 제목</th><th>공감</th><th>댓글</th><th>에러</th></tr></thead>
+          <tbody id="engTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ═══ 탭 7: 통계 ═══ -->
     <div class="tab-content" id="tab-stats">
       <div class="cards-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
@@ -589,7 +649,7 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-nav button').forEach(el => el.classList.remove('active'));
   document.getElementById(`tab-${tabName}`).classList.add('active');
   const btns = document.querySelectorAll('.tab-nav button');
-  const tabs = ['articles','publish','accounts','keywords','scheduler','history','stats','notifications'];
+  const tabs = ['articles','publish','accounts','keywords','scheduler','history','engagement','stats','notifications'];
   const idx = tabs.indexOf(tabName);
   if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
 
@@ -599,6 +659,7 @@ function switchTab(tabName) {
   if (tabName === 'keywords') loadKeywords();
   if (tabName === 'scheduler') loadSchedulerConfig();
   if (tabName === 'history') loadHistory();
+  if (tabName === 'engagement') loadEngagement();
   if (tabName === 'stats') loadStats();
   if (tabName === 'notifications') loadNotifications();
   if (tabName === 'publish') loadBatches();
@@ -1112,6 +1173,107 @@ function syncApiKeys() {
   else localStorage.removeItem('claude_api_key');
   const badge = document.getElementById('kwApiKeySaved');
   if (val) { badge.style.display = 'inline'; setTimeout(() => badge.style.display = 'none', 2000); }
+}
+
+/* ━━━ 참여 관리 (공감/댓글) ━━━ */
+async function loadEngagement() {
+  try {
+    const [stats, history] = await Promise.all([
+      api('/api/engagement/stats'),
+      api('/api/engagement/history?limit=50'),
+    ]);
+
+    document.getElementById('engTodayLikes').textContent = stats.today_likes || 0;
+    document.getElementById('engTodayComments').textContent = stats.today_comments || 0;
+    document.getElementById('engTotal').textContent = stats.total || 0;
+
+    const tbody = document.getElementById('engTableBody');
+    if (!history || history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">참여 이력이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = history.map(h => `<tr>
+      <td style="font-size:11px">${(h.created_at||'').substring(0,16)}</td>
+      <td>${escapeHtml(h.account_name||'?')}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <a href="${escapeHtml(h.post_url)}" target="_blank" style="color:#0984e3">${escapeHtml((h.post_title||'').substring(0,40))}</a>
+      </td>
+      <td>${h.like_success ? '<span style="color:#00b894">O</span>' : '<span style="color:#d63031">X</span>'}</td>
+      <td>${h.comment_success ? '<span style="color:#00b894">O</span>' : '<span style="color:#d63031">X</span>'}
+        ${h.comment_text ? '<br><span style="font-size:10px;color:#636e72">' + escapeHtml((h.comment_text||'').substring(0,50)) + '</span>' : ''}
+      </td>
+      <td style="font-size:10px;color:#d63031;max-width:120px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.error_message||'')}</td>
+    </tr>`).join('');
+
+    // 설정 로드
+    const config = await api('/api/scheduler/config');
+    document.getElementById('engDoLike').checked = config.engagement_do_like !== 0;
+    document.getElementById('engDoComment').checked = config.engagement_do_comment !== 0;
+    document.getElementById('engMaxPosts').value = config.engagement_max_posts || 10;
+    document.getElementById('engScheduleEnabled').checked = !!config.engagement_enabled;
+    document.getElementById('engHour').value = config.engagement_hour || 14;
+    document.getElementById('engMinute').value = config.engagement_minute || 0;
+  } catch (e) {
+    console.error('참여 데이터 로드 실패:', e);
+  }
+}
+
+async function saveEngagementConfig() {
+  try {
+    await api('/api/scheduler/config', {
+      method: 'POST',
+      body: JSON.stringify({
+        engagement_enabled: document.getElementById('engScheduleEnabled').checked ? 1 : 0,
+        engagement_hour: parseInt(document.getElementById('engHour').value) || 14,
+        engagement_minute: parseInt(document.getElementById('engMinute').value) || 0,
+        engagement_max_posts: parseInt(document.getElementById('engMaxPosts').value) || 10,
+        engagement_do_like: document.getElementById('engDoLike').checked ? 1 : 0,
+        engagement_do_comment: document.getElementById('engDoComment').checked ? 1 : 0,
+      }),
+    });
+    showToast('참여 설정이 저장되었습니다');
+  } catch (e) {
+    showToast('설정 저장 실패: ' + e.message, 'error');
+  }
+}
+
+let _engPollTimer = null;
+async function runEngagementNow() {
+  const btn = document.getElementById('engRunBtn');
+  const statusEl = document.getElementById('engRunStatus');
+  btn.disabled = true;
+  btn.textContent = '실행 중...';
+  statusEl.textContent = '참여 실행을 시작합니다...';
+
+  try {
+    const res = await api('/api/engagement/run', { method: 'POST' });
+    const runId = res.run_id;
+    statusEl.textContent = res.message;
+
+    // 상태 폴링
+    _engPollTimer = setInterval(async () => {
+      try {
+        const st = await api(`/api/engagement/status/${runId}`);
+        statusEl.textContent = `진행: ${st.completed_accounts}/${st.total_accounts} 계정 | 공감 ${st.total_likes} | 댓글 ${st.total_comments}`;
+        if (st.status === 'completed') {
+          clearInterval(_engPollTimer);
+          btn.disabled = false;
+          btn.textContent = '지금 실행';
+          statusEl.textContent += ' (완료)';
+          loadEngagement();
+        }
+      } catch (e) {
+        clearInterval(_engPollTimer);
+        btn.disabled = false;
+        btn.textContent = '지금 실행';
+      }
+    }, 5000);
+  } catch (e) {
+    showToast('참여 실행 실패: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '지금 실행';
+    statusEl.textContent = '';
+  }
 }
 
 /* ━━━ 초기화 ━━━ */

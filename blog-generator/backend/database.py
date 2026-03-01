@@ -267,6 +267,36 @@ async def init_db():
             if row["cnt"] == 0:
                 await cur.execute("INSERT INTO scheduler_config (id) VALUES (1)")
 
+            # ─── 참여(공감/댓글) 이력 테이블 ───
+            await cur.execute("""
+                CREATE TABLE IF NOT EXISTS engagement_history (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    account_id BIGINT NOT NULL,
+                    post_url VARCHAR(500) NOT NULL,
+                    post_title VARCHAR(300) DEFAULT '',
+                    like_success TINYINT DEFAULT 0,
+                    comment_success TINYINT DEFAULT 0,
+                    comment_text TEXT,
+                    error_message TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """)
+
+            # ─── 참여 설정 컬럼 추가 (scheduler_config) ───
+            for col, col_def in [
+                ("engagement_enabled", "TINYINT DEFAULT 0"),
+                ("engagement_hour", "INT DEFAULT 14"),
+                ("engagement_minute", "INT DEFAULT 0"),
+                ("engagement_max_posts", "INT DEFAULT 10"),
+                ("engagement_do_like", "TINYINT DEFAULT 1"),
+                ("engagement_do_comment", "TINYINT DEFAULT 1"),
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
+                except Exception:
+                    pass  # 이미 존재
+
 
 # ─── 계정 CRUD ──────────────────────────────────────────
 
@@ -833,3 +863,69 @@ async def check_keyword_duplicate(keyword: str, days: int = 7) -> bool:
 async def get_export_data(filters: dict = None) -> list:
     """발행 이력을 CSV 내보내기용으로 조회"""
     return await get_publish_history(filters or {})
+
+
+# ─── 참여(공감/댓글) CRUD ──────────────────────────────────
+
+async def create_engagement(data: dict) -> dict:
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO engagement_history
+                   (account_id, post_url, post_title, like_success, comment_success,
+                    comment_text, error_message)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    data["account_id"], data["post_url"],
+                    data.get("post_title", ""),
+                    1 if data.get("like_success") else 0,
+                    1 if data.get("comment_success") else 0,
+                    data.get("comment_text", ""),
+                    data.get("error_message", ""),
+                ),
+            )
+            eng_id = cur.lastrowid
+            await cur.execute("SELECT * FROM engagement_history WHERE id = %s", (eng_id,))
+            return await cur.fetchone()
+
+
+async def get_engagement_history(limit: int = 100) -> list:
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT eh.*, a.account_name
+                   FROM engagement_history eh
+                   LEFT JOIN accounts a ON eh.account_id = a.id
+                   ORDER BY eh.created_at DESC
+                   LIMIT %s""",
+                (limit,),
+            )
+            return list(await cur.fetchall())
+
+
+async def get_engagement_stats() -> dict:
+    """오늘/전체 참여 통계"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(like_success) AS total_likes,
+                    SUM(comment_success) AS total_comments,
+                    SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS today_total,
+                    SUM(CASE WHEN DATE(created_at) = CURDATE() AND like_success THEN 1 ELSE 0 END) AS today_likes,
+                    SUM(CASE WHEN DATE(created_at) = CURDATE() AND comment_success THEN 1 ELSE 0 END) AS today_comments
+                FROM engagement_history
+            """)
+            row = await cur.fetchone()
+            return {
+                "total": row["total"] or 0,
+                "total_likes": int(row["total_likes"] or 0),
+                "total_comments": int(row["total_comments"] or 0),
+                "today_total": int(row["today_total"] or 0),
+                "today_likes": int(row["today_likes"] or 0),
+                "today_comments": int(row["today_comments"] or 0),
+            }

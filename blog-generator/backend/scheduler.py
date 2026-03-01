@@ -387,6 +387,84 @@ async def daily_publish_job():
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 참여(공감/댓글) 잡
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def daily_engagement_job():
+    """하루 1회 블로그 참여(공감 + AI 댓글) 자동 실행"""
+    from database import get_scheduler_config, get_accounts, get_account, create_engagement, create_notification
+    from crypto import decrypt
+    from blog_engagement import run_engagement
+
+    config = await get_scheduler_config()
+    if not config.get("engagement_enabled"):
+        return
+
+    max_posts = config.get("engagement_max_posts", 10)
+    do_like = bool(config.get("engagement_do_like", 1))
+    do_comment = bool(config.get("engagement_do_comment", 1))
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    all_accounts = await get_accounts()
+    active_accounts = [a for a in all_accounts if a.get("is_active")]
+    if not active_accounts:
+        logger.warning("참여 실행: 활성 계정 없음")
+        return
+
+    logger.info(f"참여 잡 시작: {len(active_accounts)}개 계정, 포스팅 최대 {max_posts}개")
+
+    total_likes = 0
+    total_comments = 0
+
+    for i, account in enumerate(active_accounts):
+        account_id = account["id"]
+        logger.info(f"참여 [{i+1}/{len(active_accounts)}]: 계정 {account.get('account_name', account_id)}")
+
+        try:
+            naver_id = decrypt(account["naver_id"])
+            naver_pw = decrypt(account["naver_password"])
+
+            result = await run_engagement(
+                account_id, naver_id, naver_pw,
+                api_key, max_posts, do_like, do_comment,
+            )
+
+            for eng in result.get("results", []):
+                await create_engagement({
+                    "account_id": account_id,
+                    "post_url": eng.get("post_url", ""),
+                    "post_title": eng.get("post_title", ""),
+                    "like_success": eng.get("like_success", False),
+                    "comment_success": eng.get("comment_success", False),
+                    "comment_text": eng.get("comment_text", ""),
+                    "error_message": eng.get("error", ""),
+                })
+
+            total_likes += result.get("like_count", 0)
+            total_comments += result.get("comment_count", 0)
+
+        except Exception as e:
+            logger.error(f"참여 오류 (계정 {account_id}): {e}")
+
+        # 계정 간 대기 (3~5분)
+        if i < len(active_accounts) - 1:
+            delay = random.uniform(180, 300)
+            logger.info(f"다음 계정까지 {delay:.0f}초 대기")
+            await asyncio.sleep(delay)
+
+    logger.info(f"참여 잡 완료: 공감 {total_likes}, 댓글 {total_comments}")
+
+    try:
+        await create_notification({
+            "type": "success",
+            "title": "참여 완료",
+            "message": f"공감 {total_likes}개, 댓글 {total_comments}개 완료",
+        })
+    except Exception:
+        pass
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 스케줄러 제어
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -424,23 +502,35 @@ async def start_scheduler():
         replace_existing=True,
     )
 
+    # 3) 참여(공감/댓글) 잡
+    eng_enabled = config.get("engagement_enabled", 0)
+    eng_h = config.get("engagement_hour", 14)
+    eng_m = config.get("engagement_minute", 0)
+    if eng_enabled:
+        scheduler.add_job(
+            daily_engagement_job,
+            "cron",
+            hour=eng_h,
+            minute=eng_m,
+            id="daily_engagement",
+            replace_existing=True,
+        )
+
     if not scheduler.running:
         scheduler.start()
     _is_running = True
-    logger.info(f"스케줄러 시작: 글 생성 {gen_h:02d}:{gen_m:02d}, 발행 {start_h:02d}:{start_m:02d}")
+    eng_str = f", 참여 {eng_h:02d}:{eng_m:02d}" if eng_enabled else ""
+    logger.info(f"스케줄러 시작: 글 생성 {gen_h:02d}:{gen_m:02d}, 발행 {start_h:02d}:{start_m:02d}{eng_str}")
 
 
 async def stop_scheduler():
     """스케줄러 중지"""
     global _is_running
-    try:
-        scheduler.remove_job("article_generation")
-    except Exception:
-        pass
-    try:
-        scheduler.remove_job("daily_publish")
-    except Exception:
-        pass
+    for job_id in ("article_generation", "daily_publish", "daily_engagement"):
+        try:
+            scheduler.remove_job(job_id)
+        except Exception:
+            pass
     _is_running = False
     logger.info("스케줄러 중지")
 

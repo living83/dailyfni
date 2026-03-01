@@ -1105,6 +1105,139 @@ async def delete_notification(nid: int):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 참여(공감/댓글) API
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 참여 실행 상태 추적
+_engagement_status = {}
+
+
+@app.post("/api/engagement/run")
+async def run_engagement_now(background_tasks: BackgroundTasks):
+    """수동으로 참여(공감/댓글) 실행"""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    # 스케줄러 설정에서 참여 옵션 읽기
+    try:
+        config = await db.get_scheduler_config()
+        max_posts = config.get("engagement_max_posts", 10)
+        do_like = bool(config.get("engagement_do_like", 1))
+        do_comment = bool(config.get("engagement_do_comment", 1))
+    except Exception:
+        max_posts = 10
+        do_like = True
+        do_comment = True
+
+    # 활성 계정 목록
+    all_accounts = await db.get_accounts()
+    active_accounts = [a for a in all_accounts if a.get("is_active")]
+    if not active_accounts:
+        raise HTTPException(status_code=400, detail="활성 계정이 없습니다.")
+
+    run_id = int(datetime.now().timestamp())
+    _engagement_status[run_id] = {
+        "status": "running",
+        "total_accounts": len(active_accounts),
+        "completed_accounts": 0,
+        "total_likes": 0,
+        "total_comments": 0,
+    }
+
+    background_tasks.add_task(
+        _run_engagement_all_accounts,
+        run_id, active_accounts, api_key, max_posts, do_like, do_comment,
+    )
+    return {"run_id": run_id, "message": f"{len(active_accounts)}개 계정으로 참여가 시작되었습니다."}
+
+
+async def _run_engagement_all_accounts(
+    run_id: int, accounts: list, api_key: str,
+    max_posts: int, do_like: bool, do_comment: bool,
+):
+    """모든 활성 계정으로 순차 참여 실행"""
+    from blog_engagement import run_engagement
+
+    total_likes = 0
+    total_comments = 0
+
+    for i, account in enumerate(accounts):
+        account_id = account["id"]
+        logger.info(f"참여 실행 [{i+1}/{len(accounts)}]: 계정 {account.get('account_name', account_id)}")
+
+        try:
+            naver_id = decrypt(account["naver_id"])
+            naver_pw = decrypt(account["naver_password"])
+
+            result = await run_engagement(
+                account_id, naver_id, naver_pw,
+                api_key, max_posts, do_like, do_comment,
+            )
+
+            # DB에 이력 저장
+            for eng in result.get("results", []):
+                await db.create_engagement(
+                    {
+                        "account_id": account_id,
+                        "post_url": eng.get("post_url", ""),
+                        "post_title": eng.get("post_title", ""),
+                        "like_success": eng.get("like_success", False),
+                        "comment_success": eng.get("comment_success", False),
+                        "comment_text": eng.get("comment_text", ""),
+                        "error_message": eng.get("error", ""),
+                    }
+                )
+
+            total_likes += result.get("like_count", 0)
+            total_comments += result.get("comment_count", 0)
+
+        except Exception as e:
+            logger.error(f"참여 실행 오류 (계정 {account_id}): {e}")
+
+        _engagement_status[run_id]["completed_accounts"] = i + 1
+        _engagement_status[run_id]["total_likes"] = total_likes
+        _engagement_status[run_id]["total_comments"] = total_comments
+
+        # 계정 간 대기 (3~5분)
+        if i < len(accounts) - 1:
+            delay = random.uniform(180, 300)
+            logger.info(f"다음 계정까지 {delay:.0f}초 대기")
+            await asyncio.sleep(delay)
+
+    _engagement_status[run_id]["status"] = "completed"
+    logger.info(f"참여 완료: 공감 {total_likes}, 댓글 {total_comments}")
+
+    try:
+        await db.create_notification({
+            "type": "success",
+            "title": "참여 완료",
+            "message": f"공감 {total_likes}개, 댓글 {total_comments}개 완료",
+        })
+    except Exception:
+        pass
+
+
+@app.get("/api/engagement/status/{run_id}")
+async def get_engagement_status(run_id: int):
+    """참여 실행 상태 조회"""
+    status = _engagement_status.get(run_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="실행 상태를 찾을 수 없습니다.")
+    return status
+
+
+@app.get("/api/engagement/history")
+async def get_engagement_history(limit: int = Query(100, ge=1, le=500)):
+    """참여 이력 조회"""
+    return await db.get_engagement_history(limit)
+
+
+@app.get("/api/engagement/stats")
+async def get_engagement_stats():
+    """참여 통계"""
+    return await db.get_engagement_stats()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 헬스체크
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
