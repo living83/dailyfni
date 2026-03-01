@@ -81,6 +81,24 @@ app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
 _background_tasks: set = set()
 
 
+def _on_task_done(task):
+    """background task 완료/실패 시 콘솔 출력"""
+    _background_tasks.discard(task)
+    try:
+        if task.cancelled():
+            print(f"[TASK] 취소됨", flush=True)
+            logger.warning("[TASK] background task 취소됨")
+        elif task.exception():
+            exc = task.exception()
+            print(f"[TASK] 오류 발생: {exc}", flush=True)
+            logger.error(f"[TASK] background task 오류: {exc}", exc_info=exc)
+        else:
+            print(f"[TASK] 정상 완료", flush=True)
+            logger.info("[TASK] background task 정상 완료")
+    except Exception as e:
+        print(f"[TASK] done callback 오류: {e}", flush=True)
+
+
 # ─── 422 에러 상세 로그 핸들러 ──────────────────────────────
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -160,6 +178,7 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.on_event("startup")
 async def startup():
+    print("=== DailyFNI v2026-03-01-B ===", flush=True)
     try:
         await db.init_db()
         logger.info("데이터베이스 초기화 완료")
@@ -416,11 +435,13 @@ async def generate_batch():
     if not kw:
         raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
 
+    print(f"[generate-batch] 키워드 '{kw['keyword']}' 생성 task 시작", flush=True)
     logger.info(f"[generate-batch] 키워드 '{kw['keyword']}' 생성 task 시작")
     from scheduler import article_generation_job
     task = asyncio.create_task(article_generation_job(manual=True))
     _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    task.add_done_callback(_on_task_done)
+    print(f"[generate-batch] task 생성 완료, 현재 background tasks: {len(_background_tasks)}개", flush=True)
     return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
 
 
@@ -448,7 +469,7 @@ async def publish_ready_articles():
     from scheduler import daily_publish_job
     task = asyncio.create_task(daily_publish_job(manual=True))
     _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    task.add_done_callback(_on_task_done)
     return {"message": f"{len(batches)}개 배치의 글 발행이 시작되었습니다.", "batch_count": len(batches)}
 
 

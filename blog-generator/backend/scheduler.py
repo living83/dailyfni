@@ -66,6 +66,7 @@ async def article_generation_job(manual: bool = False):
     """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
     manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다."""
     try:
+        print(f"[scheduler] article_generation_job 시작 (manual={manual})", flush=True)
         logger.info(f"article_generation_job 시작 (manual={manual})")
         from database import (
             get_next_keyword, update_keyword, get_accounts,
