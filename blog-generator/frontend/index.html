@@ -1255,7 +1255,7 @@ async function saveEngagementConfig() {
       .map(cb => parseInt(cb.value));
 
     await api('/api/scheduler/config', {
-      method: 'POST',
+      method: 'PUT',
       body: JSON.stringify({
         engagement_enabled: document.getElementById('engScheduleEnabled').checked ? 1 : 0,
         engagement_hour: parseInt(document.getElementById('engHour').value) || 14,

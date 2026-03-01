@@ -359,6 +359,13 @@ class SchedulerConfigUpdate(BaseModel):
     weekend_low_prob: Optional[int] = None
     weekend_prob_percent: Optional[int] = None
     force_rest_after_days: Optional[int] = None
+    engagement_enabled: Optional[int] = None
+    engagement_hour: Optional[int] = None
+    engagement_minute: Optional[int] = None
+    engagement_max_posts: Optional[int] = None
+    engagement_do_like: Optional[int] = None
+    engagement_do_comment: Optional[int] = None
+    engagement_account_ids: Optional[List[int]] = None
 
     @validator("start_hour", "end_hour")
     def check_hour(cls, v):
