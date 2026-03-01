@@ -62,22 +62,24 @@ async def _should_skip_today(config: dict) -> bool:
 # 1단계: 글 사전 생성 잡 (발행 2시간 전 실행)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def article_generation_job():
-    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장"""
+async def article_generation_job(manual: bool = False):
+    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
+    manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다."""
     from database import (
         get_next_keyword, update_keyword, get_accounts,
         create_batch, create_publish_history, update_batch,
         create_notification, get_categories,
     )
 
-    config = await _get_config()
-    if not config.get("is_active"):
-        return
+    if not manual:
+        config = await _get_config()
+        if not config.get("is_active"):
+            return
 
-    # 오늘 건너뛸지 확인
-    if await _should_skip_today(config):
-        await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
-        return
+        # 오늘 건너뛸지 확인
+        if await _should_skip_today(config):
+            await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
+            return
 
     # 다음 키워드 가져오기
     kw = await get_next_keyword()
@@ -196,8 +198,9 @@ async def article_generation_job():
 # 2단계: 사전 생성된 글 발행 잡 (스케줄 시간에 실행)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def daily_publish_job():
-    """사전 생성된 글(status='generated')을 네이버 계정별로 순차 발행"""
+async def daily_publish_job(manual: bool = False):
+    """사전 생성된 글(status='generated')을 네이버 계정별로 순차 발행
+    manual=True이면 스케줄러 활성 여부 체크를 무시한다."""
     from database import (
         get_ready_batches, get_generated_articles,
         update_publish_history, update_batch,
@@ -208,8 +211,9 @@ async def daily_publish_job():
     from publisher import run_publish_task
 
     config = await _get_config()
-    if not config.get("is_active"):
-        return
+    if not manual:
+        if not config.get("is_active"):
+            return
 
     # 발행 대기 중인 배치 가져오기
     batches = await get_ready_batches()

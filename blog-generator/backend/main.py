@@ -414,7 +414,7 @@ async def generate_batch(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
 
     from scheduler import article_generation_job
-    background_tasks.add_task(article_generation_job)
+    background_tasks.add_task(article_generation_job, manual=True)
     return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
 
 
@@ -440,7 +440,7 @@ async def publish_ready_articles(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail="발행할 사전 생성 글이 없습니다.")
 
     from scheduler import daily_publish_job
-    background_tasks.add_task(daily_publish_job)
+    background_tasks.add_task(daily_publish_job, manual=True)
     return {"message": f"{len(batches)}개 배치의 글 발행이 시작되었습니다.", "batch_count": len(batches)}
 
 
