@@ -107,6 +107,30 @@ async def dismiss_blocking_popup(target, description=""):
     return dismissed
 
 
+async def _dismiss_all_overlays(page, editor):
+    """클릭 차단하는 모든 오버레이 제거 (투명 dim, 플로팅 메뉴, 에러 팝업).
+    발행/폰트변경/링크삽입 등 중요 클릭 전에 호출하여 pointer event 차단을 방지."""
+    for target in ([editor, page] if editor != page else [editor]):
+        try:
+            await target.evaluate('''() => {
+                // 플로팅 머티리얼 메뉴
+                document.querySelectorAll(
+                    '.se-floating-material-menu, .se-floating-material-menu-buttons'
+                ).forEach(el => el.remove());
+                // 투명 dim 레이어 ("null 글감" 등 에러 팝업의 오버레이)
+                document.querySelectorAll('.se-popup-dim-transparent').forEach(el => el.remove());
+                // 에러/경고 팝업 닫기 버튼 클릭 후 제거
+                document.querySelectorAll(
+                    '.se-popup-alert, .se-popup-alert-confirm'
+                ).forEach(popup => {
+                    const btn = popup.querySelector('button');
+                    if (btn) btn.click();
+                });
+            }''')
+        except Exception:
+            pass
+
+
 async def capture_debug(page, step_name):
     """디버그용 스크린샷 저장"""
     try:
@@ -617,7 +641,9 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
             logger.warning("폰트 크기 버튼 미발견")
             return False
 
-        await font_btn.click()
+        # 차단 오버레이 제거 후 클릭 (null 글감 팝업 등 대응)
+        await _dismiss_all_overlays(page, editor)
+        await font_btn.click(force=True)
         await random_delay(0.6, 1.0)  # 드롭다운 렌더링 충분히 대기
 
         # 2. 드롭다운에서 크기 선택
@@ -671,7 +697,8 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
 
             # 재시도: 폰트 버튼 다시 클릭 + JS로 직접 선택
             try:
-                await font_btn.click()
+                await _dismiss_all_overlays(page, editor)
+                await font_btn.click(force=True)
                 await random_delay(0.8, 1.2)
                 for target in ([editor, page] if editor != page else [editor]):
                     js_retry = await target.evaluate(f'''() => {{
@@ -701,7 +728,8 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
             logger.warning(f"폰트 크기 {size} 항목 미발견 (재시도 포함)")
             return False
 
-        await size_item.click()
+        await _dismiss_all_overlays(page, editor)
+        await size_item.click(force=True)
         await random_delay(0.2, 0.3)
         logger.info(f"폰트 크기 변경: {size}")
         return True
@@ -826,17 +854,8 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
     await page.keyboard.press("Shift+Home")
     await random_delay(0.3, 0.5)
 
-    # 플로팅 머티리얼 메뉴 제거 (pointer events 차단 방지)
-    for target in ([editor, page] if editor != page else [editor]):
-        try:
-            await target.evaluate('''() => {
-                const menus = document.querySelectorAll(
-                    '.se-floating-material-menu, .se-floating-material-menu-buttons'
-                );
-                menus.forEach(m => m.remove());
-            }''')
-        except Exception:
-            pass
+    # 차단 오버레이 전체 제거 (플로팅 메뉴 + 에러 팝업 dim)
+    await _dismiss_all_overlays(page, editor)
 
     await page.keyboard.press("Control+k")
     await random_delay(1, 2)
@@ -955,17 +974,8 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                 await page.keyboard.press("Enter")
                 await random_delay(2, 3)
 
-            # 확인 버튼 클릭 전 플로팅 메뉴 재거 (대기 중 다시 나타날 수 있음)
-            for target in targets:
-                try:
-                    await target.evaluate('''() => {
-                        const menus = document.querySelectorAll(
-                            '.se-floating-material-menu, .se-floating-material-menu-buttons'
-                        );
-                        menus.forEach(m => m.remove());
-                    }''')
-                except Exception:
-                    pass
+            # 확인 버튼 클릭 전 오버레이 재제거 (대기 중 다시 나타날 수 있음)
+            await _dismiss_all_overlays(page, editor)
 
             # 확인 버튼
             confirm_selectors = [
@@ -1060,17 +1070,8 @@ async def se_input_tags(page, editor, tags: list):
         except Exception:
             pass
 
-        # 플로팅 메뉴 제거 (태그 입력 방해 방지)
-        for target in ([editor, page] if editor != page else [editor]):
-            try:
-                await target.evaluate('''() => {
-                    const menus = document.querySelectorAll(
-                        '.se-floating-material-menu, .se-floating-material-menu-buttons'
-                    );
-                    menus.forEach(m => m.remove());
-                }''')
-            except Exception:
-                pass
+        # 차단 오버레이 전체 제거 (태그 입력 방해 방지)
+        await _dismiss_all_overlays(page, editor)
 
         tag_selectors = [
             'input[placeholder*="태그"]',
@@ -1187,7 +1188,8 @@ async def se_click_publish(page, editor) -> bool:
             ], timeout=5000, description="발행 버튼(메인)")
 
         if publish_btn:
-            await publish_btn.click()
+            await _dismiss_all_overlays(page, editor)
+            await publish_btn.click(force=True)
             publish_clicked = True
         else:
             logger.info("발행 버튼 JS 폴백 시도")
@@ -1229,7 +1231,8 @@ async def se_click_publish(page, editor) -> bool:
                 'button:has-text("발행하기")',
             ], timeout=3000, description="발행 확인(에디터)")
             if confirm_btn:
-                await confirm_btn.click()
+                await _dismiss_all_overlays(page, editor)
+                await confirm_btn.click(force=True)
                 confirm_clicked = True
                 logger.info("발행 확인 클릭 (에디터 셀렉터)")
 
@@ -1241,7 +1244,8 @@ async def se_click_publish(page, editor) -> bool:
                 '.confirm_btn',
             ], timeout=3000, description="발행 확인(메인)")
             if confirm_btn:
-                await confirm_btn.click()
+                await _dismiss_all_overlays(page, editor)
+                await confirm_btn.click(force=True)
                 confirm_clicked = True
                 logger.info("발행 확인 클릭 (메인 셀렉터)")
 
