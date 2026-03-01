@@ -77,6 +77,9 @@ DEFAULT_FOOTER_LINK_TEXT = os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
 
 app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
 
+# asyncio.create_task 참조 보관 (GC 방지)
+_background_tasks: set = set()
+
 
 # ─── 422 에러 상세 로그 핸들러 ──────────────────────────────
 @app.exception_handler(RequestValidationError)
@@ -413,8 +416,11 @@ async def generate_batch():
     if not kw:
         raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
 
+    logger.info(f"[generate-batch] 키워드 '{kw['keyword']}' 생성 task 시작")
     from scheduler import article_generation_job
-    asyncio.create_task(article_generation_job(manual=True))
+    task = asyncio.create_task(article_generation_job(manual=True))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
 
 
@@ -440,7 +446,9 @@ async def publish_ready_articles():
         raise HTTPException(status_code=404, detail="발행할 사전 생성 글이 없습니다.")
 
     from scheduler import daily_publish_job
-    asyncio.create_task(daily_publish_job(manual=True))
+    task = asyncio.create_task(daily_publish_job(manual=True))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return {"message": f"{len(batches)}개 배치의 글 발행이 시작되었습니다.", "batch_count": len(batches)}
 
 
