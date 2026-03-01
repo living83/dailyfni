@@ -524,6 +524,15 @@
                    style="width:50px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />분
           </label>
         </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px">참여 실행 계정 선택</div>
+          <div id="engAccountList" style="display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:#636e72">
+            계정을 불러오는 중...
+          </div>
+          <div style="font-size:11px;color:#b2bec3;margin-top:4px">선택하지 않으면 모든 활성 계정으로 실행됩니다.</div>
+        </div>
+
         <div style="display:flex;gap:8px">
           <button class="btn btn-primary" onclick="saveEngagementConfig()">설정 저장</button>
           <button class="btn btn-secondary" onclick="runEngagementNow()" id="engRunBtn">지금 실행</button>
@@ -1213,6 +1222,28 @@ async function loadEngagement() {
     document.getElementById('engScheduleEnabled').checked = !!config.engagement_enabled;
     document.getElementById('engHour').value = config.engagement_hour || 14;
     document.getElementById('engMinute').value = config.engagement_minute || 0;
+
+    // 계정 목록 로드 및 체크박스 렌더링
+    try {
+      const accounts = await api('/api/accounts');
+      const selectedIds = config.engagement_account_ids || [];
+      const container = document.getElementById('engAccountList');
+      if (!accounts || accounts.length === 0) {
+        container.innerHTML = '<span style="color:#b2bec3">등록된 계정이 없습니다. 계정 관리 탭에서 추가해주세요.</span>';
+      } else {
+        container.innerHTML = accounts.map(acc => {
+          const checked = selectedIds.includes(acc.id) ? 'checked' : '';
+          const inactive = !acc.is_active ? ' (비활성)' : '';
+          const opacity = !acc.is_active ? 'opacity:0.5;' : '';
+          return `<label style="display:flex;align-items:center;gap:4px;padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;cursor:pointer;${opacity}">
+            <input type="checkbox" class="eng-account-cb" value="${acc.id}" ${checked} ${!acc.is_active ? 'disabled' : ''} />
+            ${escapeHtml(acc.account_name)}${inactive}
+          </label>`;
+        }).join('');
+      }
+    } catch (e) {
+      document.getElementById('engAccountList').innerHTML = '<span style="color:#d63031">계정 목록 로드 실패</span>';
+    }
   } catch (e) {
     console.error('참여 데이터 로드 실패:', e);
   }
@@ -1220,6 +1251,9 @@ async function loadEngagement() {
 
 async function saveEngagementConfig() {
   try {
+    const selectedAccountIds = Array.from(document.querySelectorAll('.eng-account-cb:checked'))
+      .map(cb => parseInt(cb.value));
+
     await api('/api/scheduler/config', {
       method: 'POST',
       body: JSON.stringify({
@@ -1229,6 +1263,7 @@ async function saveEngagementConfig() {
         engagement_max_posts: parseInt(document.getElementById('engMaxPosts').value) || 10,
         engagement_do_like: document.getElementById('engDoLike').checked ? 1 : 0,
         engagement_do_comment: document.getElementById('engDoComment').checked ? 1 : 0,
+        engagement_account_ids: selectedAccountIds,
       }),
     });
     showToast('참여 설정이 저장되었습니다');

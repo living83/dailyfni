@@ -291,6 +291,7 @@ async def init_db():
                 ("engagement_max_posts", "INT DEFAULT 10"),
                 ("engagement_do_like", "TINYINT DEFAULT 1"),
                 ("engagement_do_comment", "TINYINT DEFAULT 1"),
+                ("engagement_account_ids", "TEXT DEFAULT NULL"),
             ]:
                 try:
                     await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
@@ -775,6 +776,13 @@ async def get_scheduler_config() -> dict:
             if row:
                 d = dict(row)
                 d["days_of_week"] = json.loads(d["days_of_week"])
+                if d.get("engagement_account_ids"):
+                    try:
+                        d["engagement_account_ids"] = json.loads(d["engagement_account_ids"])
+                    except (json.JSONDecodeError, TypeError):
+                        d["engagement_account_ids"] = []
+                else:
+                    d["engagement_account_ids"] = []
                 return d
             return {}
 
@@ -786,6 +794,8 @@ async def update_scheduler_config(data: dict):
         if key in ("id",):
             continue
         if key == "days_of_week" and isinstance(val, list):
+            val = json.dumps(val)
+        if key == "engagement_account_ids" and isinstance(val, list):
             val = json.dumps(val)
         fields.append(f"{key} = %s")
         values.append(val)

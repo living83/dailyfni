@@ -1128,11 +1128,16 @@ async def run_engagement_now(background_tasks: BackgroundTasks):
         do_like = True
         do_comment = True
 
-    # 활성 계정 목록
+    # 활성 계정 목록 (설정에서 지정된 계정만 필터링)
     all_accounts = await db.get_accounts()
     active_accounts = [a for a in all_accounts if a.get("is_active")]
+
+    selected_ids = config.get("engagement_account_ids", [])
+    if selected_ids:
+        active_accounts = [a for a in active_accounts if a["id"] in selected_ids]
+
     if not active_accounts:
-        raise HTTPException(status_code=400, detail="활성 계정이 없습니다.")
+        raise HTTPException(status_code=400, detail="참여에 사용할 활성 계정이 없습니다. 참여 설정에서 계정을 선택해주세요.")
 
     run_id = int(datetime.now().timestamp())
     _engagement_status[run_id] = {
