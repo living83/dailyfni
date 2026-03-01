@@ -662,11 +662,12 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                                              timeout=2000, description=f"폰트 크기 {size}(페이지)")
 
         if not size_item:
-            # JS 폴백: 드롭다운/팝업 내에서 크기 값 매칭
+            # JS 폴백: 문서 전체에서 크기 값 매칭 (팝업 클래스에 의존하지 않음)
             js_clicked = False
             for target in ([editor, page] if editor != page else [editor]):
                 try:
                     js_clicked = await target.evaluate(f'''() => {{
+                        // 방법1: 알려진 팝업 컨테이너 내부 검색
                         const popups = document.querySelectorAll(
                             '.se-popup, .se-popup-font-size, [class*="font_size"], [class*="fontSize"]'
                         );
@@ -675,7 +676,22 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                             for (const item of items) {{
                                 const val = item.dataset?.value || item.textContent?.trim();
                                 if (val === '{size_str}') {{
+                                    item.scrollIntoView({{block: "center"}});
                                     item.click();
+                                    return true;
+                                }}
+                            }}
+                        }}
+                        // 방법2: 전체 문서에서 보이는 li 검색 (드롭다운 클래스명이 예상과 다를 때)
+                        const allLis = document.querySelectorAll('li, [role="option"]');
+                        for (const li of allLis) {{
+                            const val = (li.dataset?.value || '').trim();
+                            const text = (li.textContent || '').trim();
+                            if (val === '{size_str}' || text === '{size_str}') {{
+                                const rect = li.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {{
+                                    li.scrollIntoView({{block: "center"}});
+                                    li.click();
                                     return true;
                                 }}
                             }}
@@ -702,17 +718,18 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
                 await random_delay(0.8, 1.2)
                 for target in ([editor, page] if editor != page else [editor]):
                     js_retry = await target.evaluate(f'''() => {{
-                        // 모든 li, button 중 텍스트가 정확히 일치하는 항목 클릭
-                        const items = document.querySelectorAll(
-                            '.se-popup li, .se-popup button, [class*="font"] li, '
-                            + '[class*="font"] button, [data-value], [role="option"]'
-                        );
+                        // 전체 문서에서 보이는 li/option 검색
+                        const items = document.querySelectorAll('li, [data-value], [role="option"]');
                         for (const item of items) {{
                             const val = (item.dataset?.value || '').trim();
                             const text = (item.textContent || '').trim();
                             if (val === '{size_str}' || text === '{size_str}') {{
-                                item.click();
-                                return true;
+                                const rect = item.getBoundingClientRect();
+                                if (rect.width > 0 && rect.height > 0) {{
+                                    item.scrollIntoView({{block: "center"}});
+                                    item.click();
+                                    return true;
+                                }}
                             }}
                         }}
                         return false;
@@ -739,24 +756,33 @@ async def _se_set_font_size(page, editor, size: int) -> bool:
         return False
     finally:
         # ★ 핵심: 드롭다운 조작 후 에디터 본문에 포커스/커서 복원
-        # 드롭다운 클릭으로 포커스가 툴바에 남으면 이후 keyboard.type()이
-        # 에디터가 아닌 곳으로 전송되어 본문이 사라짐
+        # JS .focus()만으로는 Playwright의 keyboard 라우팅이 iframe으로 전환되지 않음
+        # 반드시 Playwright .click()으로 프레임 레벨 포커스를 이전해야 함
         try:
-            await editor.evaluate('''() => {
+            last_p_handle = await editor.evaluate_handle('''() => {
                 const paragraphs = document.querySelectorAll('.se-text-paragraph');
-                if (paragraphs.length > 0) {
-                    const last = paragraphs[paragraphs.length - 1];
-                    last.focus();
-                    const sel = window.getSelection();
-                    if (sel) {
-                        const range = document.createRange();
-                        range.selectNodeContents(last);
-                        range.collapse(false);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                    }
-                }
+                return paragraphs.length > 0 ? paragraphs[paragraphs.length - 1] : null;
             }''')
+            last_p = last_p_handle.as_element()
+            if last_p:
+                # Playwright click으로 프레임 레벨 포커스 전환
+                await last_p.click(force=True)
+                await asyncio.sleep(0.15)
+                # click이 요소 중앙에 커서를 놓으므로 문단 끝으로 재배치
+                await editor.evaluate('''() => {
+                    const paragraphs = document.querySelectorAll('.se-text-paragraph');
+                    if (paragraphs.length > 0) {
+                        const last = paragraphs[paragraphs.length - 1];
+                        const sel = window.getSelection();
+                        if (sel) {
+                            const range = document.createRange();
+                            range.selectNodeContents(last);
+                            range.collapse(false);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    }
+                }''')
         except Exception:
             pass
 
@@ -842,6 +868,33 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                        "스케줄러 설정 또는 .env의 DEFAULT_FOOTER_LINK를 확인하세요.")
         return
 
+    # ★ 에디터 포커스 확보 (폰트 변경/본문 입력 후 포커스가 다른 곳에 있을 수 있음)
+    try:
+        last_p_handle = await editor.evaluate_handle('''() => {
+            const paragraphs = document.querySelectorAll('.se-text-paragraph');
+            return paragraphs.length > 0 ? paragraphs[paragraphs.length - 1] : null;
+        }''')
+        last_p = last_p_handle.as_element()
+        if last_p:
+            await last_p.click(force=True)
+            await asyncio.sleep(0.15)
+            await editor.evaluate('''() => {
+                const paragraphs = document.querySelectorAll('.se-text-paragraph');
+                if (paragraphs.length > 0) {
+                    const last = paragraphs[paragraphs.length - 1];
+                    const sel = window.getSelection();
+                    if (sel) {
+                        const range = document.createRange();
+                        range.selectNodeContents(last);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }
+            }''')
+    except Exception:
+        pass
+
     await page.keyboard.press("Enter")
     await page.keyboard.press("Enter")
     link_display = footer_link_text if footer_link_text else footer_link
@@ -882,14 +935,79 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
             if link_input:
                 break
 
+        # Ctrl+K 실패 시 툴바 링크 버튼 폴백
+        if not link_input:
+            logger.info("Ctrl+K 링크 다이얼로그 미표시, 툴바 링크 버튼 시도")
+            await page.keyboard.press("Escape")
+            await random_delay(0.3, 0.5)
+            link_btn_selectors = [
+                'button[data-name="link"]',
+                'button[data-name="hyperlink"]',
+                '.se-toolbar button[aria-label*="링크"]',
+                '.se-toolbar button[aria-label*="link"]',
+            ]
+            link_btn = None
+            for target in targets:
+                link_btn = await try_selectors(target, link_btn_selectors,
+                                                timeout=2000, description=f"툴바 링크 버튼({'에디터' if target == editor else '페이지'})")
+                if link_btn:
+                    break
+            if not link_btn:
+                # JS로 링크 관련 버튼 검색
+                for target in targets:
+                    try:
+                        btn_handle = await target.evaluate_handle('''() => {
+                            const btns = document.querySelectorAll(
+                                '.se-toolbar button, [class*="toolbar"] button'
+                            );
+                            for (const btn of btns) {
+                                const name = (btn.dataset.name || '').toLowerCase();
+                                const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+                                if (name.includes('link') || label.includes('링크') || label.includes('link')) {
+                                    return btn;
+                                }
+                            }
+                            return null;
+                        }''')
+                        if btn_handle:
+                            el = btn_handle.as_element()
+                            if el:
+                                link_btn = el
+                                logger.info("툴바 링크 버튼 JS 폴백 발견")
+                                break
+                    except Exception:
+                        continue
+            if link_btn:
+                await _dismiss_all_overlays(page, editor)
+                await link_btn.click(force=True)
+                await random_delay(1, 2)
+                # 다시 링크 입력 필드 검색
+                for target in targets:
+                    link_input = await try_selectors(target, link_input_selectors,
+                                                      timeout=3000, description=f"링크 입력 재시도({'에디터' if target == editor else '페이지'})")
+                    if link_input:
+                        break
+
         if not link_input:
             for target in targets:
                 try:
                     handle = await target.evaluate_handle('''() => {
-                        const popup = document.querySelector('.se-popup-link, .se-popup, [class*="link_layer"]');
+                        // 최근 나타난 팝업/다이얼로그 내 input 검색
+                        const popup = document.querySelector(
+                            '.se-popup-link, .se-popup, [class*="link_layer"], '
+                            + '[class*="layer_link"], [class*="popup"]'
+                        );
                         if (popup) {
                             const inp = popup.querySelector('input');
                             if (inp) return inp;
+                        }
+                        // 전체 보이는 input 중 최근 추가된 것
+                        const inputs = document.querySelectorAll('input[type="text"], input[type="url"], input:not([type])');
+                        for (const inp of inputs) {
+                            const rect = inp.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                return inp;
+                            }
                         }
                         return null;
                     }''')
@@ -897,7 +1015,7 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
                         el = handle.as_element()
                         if el:
                             link_input = el
-                            logger.info(f"링크 입력 JS 폴백 발견")
+                            logger.info("링크 입력 JS 폴백 발견")
                             break
                 except Exception:
                     continue
