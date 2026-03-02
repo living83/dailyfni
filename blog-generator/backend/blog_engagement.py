@@ -69,12 +69,59 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
 
         logger.info(f"블로그 페이지 도착: {page.url}")
 
-        # ── 2단계: 주제별 보기 이동 ──
-        # 블로그 섹션의 "주제별 보기" 링크는 SPA 내부 라우팅(home#)이라
-        # page.goto()로 이동하면 빈 페이지가 됨 → ThemePost.naver 직접 이동
-        await page.goto("https://section.blog.naver.com/ThemePost.naver",
-                        wait_until="domcontentloaded", timeout=15000)
-        await random_delay(2, 3)
+        # ── 2단계: "주제별 보기" 탭 클릭 (SPA 내부 네비게이션) ──
+        # section.blog.naver.com은 React SPA라서 page.goto()로 이동하면
+        # 빈 SPA 쉘만 로드됨. 반드시 SPA 내부에서 클릭해야 올바르게 라우팅됨.
+
+        # SPA 완전 로딩 대기
+        await page.wait_for_load_state("load", timeout=10000)
+        await random_delay(1, 2)
+
+        clicked_topic = False
+
+        # 방법 1: Playwright 텍스트 셀렉터로 클릭
+        for selector in [
+            'a:has-text("주제별 보기")',
+            'text=주제별 보기',
+            'a:has-text("주제별보기")',
+        ]:
+            try:
+                await page.click(selector, timeout=3000)
+                clicked_topic = True
+                logger.info(f"주제별 보기 탭 클릭 성공: {selector}")
+                break
+            except Exception:
+                continue
+
+        # 방법 2: JS 클릭 폴백
+        if not clicked_topic:
+            clicked = await page.evaluate('''() => {
+                const links = document.querySelectorAll('a, button, [role="tab"]');
+                for (const el of links) {
+                    const text = (el.textContent || '').trim();
+                    if (text === '주제별 보기' || text === '주제별보기' ||
+                        (text.includes('주제별') && text.includes('보기'))) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }''')
+            if clicked:
+                clicked_topic = True
+                logger.info("주제별 보기 탭 클릭 성공 (JS)")
+
+        if clicked_topic:
+            # SPA 라우팅 완료 대기
+            await random_delay(2, 3)
+        else:
+            # 최종 폴백: ThemePost.naver 직접 이동 (SPA 재로드)
+            logger.warning("주제별 보기 클릭 실패 → ThemePost.naver 직접 이동")
+            await page.goto(
+                "https://section.blog.naver.com/ThemePost.naver",
+                wait_until="load", timeout=15000,
+            )
+            await random_delay(3, 5)
 
         logger.info(f"주제별 보기 도착: {page.url}")
 
