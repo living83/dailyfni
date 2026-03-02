@@ -1238,9 +1238,9 @@ async def _run_engagement_all_accounts(
         _engagement_status[run_id]["total_likes"] = total_likes
         _engagement_status[run_id]["total_comments"] = total_comments
 
-        # 계정 간 대기 (3~5분)
+        # 계정 간 대기 (30초~1분)
         if i < len(accounts) - 1:
-            delay = random.uniform(180, 300)
+            delay = random.uniform(30, 60)
             logger.info(f"다음 계정까지 {delay:.0f}초 대기")
             await asyncio.sleep(delay)
 

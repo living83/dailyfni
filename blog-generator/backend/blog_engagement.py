@@ -32,83 +32,80 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
     posts = []
 
     try:
-        # ── 1단계: 네이버 메인에서 "블로그" 클릭 ──
+        # ── 1단계: 네이버 메인에서 "블로그" 링크 URL 추출 후 이동 ──
         await page.goto("https://www.naver.com/",
                         wait_until="domcontentloaded", timeout=15000)
-        await random_delay(2, 3)
+        await random_delay(1, 2)
 
-        # 오른쪽 하단 영역의 "블로그" 링크 찾기
-        blog_link = await try_selectors(page, [
-            'a:has-text("블로그")[href*="blog"]',
-            'a[href*="section.blog.naver.com"]',
-            'a[href*="blog.naver.com"]:has-text("블로그")',
-        ], timeout=5000, description="네이버 메인 블로그 링크")
+        # 상단 네비게이션의 "블로그" 링크 URL 추출 (클릭 대신 URL 추출 → goto)
+        # 클릭하면 target="_blank"로 새 탭이 열릴 수 있어서 URL을 직접 가져옴
+        blog_url = await page.evaluate('''() => {
+            const links = document.querySelectorAll('a');
+            for (const a of links) {
+                const text = (a.textContent || '').trim();
+                const href = a.href || '';
+                // 상단 네비게이션의 "블로그" 링크
+                if (text === '블로그' && href.includes('blog')) return href;
+            }
+            // 두 번째 시도: href에 blog이 포함된 링크
+            for (const a of links) {
+                const text = (a.textContent || '').trim();
+                const href = a.href || '';
+                if (text.includes('블로그') && (
+                    href.includes('section.blog.naver.com') ||
+                    href.includes('blog.naver.com')
+                )) return href;
+            }
+            return '';
+        }''')
 
-        if not blog_link:
-            # JS 폴백: 텍스트로 "블로그" 링크 찾기
-            blog_link_handle = await page.evaluate_handle('''() => {
-                const links = document.querySelectorAll('a');
-                for (const a of links) {
-                    const text = a.textContent.trim();
-                    const href = a.href || '';
-                    if (text === '블로그' && href.includes('blog')) return a;
-                }
-                return null;
-            }''')
-            el = blog_link_handle.as_element() if blog_link_handle else None
-            if el:
-                blog_link = el
-                logger.info("네이버 메인 블로그 링크 JS 폴백 발견")
-
-        if blog_link:
-            await blog_link.click()
-            await random_delay(2, 3)
-            logger.info("네이버 메인 → 블로그 이동")
+        if blog_url:
+            logger.info(f"네이버 메인 → 블로그: {blog_url}")
+            await page.goto(blog_url, wait_until="domcontentloaded", timeout=15000)
+            await random_delay(1, 2)
         else:
-            # 직접 이동 폴백
-            logger.warning("블로그 링크 미발견, 직접 이동")
+            logger.warning("블로그 링크 미발견, 블로그 섹션으로 직접 이동")
             await page.goto("https://section.blog.naver.com/BlogHome.naver",
                             wait_until="domcontentloaded", timeout=15000)
-            await random_delay(2, 3)
+            await random_delay(1, 2)
 
-        # ── 2단계: "주제별 보기" 클릭 ──
-        topic_link = await try_selectors(page, [
-            'a:has-text("주제별 보기")',
-            'a:has-text("주제별보기")',
-            'a[href*="ThemePost"]',
-            'a[href*="topic"]',
-            '.category_area a:has-text("주제")',
-            'nav a:has-text("주제")',
-        ], timeout=5000, description="주제별 보기 링크")
+        logger.info(f"블로그 페이지 도착: {page.url}")
 
-        if not topic_link:
-            # JS 폴백
-            topic_handle = await page.evaluate_handle('''() => {
-                const links = document.querySelectorAll('a');
-                for (const a of links) {
-                    const text = a.textContent.trim();
-                    if (text.includes('주제별') && text.includes('보기')) return a;
-                    if (text === '주제별 보기') return a;
-                }
-                return null;
-            }''')
-            el = topic_handle.as_element() if topic_handle else None
-            if el:
-                topic_link = el
-                logger.info("주제별 보기 링크 JS 폴백 발견")
+        # ── 2단계: "주제별 보기" 링크 URL 추출 후 이동 ──
+        topic_url = await page.evaluate('''() => {
+            const links = document.querySelectorAll('a');
+            for (const a of links) {
+                const text = (a.textContent || '').trim();
+                const href = a.href || '';
+                if (text === '주제별 보기' || text === '주제별보기') return href;
+                if (text.includes('주제별') && text.includes('보기')) return href;
+            }
+            // href 기반 탐색
+            for (const a of links) {
+                const href = a.href || '';
+                if (href.includes('ThemePost')) return href;
+            }
+            return '';
+        }''')
 
-        if topic_link:
-            await topic_link.click()
-            await random_delay(2, 3)
-            logger.info("주제별 보기 페이지 이동")
+        if topic_url:
+            logger.info(f"주제별 보기 이동: {topic_url}")
+            await page.goto(topic_url, wait_until="domcontentloaded", timeout=15000)
+            await random_delay(1, 2)
         else:
-            logger.warning("주제별 보기 링크 미발견, 현재 페이지에서 포스팅 수집 시도")
+            # 직접 URL 폴백
+            logger.warning("주제별 보기 링크 미발견 → 직접 URL 이동")
+            await page.goto("https://section.blog.naver.com/ThemePost.naver",
+                            wait_until="domcontentloaded", timeout=15000)
+            await random_delay(1, 2)
+
+        logger.info(f"주제별 보기 도착: {page.url}")
 
         # ── 3단계: 포스팅 목록 수집 ──
         # 스크롤 다운으로 더 많은 포스팅 로드
-        for _ in range(3):
-            await page.evaluate('window.scrollBy(0, 800)')
-            await random_delay(0.5, 1.0)
+        for _ in range(5):
+            await page.evaluate('window.scrollBy(0, 600)')
+            await random_delay(0.3, 0.6)
 
         posts = await page.evaluate(f'''() => {{
             const results = [];
@@ -137,7 +134,6 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 '.item_inner a[href*="blog.naver.com"]',
                 'a[href*="/PostView.naver"]',
                 'a[href*="blog.naver.com"][class*="link"]',
-                // 주제별 보기 전용 셀렉터
                 '.theme_post_area a[href*="blog.naver.com"]',
                 '.topic_post a[href*="blog.naver.com"]',
                 '.post_list a[href*="blog.naver.com"]',
@@ -177,6 +173,19 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
         }}''')
 
         logger.info(f"주제별 보기에서 포스팅 {len(posts)}개 수집")
+
+        # 포스팅 없으면 디버그 정보
+        if not posts:
+            page_info = await page.evaluate('''() => {
+                return {
+                    url: location.href,
+                    title: document.title,
+                    links: document.querySelectorAll('a[href*="blog.naver.com"]').length,
+                    allLinks: document.querySelectorAll('a').length,
+                };
+            }''')
+            logger.warning(f"포스팅 0개 - 페이지 정보: {page_info}")
+            await capture_debug(page, "no_posts_found")
 
     except Exception as e:
         logger.error(f"블로그 포스팅 수집 실패: {e}")
@@ -449,99 +458,186 @@ async def write_comment(page, comment_text: str) -> dict:
         return result
 
     try:
-        # iframe 내부에서 댓글 입력 영역 찾기
-        comment_target = page
-        for frame in page.frames:
-            try:
-                has_comment = await frame.evaluate('''() => {
-                    return !!document.querySelector(
-                        '.u_cbox_write_wrap, [class*="comment_write"], ' +
-                        '[class*="reply_write"], textarea[class*="comment"], ' +
-                        '.comment_inbox, .u_cbox_area'
-                    );
-                }''')
-                if has_comment:
-                    comment_target = frame
-                    break
-            except Exception:
-                continue
+        # ── 1. 메인 페이지 하단까지 스크롤 (댓글 iframe 로딩 트리거) ──
+        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+        await random_delay(1, 2)
+        # 추가 스크롤로 댓글 영역 확실히 로딩
+        for _ in range(3):
+            await page.evaluate('window.scrollBy(0, 500)')
+            await random_delay(0.3, 0.5)
 
-        # 댓글 영역으로 스크롤
+        # ── 2. 댓글 iframe 찾기 ──
+        comment_target = None
+
+        # 방법 1: iframe URL/이름으로 찾기 (가장 정확)
+        for frame in page.frames:
+            frame_url = frame.url or ''
+            frame_name = frame.name or ''
+            if ('cbox' in frame_url.lower() or 'comment' in frame_url.lower() or
+                'cbox' in frame_name.lower() or 'comment' in frame_name.lower()):
+                comment_target = frame
+                logger.info(f"댓글 iframe 발견 (URL매칭): name={frame_name}, url={frame_url[:80]}")
+                break
+
+        # 방법 2: DOM 내용으로 찾기
+        if not comment_target:
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                try:
+                    has_cbox = await frame.evaluate('''() => {
+                        return !!document.querySelector(
+                            '.u_cbox_wrap, .u_cbox_area, .u_cbox_write_wrap, ' +
+                            '[class*="u_cbox"], .cbox_module'
+                        );
+                    }''')
+                    if has_cbox:
+                        comment_target = frame
+                        logger.info(f"댓글 프레임 발견 (DOM매칭): name={frame.name}")
+                        break
+                except Exception:
+                    continue
+
+        # 방법 3: mainFrame 내부에서 시도 (일부 블로그는 post + 댓글이 같은 iframe)
+        if not comment_target:
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                try:
+                    has_textarea = await frame.evaluate('''() => {
+                        const ta = document.querySelector('textarea');
+                        return !!ta;
+                    }''')
+                    if has_textarea:
+                        comment_target = frame
+                        logger.info(f"textarea 포함 프레임 발견: name={frame.name}")
+                        break
+                except Exception:
+                    continue
+
+        if not comment_target:
+            # 메인 페이지에서도 시도
+            comment_target = page
+            logger.warning("댓글 iframe 미발견, 메인 페이지에서 시도")
+
+        # ── 3. 댓글 영역으로 스크롤 + placeholder 클릭 (textarea 활성화) ──
         await comment_target.evaluate('''() => {
+            // 댓글 작성 영역 스크롤
             const area = document.querySelector(
-                '.u_cbox_write_wrap, .u_cbox_area, [class*="comment_write"], .comment_inbox'
+                '.u_cbox_write_wrap, .u_cbox_area, .u_cbox_inbox'
             );
-            if (area) area.scrollIntoView({ block: "center", behavior: "smooth" });
-            else window.scrollTo(0, document.body.scrollHeight);
+            if (area) {
+                area.scrollIntoView({ block: "center" });
+            } else {
+                window.scrollTo(0, document.body.scrollHeight);
+            }
         }''')
         await random_delay(0.5, 1)
 
-        # 댓글 입력 영역 클릭 (포커스) - 클릭 가능한 placeholder 포함
+        # placeholder/inbox 클릭으로 textarea 활성화
+        await comment_target.evaluate('''() => {
+            const clickTargets = document.querySelectorAll(
+                '.u_cbox_inbox, .u_cbox_write_wrap, .u_cbox_write_box, ' +
+                '.u_cbox_placeholder'
+            );
+            for (const el of clickTargets) {
+                el.click();
+            }
+        }''')
+        await random_delay(0.5, 1)
+
+        # ── 4. textarea 찾기 ──
         comment_input = await try_selectors(comment_target, [
-            '.u_cbox_write_wrap textarea',
             'textarea.u_cbox_text',
-            '.u_cbox_text',
-            'textarea[class*="comment"]',
-            '[class*="comment_write"] textarea',
-            '.comment_inbox textarea',
+            '.u_cbox_write_wrap textarea',
+            'textarea[class*="u_cbox"]',
+            '.u_cbox_inbox textarea',
             'textarea[placeholder*="댓글"]',
-            '.u_cbox_write_wrap .u_cbox_inbox',
-            '.u_cbox_inbox',
-        ], timeout=5000, description="댓글 입력 영역")
+            'textarea',
+        ], timeout=5000, description="댓글 textarea")
 
         if not comment_input:
-            # JS 폴백: 댓글 placeholder 클릭하여 textarea 활성화
+            # 재시도: placeholder 다시 클릭 + focus
             activated = await comment_target.evaluate('''() => {
-                // placeholder 영역 클릭으로 textarea 활성화
-                const placeholders = document.querySelectorAll(
-                    '.u_cbox_inbox, .u_cbox_write_wrap, ' +
-                    '[class*="comment_write"], .comment_inbox'
+                // 모든 댓글 관련 영역 클릭
+                const areas = document.querySelectorAll(
+                    '.u_cbox_inbox, .u_cbox_write_box, .u_cbox_write_wrap, ' +
+                    '.u_cbox_placeholder, [class*="comment_write"]'
                 );
-                for (const ph of placeholders) {
-                    ph.click();
-                    const ta = ph.querySelector('textarea');
-                    if (ta) { ta.click(); ta.focus(); return "textarea"; }
-                    // contenteditable div인 경우
-                    const editable = ph.querySelector('[contenteditable="true"]');
-                    if (editable) { editable.click(); editable.focus(); return "editable"; }
-                    return "clicked";
+                for (const area of areas) {
+                    area.click();
                 }
-                return "";
+                // textarea 직접 찾아서 focus
+                const ta = document.querySelector(
+                    'textarea.u_cbox_text, textarea[class*="u_cbox"], textarea'
+                );
+                if (ta) {
+                    ta.click();
+                    ta.focus();
+                    return true;
+                }
+                // contenteditable div 시도
+                const editable = document.querySelector('[contenteditable="true"]');
+                if (editable) {
+                    editable.click();
+                    editable.focus();
+                    return true;
+                }
+                return false;
             }''')
 
             if activated:
-                await random_delay(0.5, 1)
+                await random_delay(0.3, 0.5)
                 comment_input = await try_selectors(comment_target, [
-                    'textarea:focus', 'textarea.u_cbox_text',
-                    'textarea[class*="comment"]',
+                    'textarea:focus',
+                    'textarea.u_cbox_text',
+                    'textarea',
                     '[contenteditable="true"]:focus',
-                ], timeout=3000, description="댓글 입력(포커스 후)")
+                ], timeout=3000, description="댓글 textarea(재시도)")
 
         if not comment_input:
+            # 디버그: 모든 프레임 정보 로깅
+            frame_info = []
+            for f in page.frames:
+                try:
+                    f_url = f.url or 'none'
+                    f_name = f.name or 'unnamed'
+                    el_count = await f.evaluate('document.querySelectorAll("*").length')
+                    has_ta = await f.evaluate('!!document.querySelector("textarea")')
+                    has_cbox = await f.evaluate('!!document.querySelector("[class*=u_cbox]")')
+                    frame_info.append(
+                        f"[{f_name}] url={f_url[:60]} els={el_count} "
+                        f"textarea={has_ta} cbox={has_cbox}"
+                    )
+                except Exception:
+                    frame_info.append(f"[{f.name or '?'}] (접근불가)")
+            logger.warning(f"댓글 입력 영역 미발견. 프레임 목록:\n" + "\n".join(frame_info))
+            await capture_debug(page, "comment_not_found")
             result["error"] = "댓글 입력 영역 미발견"
             return result
 
+        # ── 5. 댓글 타이핑 ──
         await comment_input.click()
         await random_delay(0.3, 0.5)
-
-        # 댓글 타이핑
         await comment_input.type(comment_text,
                                  delay=30 + random.randint(-10, 15))
         await random_delay(0.5, 1)
 
-        # 등록 버튼 클릭
+        # ── 6. 등록 버튼 클릭 ──
         submit_btn = await try_selectors(comment_target, [
             'button.u_cbox_btn_upload',
             'a.u_cbox_btn_upload',
             '.u_cbox_btn_upload',
             'button:has-text("등록")',
             'a:has-text("등록")',
-            '[class*="comment"] button[class*="submit"]',
-            '[class*="comment"] button[class*="upload"]',
-            'button[class*="btn_register"]',
         ], timeout=5000, description="댓글 등록 버튼")
 
-        if not submit_btn:
+        if submit_btn:
+            await submit_btn.click()
+            await random_delay(1, 1.5)
+            result["success"] = True
+            logger.info("댓글 등록 성공")
+        else:
             # JS 폴백
             clicked = await comment_target.evaluate('''() => {
                 const btns = document.querySelectorAll('button, a');
@@ -549,7 +645,7 @@ async def write_comment(page, comment_text: str) -> dict:
                     const text = (btn.textContent || '').trim();
                     const cls = btn.className || '';
                     if (text === '등록' || cls.includes('upload') ||
-                        cls.includes('submit') || cls.includes('btn_register')) {
+                        cls.includes('btn_register')) {
                         btn.click();
                         return true;
                     }
@@ -560,15 +656,8 @@ async def write_comment(page, comment_text: str) -> dict:
                 result["success"] = True
                 logger.info("댓글 등록 성공 (JS 폴백)")
                 await random_delay(1, 1.5)
-                return result
-
-            result["error"] = "댓글 등록 버튼 미발견"
-            return result
-
-        await submit_btn.click()
-        await random_delay(1, 1.5)
-        result["success"] = True
-        logger.info("댓글 등록 성공")
+            else:
+                result["error"] = "댓글 등록 버튼 미발견"
 
     except Exception as e:
         result["error"] = str(e)
@@ -676,10 +765,10 @@ async def _run_engagement_impl(
 
             await random_delay(1, 2)
 
-            # 2. 블로그 피드에서 포스팅 수집
+            # 2. 주제별 보기에서 포스팅 수집
             posts = await collect_blog_posts(page, max_posts)
             if not posts:
-                result["error"] = "블로그 피드에서 포스팅을 찾을 수 없습니다"
+                result["error"] = "주제별 보기에서 포스팅을 찾을 수 없습니다"
                 return result
 
             result["total_posts"] = len(posts)
