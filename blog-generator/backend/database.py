@@ -195,7 +195,7 @@ async def init_db():
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     keyword VARCHAR(500) NOT NULL,
                     product_info TEXT DEFAULT (''),
-                    priority VARCHAR(20) DEFAULT 'medium',
+                    priority VARCHAR(20) DEFAULT 'ad',
                     status VARCHAR(20) DEFAULT 'pending',
                     last_used_at VARCHAR(50) DEFAULT '',
                     next_available_at VARCHAR(50) DEFAULT '',
@@ -282,6 +282,25 @@ async def init_db():
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+
+            # ─── priority 값 마이그레이션 (high/medium/low → ad/general) ───
+            try:
+                await cur.execute("""
+                    UPDATE keyword_queue
+                    SET priority = 'ad'
+                    WHERE priority IN ('high', 'medium', 'low')
+                """)
+            except Exception:
+                pass
+
+            # ─── priority 기본값 변경 ───
+            try:
+                await cur.execute("""
+                    ALTER TABLE keyword_queue
+                    ALTER COLUMN priority SET DEFAULT 'ad'
+                """)
+            except Exception:
+                pass
 
             # ─── 참여 설정 컬럼 추가 (scheduler_config) ───
             for col, col_def in [
@@ -564,7 +583,7 @@ async def add_keyword(data: dict) -> dict:
         async with conn.cursor() as cur:
             await cur.execute(
                 "INSERT INTO keyword_queue (keyword, product_info, priority) VALUES (%s, %s, %s)",
-                (data["keyword"], data.get("product_info", ""), data.get("priority", "medium")),
+                (data["keyword"], data.get("product_info", ""), data.get("priority", "ad")),
             )
             await cur.execute("SELECT * FROM keyword_queue WHERE id = %s", (cur.lastrowid,))
             return await cur.fetchone()
@@ -577,7 +596,7 @@ async def add_keywords_bulk(keywords: list) -> int:
             count = 0
             for kw in keywords:
                 keyword = kw if isinstance(kw, str) else kw.get("keyword", "")
-                priority = "medium" if isinstance(kw, str) else kw.get("priority", "medium")
+                priority = "ad" if isinstance(kw, str) else kw.get("priority", "ad")
                 product_info = "" if isinstance(kw, str) else kw.get("product_info", "")
                 if keyword.strip():
                     await cur.execute(
@@ -597,7 +616,7 @@ async def get_keywords(status: str = None) -> list:
             if status:
                 query += " WHERE status = %s"
                 params.append(status)
-            query += " ORDER BY FIELD(priority, 'high', 'medium', 'low'), created_at ASC"
+            query += " ORDER BY FIELD(priority, 'ad', 'general'), created_at ASC"
             await cur.execute(query, params)
             return list(await cur.fetchall())
 
@@ -611,7 +630,7 @@ async def get_next_keyword() -> dict | None:
                 """SELECT * FROM keyword_queue
                    WHERE status = 'pending'
                    AND (next_available_at = '' OR next_available_at <= %s)
-                   ORDER BY FIELD(priority, 'high', 'medium', 'low'),
+                   ORDER BY FIELD(priority, 'ad', 'general'),
                             created_at ASC
                    LIMIT 1""",
                 (now,),

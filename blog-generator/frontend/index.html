@@ -353,9 +353,8 @@
           <label>키워드 (줄바꿈으로 여러 개 입력)</label>
           <textarea id="kwInput" rows="5" placeholder="키워드를 입력하세요&#10;줄바꿈으로 여러 개 등록 가능&#10;예)&#10;강아지 사료 추천&#10;고양이 장난감 순위"></textarea>
           <select id="kwPriority">
-            <option value="high">높음</option>
-            <option value="medium" selected>보통</option>
-            <option value="low">낮음</option>
+            <option value="ad" selected>광고</option>
+            <option value="general">일반</option>
           </select>
         </div>
         <div class="form-row">
@@ -900,8 +899,8 @@ async function loadKeywords(status) {
     const keywords = await api(url);
     const tbody = document.getElementById('kwTableBody');
     if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
-    const prioMap = { high: '높음', medium: '보통', low: '낮음' };
-    const prioTag = { high: 'tag-red', medium: 'tag-blue', low: 'tag-gray' };
+    const prioMap = { ad: '광고', general: '일반' };
+    const prioTag = { ad: 'tag-red', general: 'tag-blue' };
     const statusMap = { pending: '대기', used: '사용됨', reserved: '예약' };
     const statusTag = { pending: 'tag-yellow', used: 'tag-green', reserved: 'tag-blue' };
     tbody.innerHTML = keywords.map(kw => `<tr>

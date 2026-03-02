@@ -233,8 +233,8 @@ def _validate_api_key(v: str) -> str:
 
 
 def _validate_priority(v: str) -> str:
-    if v not in ("high", "medium", "low"):
-        raise ValueError("priority는 high, medium, low 중 하나여야 합니다.")
+    if v not in ("ad", "general"):
+        raise ValueError("priority는 ad, general 중 하나여야 합니다.")
     return v
 
 
@@ -321,7 +321,7 @@ class PublishRequest(BaseModel):
 class KeywordCreate(BaseModel):
     keyword: str
     product_info: str = ""
-    priority: str = "medium"
+    priority: str = "ad"
 
     @validator("keyword")
     def check_keyword(cls, v):
@@ -335,7 +335,7 @@ class KeywordCreate(BaseModel):
 class KeywordBulkCreate(BaseModel):
     keywords: List[str]
     product_info: str = ""
-    priority: str = "medium"
+    priority: str = "ad"
 
     @validator("keywords")
     def check_keywords(cls, v):

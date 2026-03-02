@@ -94,7 +94,7 @@ async def article_generation_job(manual: bool = False):
 
         keyword = kw["keyword"]
         product_info = kw.get("product_info", "")
-        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}")
+        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}, 타입 = {kw.get('priority', 'ad')}")
 
         # 활성 계정 가져오기
         accounts = await get_accounts()
@@ -124,10 +124,16 @@ async def article_generation_job(manual: bool = False):
             await create_notification("error", "API 키 없음", "ANTHROPIC_API_KEY가 설정되지 않았습니다.")
             return
 
+        # 글 타입 결정 (일반/광고)
+        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
+
         # 문서 생성
         try:
             from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
+            from prompts import AD_FOOTER, GENERAL_FOOTER
             from agents import _call_claude
+
+            ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
             all_doc_formats = [
                 ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
@@ -159,7 +165,11 @@ async def article_generation_job(manual: bool = False):
                 cat_id = default_cat["id"] if default_cat else None
 
                 # 글 생성
-                prompt = prompt_template.format(keyword=keyword, product_info_section=product_info_section)
+                prompt = prompt_template.format(
+                    keyword=keyword,
+                    product_info_section=product_info_section,
+                    ad_footer=ad_footer,
+                )
                 result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
 
                 # 제목과 본문 분리
