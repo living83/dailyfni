@@ -512,6 +512,10 @@ async def _find_like_button(page):
         '.u_likeit_btn',
         '#sympathyArea a[role="button"]',
         '.area_sympathy a[role="button"]',
+        # 추가: 플로팅 바 전용 셀렉터
+        '.btn_like',
+        'button.like_btn',
+        'a.like_btn',
     ]
 
     # 탐색 순서: outer page → mainFrame → 기타
@@ -547,6 +551,47 @@ async def _find_like_button(page):
                     return frame, sel, info
             except Exception:
                 continue
+
+    # 폴백: "공감" 텍스트가 있는 요소 근처에서 클릭 가능한 버튼 찾기
+    for frame in frames_ordered:
+        try:
+            fallback = await frame.evaluate('''() => {
+                // "공감" 텍스트를 포함한 영역 찾기
+                const allEls = document.querySelectorAll('*');
+                for (const el of allEls) {
+                    const text = (el.textContent || '').trim();
+                    const cls = typeof el.className === 'string' ? el.className : '';
+                    // "공감" 텍스트가 있고, 짧은 텍스트이며, 클릭 가능한 요소
+                    if (text.startsWith('공감') && text.length < 20 &&
+                        (el.tagName === 'A' || el.tagName === 'BUTTON' ||
+                         el.role === 'button' || el.getAttribute('role') === 'button')) {
+                        // 광고 제외
+                        if (el.closest('[class*="power_link"], [class*="ad_"]')) continue;
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            return {
+                                tag: el.tagName,
+                                cls: cls.substring(0, 80),
+                                text: text.substring(0, 50),
+                                isOn: el.classList.contains('on'),
+                                w: rect.width, h: rect.height,
+                                x: rect.left + rect.width / 2,
+                                y: rect.top + rect.height / 2,
+                                visible: true,
+                                sel: 'text_fallback',
+                            };
+                        }
+                    }
+                }
+                return null;
+            }''')
+            if fallback:
+                # 텍스트 폴백은 selector를 반환하지 않으므로 특별 처리
+                logger.info(f"공감 텍스트 폴백: {fallback}")
+                return frame, '__text_fallback__', fallback
+        except Exception:
+            continue
+
     return None, None, None
 
 
@@ -597,30 +642,39 @@ async def click_like(page) -> dict:
             logger.info("이미 공감한 글입니다")
             return result
 
+        # 디버그 스크린샷: 클릭 전
+        await capture_debug(page, "like_before_click")
+
         # ── 2. Playwright 물리적 클릭 (3단계 폴백) ──
         clicked = False
 
-        # 방법 1: Playwright locator.click (실제 마우스 이벤트 — 가장 안정적)
-        try:
-            locator = frame.locator(selector).first
-            await locator.scroll_into_view_if_needed(timeout=3000)
-            await random_delay(0.3, 0.5)
-            await locator.click(timeout=5000)
-            clicked = True
-            logger.info(f"공감 Playwright 클릭 성공: {selector}")
-        except Exception as e1:
-            logger.info(f"Playwright locator 클릭 실패: {e1}")
+        # 방법 1: Playwright locator.click (실제 마우스 이벤트)
+        # __text_fallback__이면 locator 사용 불가 → 방법 2로 직행
+        if selector != '__text_fallback__':
+            try:
+                locator = frame.locator(selector).first
+                await locator.scroll_into_view_if_needed(timeout=3000)
+                await random_delay(0.3, 0.5)
+                await locator.click(timeout=5000)
+                clicked = True
+                logger.info(f"공감 Playwright 클릭 성공: {selector}")
+            except Exception as e1:
+                logger.info(f"Playwright locator 클릭 실패: {e1}")
 
-        # 방법 2: 좌표 기반 mouse.click
+        # 방법 2: 좌표 기반 mouse.click (info에 좌표가 이미 있음)
         if not clicked:
             try:
-                coords = await frame.evaluate('''(sel) => {
-                    const btn = document.querySelector(sel);
-                    if (!btn) return null;
-                    btn.scrollIntoView({ block: "center" });
-                    const r = btn.getBoundingClientRect();
-                    return { x: r.left + r.width/2, y: r.top + r.height/2 };
-                }''', selector)
+                # 텍스트 폴백이면 info의 좌표 사용, 아니면 재계산
+                if selector == '__text_fallback__':
+                    coords = {'x': info['x'], 'y': info['y']}
+                else:
+                    coords = await frame.evaluate('''(sel) => {
+                        const btn = document.querySelector(sel);
+                        if (!btn) return null;
+                        btn.scrollIntoView({ block: "center" });
+                        const r = btn.getBoundingClientRect();
+                        return { x: r.left + r.width/2, y: r.top + r.height/2 };
+                    }''', selector)
 
                 if coords:
                     click_x, click_y = coords['x'], coords['y']
@@ -647,12 +701,26 @@ async def click_like(page) -> dict:
         # 방법 3: JS click (최후 수단)
         if not clicked:
             try:
-                ok = await frame.evaluate('''(sel) => {
-                    const btn = document.querySelector(sel);
-                    if (!btn) return false;
-                    btn.click();
-                    return true;
-                }''', selector)
+                if selector == '__text_fallback__':
+                    # 텍스트 기반: "공감" 시작하는 클릭 가능 요소 찾아 클릭
+                    ok = await frame.evaluate('''() => {
+                        for (const el of document.querySelectorAll('a, button, [role="button"]')) {
+                            const text = (el.textContent || '').trim();
+                            if (text.startsWith('공감') && text.length < 20) {
+                                if (el.closest('[class*="power_link"], [class*="ad_"]')) continue;
+                                el.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }''')
+                else:
+                    ok = await frame.evaluate('''(sel) => {
+                        const btn = document.querySelector(sel);
+                        if (!btn) return false;
+                        btn.click();
+                        return true;
+                    }''', selector)
                 if ok:
                     clicked = True
                     logger.info("JS click 성공 (최후 수단)")
@@ -664,6 +732,9 @@ async def click_like(page) -> dict:
             return result
 
         await random_delay(0.8, 1.5)
+
+        # 디버그 스크린샷: 클릭 후
+        await capture_debug(page, "like_after_click")
 
         # ── 3. 클릭 후 검증 ──
         current_url = page.url or ""
