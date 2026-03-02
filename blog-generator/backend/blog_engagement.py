@@ -508,149 +508,147 @@ async def read_post_content(page, post_url: str) -> dict:
 async def click_like(page) -> dict:
     """현재 페이지의 공감(하트) 버튼 클릭.
 
-    네이버 블로그 공감 구조:
-    - 공감 버튼은 mainFrame iframe 안에 위치
-    - .u_likeit_list_module > .u_likeit_btn 구조
-    - 클릭 시 .on 클래스 추가됨 (이미 공감한 상태)
+    네이버 블로그 공감 구조 (2025년 현재):
+    - 외부 페이지(outer page)에 **플로팅 하단 툴바** 존재
+      → position:fixed, 항상 화면 하단에 표시
+      → ♡ 공감 N | 💬 댓글 N | 공유  형태
+    - mainFrame iframe 안에도 전통적 공감 영역 존재 (포스트 본문 끝)
+    - 플로팅 툴바가 더 안정적이므로 **외부 페이지를 먼저** 탐색
     """
     result = {"success": False, "already_liked": False, "error": ""}
 
     try:
-        # ── 1. 공감 버튼이 있는 프레임 찾기 ──
-        # mainFrame 우선 (공감 버튼은 거의 항상 mainFrame 안에 있음)
+        # ── 1. 공감 버튼 찾기 ──
+        # 순서: 외부 페이지(플로팅 툴바) → mainFrame(전통적 위치)
         like_target = None
+        btn_method = ""
+        is_floating = False
 
-        for frame in sorted(page.frames, key=lambda f: (
-            0 if f.name == 'mainFrame' else 2
-        )):
-            try:
-                # 정확한 네이버 공감 버튼만 탐색 (광고/상품 링크 제외)
-                btn_info = await frame.evaluate('''() => {
-                    // 1순위: 네이버 공식 공감 모듈 (u_likeit)
-                    const likeit = document.querySelector(
-                        '.u_likeit_list_module .u_likeit_btn, ' +
-                        '.u_likeit_list_module a.u_likeit_btn'
+        # 1-A. 외부 페이지에서 플로팅 툴바 공감 버튼 탐색
+        try:
+            outer_info = await page.evaluate('''() => {
+                // 플로팅 툴바의 공감 버튼 셀렉터
+                // (네이버 블로그 하단 고정 바)
+                const toolbarSelectors = [
+                    // 새 UI: 하단 플로팅 툴바
+                    '.blog2_toolbar .u_likeit_btn',
+                    '.toolbar_wrap .u_likeit_btn',
+                    '.btn_toolbar_like',
+                    '[class*="toolbar"] .u_likeit_btn',
+                    '[class*="floating"] .u_likeit_btn',
+                    // 일반 외부 페이지 공감 버튼
+                    '.u_likeit_list_module .u_likeit_btn',
+                    '.u_likeit_btn',
+                ];
+
+                for (const sel of toolbarSelectors) {
+                    const btn = document.querySelector(sel);
+                    if (!btn) continue;
+
+                    // 광고 영역 내 요소 제외
+                    const inAd = btn.closest(
+                        '[class*="power_link"], [class*="ad_"], ' +
+                        '[class*="banner"], [class*="product"], ' +
+                        '.revenue_unit, .bnr_area, #_adFoot'
                     );
-                    if (likeit) {
-                        return {
-                            found: true, method: 'u_likeit_module',
-                            tag: likeit.tagName,
-                            cls: likeit.className,
-                            text: (likeit.textContent || '').trim().substring(0, 50),
-                            isOn: likeit.classList.contains('on'),
-                            href: likeit.href || '',
-                        };
-                    }
+                    if (inAd) continue;
 
-                    // 2순위: u_likeit_btn 직접 (모듈 없이)
-                    const likeitBtn = document.querySelector('.u_likeit_btn');
-                    if (likeitBtn) {
-                        return {
-                            found: true, method: 'u_likeit_btn',
-                            tag: likeitBtn.tagName,
-                            cls: likeitBtn.className,
-                            text: (likeitBtn.textContent || '').trim().substring(0, 50),
-                            isOn: likeitBtn.classList.contains('on'),
-                            href: likeitBtn.href || '',
-                        };
-                    }
+                    // position:fixed 또는 sticky면 플로팅 툴바
+                    const style = window.getComputedStyle(btn.closest(
+                        '[class*="toolbar"], [class*="floating"], ' +
+                        '[style*="position: fixed"], [style*="position:fixed"]'
+                    ) || btn);
+                    const isFixed = style.position === 'fixed' || style.position === 'sticky';
 
-                    // 3순위: sympathize 영역 (구버전)
-                    const sympArea = document.querySelector(
-                        '#sympathyArea, .area_sympathy, .post_sympathize'
-                    );
-                    if (sympArea) {
-                        const btn = sympArea.querySelector('a, button');
-                        if (btn) {
-                            return {
-                                found: true, method: 'sympathy_area',
-                                tag: btn.tagName,
-                                cls: btn.className,
-                                text: (btn.textContent || '').trim().substring(0, 50),
-                                isOn: btn.classList.contains('on') ||
-                                      btn.classList.contains('is_active'),
-                                href: btn.href || '',
-                            };
-                        }
-                    }
+                    return {
+                        found: true,
+                        method: isFixed ? 'floating_toolbar' : 'outer_page',
+                        tag: btn.tagName,
+                        cls: btn.className.substring(0, 80),
+                        text: (btn.textContent || '').trim().substring(0, 50),
+                        isOn: btn.classList.contains('on'),
+                        isFixed: isFixed,
+                        href: (btn.href || '').substring(0, 100),
+                    };
+                }
+                return { found: false };
+            }''')
 
-                    // 4순위: "공감" 텍스트를 포함한 버튼/링크 (단, 광고 영역 제외)
-                    const candidates = document.querySelectorAll('a, button');
-                    for (const el of candidates) {
-                        const text = (el.textContent || '').trim();
-                        const cls = el.className || '';
+            if outer_info and outer_info.get('found'):
+                like_target = page
+                btn_method = outer_info['method']
+                is_floating = outer_info.get('isFixed', False)
+                logger.info(
+                    f"공감 버튼 발견 (외부): method={btn_method}, "
+                    f"cls={outer_info['cls'][:40]}, "
+                    f"text={outer_info['text'][:20]}, "
+                    f"isOn={outer_info['isOn']}, fixed={is_floating}"
+                )
+                if outer_info['isOn']:
+                    result["already_liked"] = True
+                    result["success"] = True
+                    logger.info("이미 공감한 글입니다 (외부)")
+                    return result
+        except Exception as e:
+            logger.debug(f"외부 페이지 공감 탐색 실패: {e}")
 
-                        // "공감" 텍스트 + likeit 관련 클래스
-                        if ((text.includes('공감') || cls.includes('likeit') ||
-                             cls.includes('sympathize')) &&
-                            text.length < 30) {
-
-                            // 광고/상품 영역 내 요소 제외
-                            const inAd = el.closest(
-                                '[class*="power_link"], [class*="ad_"], ' +
-                                '[class*="banner"], [class*="product"], ' +
-                                '[class*="promotion"], [class*="sponsor"], ' +
-                                '[class*="shop"], [class*="store"], ' +
-                                '.revenue_unit, .bnr_area, #_adFoot, ' +
-                                '[class*="광고"], [class*="market"]'
-                            );
-                            if (inAd) continue;
-
-                            // 외부 URL(brand.naver.com, smartstore 등)이면 제외
-                            const href = el.href || '';
-                            if (href && (
-                                href.includes('brand.naver.com') ||
-                                href.includes('smartstore') ||
-                                href.includes('shopping.naver') ||
-                                href.includes('search.naver') ||
-                                href.includes('ad.naver') ||
-                                href.includes('partner.naver')
-                            )) continue;
-
-                            return {
-                                found: true, method: 'text_search',
-                                tag: el.tagName,
-                                cls: cls.substring(0, 80),
-                                text: text.substring(0, 50),
-                                isOn: el.classList.contains('on') ||
-                                      el.classList.contains('is_active'),
-                                href: href.substring(0, 100),
-                            };
-                        }
-                    }
-
-                    return { found: false };
-                }''')
-
-                if btn_info and btn_info.get('found'):
-                    like_target = frame
-                    logger.info(
-                        f"공감 버튼 발견: frame={frame.name or 'main'}, "
-                        f"method={btn_info['method']}, "
-                        f"tag={btn_info['tag']}, cls={btn_info['cls'][:50]}, "
-                        f"text={btn_info['text'][:20]}, isOn={btn_info['isOn']}"
-                    )
-                    if btn_info['isOn']:
-                        result["already_liked"] = True
-                        result["success"] = True
-                        logger.info("이미 공감한 글입니다")
-                        return result
-                    break
-            except Exception:
-                continue
-
+        # 1-B. mainFrame에서 전통적 공감 버튼 탐색
         if not like_target:
-            # 디버그: 모든 프레임에서 공감 관련 요소 탐색
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue  # 외부 페이지는 이미 위에서 시도
+                try:
+                    frame_info = await frame.evaluate('''() => {
+                        const selectors = [
+                            '.u_likeit_list_module .u_likeit_btn',
+                            '.u_likeit_btn',
+                            '#sympathyArea a',
+                            '.area_sympathy a',
+                        ];
+                        for (const sel of selectors) {
+                            const btn = document.querySelector(sel);
+                            if (!btn) continue;
+                            return {
+                                found: true,
+                                method: 'mainFrame_' + sel.replace(/[^a-zA-Z]/g, '_'),
+                                tag: btn.tagName,
+                                cls: btn.className.substring(0, 80),
+                                text: (btn.textContent || '').trim().substring(0, 50),
+                                isOn: btn.classList.contains('on'),
+                                href: (btn.href || '').substring(0, 100),
+                            };
+                        }
+                        return { found: false };
+                    }''')
+
+                    if frame_info and frame_info.get('found'):
+                        like_target = frame
+                        btn_method = frame_info['method']
+                        logger.info(
+                            f"공감 버튼 발견 (iframe): frame={frame.name}, "
+                            f"method={btn_method}, cls={frame_info['cls'][:40]}, "
+                            f"isOn={frame_info['isOn']}"
+                        )
+                        if frame_info['isOn']:
+                            result["already_liked"] = True
+                            result["success"] = True
+                            logger.info("이미 공감한 글입니다 (iframe)")
+                            return result
+                        break
+                except Exception:
+                    continue
+
+        # 미발견 → 디버그 로깅
+        if not like_target:
             for frame in page.frames:
                 try:
                     debug = await frame.evaluate('''() => {
                         const items = [];
-                        const all = document.querySelectorAll('button, a');
-                        for (const el of all) {
+                        for (const el of document.querySelectorAll('button, a')) {
                             const text = (el.textContent || '').trim();
                             const cls = el.className || '';
                             if (text.includes('공감') || cls.includes('likeit') ||
-                                cls.includes('sympathy')) {
+                                cls.includes('sympathy') || cls.includes('like_btn')) {
                                 items.push(
                                     el.tagName + '.' + cls.substring(0,50) +
                                     ' "' + text.substring(0,20) + '"' +
@@ -664,88 +662,126 @@ async def click_like(page) -> dict:
                         logger.info(f"[디버그] 프레임 '{frame.name}' 공감 관련: {debug}")
                 except Exception:
                     continue
-
-            result["error"] = "공감 버튼 프레임 미발견"
+            result["error"] = "공감 버튼 미발견"
             return result
 
-        # ── 2. 공감 버튼으로 스크롤 ──
-        await like_target.evaluate('''() => {
-            // u_likeit 모듈 우선, 없으면 공감 텍스트 요소
-            const btn = document.querySelector(
-                '.u_likeit_list_module .u_likeit_btn, .u_likeit_btn'
-            ) || document.querySelector('#sympathyArea a, .area_sympathy a');
-            if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
-        }''')
-        await random_delay(0.5, 1)
+        # ── 2. 스크롤 (플로팅 툴바면 생략) ──
+        if not is_floating:
+            await like_target.evaluate('''() => {
+                const btn =
+                    document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
+                    document.querySelector('.u_likeit_btn') ||
+                    document.querySelector('#sympathyArea a');
+                if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
+            }''')
+            await random_delay(0.5, 1)
 
-        # ── 3. JS로 직접 클릭 (안전한 방식) ──
-        # 절대로 외부 링크(광고/상품)를 클릭하지 않도록 검증 후 클릭
+        # ── 3. JS로 직접 클릭 ──
         click_result = await like_target.evaluate('''() => {
-            // 공감 버튼 탐색 (순서대로)
-            const btn =
-                document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
-                document.querySelector('.u_likeit_btn') ||
-                document.querySelector('#sympathyArea a, .area_sympathy a, .post_sympathize a');
+            // 버튼 탐색 (순서대로)
+            const selectors = [
+                '.blog2_toolbar .u_likeit_btn',
+                '.toolbar_wrap .u_likeit_btn',
+                '[class*="toolbar"] .u_likeit_btn',
+                '[class*="floating"] .u_likeit_btn',
+                '.u_likeit_list_module .u_likeit_btn',
+                '.u_likeit_btn',
+                '#sympathyArea a',
+                '.area_sympathy a',
+            ];
 
-            if (!btn) return { clicked: false, error: 'btn_not_found' };
+            let btn = null;
+            let matchedSel = '';
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    // 광고 영역 제외
+                    const inAd = el.closest(
+                        '[class*="power_link"], [class*="ad_"], ' +
+                        '[class*="banner"], .revenue_unit, #_adFoot'
+                    );
+                    if (inAd) continue;
 
-            // 안전 검증: href가 외부 URL이면 클릭 금지
-            const href = btn.href || '';
-            if (href && !href.includes('javascript:') && !href.startsWith('#')) {
-                if (href.includes('brand.naver.com') ||
-                    href.includes('smartstore') ||
-                    href.includes('shopping.naver') ||
-                    href.includes('search.naver')) {
-                    return { clicked: false, error: 'ad_link_blocked: ' + href.substring(0, 80) };
+                    // 외부 URL 제외
+                    const href = el.href || '';
+                    if (href && (
+                        href.includes('brand.naver.com') ||
+                        href.includes('smartstore') ||
+                        href.includes('shopping.naver')
+                    )) continue;
+
+                    btn = el;
+                    matchedSel = sel;
+                    break;
                 }
             }
 
-            // 클릭 전 상태
-            const wasBefore = btn.classList.contains('on');
+            if (!btn) return { clicked: false, error: 'btn_not_found_in_click' };
 
-            // 클릭 실행 (한 번만, dispatchEvent 이중 클릭 제거)
+            // 이미 공감 상태면 스킵
+            if (btn.classList.contains('on')) {
+                return { clicked: false, error: 'already_on', cls: btn.className };
+            }
+
+            // 클릭
             btn.click();
 
             return {
                 clicked: true,
-                wasBefore: wasBefore,
+                selector: matchedSel,
                 tag: btn.tagName,
                 cls: btn.className.substring(0, 80),
-                href: href.substring(0, 100),
+                href: (btn.href || '').substring(0, 80),
             };
         }''')
 
         if click_result.get('clicked'):
             logger.info(
-                f"공감 클릭 실행: tag={click_result.get('tag')}, "
-                f"cls={click_result.get('cls', '')[:40]}, "
-                f"href={click_result.get('href', '')[:50]}"
+                f"공감 클릭 실행: selector={click_result.get('selector')}, "
+                f"tag={click_result.get('tag')}, "
+                f"cls={click_result.get('cls', '')[:40]}"
             )
             await random_delay(0.8, 1.5)
 
-            # 클릭 후 상태 확인
-            after_state = await like_target.evaluate('''() => {
-                const btn =
-                    document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
-                    document.querySelector('.u_likeit_btn');
-                if (!btn) return { found: false };
-                return {
-                    found: true,
-                    isOn: btn.classList.contains('on'),
-                    cls: btn.className.substring(0, 80),
-                };
-            }''')
+            # 클릭 후 페이지 이탈 확인
+            current_url = page.url or ""
+            if 'blog.naver.com' not in current_url:
+                logger.warning(
+                    f"공감 클릭 후 페이지 이탈: {current_url[:80]}"
+                )
+                result["error"] = f"페이지 이탈: {current_url[:60]}"
+                return result
 
-            if after_state.get('isOn'):
+            # 상태 확인
+            try:
+                after = await like_target.evaluate('''() => {
+                    const btn =
+                        document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
+                        document.querySelector('.u_likeit_btn');
+                    if (!btn) return { found: false };
+                    return {
+                        found: true,
+                        isOn: btn.classList.contains('on'),
+                        cls: btn.className.substring(0, 80),
+                    };
+                }''')
+                if after.get('isOn'):
+                    result["success"] = True
+                    logger.info("공감 클릭 성공 (on 상태 확인)")
+                else:
+                    result["success"] = True
+                    logger.info("공감 클릭 수행 (상태 변경 미확인)")
+            except Exception:
                 result["success"] = True
-                logger.info("공감 클릭 성공 (on 상태 확인)")
-            else:
-                result["success"] = True
-                logger.info("공감 클릭 수행 (상태 변경 미확인)")
+                logger.info("공감 클릭 수행 (상태 확인 불가)")
+
+        elif click_result.get('error') == 'already_on':
+            result["already_liked"] = True
+            result["success"] = True
+            logger.info("이미 공감한 글입니다")
         else:
-            error = click_result.get('error', 'unknown')
-            result["error"] = f"공감 클릭 실패: {error}"
-            logger.warning(f"공감 클릭 실패: {error}")
+            result["error"] = f"공감 클릭 실패: {click_result.get('error')}"
+            logger.warning(f"공감 클릭 실패: {click_result.get('error')}")
 
     except Exception as e:
         result["error"] = str(e)
