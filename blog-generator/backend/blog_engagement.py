@@ -505,283 +505,189 @@ async def read_post_content(page, post_url: str) -> dict:
 # 공감(좋아요) 클릭
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def click_like(page) -> dict:
-    """현재 페이지의 공감(하트) 버튼 클릭.
+async def _find_like_button(page):
+    """모든 프레임에서 공감 버튼을 찾아 (frame, selector, info) 반환."""
+    SELECTORS = [
+        '.u_likeit_list_module .u_likeit_btn',
+        '.u_likeit_btn',
+        '#sympathyArea a[role="button"]',
+        '.area_sympathy a[role="button"]',
+    ]
 
-    네이버 블로그 공감 구조 (2025년 현재):
-    - 외부 페이지(outer page)에 **플로팅 하단 툴바** 존재
-      → position:fixed, 항상 화면 하단에 표시
-      → ♡ 공감 N | 💬 댓글 N | 공유  형태
-    - mainFrame iframe 안에도 전통적 공감 영역 존재 (포스트 본문 끝)
-    - 플로팅 툴바가 더 안정적이므로 **외부 페이지를 먼저** 탐색
-    """
-    result = {"success": False, "already_liked": False, "error": ""}
+    # 탐색 순서: outer page → mainFrame → 기타
+    frames_ordered = [page.main_frame]
+    for f in page.frames:
+        if f != page.main_frame:
+            if f.name == 'mainFrame':
+                frames_ordered.insert(1, f)
+            else:
+                frames_ordered.append(f)
 
-    try:
-        # ── 1. 공감 버튼 찾기 ──
-        # 순서: 외부 페이지(플로팅 툴바) → mainFrame(전통적 위치)
-        like_target = None
-        btn_method = ""
-        is_floating = False
-
-        # 1-A. 외부 페이지에서 플로팅 툴바 공감 버튼 탐색
-        try:
-            outer_info = await page.evaluate('''() => {
-                // 플로팅 툴바의 공감 버튼 셀렉터
-                // (네이버 블로그 하단 고정 바)
-                const toolbarSelectors = [
-                    // 새 UI: 하단 플로팅 툴바
-                    '.blog2_toolbar .u_likeit_btn',
-                    '.toolbar_wrap .u_likeit_btn',
-                    '.btn_toolbar_like',
-                    '[class*="toolbar"] .u_likeit_btn',
-                    '[class*="floating"] .u_likeit_btn',
-                    // 일반 외부 페이지 공감 버튼
-                    '.u_likeit_list_module .u_likeit_btn',
-                    '.u_likeit_btn',
-                ];
-
-                for (const sel of toolbarSelectors) {
+    for frame in frames_ordered:
+        for sel in SELECTORS:
+            try:
+                info = await frame.evaluate('''(sel) => {
                     const btn = document.querySelector(sel);
-                    if (!btn) continue;
-
-                    // 광고 영역 내 요소 제외
-                    const inAd = btn.closest(
-                        '[class*="power_link"], [class*="ad_"], ' +
-                        '[class*="banner"], [class*="product"], ' +
-                        '.revenue_unit, .bnr_area, #_adFoot'
-                    );
-                    if (inAd) continue;
-
-                    // position:fixed 또는 sticky면 플로팅 툴바
-                    const style = window.getComputedStyle(btn.closest(
-                        '[class*="toolbar"], [class*="floating"], ' +
-                        '[style*="position: fixed"], [style*="position:fixed"]'
-                    ) || btn);
-                    const isFixed = style.position === 'fixed' || style.position === 'sticky';
-
+                    if (!btn) return null;
+                    // 광고 영역 제외
+                    if (btn.closest('[class*="power_link"], [class*="ad_"], .revenue_unit')) return null;
+                    const rect = btn.getBoundingClientRect();
                     return {
-                        found: true,
-                        method: isFixed ? 'floating_toolbar' : 'outer_page',
                         tag: btn.tagName,
                         cls: btn.className.substring(0, 80),
                         text: (btn.textContent || '').trim().substring(0, 50),
                         isOn: btn.classList.contains('on'),
-                        isFixed: isFixed,
-                        href: (btn.href || '').substring(0, 100),
+                        w: rect.width, h: rect.height,
+                        x: rect.left + rect.width / 2,
+                        y: rect.top  + rect.height / 2,
+                        visible: rect.width > 0 && rect.height > 0,
                     };
-                }
-                return { found: false };
-            }''')
+                }''', sel)
+                if info and info.get('visible'):
+                    return frame, sel, info
+            except Exception:
+                continue
+    return None, None, None
 
-            if outer_info and outer_info.get('found'):
-                like_target = page
-                btn_method = outer_info['method']
-                is_floating = outer_info.get('isFixed', False)
-                logger.info(
-                    f"공감 버튼 발견 (외부): method={btn_method}, "
-                    f"cls={outer_info['cls'][:40]}, "
-                    f"text={outer_info['text'][:20]}, "
-                    f"isOn={outer_info['isOn']}, fixed={is_floating}"
-                )
-                if outer_info['isOn']:
-                    result["already_liked"] = True
-                    result["success"] = True
-                    logger.info("이미 공감한 글입니다 (외부)")
-                    return result
-        except Exception as e:
-            logger.debug(f"외부 페이지 공감 탐색 실패: {e}")
 
-        # 1-B. mainFrame에서 전통적 공감 버튼 탐색
-        if not like_target:
-            for frame in page.frames:
-                if frame == page.main_frame:
-                    continue  # 외부 페이지는 이미 위에서 시도
+async def click_like(page) -> dict:
+    """현재 페이지의 공감(하트) 버튼 클릭.
+
+    핵심: JS el.click()은 네이버 이벤트 핸들러를 트리거 못할 수 있으므로
+    Playwright 물리적 클릭(locator.click / mouse.click)을 우선 사용.
+    """
+    result = {"success": False, "already_liked": False, "error": ""}
+
+    try:
+        # ── 1. 공감 버튼 찾기 (_find_like_button 사용) ──
+        frame, selector, info = await _find_like_button(page)
+
+        if not frame:
+            # 디버그: 모든 프레임 공감 관련 요소
+            for f in page.frames:
                 try:
-                    frame_info = await frame.evaluate('''() => {
-                        const selectors = [
-                            '.u_likeit_list_module .u_likeit_btn',
-                            '.u_likeit_btn',
-                            '#sympathyArea a',
-                            '.area_sympathy a',
-                        ];
-                        for (const sel of selectors) {
-                            const btn = document.querySelector(sel);
-                            if (!btn) continue;
-                            return {
-                                found: true,
-                                method: 'mainFrame_' + sel.replace(/[^a-zA-Z]/g, '_'),
-                                tag: btn.tagName,
-                                cls: btn.className.substring(0, 80),
-                                text: (btn.textContent || '').trim().substring(0, 50),
-                                isOn: btn.classList.contains('on'),
-                                href: (btn.href || '').substring(0, 100),
-                            };
-                        }
-                        return { found: false };
-                    }''')
-
-                    if frame_info and frame_info.get('found'):
-                        like_target = frame
-                        btn_method = frame_info['method']
-                        logger.info(
-                            f"공감 버튼 발견 (iframe): frame={frame.name}, "
-                            f"method={btn_method}, cls={frame_info['cls'][:40]}, "
-                            f"isOn={frame_info['isOn']}"
-                        )
-                        if frame_info['isOn']:
-                            result["already_liked"] = True
-                            result["success"] = True
-                            logger.info("이미 공감한 글입니다 (iframe)")
-                            return result
-                        break
-                except Exception:
-                    continue
-
-        # 미발견 → 디버그 로깅
-        if not like_target:
-            for frame in page.frames:
-                try:
-                    debug = await frame.evaluate('''() => {
+                    dbg = await f.evaluate('''() => {
                         const items = [];
-                        for (const el of document.querySelectorAll('button, a')) {
-                            const text = (el.textContent || '').trim();
-                            const cls = el.className || '';
-                            if (text.includes('공감') || cls.includes('likeit') ||
-                                cls.includes('sympathy') || cls.includes('like_btn')) {
-                                items.push(
-                                    el.tagName + '.' + cls.substring(0,50) +
-                                    ' "' + text.substring(0,20) + '"' +
-                                    ' href=' + (el.href || '').substring(0,60)
-                                );
+                        for (const el of document.querySelectorAll('*')) {
+                            const cls = typeof el.className === 'string' ? el.className : '';
+                            if (cls.includes('likeit') || cls.includes('sympathy')) {
+                                const r = el.getBoundingClientRect();
+                                items.push(el.tagName + '.' + cls.substring(0,60) +
+                                    ' ' + r.width.toFixed(0) + 'x' + r.height.toFixed(0));
                             }
                         }
-                        return items;
+                        return items.slice(0, 15);
                     }''')
-                    if debug:
-                        logger.info(f"[디버그] 프레임 '{frame.name}' 공감 관련: {debug}")
+                    if dbg:
+                        logger.info(f"[디버그] '{f.name or 'outer'}' 공감요소: {dbg}")
                 except Exception:
                     continue
             result["error"] = "공감 버튼 미발견"
             return result
 
-        # ── 2. 스크롤 (플로팅 툴바면 생략) ──
-        if not is_floating:
-            await like_target.evaluate('''() => {
-                const btn =
-                    document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
-                    document.querySelector('.u_likeit_btn') ||
-                    document.querySelector('#sympathyArea a');
-                if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
-            }''')
-            await random_delay(0.5, 1)
+        logger.info(
+            f"공감 버튼: frame={frame.name or 'outer'}, sel={selector}, "
+            f"cls={info['cls'][:40]}, isOn={info['isOn']}, "
+            f"size={info['w']:.0f}x{info['h']:.0f}"
+        )
 
-        # ── 3. JS로 직접 클릭 ──
-        click_result = await like_target.evaluate('''() => {
-            // 버튼 탐색 (순서대로)
-            const selectors = [
-                '.blog2_toolbar .u_likeit_btn',
-                '.toolbar_wrap .u_likeit_btn',
-                '[class*="toolbar"] .u_likeit_btn',
-                '[class*="floating"] .u_likeit_btn',
-                '.u_likeit_list_module .u_likeit_btn',
-                '.u_likeit_btn',
-                '#sympathyArea a',
-                '.area_sympathy a',
-            ];
-
-            let btn = null;
-            let matchedSel = '';
-            for (const sel of selectors) {
-                const el = document.querySelector(sel);
-                if (el) {
-                    // 광고 영역 제외
-                    const inAd = el.closest(
-                        '[class*="power_link"], [class*="ad_"], ' +
-                        '[class*="banner"], .revenue_unit, #_adFoot'
-                    );
-                    if (inAd) continue;
-
-                    // 외부 URL 제외
-                    const href = el.href || '';
-                    if (href && (
-                        href.includes('brand.naver.com') ||
-                        href.includes('smartstore') ||
-                        href.includes('shopping.naver')
-                    )) continue;
-
-                    btn = el;
-                    matchedSel = sel;
-                    break;
-                }
-            }
-
-            if (!btn) return { clicked: false, error: 'btn_not_found_in_click' };
-
-            // 이미 공감 상태면 스킵
-            if (btn.classList.contains('on')) {
-                return { clicked: false, error: 'already_on', cls: btn.className };
-            }
-
-            // 클릭
-            btn.click();
-
-            return {
-                clicked: true,
-                selector: matchedSel,
-                tag: btn.tagName,
-                cls: btn.className.substring(0, 80),
-                href: (btn.href || '').substring(0, 80),
-            };
-        }''')
-
-        if click_result.get('clicked'):
-            logger.info(
-                f"공감 클릭 실행: selector={click_result.get('selector')}, "
-                f"tag={click_result.get('tag')}, "
-                f"cls={click_result.get('cls', '')[:40]}"
-            )
-            await random_delay(0.8, 1.5)
-
-            # 클릭 후 페이지 이탈 확인
-            current_url = page.url or ""
-            if 'blog.naver.com' not in current_url:
-                logger.warning(
-                    f"공감 클릭 후 페이지 이탈: {current_url[:80]}"
-                )
-                result["error"] = f"페이지 이탈: {current_url[:60]}"
-                return result
-
-            # 상태 확인
-            try:
-                after = await like_target.evaluate('''() => {
-                    const btn =
-                        document.querySelector('.u_likeit_list_module .u_likeit_btn') ||
-                        document.querySelector('.u_likeit_btn');
-                    if (!btn) return { found: false };
-                    return {
-                        found: true,
-                        isOn: btn.classList.contains('on'),
-                        cls: btn.className.substring(0, 80),
-                    };
-                }''')
-                if after.get('isOn'):
-                    result["success"] = True
-                    logger.info("공감 클릭 성공 (on 상태 확인)")
-                else:
-                    result["success"] = True
-                    logger.info("공감 클릭 수행 (상태 변경 미확인)")
-            except Exception:
-                result["success"] = True
-                logger.info("공감 클릭 수행 (상태 확인 불가)")
-
-        elif click_result.get('error') == 'already_on':
+        if info['isOn']:
             result["already_liked"] = True
             result["success"] = True
             logger.info("이미 공감한 글입니다")
-        else:
-            result["error"] = f"공감 클릭 실패: {click_result.get('error')}"
-            logger.warning(f"공감 클릭 실패: {click_result.get('error')}")
+            return result
+
+        # ── 2. Playwright 물리적 클릭 (3단계 폴백) ──
+        clicked = False
+
+        # 방법 1: Playwright locator.click (실제 마우스 이벤트 — 가장 안정적)
+        try:
+            locator = frame.locator(selector).first
+            await locator.scroll_into_view_if_needed(timeout=3000)
+            await random_delay(0.3, 0.5)
+            await locator.click(timeout=5000)
+            clicked = True
+            logger.info(f"공감 Playwright 클릭 성공: {selector}")
+        except Exception as e1:
+            logger.info(f"Playwright locator 클릭 실패: {e1}")
+
+        # 방법 2: 좌표 기반 mouse.click
+        if not clicked:
+            try:
+                coords = await frame.evaluate('''(sel) => {
+                    const btn = document.querySelector(sel);
+                    if (!btn) return null;
+                    btn.scrollIntoView({ block: "center" });
+                    const r = btn.getBoundingClientRect();
+                    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+                }''', selector)
+
+                if coords:
+                    click_x, click_y = coords['x'], coords['y']
+                    # iframe이면 부모에서 오프셋 추가
+                    if frame != page.main_frame and frame.name:
+                        try:
+                            offset = await page.evaluate('''(name) => {
+                                const iframe = document.querySelector('iframe[name="' + name + '"]');
+                                if (!iframe) return { x: 0, y: 0 };
+                                const r = iframe.getBoundingClientRect();
+                                return { x: r.left, y: r.top };
+                            }''', frame.name)
+                            click_x += offset.get('x', 0)
+                            click_y += offset.get('y', 0)
+                        except Exception:
+                            pass
+                    await random_delay(0.2, 0.4)
+                    await page.mouse.click(click_x, click_y)
+                    clicked = True
+                    logger.info(f"좌표 클릭 성공: ({click_x:.0f}, {click_y:.0f})")
+            except Exception as e2:
+                logger.info(f"좌표 클릭 실패: {e2}")
+
+        # 방법 3: JS click (최후 수단)
+        if not clicked:
+            try:
+                ok = await frame.evaluate('''(sel) => {
+                    const btn = document.querySelector(sel);
+                    if (!btn) return false;
+                    btn.click();
+                    return true;
+                }''', selector)
+                if ok:
+                    clicked = True
+                    logger.info("JS click 성공 (최후 수단)")
+            except Exception as e3:
+                logger.warning(f"JS click도 실패: {e3}")
+
+        if not clicked:
+            result["error"] = "모든 클릭 방법 실패"
+            return result
+
+        await random_delay(0.8, 1.5)
+
+        # ── 3. 클릭 후 검증 ──
+        current_url = page.url or ""
+        if 'naver.com' not in current_url:
+            logger.warning(f"공감 클릭 후 페이지 이탈: {current_url[:80]}")
+            result["error"] = f"페이지 이탈: {current_url[:60]}"
+            return result
+
+        try:
+            after = await frame.evaluate('''(sel) => {
+                const btn = document.querySelector(sel);
+                if (!btn) return { found: false };
+                return { found: true, isOn: btn.classList.contains('on'),
+                         cls: btn.className.substring(0,80) };
+            }''', selector)
+            if after.get('isOn'):
+                result["success"] = True
+                logger.info("공감 성공 (on 확인)")
+            else:
+                result["success"] = True
+                logger.info(f"공감 클릭 수행 (cls={after.get('cls','')})")
+        except Exception:
+            result["success"] = True
+            logger.info("공감 클릭 수행 (확인 불가)")
 
     except Exception as e:
         result["error"] = str(e)
