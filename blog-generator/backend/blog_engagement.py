@@ -24,6 +24,89 @@ logger = logging.getLogger("engagement")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 포스트 페이지 vs 블로그 홈 판별
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def is_actual_post_page(page) -> bool:
+    """현재 페이지가 실제 블로그 포스트 페이지인지 검증.
+    블로그 홈으로 리다이렉트된 경우 False 반환."""
+
+    current_url = page.url or ""
+
+    # URL 기반 빠른 판별: 블로그 홈 패턴이면 즉시 False
+    home_patterns = [
+        "/BlogHome", "/PostList.naver", "/my-log", "/market",
+        "/neighborlog", "/SympathyHistoryList",
+    ]
+    for pat in home_patterns:
+        if pat in current_url:
+            logger.info(f"블로그 홈 URL 감지 (스킵): {current_url[:100]}")
+            return False
+
+    # URL에 포스트 번호가 있으면 True (blog.naver.com/user/123456)
+    import re
+    if re.search(r'blog\.naver\.com/[^/\?]+/\d+', current_url):
+        return True
+    if '/PostView.naver' in current_url and 'logNo=' in current_url:
+        return True
+
+    # URL만으로 판별 불가 → DOM 기반 검증
+    # 블로그 포스트에만 있는 요소들 확인 (mainFrame 포함)
+    targets = [page] + [f for f in page.frames if f.name == 'mainFrame']
+
+    for target in targets:
+        try:
+            is_post = await target.evaluate('''() => {
+                // 포스트 본문 요소가 있는지 확인
+                const postSelectors = [
+                    '.se-main-container',   // SE ONE 에디터 본문
+                    '#postViewArea',        // 구형 에디터 본문
+                    '#post-view',           // 또 다른 형태
+                    '.post_ct',             // 모바일 형태
+                    '.se-component.se-text', // SE 텍스트 블록
+                ];
+                for (const sel of postSelectors) {
+                    const el = document.querySelector(sel);
+                    if (el && el.innerText && el.innerText.trim().length > 30) {
+                        return true;
+                    }
+                }
+                return false;
+            }''')
+            if is_post:
+                return True
+        except Exception:
+            continue
+
+    # 블로그 홈 특징 감지: 카테고리 목록, 프로필 영역만 있는 경우
+    try:
+        is_home = await page.evaluate('''() => {
+            // 블로그 홈에만 있는 요소들
+            const homeIndicators = [
+                '.blog_category',           // 카테고리 위젯
+                '.category_list',           // 카테고리 목록
+                '.area_category',           // 카테고리 영역
+                '#category',                // 카테고리 ID
+                '.widget_category',         // 카테고리 위젯
+            ];
+            let homeScore = 0;
+            for (const sel of homeIndicators) {
+                if (document.querySelector(sel)) homeScore++;
+            }
+            return homeScore >= 1;
+        }''')
+        if is_home:
+            logger.info(f"블로그 홈 DOM 감지 (스킵): {current_url[:100]}")
+            return False
+    except Exception:
+        pass
+
+    # 판별 불가 → 포스트가 아닌 것으로 간주 (안전 우선)
+    logger.warning(f"페이지 유형 판별 불가 (스킵): {current_url[:100]}")
+    return False
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 블로그 피드에서 포스팅 수집
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -164,23 +247,42 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
             const results = [];
             const seen = new Set();
 
-            // 포스팅 URL 검증 (section.blog.naver.com URL도 허용)
+            // 포스팅 URL 검증 (엄격 모드)
             function isPostUrl(url) {{
                 if (!url) return false;
-                // 네이버 블로그 포스트 URL 패턴
-                if (url.includes('blog.naver.com')) {{
-                    if (url.includes('seller.blog.naver.com')) return false;
-                    if (url.includes('/BlogHome')) return false;
-                    if (url.includes('/PostList.naver')) return false;
-                    if (url.includes('/my-log')) return false;
-                    if (url.includes('/market')) return false;
-                    // section.blog.naver.com의 포스트 상세 URL
-                    if (url.includes('/detail')) return true;
-                    if (url.includes('/PostView.naver')) return true;
-                    // blog.naver.com/사용자/포스트번호
-                    const match = url.match(/blog\\.naver\\.com\\/([^\\/\\?]+)\\/([0-9]+)/);
-                    if (match) return true;
+                if (!url.includes('blog.naver.com')) return false;
+
+                // 블로그 홈/목록 패턴 제외
+                const excludePatterns = [
+                    'seller.blog.naver.com',
+                    '/BlogHome', '/PostList.naver', '/my-log', '/market',
+                    '/neighborlog', '/SympathyHistoryList',
+                    '/ProfileView', '/profile',
+                ];
+                for (const pat of excludePatterns) {{
+                    if (url.includes(pat)) return false;
                 }}
+
+                // 포스트 상세 URL만 허용
+                // 1) blog.naver.com/사용자/포스트번호 (가장 일반적)
+                if (/blog\\.naver\\.com\\/[^\\/\\?]+\\/[0-9]{{6,}}/.test(url)) return true;
+                // 2) PostView.naver?logNo=...
+                if (url.includes('/PostView.naver') && url.includes('logNo=')) return true;
+                // 3) section.blog.naver.com/...detail...logNo
+                if (url.includes('section.blog.naver.com') &&
+                    url.includes('/detail') && url.includes('logNo=')) return true;
+
+                return false;
+            }}
+
+            // 블로그 홈/프로필 URL인지 확인 (추가 필터)
+            function isBlogHomeUrl(url) {{
+                if (!url) return false;
+                // blog.naver.com/username (포스트 번호 없음) = 블로그 홈
+                const m = url.match(/blog\\.naver\\.com\\/([^\\/\\?#]+)\\/?$/);
+                if (m && !/^[0-9]+$/.test(m[1])) return true;
+                // section.blog.naver.com/BlogHome
+                if (url.includes('/BlogHome')) return true;
                 return false;
             }}
 
@@ -218,6 +320,9 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                     );
                     if (inSidebar) continue;
 
+                    // 블로그 홈 URL 명시적 제외
+                    if (isBlogHomeUrl(href)) continue;
+
                     if (isPostUrl(href) && title && title.length > 5 &&
                         !seen.has(href)) {{
                         seen.add(href);
@@ -241,6 +346,9 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                         '[class*="my_news"], [class*="area_my"], [class*="snb"]'
                     );
                     if (inSidebar) continue;
+
+                    // 블로그 홈 URL 명시적 제외
+                    if (isBlogHomeUrl(href)) continue;
 
                     if (isPostUrl(href) && title && title.length > 5 &&
                         !seen.has(href)) {{
@@ -279,6 +387,12 @@ async def read_post_content(page, post_url: str) -> dict:
     try:
         await page.goto(post_url, wait_until="domcontentloaded", timeout=15000)
         await random_delay(1, 2)
+
+        # 리다이렉트 감지: 블로그 홈으로 리다이렉트된 경우 스킵
+        if not await is_actual_post_page(page):
+            result["error"] = "블로그 홈으로 리다이렉트됨 (포스트 아님)"
+            logger.warning(f"포스트 아님 (리다이렉트): {post_url} → {page.url}")
+            return result
 
         # 네이버 블로그는 iframe 안에 본문이 있음
         content_data = await page.evaluate('''() => {
@@ -776,12 +890,17 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
     }
 
     try:
-        # 1. 포스팅 내용 읽기
+        # 1. 포스팅 내용 읽기 (리다이렉트 감지 포함)
         post_data = await read_post_content(page, post_url)
         result["post_title"] = post_data.get("title", "")
 
         if post_data.get("error"):
-            logger.warning(f"본문 추출 실패: {post_data['error']} (URL: {post_url})")
+            error_msg = post_data['error']
+            logger.warning(f"본문 추출 실패: {error_msg} (URL: {post_url})")
+            # 블로그 홈으로 리다이렉트된 경우 → 공감/댓글 시도 없이 즉시 스킵
+            if "블로그 홈" in error_msg or "포스트 아님" in error_msg:
+                result["error"] = error_msg
+                return result
 
         # 2. 공감 클릭 + AI 댓글 생성을 병렬 실행
         #    공감 클릭(~2초)하는 동안 AI 댓글(~3-5초)을 백그라운드에서 생성
