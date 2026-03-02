@@ -32,22 +32,20 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
     posts = []
 
     try:
-        # ── 1단계: 네이버 메인에서 "블로그" 링크 URL 추출 후 이동 ──
+        # ── 1단계: 네이버 메인에서 "블로그" 링크 클릭 ──
         await page.goto("https://www.naver.com/",
                         wait_until="domcontentloaded", timeout=15000)
         await random_delay(1, 2)
 
-        # 상단 네비게이션의 "블로그" 링크 URL 추출 (클릭 대신 URL 추출 → goto)
-        # 클릭하면 target="_blank"로 새 탭이 열릴 수 있어서 URL을 직접 가져옴
+        # 상단 네비게이션의 "블로그" 링크 URL 추출 후 goto
+        # (클릭하면 target="_blank"로 새 탭이 열릴 수 있어서 URL을 직접 가져옴)
         blog_url = await page.evaluate('''() => {
             const links = document.querySelectorAll('a');
             for (const a of links) {
                 const text = (a.textContent || '').trim();
                 const href = a.href || '';
-                // 상단 네비게이션의 "블로그" 링크
                 if (text === '블로그' && href.includes('blog')) return href;
             }
-            // 두 번째 시도: href에 blog이 포함된 링크
             for (const a of links) {
                 const text = (a.textContent || '').trim();
                 const href = a.href || '';
@@ -71,35 +69,24 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
 
         logger.info(f"블로그 페이지 도착: {page.url}")
 
-        # ── 2단계: "주제별 보기" 링크 URL 추출 후 이동 ──
-        topic_url = await page.evaluate('''() => {
-            const links = document.querySelectorAll('a');
-            for (const a of links) {
-                const text = (a.textContent || '').trim();
-                const href = a.href || '';
-                if (text === '주제별 보기' || text === '주제별보기') return href;
-                if (text.includes('주제별') && text.includes('보기')) return href;
-            }
-            // href 기반 탐색
-            for (const a of links) {
-                const href = a.href || '';
-                if (href.includes('ThemePost')) return href;
-            }
-            return '';
-        }''')
-
-        if topic_url:
-            logger.info(f"주제별 보기 이동: {topic_url}")
-            await page.goto(topic_url, wait_until="domcontentloaded", timeout=15000)
-            await random_delay(1, 2)
-        else:
-            # 직접 URL 폴백
-            logger.warning("주제별 보기 링크 미발견 → 직접 URL 이동")
-            await page.goto("https://section.blog.naver.com/ThemePost.naver",
-                            wait_until="domcontentloaded", timeout=15000)
-            await random_delay(1, 2)
+        # ── 2단계: 주제별 보기 이동 ──
+        # 블로그 섹션의 "주제별 보기" 링크는 SPA 내부 라우팅(home#)이라
+        # page.goto()로 이동하면 빈 페이지가 됨 → ThemePost.naver 직접 이동
+        await page.goto("https://section.blog.naver.com/ThemePost.naver",
+                        wait_until="domcontentloaded", timeout=15000)
+        await random_delay(2, 3)
 
         logger.info(f"주제별 보기 도착: {page.url}")
+
+        # SPA 콘텐츠 렌더링 대기: 포스팅 링크가 나타날 때까지
+        try:
+            await page.wait_for_selector(
+                'a[href*="blog.naver.com"]',
+                timeout=10000,
+            )
+            logger.info("포스팅 링크 렌더링 확인")
+        except Exception:
+            logger.warning("포스팅 링크 10초 내 미렌더링, 스크롤 후 재시도")
 
         # ── 3단계: 포스팅 목록 수집 ──
         # 스크롤 다운으로 더 많은 포스팅 로드
