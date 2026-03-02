@@ -362,9 +362,28 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
             return results;
         }}''')
 
-        logger.info(f"주제별 보기에서 포스팅 {len(posts)}개 수집")
+        logger.info(f"주제별 보기에서 포스팅 {len(posts)}개 수집 (필터 전)")
         for p in posts[:5]:
             logger.info(f"  수집: {p.get('title', '?')[:40]} → {p.get('url', '?')[:80]}")
+
+        # Python 단 URL 재검증 (JS 필터 통과한 URL 이중 확인)
+        import re
+        validated_posts = []
+        for p in posts:
+            url = p.get("url", "")
+            # 반드시 포스트 번호가 포함된 URL만 허용
+            has_post_num = bool(re.search(r'blog\.naver\.com/[^/\?]+/\d{6,}', url))
+            has_logno = ('PostView.naver' in url and 'logNo=' in url)
+            has_detail_logno = ('section.blog.naver.com' in url and '/detail' in url and 'logNo=' in url)
+
+            if has_post_num or has_logno or has_detail_logno:
+                validated_posts.append(p)
+            else:
+                logger.warning(f"  URL 필터링 (포스트번호 없음): {url[:100]}")
+
+        if len(validated_posts) < len(posts):
+            logger.info(f"URL 검증 후: {len(posts)} → {len(validated_posts)}개")
+        posts = validated_posts
 
         # 포스팅 없으면 디버그 정보
         if not posts:
@@ -388,10 +407,15 @@ async def read_post_content(page, post_url: str) -> dict:
         await page.goto(post_url, wait_until="domcontentloaded", timeout=15000)
         await random_delay(1, 2)
 
-        # 리다이렉트 감지: 블로그 홈으로 리다이렉트된 경우 스킵
+        # 리다이렉트 감지: URL 변경 확인
+        final_url = page.url or ""
+        if final_url != post_url:
+            logger.info(f"URL 변경 감지: {post_url[:80]} → {final_url[:80]}")
+
+        # 포스트 페이지 검증: 블로그 홈이면 스킵
         if not await is_actual_post_page(page):
             result["error"] = "블로그 홈으로 리다이렉트됨 (포스트 아님)"
-            logger.warning(f"포스트 아님 (리다이렉트): {post_url} → {page.url}")
+            logger.warning(f"포스트 아님 (스킵): 요청={post_url[:80]} 도착={final_url[:80]}")
             return result
 
         # 네이버 블로그는 iframe 안에 본문이 있음
