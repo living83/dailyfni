@@ -425,7 +425,8 @@ async def daily_engagement_job():
 
     selected_ids = config.get("engagement_account_ids", [])
     if selected_ids:
-        active_accounts = [a for a in active_accounts if a["id"] in selected_ids]
+        account_map = {a["id"]: a for a in active_accounts}
+        active_accounts = [account_map[aid] for aid in selected_ids if aid in account_map]
 
     if not active_accounts:
         logger.warning("참여 실행: 활성 계정 없음")

@@ -1149,9 +1149,16 @@ _engagement_status = {}
 
 
 @app.post("/api/engagement/run")
-async def run_engagement_now(background_tasks: BackgroundTasks):
+async def run_engagement_now(request: Request, background_tasks: BackgroundTasks):
     """수동으로 참여(공감/댓글) 실행"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    # 요청 본문에서 계정 ID 목록 읽기 (프론트엔드에서 직접 전달)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    request_account_ids = body.get("account_ids", None)
 
     # 스케줄러 설정에서 참여 옵션 읽기
     try:
@@ -1160,17 +1167,25 @@ async def run_engagement_now(background_tasks: BackgroundTasks):
         do_like = bool(config.get("engagement_do_like", 1))
         do_comment = bool(config.get("engagement_do_comment", 1))
     except Exception:
+        config = {}
         max_posts = 10
         do_like = True
         do_comment = True
 
-    # 활성 계정 목록 (설정에서 지정된 계정만 필터링)
+    # 활성 계정 목록 (요청 본문의 계정 ID 우선, 없으면 설정에서 읽기)
     all_accounts = await db.get_accounts()
     active_accounts = [a for a in all_accounts if a.get("is_active")]
 
-    selected_ids = config.get("engagement_account_ids", [])
+    # 요청에서 직접 전달된 계정 ID가 있으면 우선 사용
+    if request_account_ids is not None and len(request_account_ids) > 0:
+        selected_ids = request_account_ids
+    else:
+        selected_ids = config.get("engagement_account_ids", [])
+
     if selected_ids:
-        active_accounts = [a for a in active_accounts if a["id"] in selected_ids]
+        # selected_ids 순서를 보존하여 필터링
+        account_map = {a["id"]: a for a in active_accounts}
+        active_accounts = [account_map[aid] for aid in selected_ids if aid in account_map]
 
     if not active_accounts:
         raise HTTPException(status_code=400, detail="참여에 사용할 활성 계정이 없습니다. 참여 설정에서 계정을 선택해주세요.")
