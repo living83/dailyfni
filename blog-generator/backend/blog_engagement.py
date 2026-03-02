@@ -511,8 +511,13 @@ async def click_like(page) -> dict:
 
     try:
         # iframe 내부에서 공감 버튼 찾기 (네이버 블로그는 iframe 구조)
+        # mainFrame을 최우선으로 탐색
         like_target = page
-        for frame in page.frames:
+        sorted_frames = sorted(
+            page.frames,
+            key=lambda f: (0 if 'mainFrame' in (f.name or '') else 1),
+        )
+        for frame in sorted_frames:
             try:
                 has_like = await frame.evaluate('''() => {
                     return !!document.querySelector(
@@ -522,19 +527,28 @@ async def click_like(page) -> dict:
                 }''')
                 if has_like:
                     like_target = frame
+                    logger.info(f"공감 버튼 프레임 발견: {frame.name or 'main'}")
                     break
             except Exception:
                 continue
 
-        # 공감 영역으로 스크롤 (iframe 내부에서 스크롤)
-        await like_target.evaluate('''() => {
+        # 공감 영역으로 스크롤 (버튼이 있을 때만, 없으면 스크롤 안함)
+        found_btn = await like_target.evaluate('''() => {
             const btn = document.querySelector(
                 '.u_likeit_btn, [class*="sympathy"], [class*="like_it"], ' +
                 '.btn_sympathize, [data-type="sympathy"]'
             );
-            if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
-            else window.scrollTo(0, document.body.scrollHeight);
+            if (btn) {
+                btn.scrollIntoView({ block: "center", behavior: "smooth" });
+                return true;
+            }
+            return false;
         }''')
+        if not found_btn:
+            result["error"] = "공감 버튼 미발견 (스크롤 생략)"
+            logger.warning("공감 버튼을 찾을 수 없어 스크롤 생략")
+            return result
+
         await random_delay(0.5, 1)
 
         # 이미 공감 눌렀는지 확인
@@ -681,21 +695,19 @@ async def write_comment(page, comment_text: str) -> dict:
                 break
 
         if main_frame:
-            # mainFrame 내부 스크롤
+            # mainFrame 내부 스크롤 (댓글 영역은 본문 바로 아래)
             logger.info("mainFrame 내부 스크롤 시작 (댓글 영역 로딩)")
-            for _ in range(8):
-                await main_frame.evaluate('window.scrollBy(0, 800)')
+            for _ in range(6):
+                await main_frame.evaluate('window.scrollBy(0, 600)')
                 await random_delay(0.3, 0.5)
-            await main_frame.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            # 댓글 영역 로딩 대기
             await random_delay(1, 2)
         else:
             logger.warning("mainFrame 미발견, 메인 페이지 스크롤")
-            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            for _ in range(5):
+                await page.evaluate('window.scrollBy(0, 600)')
+                await random_delay(0.3, 0.5)
             await random_delay(1, 2)
-
-        # 외부 페이지도 스크롤 (안전장치)
-        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-        await random_delay(0.5, 1)
 
         # ── 2. 댓글 iframe 찾기 ──
         comment_target = None
