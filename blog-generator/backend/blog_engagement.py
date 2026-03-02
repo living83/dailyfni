@@ -513,12 +513,13 @@ async def _scroll_to_sympathy_area(frame):
             return !!document.querySelector('.area_sympathy, #sympathyArea, .u_likeit_list_module');
         }''')
         if has_area:
-            # 이미 있으면 스크롤만
+            # block:"start" → 뷰포트 상단에 배치 (하단 플로팅 바와 겹치지 않도록)
             await frame.evaluate('''() => {
                 const area = document.querySelector('.area_sympathy, #sympathyArea, .u_likeit_list_module');
-                if (area) area.scrollIntoView({ block: "center", behavior: "instant" });
+                if (area) area.scrollIntoView({ block: "start", behavior: "instant" });
             }''')
-            await asyncio.sleep(0.5)
+            # AJAX JS 핸들러 바인딩 대기 (0.5초 → 1.5초)
+            await asyncio.sleep(1.5)
             return True
 
         # 2단계: 없으면 본문 하단까지 점진적 스크롤 (AJAX 트리거)
@@ -529,14 +530,15 @@ async def _scroll_to_sympathy_area(frame):
             found = await frame.evaluate('''() => {
                 const area = document.querySelector('.area_sympathy, #sympathyArea, .u_likeit_list_module');
                 if (area) {
-                    area.scrollIntoView({ block: "center", behavior: "instant" });
+                    area.scrollIntoView({ block: "start", behavior: "instant" });
                     return true;
                 }
                 return false;
             }''')
             if found:
                 logger.info(f"공감 영역 발견 (스크롤 {i+1}회)")
-                await asyncio.sleep(0.5)
+                # JS 핸들러 바인딩 대기
+                await asyncio.sleep(1.5)
                 return True
 
         logger.info("mainFrame 스크롤 완료, 공감 영역 미발견")
@@ -639,7 +641,79 @@ async def _find_like_button(page):
         except Exception:
             pass
 
-    # ── 2. 외부 페이지 + 기타 프레임 폴백 ──
+    # ── 2. 외부 페이지 플로팅 바에서 ♡ 버튼 탐지 ──
+    # 플로팅 바는 position:fixed 로 하단에 고정된 영역
+    try:
+        floating_btn = await page.evaluate('''() => {
+            // position:fixed이고 뷰포트 하단에 있는 요소 찾기
+            const vh = window.innerHeight;
+            const fixedContainers = [];
+            for (const el of document.querySelectorAll('*')) {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed') {
+                    const rect = el.getBoundingClientRect();
+                    // 하단 100px 내에 위치한 고정 요소
+                    if (rect.bottom >= vh - 100 && rect.height > 20 && rect.height < 120) {
+                        fixedContainers.push(el);
+                    }
+                }
+            }
+            // 고정 컨테이너 내에서 공감/like 관련 클릭 가능 요소 찾기
+            for (const container of fixedContainers) {
+                const candidates = container.querySelectorAll('a, button, [role="button"], span[class*="like"], span[class*="sympathy"]');
+                for (const btn of candidates) {
+                    const cls = typeof btn.className === 'string' ? btn.className : '';
+                    const text = (btn.textContent || '').trim();
+                    // 공감/like 관련 요소 식별
+                    if (cls.includes('like') || cls.includes('sympathy') ||
+                        cls.includes('u_likeit') ||
+                        (text.length <= 10 && (text.includes('공감') || text === '')) ||
+                        btn.querySelector('[class*="like"], [class*="heart"], [class*="ico_like"]')) {
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width > 10 && rect.height > 10) {
+                            return {
+                                tag: btn.tagName,
+                                cls: cls.substring(0, 100),
+                                text: text.substring(0, 50),
+                                x: rect.left + rect.width / 2,
+                                y: rect.top + rect.height / 2,
+                                w: rect.width, h: rect.height,
+                                isOn: btn.classList.contains('on'),
+                                visible: true,
+                                source: 'floating_bar',
+                            };
+                        }
+                    }
+                }
+                // 폴백: 컨테이너의 첫번째 클릭 가능 요소 (♡는 보통 맨 왼쪽)
+                const firstBtn = container.querySelector('a, button, [role="button"]');
+                if (firstBtn) {
+                    const rect = firstBtn.getBoundingClientRect();
+                    const cls = typeof firstBtn.className === 'string' ? firstBtn.className : '';
+                    if (rect.width > 10 && rect.height > 10 && rect.left < 150) {
+                        return {
+                            tag: firstBtn.tagName,
+                            cls: cls.substring(0, 100),
+                            text: (firstBtn.textContent || '').trim().substring(0, 50),
+                            x: rect.left + rect.width / 2,
+                            y: rect.top + rect.height / 2,
+                            w: rect.width, h: rect.height,
+                            isOn: firstBtn.classList.contains('on'),
+                            visible: true,
+                            source: 'floating_bar_first',
+                        };
+                    }
+                }
+            }
+            return null;
+        }''')
+        if floating_btn:
+            logger.info(f"플로팅 바 공감 버튼 발견: {floating_btn}")
+            return page.main_frame, '__floating_bar__', floating_btn
+    except Exception as e:
+        logger.info(f"플로팅 바 탐지 오류: {e}")
+
+    # ── 3. 기타 프레임 폴백 (일반 셀렉터) ──
     other_frames = [page.main_frame]
     for f in page.frames:
         if f != page.main_frame and f.name != 'mainFrame':
@@ -673,13 +747,53 @@ async def _find_like_button(page):
     return None, None, None
 
 
+async def _hide_floating_bar(page):
+    """외부 페이지의 하단 플로팅 바를 임시로 숨김 (mainFrame 클릭 방해 방지)."""
+    try:
+        hidden = await page.evaluate('''() => {
+            let count = 0;
+            const vh = window.innerHeight;
+            for (const el of document.querySelectorAll('*')) {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed') {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.bottom >= vh - 100 && rect.height > 20 && rect.height < 120) {
+                        el.setAttribute('data-hidden-by-bot', el.style.display || '');
+                        el.style.setProperty('display', 'none', 'important');
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }''')
+        if hidden:
+            logger.info(f"플로팅 바 {hidden}개 숨김")
+        return hidden
+    except Exception:
+        return 0
+
+
+async def _restore_floating_bar(page):
+    """숨긴 플로팅 바 복원."""
+    try:
+        await page.evaluate('''() => {
+            for (const el of document.querySelectorAll('[data-hidden-by-bot]')) {
+                const orig = el.getAttribute('data-hidden-by-bot');
+                el.style.display = orig;
+                el.removeAttribute('data-hidden-by-bot');
+            }
+        }''')
+    except Exception:
+        pass
+
+
 async def click_like(page) -> dict:
     """현재 페이지의 공감(하트) 버튼 클릭.
 
-    핵심 전략:
-    1. mainFrame iframe 내부 div.area_sympathy의 .u_likeit_btn이 실제 API 호출 버튼
-    2. 외부 페이지 플로팅 바의 ♡는 시각적 미러 → mainFrame 우선 탐색
-    3. Playwright 물리적 클릭 사용 (JS click은 이벤트 핸들러 미트리거)
+    전략:
+    A. mainFrame의 area_sympathy 버튼 → 플로팅 바 숨기고 locator.click(force=True)
+    B. 외부 플로팅 바의 ♡ 버튼 → 좌표 기반 직접 클릭
+    C. 모든 프레임에서 JS dispatchEvent 폴백
     """
     result = {"success": False, "already_liked": False, "error": ""}
 
@@ -698,10 +812,12 @@ async def click_like(page) -> dict:
                             if (cls.includes('likeit') || cls.includes('sympathy') || cls.includes('like_it')) {
                                 const r = el.getBoundingClientRect();
                                 items.push(el.tagName + '.' + cls.substring(0,60) +
-                                    ' ' + r.width.toFixed(0) + 'x' + r.height.toFixed(0));
+                                    ' vis=' + (r.width > 0 && r.height > 0) +
+                                    ' ' + r.width.toFixed(0) + 'x' + r.height.toFixed(0) +
+                                    ' @' + r.left.toFixed(0) + ',' + r.top.toFixed(0));
                             }
                         }
-                        return items.slice(0, 15);
+                        return items.slice(0, 20);
                     }''')
                     if dbg:
                         logger.info(f"[디버그] '{f.name or 'outer'}' 공감요소: {dbg}")
@@ -714,7 +830,8 @@ async def click_like(page) -> dict:
         logger.info(
             f"공감 버튼: frame={frame.name or 'outer'}, sel={selector}, "
             f"cls={info['cls'][:40]}, isOn={info['isOn']}, "
-            f"size={info['w']:.0f}x{info['h']:.0f}"
+            f"size={info['w']:.0f}x{info['h']:.0f}, "
+            f"pos=({info.get('x',0):.0f},{info.get('y',0):.0f})"
         )
 
         if info['isOn']:
@@ -726,42 +843,48 @@ async def click_like(page) -> dict:
         # 디버그 스크린샷: 클릭 전
         await capture_debug(page, "like_before_click")
 
-        # ── 2. Playwright 물리적 클릭 (3단계 폴백) ──
+        # ── 2. 클릭 실행 ──
         clicked = False
-        is_in_iframe = (frame.name == 'mainFrame')
+        is_in_mainframe = (frame.name == 'mainFrame')
+        is_floating = (selector == '__floating_bar__')
 
-        # 방법 1: Playwright locator.click (실제 마우스 이벤트)
-        if selector != '__text_fallback__':
-            try:
-                locator = frame.locator(selector).first
-                await locator.scroll_into_view_if_needed(timeout=3000)
-                await random_delay(0.3, 0.5)
-                await locator.click(timeout=5000)
-                clicked = True
-                logger.info(f"공감 Playwright locator.click 성공: {selector}")
-            except Exception as e1:
-                logger.info(f"Playwright locator 클릭 실패: {e1}")
+        # ──── 전략 A: mainFrame 버튼 (플로팅 바 숨기고 클릭) ────
+        if is_in_mainframe and not is_floating:
+            # 플로팅 바를 숨겨서 클릭 차단 방지
+            await _hide_floating_bar(page)
 
-        # 방법 2: 좌표 기반 page.mouse.click (iframe 오프셋 보정)
-        if not clicked:
-            try:
-                # 버튼을 다시 뷰포트 중앙으로 스크롤 후 좌표 재계산
-                if selector == '__text_fallback__':
-                    coords = {'x': info['x'], 'y': info['y']}
-                else:
-                    coords = await frame.evaluate('''(sel) => {
+            # A-1: locator.click(force=True) - 가장 신뢰할 수 있는 방법
+            if selector not in ('__text_fallback__', '__floating_bar__'):
+                try:
+                    locator = frame.locator(selector).first
+                    # block:"start"로 스크롤 (플로팅 바 영역 회피)
+                    await frame.evaluate('''(sel) => {
                         const btn = document.querySelector(sel);
-                        if (!btn) return null;
-                        btn.scrollIntoView({ block: "center", behavior: "instant" });
-                        const r = btn.getBoundingClientRect();
-                        return { x: r.left + r.width/2, y: r.top + r.height/2 };
+                        if (btn) btn.scrollIntoView({ block: "start", behavior: "instant" });
                     }''', selector)
+                    await random_delay(0.3, 0.5)
+                    await locator.click(force=True, timeout=5000)
+                    clicked = True
+                    logger.info(f"전략A-1: mainFrame locator.click(force) 성공: {selector}")
+                except Exception as e1:
+                    logger.info(f"전략A-1 실패: {e1}")
 
-                if coords:
-                    click_x, click_y = coords['x'], coords['y']
+            # A-2: 좌표 기반 mouse.click (iframe 오프셋 보정)
+            if not clicked:
+                try:
+                    if selector in ('__text_fallback__',):
+                        coords = {'x': info['x'], 'y': info['y']}
+                    else:
+                        coords = await frame.evaluate('''(sel) => {
+                            const btn = document.querySelector(sel);
+                            if (!btn) return null;
+                            btn.scrollIntoView({ block: "start", behavior: "instant" });
+                            const r = btn.getBoundingClientRect();
+                            return { x: r.left + r.width/2, y: r.top + r.height/2 };
+                        }''', selector)
 
-                    # mainFrame iframe이면 부모 페이지에서 iframe 오프셋 더하기
-                    if is_in_iframe:
+                    if coords:
+                        click_x, click_y = coords['x'], coords['y']
                         try:
                             offset = await page.evaluate('''() => {
                                 const iframe = document.querySelector('iframe[name="mainFrame"]');
@@ -771,47 +894,101 @@ async def click_like(page) -> dict:
                             }''')
                             click_x += offset.get('x', 0)
                             click_y += offset.get('y', 0)
-                            logger.info(f"iframe 오프셋: ({offset.get('x',0):.0f}, {offset.get('y',0):.0f})")
                         except Exception:
                             pass
 
+                        await random_delay(0.2, 0.4)
+                        await page.mouse.click(click_x, click_y)
+                        clicked = True
+                        logger.info(f"전략A-2: 좌표 클릭 성공: ({click_x:.0f}, {click_y:.0f})")
+                except Exception as e2:
+                    logger.info(f"전략A-2 실패: {e2}")
+
+            # A-3: JS dispatchEvent (mainFrame 내부)
+            if not clicked:
+                try:
+                    ok = await frame.evaluate('''(sel) => {
+                        let btn;
+                        if (sel === '__text_fallback__') {
+                            const area = document.querySelector('.area_sympathy, #sympathyArea') || document;
+                            for (const el of area.querySelectorAll('a, button, [role="button"]')) {
+                                if ((el.textContent || '').trim().startsWith('공감')) { btn = el; break; }
+                            }
+                        } else {
+                            btn = document.querySelector(sel);
+                        }
+                        if (!btn) return false;
+                        // mousedown → mouseup → click 시퀀스 (네이버 핸들러 트리거)
+                        const opts = { bubbles: true, cancelable: true, view: window };
+                        btn.dispatchEvent(new MouseEvent('mousedown', opts));
+                        btn.dispatchEvent(new MouseEvent('mouseup', opts));
+                        btn.dispatchEvent(new MouseEvent('click', opts));
+                        return true;
+                    }''', selector)
+                    if ok:
+                        clicked = True
+                        logger.info("전략A-3: JS dispatchEvent 성공")
+                except Exception as e3:
+                    logger.info(f"전략A-3 실패: {e3}")
+
+            # 플로팅 바 복원
+            await _restore_floating_bar(page)
+
+        # ──── 전략 B: 플로팅 바 ♡ 직접 클릭 ────
+        if not clicked and (is_floating or not is_in_mainframe):
+            click_x = info.get('x', 0)
+            click_y = info.get('y', 0)
+
+            if click_x > 0 and click_y > 0:
+                try:
                     await random_delay(0.2, 0.4)
                     await page.mouse.click(click_x, click_y)
                     clicked = True
-                    logger.info(f"좌표 클릭 성공: ({click_x:.0f}, {click_y:.0f})")
-            except Exception as e2:
-                logger.info(f"좌표 클릭 실패: {e2}")
+                    logger.info(f"전략B: 플로팅 바 좌표 클릭 성공: ({click_x:.0f}, {click_y:.0f})")
+                except Exception as e4:
+                    logger.info(f"전략B 좌표 클릭 실패: {e4}")
 
-        # 방법 3: JS dispatchEvent 시뮬레이션 (최후 수단)
-        if not clicked:
+            # B-2: locator 폴백
+            if not clicked and selector not in ('__text_fallback__', '__floating_bar__'):
+                try:
+                    locator = frame.locator(selector).first
+                    await locator.click(force=True, timeout=5000)
+                    clicked = True
+                    logger.info(f"전략B-2: locator.click(force) 성공: {selector}")
+                except Exception as e5:
+                    logger.info(f"전략B-2 실패: {e5}")
+
+        # ──── 전략 C: mainFrame 실패 후 플로팅 바 시도 ────
+        if not clicked and is_in_mainframe:
+            logger.info("mainFrame 클릭 실패 → 플로팅 바 ♡ 시도")
             try:
-                if selector == '__text_fallback__':
-                    ok = await frame.evaluate('''() => {
-                        const area = document.querySelector('.area_sympathy, #sympathyArea') || document;
-                        for (const el of area.querySelectorAll('a, button, [role="button"]')) {
-                            const text = (el.textContent || '').trim();
-                            if (text.startsWith('공감') && text.length < 20) {
-                                if (el.closest('[class*="power_link"], [class*="ad_"]')) continue;
-                                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                                return true;
+                floating_info = await page.evaluate('''() => {
+                    const vh = window.innerHeight;
+                    for (const el of document.querySelectorAll('*')) {
+                        const style = window.getComputedStyle(el);
+                        if (style.position === 'fixed') {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.bottom >= vh - 100 && rect.height > 20 && rect.height < 120) {
+                                // 컨테이너의 첫번째 클릭 가능 요소 (♡)
+                                const btn = el.querySelector('a, button, [role="button"]');
+                                if (btn) {
+                                    const br = btn.getBoundingClientRect();
+                                    return { x: br.left + br.width/2, y: br.top + br.height/2 };
+                                }
                             }
                         }
-                        return false;
-                    }''')
-                else:
-                    ok = await frame.evaluate('''(sel) => {
-                        const btn = document.querySelector(sel);
-                        if (!btn) return false;
-                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                        return true;
-                    }''', selector)
-                if ok:
+                    }
+                    return null;
+                }''')
+                if floating_info:
+                    await page.mouse.click(floating_info['x'], floating_info['y'])
                     clicked = True
-                    logger.info("JS dispatchEvent 클릭 성공 (최후 수단)")
-            except Exception as e3:
-                logger.warning(f"JS dispatchEvent도 실패: {e3}")
+                    logger.info(f"전략C: 플로팅 바 폴백 클릭 성공: ({floating_info['x']:.0f}, {floating_info['y']:.0f})")
+            except Exception as e6:
+                logger.info(f"전략C 실패: {e6}")
 
         if not clicked:
+            await capture_debug(page, "like_click_failed")
             result["error"] = "모든 클릭 방법 실패"
             return result
 
@@ -827,26 +1004,34 @@ async def click_like(page) -> dict:
             result["error"] = f"페이지 이탈: {current_url[:60]}"
             return result
 
-        # .on 클래스 확인 (공감 성공 시 추가됨)
+        # .on 클래스 확인 (mainFrame에서 체크)
         try:
-            if selector != '__text_fallback__':
-                after = await frame.evaluate('''(sel) => {
-                    const btn = document.querySelector(sel);
-                    if (!btn) return { found: false };
-                    return { found: true, isOn: btn.classList.contains('on'),
-                             cls: btn.className.substring(0,80) };
-                }''', selector)
-            else:
-                after = await frame.evaluate('''() => {
-                    const btn = document.querySelector('.u_likeit_btn, .area_sympathy a[role="button"]');
-                    if (!btn) return { found: false };
-                    return { found: true, isOn: btn.classList.contains('on'),
-                             cls: btn.className.substring(0,80) };
-                }''')
+            check_frame = frame
+            # 플로팅 바로 클릭한 경우 mainFrame에서도 확인
+            main_frame = None
+            for f in page.frames:
+                if f.name == 'mainFrame':
+                    main_frame = f
+                    break
+            if main_frame:
+                check_frame = main_frame
+
+            after = await check_frame.evaluate('''() => {
+                const btn = document.querySelector(
+                    '.area_sympathy .u_likeit_btn, .u_likeit_btn, ' +
+                    '#sympathyArea a[role="button"], .area_sympathy a[role="button"]'
+                );
+                if (!btn) return { found: false };
+                return {
+                    found: true,
+                    isOn: btn.classList.contains('on'),
+                    cls: btn.className.substring(0, 80),
+                };
+            }''')
 
             if after.get('isOn'):
                 result["success"] = True
-                logger.info("공감 성공 (on 클래스 확인)")
+                logger.info("공감 성공! (on 클래스 확인)")
             else:
                 result["success"] = True
                 logger.info(f"공감 클릭 수행 (on 미확인, cls={after.get('cls','')})")
