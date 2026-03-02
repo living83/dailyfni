@@ -843,6 +843,29 @@ async def click_like(page) -> dict:
         # 디버그 스크린샷: 클릭 전
         await capture_debug(page, "like_before_click")
 
+        # 디버그: 클릭 대상 HTML 덤프
+        if selector not in ('__text_fallback__', '__floating_bar__'):
+            try:
+                html_dump = await frame.evaluate('''(sel) => {
+                    const btn = document.querySelector(sel);
+                    if (!btn) return null;
+                    return {
+                        outerHTML: btn.outerHTML.substring(0, 300),
+                        parentTag: btn.parentElement ? btn.parentElement.tagName : '?',
+                        parentCls: btn.parentElement ? (btn.parentElement.className || '').substring(0, 80) : '?',
+                        areaHTML: (() => {
+                            const a = document.querySelector('.area_sympathy');
+                            return a ? a.outerHTML.substring(0, 500) : 'area_sympathy NOT FOUND';
+                        })(),
+                    };
+                }''', selector)
+                if html_dump:
+                    logger.info(f"[HTML덤프] btn: {html_dump.get('outerHTML','')[:200]}")
+                    logger.info(f"[HTML덤프] parent: {html_dump.get('parentTag','')} .{html_dump.get('parentCls','')[:60]}")
+                    logger.info(f"[HTML덤프] area: {html_dump.get('areaHTML','')[:300]}")
+            except Exception:
+                pass
+
         # ── 2. 클릭 실행 ──
         clicked = False
         is_in_mainframe = (frame.name == 'mainFrame')
@@ -904,7 +927,7 @@ async def click_like(page) -> dict:
                 except Exception as e2:
                     logger.info(f"전략A-2 실패: {e2}")
 
-            # A-3: JS dispatchEvent (mainFrame 내부)
+            # A-3: JS element.click() (isTrusted: true → 네이버 핸들러 호환)
             if not clicked:
                 try:
                     ok = await frame.evaluate('''(sel) => {
@@ -918,16 +941,13 @@ async def click_like(page) -> dict:
                             btn = document.querySelector(sel);
                         }
                         if (!btn) return false;
-                        // mousedown → mouseup → click 시퀀스 (네이버 핸들러 트리거)
-                        const opts = { bubbles: true, cancelable: true, view: window };
-                        btn.dispatchEvent(new MouseEvent('mousedown', opts));
-                        btn.dispatchEvent(new MouseEvent('mouseup', opts));
-                        btn.dispatchEvent(new MouseEvent('click', opts));
+                        // element.click()은 isTrusted: true (dispatchEvent와 다름)
+                        btn.click();
                         return true;
                     }''', selector)
                     if ok:
                         clicked = True
-                        logger.info("전략A-3: JS dispatchEvent 성공")
+                        logger.info("전략A-3: JS element.click() 성공")
                 except Exception as e3:
                     logger.info(f"전략A-3 실패: {e3}")
 
@@ -993,6 +1013,81 @@ async def click_like(page) -> dict:
             return result
 
         await random_delay(0.8, 1.5)
+
+        # ── 2-1. 리액션 피커 처리 ──
+        # 네이버 블로그는 ♡ 클릭 시 리액션 피커(좋아요/훈훈해요/슬퍼요 등)가
+        # 나타날 수 있음. 피커가 보이면 첫 번째 리액션(좋아요) 클릭.
+        reaction_handled = False
+        for check_frame in [frame] + ([page.main_frame] if frame != page.main_frame else []):
+            try:
+                reaction_info = await check_frame.evaluate('''() => {
+                    // 리액션 레이어 찾기 (u_likeit_layer, reaction_layer 등)
+                    const layerSels = [
+                        '.u_likeit_layer',
+                        '[class*="likeit_layer"]',
+                        '[class*="reaction_layer"]',
+                        '[class*="sympathy_layer"]',
+                        '.u_likeit_module .u_likeit_layer',
+                    ];
+                    for (const sel of layerSels) {
+                        const layers = document.querySelectorAll(sel);
+                        for (const layer of layers) {
+                            const style = window.getComputedStyle(layer);
+                            if (style.display === 'none' || style.visibility === 'hidden' ||
+                                style.opacity === '0') continue;
+                            const rect = layer.getBoundingClientRect();
+                            if (rect.width < 10 || rect.height < 10) continue;
+
+                            // 레이어 내 첫 번째 리액션 버튼 찾기
+                            const btns = layer.querySelectorAll(
+                                'a, button, [role="button"], li, .u_likeit_list_btn'
+                            );
+                            for (const btn of btns) {
+                                const br = btn.getBoundingClientRect();
+                                if (br.width > 5 && br.height > 5) {
+                                    return {
+                                        layerSel: sel,
+                                        layerSize: rect.width.toFixed(0) + 'x' + rect.height.toFixed(0),
+                                        btnTag: btn.tagName,
+                                        btnCls: (typeof btn.className === 'string' ? btn.className : '').substring(0, 80),
+                                        btnText: (btn.textContent || '').trim().substring(0, 30),
+                                        x: br.left + br.width / 2,
+                                        y: br.top + br.height / 2,
+                                        inFrame: true,
+                                    };
+                                }
+                            }
+                        }
+                    }
+                    return null;
+                }''')
+                if reaction_info:
+                    logger.info(f"리액션 피커 발견! {reaction_info}")
+                    rx, ry = reaction_info['x'], reaction_info['y']
+                    # iframe 오프셋 보정
+                    if check_frame.name == 'mainFrame':
+                        try:
+                            offset = await page.evaluate('''() => {
+                                const iframe = document.querySelector('iframe[name="mainFrame"]');
+                                if (!iframe) return { x: 0, y: 0 };
+                                const r = iframe.getBoundingClientRect();
+                                return { x: r.left, y: r.top };
+                            }''')
+                            rx += offset.get('x', 0)
+                            ry += offset.get('y', 0)
+                        except Exception:
+                            pass
+                    await random_delay(0.3, 0.5)
+                    await page.mouse.click(rx, ry)
+                    reaction_handled = True
+                    logger.info(f"리액션 클릭 완료: ({rx:.0f}, {ry:.0f}) {reaction_info.get('btnText','')}")
+                    await random_delay(0.5, 1.0)
+                    break
+            except Exception:
+                continue
+
+        if reaction_handled:
+            logger.info("리액션 피커 처리 완료")
 
         # 디버그 스크린샷: 클릭 후
         await capture_debug(page, "like_after_click")
