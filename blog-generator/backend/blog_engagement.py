@@ -25,7 +25,7 @@ from se_helpers import (
 logger = logging.getLogger("engagement")
 
 # 배포 확인용 버전 상수 (이 값이 로그에 보이면 최신 코드 실행 중)
-CODE_VERSION = "2026-03-02-v6"
+CODE_VERSION = "2026-03-02-v7"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1395,18 +1395,81 @@ async def write_comment(page, comment_text: str) -> dict:
         if not main_frame:
             logger.warning("mainFrame 미발견, 메인 페이지 스크롤")
 
-        # 점진적 스크롤 + cbox iframe 폴링 (최대 3라운드)
-        logger.info("댓글 영역 스크롤 시작 (cbox iframe 로딩 트리거)")
+        # ── 1-1. 본문 하단으로 스크롤 (댓글 버튼 노출) ──
+        logger.info("댓글 영역 스크롤 시작")
+        await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+        await random_delay(0.8, 1.2)
+        for _ in range(3):
+            await scroll_target.evaluate('window.scrollBy(0, 800)')
+            await random_delay(0.2, 0.3)
+
+        # ── 1-2. "댓글" 버튼 클릭 (cbox iframe 로딩 트리거) ──
+        # 네이버 블로그는 "댓글 N" 버튼을 클릭해야 댓글 cbox iframe이 로드됨
+        comment_btn_selectors = [
+            'a.btn_comment',                          # 일반 블로그 댓글 버튼
+            '.area_comment a',                         # 댓글 영역 링크
+            'a[href*="#comment"]',                      # 해시 앵커 댓글 링크
+            '.u_likeit_list_btn._comment',             # 좋아요 옆 댓글 버튼
+            'button._comment',                         # 버튼형 댓글
+            'em.u_cnt._count',                         # 댓글 수 표시 영역 (클릭 가능)
+            '.comment_count',                          # 댓글 카운트 영역
+            'a[class*="comment"]',                     # comment 포함 클래스
+            '.area_sympathy + * a',                    # 공감 영역 다음 형제
+        ]
+        comment_btn_clicked = False
+        for sel in comment_btn_selectors:
+            try:
+                btn = scroll_target.locator(sel).first
+                if await btn.is_visible(timeout=1000):
+                    # 버튼 텍스트에 "댓글" 포함 여부 확인
+                    btn_text = await btn.text_content() or ''
+                    await btn.click(timeout=3000)
+                    comment_btn_clicked = True
+                    logger.info(f"댓글 버튼 클릭 성공: {sel} (텍스트: '{btn_text.strip()[:20]}')")
+                    break
+            except Exception:
+                continue
+
+        if not comment_btn_clicked:
+            # JS 폴백: 텍스트 기반 "댓글" 링크 탐색
+            logger.info("댓글 버튼 locator 미발견 → JS 텍스트 탐색")
+            js_clicked = await scroll_target.evaluate('''() => {
+                // "댓글" 텍스트를 포함하는 클릭 가능한 요소 탐색
+                const allLinks = document.querySelectorAll('a, button, span[onclick], em');
+                for (const el of allLinks) {
+                    const text = (el.textContent || '').trim();
+                    if (text.match(/댓글\\s*\\d*/)) {
+                        el.scrollIntoView({ block: "center" });
+                        el.click();
+                        return text.substring(0, 30);
+                    }
+                }
+                // 클래스명 기반 폴백
+                const byClass = document.querySelector(
+                    '[class*="comment_btn"], [class*="btn_comment"], ' +
+                    '[class*="comment_count"], [class*="reply"]'
+                );
+                if (byClass) {
+                    byClass.scrollIntoView({ block: "center" });
+                    byClass.click();
+                    return 'class:' + byClass.className.substring(0, 30);
+                }
+                return null;
+            }''')
+            if js_clicked:
+                comment_btn_clicked = True
+                logger.info(f"댓글 버튼 JS 클릭 성공: '{js_clicked}'")
+            else:
+                logger.warning("댓글 버튼 미발견 - cbox iframe이 이미 로드되었을 수 있음")
+
+        # 댓글 버튼 클릭 후 cbox iframe 로딩 대기
+        if comment_btn_clicked:
+            await random_delay(1.5, 2.5)
+
+        # ── 1-3. cbox iframe 폴링 (최대 3라운드) ──
         comment_target = None
         for scroll_round in range(3):
-            # 본문 끝까지 스크롤
-            await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-            await random_delay(0.8, 1.2)
-            # 추가 점진적 스크롤 (lazy-load IntersectionObserver 트리거)
-            for _ in range(5):
-                await scroll_target.evaluate('window.scrollBy(0, 1000)')
-                await random_delay(0.2, 0.4)
-            # 스크롤 후 cbox iframe 로딩 폴링 (최대 5초)
+            # cbox iframe 폴링 (최대 5초)
             for poll in range(10):
                 comment_target = _find_cbox_in_frames()
                 if comment_target:
@@ -1418,7 +1481,13 @@ async def write_comment(page, comment_text: str) -> dict:
                 await asyncio.sleep(0.5)
             if comment_target:
                 break
-            logger.info(f"cbox iframe 미발견 (스크롤 라운드 {scroll_round+1}/3), 재시도")
+            # 추가 스크롤 후 재시도
+            logger.info(f"cbox iframe 미발견 (라운드 {scroll_round+1}/3), 추가 스크롤 후 재시도")
+            await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await random_delay(0.5, 0.8)
+            for _ in range(3):
+                await scroll_target.evaluate('window.scrollBy(0, 1000)')
+                await random_delay(0.2, 0.3)
 
         # cbox iframe 로드 대기
         if comment_target:
