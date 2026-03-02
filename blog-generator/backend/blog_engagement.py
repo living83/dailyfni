@@ -28,38 +28,107 @@ logger = logging.getLogger("engagement")
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def collect_blog_posts(page, max_posts: int = 10) -> list:
-    """네이버 블로그 탭에서 포스팅 URL 수집"""
+    """네이버 메인 → 블로그 → 주제별 보기 경로로 포스팅 URL 수집"""
     posts = []
 
     try:
-        # 블로그 섹션으로 이동
-        await page.goto("https://section.blog.naver.com/BlogHome.naver",
+        # ── 1단계: 네이버 메인에서 "블로그" 클릭 ──
+        await page.goto("https://www.naver.com/",
                         wait_until="domcontentloaded", timeout=15000)
         await random_delay(2, 3)
 
-        # 포스팅 목록 추출
+        # 오른쪽 하단 영역의 "블로그" 링크 찾기
+        blog_link = await try_selectors(page, [
+            'a:has-text("블로그")[href*="blog"]',
+            'a[href*="section.blog.naver.com"]',
+            'a[href*="blog.naver.com"]:has-text("블로그")',
+        ], timeout=5000, description="네이버 메인 블로그 링크")
+
+        if not blog_link:
+            # JS 폴백: 텍스트로 "블로그" 링크 찾기
+            blog_link_handle = await page.evaluate_handle('''() => {
+                const links = document.querySelectorAll('a');
+                for (const a of links) {
+                    const text = a.textContent.trim();
+                    const href = a.href || '';
+                    if (text === '블로그' && href.includes('blog')) return a;
+                }
+                return null;
+            }''')
+            el = blog_link_handle.as_element() if blog_link_handle else None
+            if el:
+                blog_link = el
+                logger.info("네이버 메인 블로그 링크 JS 폴백 발견")
+
+        if blog_link:
+            await blog_link.click()
+            await random_delay(2, 3)
+            logger.info("네이버 메인 → 블로그 이동")
+        else:
+            # 직접 이동 폴백
+            logger.warning("블로그 링크 미발견, 직접 이동")
+            await page.goto("https://section.blog.naver.com/BlogHome.naver",
+                            wait_until="domcontentloaded", timeout=15000)
+            await random_delay(2, 3)
+
+        # ── 2단계: "주제별 보기" 클릭 ──
+        topic_link = await try_selectors(page, [
+            'a:has-text("주제별 보기")',
+            'a:has-text("주제별보기")',
+            'a[href*="ThemePost"]',
+            'a[href*="topic"]',
+            '.category_area a:has-text("주제")',
+            'nav a:has-text("주제")',
+        ], timeout=5000, description="주제별 보기 링크")
+
+        if not topic_link:
+            # JS 폴백
+            topic_handle = await page.evaluate_handle('''() => {
+                const links = document.querySelectorAll('a');
+                for (const a of links) {
+                    const text = a.textContent.trim();
+                    if (text.includes('주제별') && text.includes('보기')) return a;
+                    if (text === '주제별 보기') return a;
+                }
+                return null;
+            }''')
+            el = topic_handle.as_element() if topic_handle else None
+            if el:
+                topic_link = el
+                logger.info("주제별 보기 링크 JS 폴백 발견")
+
+        if topic_link:
+            await topic_link.click()
+            await random_delay(2, 3)
+            logger.info("주제별 보기 페이지 이동")
+        else:
+            logger.warning("주제별 보기 링크 미발견, 현재 페이지에서 포스팅 수집 시도")
+
+        # ── 3단계: 포스팅 목록 수집 ──
+        # 스크롤 다운으로 더 많은 포스팅 로드
+        for _ in range(3):
+            await page.evaluate('window.scrollBy(0, 800)')
+            await random_delay(0.5, 1.0)
+
         posts = await page.evaluate(f'''() => {{
             const results = [];
 
-            // 포스팅 URL 검증: blog.naver.com/username/숫자 또는 PostView.naver 형태만
+            // 포스팅 URL 검증
             function isPostUrl(url) {{
                 if (!url || !url.includes('blog.naver.com')) return false;
-                // seller, section 등 비포스팅 도메인 제외
                 if (url.includes('seller.blog.naver.com')) return false;
                 if (url.includes('section.blog.naver.com')) return false;
-                // PostView.naver 형태
                 if (url.includes('/PostView.naver')) return true;
                 if (url.includes('/PostList.naver')) return false;
                 if (url.includes('/BlogHome')) return false;
                 if (url.includes('/my-log')) return false;
                 if (url.includes('/market')) return false;
-                // blog.naver.com/username/숫자 형태
                 const match = url.match(/blog\\.naver\\.com\\/([^\\/\\?]+)\\/([0-9]+)/);
                 if (match) return true;
                 return false;
             }}
 
-            // 블로그 피드의 포스팅 링크 수집
+            // 주제별 보기 포스팅 링크 수집 (다양한 셀렉터)
             const selectors = [
                 '.desc_inner a.desc_txt',
                 '.post_area a.desc_txt',
@@ -68,6 +137,12 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 '.item_inner a[href*="blog.naver.com"]',
                 'a[href*="/PostView.naver"]',
                 'a[href*="blog.naver.com"][class*="link"]',
+                // 주제별 보기 전용 셀렉터
+                '.theme_post_area a[href*="blog.naver.com"]',
+                '.topic_post a[href*="blog.naver.com"]',
+                '.post_list a[href*="blog.naver.com"]',
+                '.content_list a[href*="blog.naver.com"]',
+                '.list_content a[href*="blog.naver.com"]',
             ];
 
             for (const sel of selectors) {{
@@ -75,7 +150,7 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 for (const link of links) {{
                     const href = link.href || link.getAttribute('href') || '';
                     const title = (link.textContent || '').trim().substring(0, 100);
-                    if (isPostUrl(href) && title &&
+                    if (isPostUrl(href) && title && title.length > 3 &&
                         !results.some(r => r.url === href)) {{
                         results.push({{ url: href, title: title }});
                     }}
@@ -101,10 +176,10 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
             return results;
         }}''')
 
-        logger.info(f"블로그 피드에서 포스팅 {len(posts)}개 수집")
+        logger.info(f"주제별 보기에서 포스팅 {len(posts)}개 수집")
 
     except Exception as e:
-        logger.error(f"블로그 피드 수집 실패: {e}")
+        logger.error(f"블로그 포스팅 수집 실패: {e}")
 
     return posts
 
