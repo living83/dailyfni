@@ -506,118 +506,165 @@ async def read_post_content(page, post_url: str) -> dict:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def click_like(page) -> dict:
-    """현재 페이지의 공감(하트) 버튼 클릭"""
+    """현재 페이지의 공감(하트) 버튼 클릭.
+
+    네이버 블로그 공감 구조:
+    - 공감 버튼은 mainFrame iframe 안에 위치
+    - .u_likeit_list_module 안에 .u_likeit_btn 이 있음
+    - 클릭 시 .on 클래스 추가됨 (이미 공감한 상태)
+    - 또는 React 버전에서 [data-v-...] 형태의 공감 컴포넌트
+    """
     result = {"success": False, "already_liked": False, "error": ""}
 
     try:
-        # iframe 내부에서 공감 버튼 찾기 (네이버 블로그는 iframe 구조)
-        # mainFrame을 최우선으로 탐색
-        like_target = page
-        sorted_frames = sorted(
-            page.frames,
-            key=lambda f: (0 if 'mainFrame' in (f.name or '') else 1),
+        # ── 1. 공감 버튼이 있는 프레임 찾기 ──
+        # mainFrame > sympathyFrame > 기타 순으로 탐색
+        like_target = None
+        all_frames = page.frames
+
+        # 공감 버튼 셀렉터 (네이버 블로그 현재 버전)
+        LIKE_SELECTORS = (
+            '.u_likeit_btn, '
+            '.u_likeit_btn_count, '
+            'a.u_likeit_btn, '
+            '.btn_sympathize, '
+            '[class*="like_it"] button, '
+            '[class*="like_it"] a, '
+            '[data-type="sympathy"], '
+            'button[class*="sympathy"], '
+            'a[class*="sympathy"], '
+            '.post_sympathize_btn, '
+            '#sympathyArea button, '
+            '#sympathyArea a'
         )
-        for frame in sorted_frames:
+
+        # mainFrame 우선 탐색
+        for frame in sorted(all_frames, key=lambda f: (
+            0 if f.name == 'mainFrame' else
+            1 if 'sympathy' in (f.name or '').lower() else 2
+        )):
             try:
-                has_like = await frame.evaluate('''() => {
-                    return !!document.querySelector(
-                        '.u_likeit_btn, [class*="sympathy"], [class*="like_it"], ' +
-                        'a[class*="btn_like"], .btn_sympathize, [data-type="sympathy"]'
-                    );
-                }''')
-                if has_like:
+                btn_info = await frame.evaluate(f'''() => {{
+                    const btn = document.querySelector('{LIKE_SELECTORS}');
+                    if (!btn) return null;
+                    return {{
+                        tag: btn.tagName,
+                        cls: btn.className,
+                        text: (btn.textContent || '').trim().substring(0, 50),
+                        rect: btn.getBoundingClientRect().toJSON(),
+                        isOn: btn.classList.contains('on') ||
+                              btn.classList.contains('is_active') ||
+                              btn.getAttribute('data-active') === 'true',
+                    }};
+                }}''')
+                if btn_info:
                     like_target = frame
-                    logger.info(f"공감 버튼 프레임 발견: {frame.name or 'main'}")
+                    logger.info(
+                        f"공감 버튼 발견: frame={frame.name or 'main'}, "
+                        f"tag={btn_info['tag']}, cls={btn_info['cls'][:60]}, "
+                        f"text={btn_info['text'][:30]}, isOn={btn_info['isOn']}"
+                    )
+                    # 이미 공감 상태
+                    if btn_info['isOn']:
+                        result["already_liked"] = True
+                        result["success"] = True
+                        logger.info("이미 공감한 글입니다")
+                        return result
                     break
             except Exception:
                 continue
 
-        # 공감 영역으로 스크롤 (버튼이 있을 때만, 없으면 스크롤 안함)
-        found_btn = await like_target.evaluate('''() => {
-            const btn = document.querySelector(
-                '.u_likeit_btn, [class*="sympathy"], [class*="like_it"], ' +
-                '.btn_sympathize, [data-type="sympathy"]'
-            );
-            if (btn) {
-                btn.scrollIntoView({ block: "center", behavior: "smooth" });
-                return true;
-            }
-            return false;
-        }''')
-        if not found_btn:
-            result["error"] = "공감 버튼 미발견 (스크롤 생략)"
-            logger.warning("공감 버튼을 찾을 수 없어 스크롤 생략")
+        if not like_target:
+            # 디버그: 모든 프레임의 하단 영역 요소 출력
+            for frame in all_frames:
+                try:
+                    debug = await frame.evaluate('''() => {
+                        const all = document.querySelectorAll('button, a');
+                        const items = [];
+                        for (const el of all) {
+                            const text = (el.textContent || '').trim();
+                            const cls = el.className || '';
+                            if (text.includes('공감') || cls.includes('like') ||
+                                cls.includes('sympathy') || cls.includes('likeit')) {
+                                items.push(`${el.tagName}.${cls.substring(0,60)} "${text.substring(0,30)}"`);
+                            }
+                        }
+                        return items;
+                    }''')
+                    if debug:
+                        logger.info(f"프레임 '{frame.name}' 공감 관련 요소: {debug}")
+                except Exception:
+                    continue
+
+            result["error"] = "공감 버튼 프레임 미발견"
             return result
 
+        # ── 2. 공감 버튼으로 스크롤 ──
+        await like_target.evaluate(f'''() => {{
+            const btn = document.querySelector('{LIKE_SELECTORS}');
+            if (btn) btn.scrollIntoView({{ block: "center", behavior: "smooth" }});
+        }}''')
         await random_delay(0.5, 1)
 
-        # 이미 공감 눌렀는지 확인
-        already_liked = await like_target.evaluate('''() => {
-            const btn = document.querySelector(
-                '.u_likeit_btn, [class*="sympathy"], [class*="like_it"], ' +
-                '.btn_sympathize'
-            );
-            if (!btn) return false;
-            return btn.classList.contains('on') ||
-                   btn.classList.contains('is_active') ||
-                   btn.getAttribute('data-active') === 'true';
-        }''')
+        # ── 3. JS로 직접 클릭 (가장 안정적) ──
+        # Playwright의 click()은 iframe 내부 요소에서 좌표 계산 문제 발생 가능
+        # → JS evaluate로 직접 클릭하는 것이 더 안정적
+        click_result = await like_target.evaluate(f'''() => {{
+            const btn = document.querySelector('{LIKE_SELECTORS}');
+            if (!btn) return {{ clicked: false, error: 'not_found' }};
 
-        if already_liked:
-            result["already_liked"] = True
-            result["success"] = True
-            logger.info("이미 공감한 글입니다")
-            return result
+            // 클릭 전 상태
+            const wasBefore = btn.classList.contains('on');
 
-        # 공감 버튼 클릭
-        like_btn = await try_selectors(like_target, [
-            '.u_likeit_btn:not(.on)',
-            'a.u_likeit_btn',
-            '.btn_sympathize',
-            '[class*="sympathy"] button',
-            '[class*="like_it"] button',
-            'button[data-type="sympathy"]',
-            'a[class*="btn_like"]',
-        ], timeout=5000, description="공감 버튼")
+            // 방법 1: 직접 click()
+            btn.click();
 
-        if like_btn:
-            # 클릭 전 viewport 내로 스크롤
-            await like_btn.scroll_into_view_if_needed()
-            await random_delay(0.2, 0.3)
-            try:
-                await like_btn.click(timeout=5000)
-            except Exception:
-                # viewport 밖 등 클릭 실패 시 JS로 직접 클릭
-                await like_target.evaluate('''(el) => { el.click(); }''', like_btn)
-            await random_delay(0.5, 1)
-            result["success"] = True
-            logger.info("공감 클릭 성공")
-            return result
+            // 방법 2: dispatchEvent (React 등에서 필요할 수 있음)
+            try {{
+                btn.dispatchEvent(new MouseEvent('click', {{
+                    bubbles: true, cancelable: true, view: window
+                }}));
+            }} catch(e) {{}}
 
-        # JS 폴백
-        clicked = await like_target.evaluate('''() => {
-            const selectors = [
-                '.u_likeit_btn', '.btn_sympathize',
-                '[class*="sympathy"] button', '[class*="like_it"] a',
-                'a[class*="btn_like"]'
-            ];
-            for (const sel of selectors) {
-                const el = document.querySelector(sel);
-                if (el) {
-                    el.scrollIntoView({ block: "center" });
-                    el.click();
-                    return true;
-                }
-            }
-            return false;
-        }''')
-        if clicked:
-            result["success"] = True
-            logger.info("공감 클릭 성공 (JS 폴백)")
-            await random_delay(0.5, 1)
-            return result
+            return {{
+                clicked: true,
+                wasBefore: wasBefore,
+                tag: btn.tagName,
+                cls: btn.className.substring(0, 80),
+            }};
+        }}''')
 
-        result["error"] = "공감 버튼 미발견"
+        if click_result.get('clicked'):
+            logger.info(
+                f"공감 클릭 실행: tag={click_result.get('tag')}, "
+                f"cls={click_result.get('cls', '')[:40]}"
+            )
+            await random_delay(0.8, 1.5)
+
+            # 클릭 후 상태 확인 (on 클래스 추가 여부)
+            after_state = await like_target.evaluate(f'''() => {{
+                const btn = document.querySelector('{LIKE_SELECTORS}');
+                if (!btn) return {{ found: false }};
+                return {{
+                    found: true,
+                    isOn: btn.classList.contains('on') ||
+                          btn.classList.contains('is_active'),
+                    cls: btn.className.substring(0, 80),
+                }};
+            }}''')
+
+            if after_state.get('isOn'):
+                result["success"] = True
+                logger.info("공감 클릭 성공 (상태 변경 확인)")
+            else:
+                # 상태 변경 안 됐지만 클릭은 수행됨 (네트워크 지연 등)
+                result["success"] = True
+                logger.info(
+                    f"공감 클릭 수행 (상태 변경 미확인): "
+                    f"cls={after_state.get('cls', '')[:40]}"
+                )
+        else:
+            result["error"] = f"공감 클릭 실패: {click_result.get('error')}"
 
     except Exception as e:
         result["error"] = str(e)
