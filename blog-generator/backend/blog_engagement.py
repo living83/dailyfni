@@ -125,17 +125,36 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
 
         logger.info(f"주제별 보기 도착: {page.url}")
 
-        # SPA 콘텐츠 렌더링 대기: 포스팅 링크가 나타날 때까지
-        try:
-            await page.wait_for_selector(
-                'a[href*="blog.naver.com"]',
-                timeout=10000,
-            )
-            logger.info("포스팅 링크 렌더링 확인")
-        except Exception:
-            logger.warning("포스팅 링크 10초 내 미렌더링, 스크롤 후 재시도")
+        # SPA 콘텐츠 렌더링 대기
+        await page.wait_for_load_state("load", timeout=10000)
+        await random_delay(2, 3)
 
         # ── 3단계: 포스팅 목록 수집 ──
+        # 먼저 페이지 구조 파악 (디버그)
+        page_debug = await page.evaluate('''() => {
+            const allLinks = document.querySelectorAll('a');
+            const sample = [];
+            for (let i = 0; i < Math.min(allLinks.length, 50); i++) {
+                const a = allLinks[i];
+                const href = (a.href || '').substring(0, 120);
+                const text = (a.textContent || '').trim().substring(0, 60);
+                const cls = (a.className || '').substring(0, 60);
+                if (text.length > 3) {
+                    sample.push(text + ' → ' + href + ' [' + cls + ']');
+                }
+            }
+            return {
+                url: location.href,
+                totalLinks: allLinks.length,
+                totalElements: document.querySelectorAll('*').length,
+                sample: sample,
+            };
+        }''')
+        logger.info(f"ThemePost 링크 수: {page_debug.get('totalLinks', 0)}, "
+                     f"요소 수: {page_debug.get('totalElements', 0)}")
+        for s in page_debug.get('sample', [])[:15]:
+            logger.info(f"  링크: {s}")
+
         # 스크롤 다운으로 더 많은 포스팅 로드
         for _ in range(5):
             await page.evaluate('window.scrollBy(0, 600)')
@@ -143,45 +162,65 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
 
         posts = await page.evaluate(f'''() => {{
             const results = [];
+            const seen = new Set();
 
-            // 포스팅 URL 검증
+            // 포스팅 URL 검증 (section.blog.naver.com URL도 허용)
             function isPostUrl(url) {{
-                if (!url || !url.includes('blog.naver.com')) return false;
-                if (url.includes('seller.blog.naver.com')) return false;
-                if (url.includes('section.blog.naver.com')) return false;
-                if (url.includes('/PostView.naver')) return true;
-                if (url.includes('/PostList.naver')) return false;
-                if (url.includes('/BlogHome')) return false;
-                if (url.includes('/my-log')) return false;
-                if (url.includes('/market')) return false;
-                const match = url.match(/blog\\.naver\\.com\\/([^\\/\\?]+)\\/([0-9]+)/);
-                if (match) return true;
+                if (!url) return false;
+                // 네이버 블로그 포스트 URL 패턴
+                if (url.includes('blog.naver.com')) {{
+                    if (url.includes('seller.blog.naver.com')) return false;
+                    if (url.includes('/BlogHome')) return false;
+                    if (url.includes('/PostList.naver')) return false;
+                    if (url.includes('/my-log')) return false;
+                    if (url.includes('/market')) return false;
+                    // section.blog.naver.com의 포스트 상세 URL
+                    if (url.includes('/detail')) return true;
+                    if (url.includes('/PostView.naver')) return true;
+                    // blog.naver.com/사용자/포스트번호
+                    const match = url.match(/blog\\.naver\\.com\\/([^\\/\\?]+)\\/([0-9]+)/);
+                    if (match) return true;
+                }}
                 return false;
             }}
 
-            // 주제별 보기 포스팅 링크 수집 (다양한 셀렉터)
-            const selectors = [
-                '.desc_inner a.desc_txt',
-                '.post_area a.desc_txt',
-                '.list_post_article a.desc_txt',
-                'a.desc_txt[href*="blog.naver.com"]',
-                '.item_inner a[href*="blog.naver.com"]',
-                'a[href*="/PostView.naver"]',
-                'a[href*="blog.naver.com"][class*="link"]',
-                '.theme_post_area a[href*="blog.naver.com"]',
-                '.topic_post a[href*="blog.naver.com"]',
-                '.post_list a[href*="blog.naver.com"]',
-                '.content_list a[href*="blog.naver.com"]',
-                '.list_content a[href*="blog.naver.com"]',
+            // 메인 콘텐츠 영역에서 포스트 카드 찾기
+            // (사이드바 "내 소식" 제외)
+            const mainSelectors = [
+                // section.blog.naver.com 주제별 보기 메인 콘텐츠
+                '.list_post_article a',
+                '.area_list_search a',
+                '.item_post a',
+                '.content_area a',
+                '.area_cont a',
+                '.list_content a',
+                // 포스트 카드 타이틀 링크
+                'a.desc_txt',
+                'a[class*="title"]',
+                'a[class*="link_post"]',
+                'a[class*="post_txt"]',
+                // 공통
+                '[class*="post_area"] a',
+                '[class*="theme_post"] a',
+                '[class*="article_area"] a',
             ];
 
-            for (const sel of selectors) {{
+            for (const sel of mainSelectors) {{
                 const links = document.querySelectorAll(sel);
                 for (const link of links) {{
                     const href = link.href || link.getAttribute('href') || '';
                     const title = (link.textContent || '').trim().substring(0, 100);
-                    if (isPostUrl(href) && title && title.length > 3 &&
-                        !results.some(r => r.url === href)) {{
+
+                    // 사이드바 요소 제외
+                    const inSidebar = link.closest(
+                        '.aside, [class*="aside"], [class*="sidebar"], ' +
+                        '[class*="my_news"], [class*="area_my"], [class*="snb"]'
+                    );
+                    if (inSidebar) continue;
+
+                    if (isPostUrl(href) && title && title.length > 5 &&
+                        !seen.has(href)) {{
+                        seen.add(href);
                         results.push({{ url: href, title: title }});
                     }}
                     if (results.length >= {max_posts}) break;
@@ -189,14 +228,23 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
                 if (results.length >= {max_posts}) break;
             }}
 
-            // 폴백: 모든 블로그 링크 중 포스팅 URL만 수집
+            // 폴백: 사이드바 제외하고 모든 링크에서 포스트 URL 수집
             if (results.length === 0) {{
-                const allLinks = document.querySelectorAll('a[href*="blog.naver.com"]');
+                const allLinks = document.querySelectorAll('a');
                 for (const link of allLinks) {{
                     const href = link.href || '';
                     const title = (link.textContent || '').trim().substring(0, 100);
+
+                    // 사이드바 제외
+                    const inSidebar = link.closest(
+                        '.aside, [class*="aside"], [class*="sidebar"], ' +
+                        '[class*="my_news"], [class*="area_my"], [class*="snb"]'
+                    );
+                    if (inSidebar) continue;
+
                     if (isPostUrl(href) && title && title.length > 5 &&
-                        !results.some(r => r.url === href)) {{
+                        !seen.has(href)) {{
+                        seen.add(href);
                         results.push({{ url: href, title: title }});
                     }}
                     if (results.length >= {max_posts}) break;
@@ -207,18 +255,11 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
         }}''')
 
         logger.info(f"주제별 보기에서 포스팅 {len(posts)}개 수집")
+        for p in posts[:5]:
+            logger.info(f"  수집: {p.get('title', '?')[:40]} → {p.get('url', '?')[:80]}")
 
         # 포스팅 없으면 디버그 정보
         if not posts:
-            page_info = await page.evaluate('''() => {
-                return {
-                    url: location.href,
-                    title: document.title,
-                    links: document.querySelectorAll('a[href*="blog.naver.com"]').length,
-                    allLinks: document.querySelectorAll('a').length,
-                };
-            }''')
-            logger.warning(f"포스팅 0개 - 페이지 정보: {page_info}")
             await capture_debug(page, "no_posts_found")
 
     except Exception as e:
@@ -492,13 +533,31 @@ async def write_comment(page, comment_text: str) -> dict:
         return result
 
     try:
-        # ── 1. 메인 페이지 하단까지 스크롤 (댓글 iframe 로딩 트리거) ──
+        # ── 1. mainFrame 내부를 스크롤 (댓글 영역 로딩 트리거) ──
+        # 네이버 블로그는 포스트가 mainFrame iframe 안에 있고,
+        # 댓글 영역도 mainFrame 하단에 위치. 외부 page 스크롤로는 로딩 안 됨.
+        main_frame = None
+        for frame in page.frames:
+            if frame.name == 'mainFrame':
+                main_frame = frame
+                break
+
+        if main_frame:
+            # mainFrame 내부 스크롤
+            logger.info("mainFrame 내부 스크롤 시작 (댓글 영역 로딩)")
+            for _ in range(8):
+                await main_frame.evaluate('window.scrollBy(0, 800)')
+                await random_delay(0.3, 0.5)
+            await main_frame.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await random_delay(1, 2)
+        else:
+            logger.warning("mainFrame 미발견, 메인 페이지 스크롤")
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await random_delay(1, 2)
+
+        # 외부 페이지도 스크롤 (안전장치)
         await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-        await random_delay(1, 2)
-        # 추가 스크롤로 댓글 영역 확실히 로딩
-        for _ in range(3):
-            await page.evaluate('window.scrollBy(0, 500)')
-            await random_delay(0.3, 0.5)
+        await random_delay(0.5, 1)
 
         # ── 2. 댓글 iframe 찾기 ──
         comment_target = None
