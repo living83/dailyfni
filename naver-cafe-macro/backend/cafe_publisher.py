@@ -21,6 +21,7 @@ import time
 import random
 import logging
 import tempfile
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -187,9 +188,25 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
         # 로그인 확인: 네이버 메일 또는 프로필 요소 존재 여부
         try:
             driver.find_element(By.CSS_SELECTOR, ".MyView-module__link_login___HpHMW")
+            logger.warning("쿠키 로그인 실패: 로그인 버튼이 여전히 표시됨")
             return False  # 로그인 버튼이 보이면 실패
         except NoSuchElementException:
-            logger.info("쿠키 로그인 성공")
+            pass  # 로그인 버튼 없음 — 1차 통과
+
+        # 2차 검증: 카페 서비스 세션 유효성 확인
+        try:
+            driver.get("https://cafe.naver.com")
+            random_delay(1, 2)
+            current_url = driver.current_url
+            if "nidlogin" in current_url or "nid.naver.com" in current_url:
+                logger.warning("쿠키 로그인 실패: 카페 접근 시 로그인 리다이렉트 발생")
+                return False
+            logger.info("쿠키 로그인 성공 (카페 세션 확인 완료)")
+            return True
+        except Exception as e2:
+            logger.warning(f"쿠키 로그인 2차 검증 중 오류: {e2}")
+            # 1차 통과했으므로 일단 성공으로 처리
+            logger.info("쿠키 로그인 성공 (1차 확인만)")
             return True
     except Exception as e:
         logger.warning(f"쿠키 로그인 실패: {e}")
@@ -199,7 +216,18 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
 def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc: str) -> bool:
     """ID/PW로 네이버 로그인 (2FA 대기 포함)"""
     try:
-        password = decrypt_password(password_enc)
+        if not password_enc:
+            logger.error("비밀번호가 설정되지 않았습니다. 계정을 다시 등록해주세요.")
+            return False
+        try:
+            password = decrypt_password(password_enc)
+        except Exception as dec_err:
+            logger.error(
+                f"비밀번호 복호화 실패 ({type(dec_err).__name__}): "
+                f"master_key가 변경되었거나 비밀번호 데이터가 손상되었습니다. "
+                f"계정을 삭제 후 다시 등록해주세요."
+            )
+            return False
         driver.get("https://nid.naver.com/nidlogin.login")
         random_delay(2, 3)
 
@@ -257,7 +285,8 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         return False
 
     except Exception as e:
-        logger.error(f"로그인 중 오류: {e}")
+        logger.error(f"로그인 중 오류 ({type(e).__name__}): {e}")
+        logger.debug(traceback.format_exc())
         return False
 
 
