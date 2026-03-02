@@ -25,7 +25,7 @@ from se_helpers import (
 logger = logging.getLogger("engagement")
 
 # 배포 확인용 버전 상수 (이 값이 로그에 보이면 최신 코드 실행 중)
-CODE_VERSION = "2026-03-02-v4"
+CODE_VERSION = "2026-03-02-v5"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1382,19 +1382,24 @@ async def write_comment(page, comment_text: str) -> dict:
                 break
 
         if main_frame:
-            # mainFrame 내부 스크롤 (댓글 영역은 본문 바로 아래)
+            # mainFrame 본문 최하단까지 스크롤 (댓글 cbox iframe 로딩 트리거)
             logger.info("mainFrame 내부 스크롤 시작 (댓글 영역 로딩)")
-            for _ in range(6):
-                await main_frame.evaluate('window.scrollBy(0, 600)')
+            await main_frame.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await random_delay(1, 1.5)
+            # 점진적 추가 스크롤 (lazy-load 트리거)
+            for _ in range(4):
+                await main_frame.evaluate('window.scrollBy(0, 800)')
                 await random_delay(0.3, 0.5)
-            # 댓글 영역 로딩 대기
-            await random_delay(1, 2)
+            # 댓글 cbox iframe 로딩 대기 (충분한 시간)
+            await random_delay(2, 3)
         else:
             logger.warning("mainFrame 미발견, 메인 페이지 스크롤")
-            for _ in range(5):
+            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+            await random_delay(1, 1.5)
+            for _ in range(3):
                 await page.evaluate('window.scrollBy(0, 600)')
                 await random_delay(0.3, 0.5)
-            await random_delay(1, 2)
+            await random_delay(2, 3)
 
         # ── 2. 댓글 iframe 찾기 ──
         comment_target = None
@@ -1407,6 +1412,11 @@ async def write_comment(page, comment_text: str) -> dict:
                 'cbox' in frame_name.lower() or 'comment' in frame_name.lower()):
                 comment_target = frame
                 logger.info(f"댓글 iframe 발견 (URL매칭): name={frame_name}, url={frame_url[:80]}")
+                # cbox iframe 내부 콘텐츠 로드 대기
+                try:
+                    await comment_target.wait_for_load_state("load", timeout=8000)
+                except Exception:
+                    logger.info("cbox iframe load 대기 타임아웃, 계속 진행")
                 break
 
         # 방법 2: DOM 내용으로 찾기
@@ -1628,11 +1638,15 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
         # 2. 공감 클릭 + AI 댓글 생성을 병렬 실행
         #    공감 클릭(~2초)하는 동안 AI 댓글(~3-5초)을 백그라운드에서 생성
         comment_future = None
-        if do_comment and api_key and post_data.get("content"):
+        post_content = post_data.get("content", "")
+        post_title = post_data.get("title", "")
+
+        if do_comment and api_key and post_content:
             comment_future = asyncio.get_event_loop().run_in_executor(
-                None, generate_comment, api_key,
-                post_data.get("title", ""), post_data.get("content", ""),
+                None, generate_comment, api_key, post_title, post_content,
             )
+        elif do_comment and api_key and not post_content:
+            logger.warning(f"본문 미추출 → 공감 후 재추출 시도 예정 (URL: {post_url[:60]})")
 
         if do_like:
             like_result = await click_like(page)
@@ -1648,9 +1662,47 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
                     f"페이지 이탈 감지! 원래={post_url[:60]} "
                     f"현재={current_url[:60]} → 복귀 시도"
                 )
-                await page.goto(post_url, wait_until="domcontentloaded",
+                await page.goto(post_url, wait_until="load",
                                 timeout=15000)
                 await random_delay(1, 2)
+
+        # 2-1. 본문 미추출 폴백: 공감 완료 후 mainFrame이 로드되었을 테니 재추출
+        if do_comment and api_key and not comment_future:
+            logger.info("공감 완료 후 mainFrame 본문 재추출 시도")
+            for f in page.frames:
+                if f.name == 'mainFrame':
+                    try:
+                        retry_data = await f.evaluate('''() => {
+                            let title = '', content = '';
+                            const titleEls = document.querySelectorAll(
+                                '.se-title-text, .pcol1, .htitle, .se-fs-, h3.se_textarea, ' +
+                                '[class*="title"] span, .post-title, .tit_h3'
+                            );
+                            for (const el of titleEls) {
+                                const t = el.textContent.trim();
+                                if (t && t.length > 3) { title = t; break; }
+                            }
+                            const contentEls = document.querySelectorAll(
+                                '.se-main-container, .se-component.se-text, ' +
+                                '#postViewArea, #post-view, .post_ct'
+                            );
+                            for (const el of contentEls) {
+                                const t = el.innerText.trim();
+                                if (t && t.length > 20) { content = t; break; }
+                            }
+                            return { title, content };
+                        }''')
+                        post_content = (retry_data.get("content", ""))[:2000]
+                        post_title = retry_data.get("title", "") or post_title
+                        if post_content:
+                            logger.info(f"mainFrame 본문 재추출 성공: {len(post_content)}자")
+                            comment_future = asyncio.get_event_loop().run_in_executor(
+                                None, generate_comment, api_key,
+                                post_title, post_content,
+                            )
+                    except Exception as e:
+                        logger.warning(f"mainFrame 본문 재추출 실패: {e}")
+                    break
 
         # 3. 댓글 생성 완료 대기 + 작성
         if comment_future:
@@ -1662,7 +1714,7 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
                 current_url = page.url or ""
                 if ('blog.naver.com' not in current_url):
                     logger.warning(f"댓글 작성 전 페이지 이탈 감지 → 복귀: {post_url[:60]}")
-                    await page.goto(post_url, wait_until="domcontentloaded",
+                    await page.goto(post_url, wait_until="load",
                                     timeout=15000)
                     await random_delay(1, 2)
 
@@ -1674,6 +1726,9 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
                 result["error"] = "AI 댓글 생성 실패"
         elif do_comment and not api_key:
             result["error"] = "API 키 미설정 (댓글 건너뜀)"
+        elif do_comment and api_key and not post_content:
+            result["error"] = "본문 추출 실패 (댓글 건너뜀)"
+            logger.warning(f"본문 추출 실패로 댓글 건너뜀: {post_url[:60]}")
 
     except Exception as e:
         result["error"] = str(e)
