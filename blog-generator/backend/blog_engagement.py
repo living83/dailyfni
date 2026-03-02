@@ -827,12 +827,13 @@ async def click_like(page) -> dict:
             result["error"] = "공감 버튼 미발견"
             return result
 
-        logger.info(
-            f"공감 버튼: frame={frame.name or 'outer'}, sel={selector}, "
+        debug_msg = (
+            f"frame={frame.name or 'outer'}, sel={selector}, "
             f"cls={info['cls'][:40]}, isOn={info['isOn']}, "
             f"size={info['w']:.0f}x{info['h']:.0f}, "
             f"pos=({info.get('x',0):.0f},{info.get('y',0):.0f})"
         )
+        logger.info(f"공감 버튼: {debug_msg}")
 
         if info['isOn']:
             result["already_liked"] = True
@@ -840,7 +841,30 @@ async def click_like(page) -> dict:
             logger.info("이미 공감한 글입니다")
             return result
 
-        # 디버그 스크린샷: 클릭 전
+        # ── 화면 디버그 오버레이 (스크린샷에 직접 표시) ──
+        has_mainframe = any(f.name == 'mainFrame' for f in page.frames)
+        frame_count = len(page.frames)
+        overlay_text = (
+            f"[BOT DEBUG] mainFrame={'YES' if has_mainframe else 'NO'}, "
+            f"frames={frame_count}\\n"
+            f"btn: {debug_msg}\\n"
+            f"viewport: {page.viewport_size}"
+        )
+        try:
+            await page.evaluate('''(text) => {
+                let d = document.getElementById('__bot_dbg');
+                if (!d) {
+                    d = document.createElement('div');
+                    d.id = '__bot_dbg';
+                    d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.92);color:#fff;padding:8px 12px;z-index:2147483647;font:bold 13px monospace;white-space:pre-wrap;pointer-events:none;';
+                    document.body.appendChild(d);
+                }
+                d.textContent = text;
+            }''', overlay_text)
+        except Exception:
+            pass
+
+        # 디버그 스크린샷: 클릭 전 (오버레이 포함)
         await capture_debug(page, "like_before_click")
 
         # 디버그: 클릭 대상 HTML 덤프
@@ -1007,6 +1031,24 @@ async def click_like(page) -> dict:
             except Exception as e6:
                 logger.info(f"전략C 실패: {e6}")
 
+        # ──── 전략 D: 뷰포트 하단 좌측 좌표 직접 클릭 (최종 폴백) ────
+        # 플로팅 바 ♡는 항상 뷰포트 하단 좌측에 고정 (position: fixed).
+        # 모든 DOM 탐색 기반 전략이 실패해도, 뷰포트 좌표로 직접 클릭.
+        if not clicked:
+            logger.info("전략 A/B/C 모두 실패 → 전략D: 뷰포트 하단 좌측 좌표 클릭")
+            try:
+                viewport = page.viewport_size
+                if viewport:
+                    # ♡는 플로팅 바 좌측 첫 번째 요소 (약 left:25px, bottom:20px)
+                    d_x = 30
+                    d_y = viewport['height'] - 22
+                    await random_delay(0.2, 0.3)
+                    await page.mouse.click(d_x, d_y)
+                    clicked = True
+                    logger.info(f"전략D: 뷰포트 좌표 클릭 ({d_x}, {d_y}), viewport={viewport}")
+            except Exception as e7:
+                logger.info(f"전략D 실패: {e7}")
+
         if not clicked:
             await capture_debug(page, "like_click_failed")
             result["error"] = "모든 클릭 방법 실패"
@@ -1089,8 +1131,28 @@ async def click_like(page) -> dict:
         if reaction_handled:
             logger.info("리액션 피커 처리 완료")
 
-        # 디버그 스크린샷: 클릭 후
+        # 클릭 후 결과 오버레이 업데이트
+        try:
+            strat_msg = "clicked=True" if clicked else "clicked=False"
+            react_msg = f", reaction={'YES' if reaction_handled else 'NO'}"
+            await page.evaluate('''(text) => {
+                const d = document.getElementById('__bot_dbg');
+                if (d) {
+                    d.style.background = 'rgba(0,128,0,0.92)';
+                    d.textContent = text;
+                }
+            }''', f"[AFTER CLICK] {strat_msg}{react_msg}")
+        except Exception:
+            pass
+
+        # 디버그 스크린샷: 클릭 후 (결과 오버레이 포함)
         await capture_debug(page, "like_after_click")
+
+        # 오버레이 제거
+        try:
+            await page.evaluate('document.getElementById("__bot_dbg")?.remove()')
+        except Exception:
+            pass
 
         # ── 3. 클릭 후 검증 ──
         current_url = page.url or ""
