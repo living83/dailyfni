@@ -466,9 +466,9 @@ async def daily_engagement_job():
         except Exception as e:
             logger.error(f"참여 오류 (계정 {account_id}): {e}")
 
-        # 계정 간 대기 (3~5분)
+        # 계정 간 대기 (30초~1분)
         if i < len(active_accounts) - 1:
-            delay = random.uniform(180, 300)
+            delay = random.uniform(30, 60)
             logger.info(f"다음 계정까지 {delay:.0f}초 대기")
             await asyncio.sleep(delay)
 

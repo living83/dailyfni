@@ -194,7 +194,7 @@ async def read_post_content(page, post_url: str) -> dict:
 
     try:
         await page.goto(post_url, wait_until="domcontentloaded", timeout=15000)
-        await random_delay(2, 3)
+        await random_delay(1, 2)
 
         # 네이버 블로그는 iframe 안에 본문이 있음
         content_data = await page.evaluate('''() => {
@@ -313,7 +313,7 @@ async def click_like(page) -> dict:
             if (btn) btn.scrollIntoView({ block: "center", behavior: "smooth" });
             else window.scrollTo(0, document.body.scrollHeight);
         }''')
-        await random_delay(1, 2)
+        await random_delay(0.5, 1)
 
         # 이미 공감 눌렀는지 확인
         already_liked = await like_target.evaluate('''() => {
@@ -347,13 +347,13 @@ async def click_like(page) -> dict:
         if like_btn:
             # 클릭 전 viewport 내로 스크롤
             await like_btn.scroll_into_view_if_needed()
-            await random_delay(0.3, 0.5)
+            await random_delay(0.2, 0.3)
             try:
                 await like_btn.click(timeout=5000)
             except Exception:
                 # viewport 밖 등 클릭 실패 시 JS로 직접 클릭
                 await like_target.evaluate('''(el) => { el.click(); }''', like_btn)
-            await random_delay(1, 2)
+            await random_delay(0.5, 1)
             result["success"] = True
             logger.info("공감 클릭 성공")
             return result
@@ -378,7 +378,7 @@ async def click_like(page) -> dict:
         if clicked:
             result["success"] = True
             logger.info("공감 클릭 성공 (JS 폴백)")
-            await random_delay(1, 2)
+            await random_delay(0.5, 1)
             return result
 
         result["error"] = "공감 버튼 미발견"
@@ -474,7 +474,7 @@ async def write_comment(page, comment_text: str) -> dict:
             if (area) area.scrollIntoView({ block: "center", behavior: "smooth" });
             else window.scrollTo(0, document.body.scrollHeight);
         }''')
-        await random_delay(1, 2)
+        await random_delay(0.5, 1)
 
         # 댓글 입력 영역 클릭 (포커스) - 클릭 가능한 placeholder 포함
         comment_input = await try_selectors(comment_target, [
@@ -522,13 +522,12 @@ async def write_comment(page, comment_text: str) -> dict:
             return result
 
         await comment_input.click()
-        await random_delay(0.5, 1)
+        await random_delay(0.3, 0.5)
 
-        # 댓글 타이핑 (자연스러운 속도)
-        # contenteditable인 경우에도 type()이 동작함
+        # 댓글 타이핑
         await comment_input.type(comment_text,
-                                 delay=50 + random.randint(-15, 25))
-        await random_delay(1, 2)
+                                 delay=30 + random.randint(-10, 15))
+        await random_delay(0.5, 1)
 
         # 등록 버튼 클릭
         submit_btn = await try_selectors(comment_target, [
@@ -560,14 +559,14 @@ async def write_comment(page, comment_text: str) -> dict:
             if clicked:
                 result["success"] = True
                 logger.info("댓글 등록 성공 (JS 폴백)")
-                await random_delay(2, 3)
+                await random_delay(1, 1.5)
                 return result
 
             result["error"] = "댓글 등록 버튼 미발견"
             return result
 
         await submit_btn.click()
-        await random_delay(2, 3)
+        await random_delay(1, 1.5)
         result["success"] = True
         logger.info("댓글 등록 성공")
 
@@ -584,7 +583,7 @@ async def write_comment(page, comment_text: str) -> dict:
 
 async def engage_single_post(page, post_url: str, api_key: str = "",
                              do_like: bool = True, do_comment: bool = True) -> dict:
-    """단일 포스팅에 공감 + 댓글 작성"""
+    """단일 포스팅에 공감 + 댓글 작성 (공감과 AI 댓글 생성 병렬 처리)"""
     result = {
         "post_url": post_url,
         "post_title": "",
@@ -602,20 +601,24 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
         if post_data.get("error"):
             logger.warning(f"본문 추출 실패: {post_data['error']} (URL: {post_url})")
 
-        # 2. 공감 클릭
+        # 2. 공감 클릭 + AI 댓글 생성을 병렬 실행
+        #    공감 클릭(~2초)하는 동안 AI 댓글(~3-5초)을 백그라운드에서 생성
+        comment_future = None
+        if do_comment and api_key and post_data.get("content"):
+            comment_future = asyncio.get_event_loop().run_in_executor(
+                None, generate_comment, api_key,
+                post_data.get("title", ""), post_data.get("content", ""),
+            )
+
         if do_like:
             like_result = await click_like(page)
             result["like_success"] = like_result["success"]
             if like_result.get("already_liked"):
                 logger.info(f"이미 공감: {result['post_title'][:30]}")
 
-        # 3. AI 댓글 생성 + 작성
-        if do_comment and api_key and post_data.get("content"):
-            comment_text = generate_comment(
-                api_key,
-                post_data.get("title", ""),
-                post_data.get("content", ""),
-            )
+        # 3. 댓글 생성 완료 대기 + 작성
+        if comment_future:
+            comment_text = await comment_future
             result["comment_text"] = comment_text
 
             if comment_text:
@@ -671,7 +674,7 @@ async def _run_engagement_impl(
                 result["error"] = "로그인 실패"
                 return result
 
-            await random_delay(2, 3)
+            await random_delay(1, 2)
 
             # 2. 블로그 피드에서 포스팅 수집
             posts = await collect_blog_posts(page, max_posts)
@@ -697,9 +700,9 @@ async def _run_engagement_impl(
                 if engage_result["comment_success"]:
                     result["comment_count"] += 1
 
-                # 포스팅 간 자연스러운 대기 (30~90초)
+                # 포스팅 간 대기 (8~20초)
                 if i < len(posts) - 1:
-                    delay = random.uniform(30, 90)
+                    delay = random.uniform(8, 20)
                     logger.info(f"다음 포스팅까지 {delay:.0f}초 대기")
                     await asyncio.sleep(delay)
 
