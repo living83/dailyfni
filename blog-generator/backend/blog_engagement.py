@@ -405,11 +405,12 @@ async def collect_blog_posts(page, max_posts: int = 10) -> list:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def read_post_content(page, post_url: str) -> dict:
-    """블로그 포스팅 내용 추출"""
+    """블로그 포스팅 내용 추출 (mainFrame 완전 로드 후 추출)"""
     result = {"title": "", "content": "", "error": ""}
 
     try:
-        await page.goto(post_url, wait_until="domcontentloaded", timeout=15000)
+        # load로 변경: mainFrame iframe까지 로드 완료 대기
+        await page.goto(post_url, wait_until="load", timeout=20000)
         await random_delay(1, 2)
 
         # 리다이렉트 감지: URL 변경 확인
@@ -423,22 +424,34 @@ async def read_post_content(page, post_url: str) -> dict:
             logger.warning(f"포스트 아님 (스킵): 요청={post_url[:80]} 도착={final_url[:80]}")
             return result
 
-        # 네이버 블로그는 iframe 안에 본문이 있음
-        content_data = await page.evaluate('''() => {
+        # mainFrame 대기: iframe 내부 콘텐츠가 로드될 때까지 대기
+        main_frame = None
+        for f in page.frames:
+            if f.name == 'mainFrame':
+                main_frame = f
+                break
+
+        if main_frame:
+            try:
+                await main_frame.wait_for_load_state("load", timeout=10000)
+            except Exception:
+                logger.info("mainFrame load_state 대기 타임아웃, 계속 진행")
+            await random_delay(0.5, 1)
+
+        # 본문 추출 함수 (외부 + iframe 공용)
+        EXTRACT_JS = '''() => {
             let title = '';
             let content = '';
 
-            // 제목 추출
             const titleEls = document.querySelectorAll(
                 '.se-title-text, .pcol1, .htitle, .se-fs-, h3.se_textarea, ' +
-                '[class*="title"] span, .post-title'
+                '[class*="title"] span, .post-title, .tit_h3'
             );
             for (const el of titleEls) {
                 const t = el.textContent.trim();
                 if (t && t.length > 3) { title = t; break; }
             }
 
-            // 본문 추출
             const contentEls = document.querySelectorAll(
                 '.se-main-container, .se-component.se-text, ' +
                 '#postViewArea, #post-view, .post_ct'
@@ -449,49 +462,47 @@ async def read_post_content(page, post_url: str) -> dict:
             }
 
             return { title, content };
-        }''')
+        }'''
 
-        # iframe 내부에서도 시도 (mainFrame 우선)
+        # 1차: mainFrame 우선 추출 (본문은 대부분 mainFrame 안에 있음)
+        content_data = {"title": "", "content": ""}
+        if main_frame:
+            try:
+                content_data = await main_frame.evaluate(EXTRACT_JS)
+                if content_data.get("content"):
+                    logger.info(f"mainFrame 본문 추출 성공: {len(content_data['content'])}자")
+            except Exception as e:
+                logger.info(f"mainFrame 본문 추출 실패: {e}")
+
+        # 2차: mainFrame에서 못 찾으면 외부 페이지
         if not content_data.get("content"):
-            # mainFrame을 우선 탐색
-            sorted_frames = sorted(
-                page.frames,
-                key=lambda f: (0 if 'mainFrame' in (f.name or '') else 1),
-            )
-            for frame in sorted_frames:
-                if frame == page.main_frame:
-                    continue  # 이미 위에서 시도함
+            try:
+                content_data = await page.evaluate(EXTRACT_JS)
+            except Exception:
+                pass
+
+        # 3차: 다른 iframe 탐색
+        if not content_data.get("content"):
+            for frame in page.frames:
+                if frame == page.main_frame or frame == main_frame:
+                    continue
                 try:
-                    frame_data = await frame.evaluate('''() => {
-                        let title = '';
-                        let content = '';
-
-                        const titleEls = document.querySelectorAll(
-                            '.se-title-text, .pcol1, h3.se_textarea, ' +
-                            '[class*="title"] span, .se-fs-, .tit_h3'
-                        );
-                        for (const el of titleEls) {
-                            const t = el.textContent.trim();
-                            if (t && t.length > 3) { title = t; break; }
-                        }
-
-                        const contentEls = document.querySelectorAll(
-                            '.se-main-container, #postViewArea, .post_ct, ' +
-                            '.se-component.se-text, #post-view'
-                        );
-                        for (const el of contentEls) {
-                            const t = el.innerText.trim();
-                            if (t && t.length > 20) { content = t; break; }
-                        }
-
-                        return { title, content };
-                    }''')
-
+                    frame_data = await frame.evaluate(EXTRACT_JS)
                     if frame_data.get("content"):
                         content_data = frame_data
+                        logger.info(f"iframe '{frame.name}' 본문 추출 성공")
                         break
                 except Exception:
                     continue
+
+        # 4차: 재시도 (mainFrame 콘텐츠 지연 로딩 대비)
+        if not content_data.get("content") and main_frame:
+            logger.info("본문 미추출 → 3초 대기 후 mainFrame 재시도")
+            await asyncio.sleep(3)
+            try:
+                content_data = await main_frame.evaluate(EXTRACT_JS)
+            except Exception:
+                pass
 
         result["title"] = content_data.get("title", "")
         # 본문을 최대 2000자로 제한 (AI 댓글 생성용)
@@ -499,6 +510,7 @@ async def read_post_content(page, post_url: str) -> dict:
 
         if not result["content"]:
             result["error"] = "본문 추출 실패"
+            logger.warning(f"본문 추출 실패: {post_url[:80]}")
 
     except Exception as e:
         result["error"] = str(e)
