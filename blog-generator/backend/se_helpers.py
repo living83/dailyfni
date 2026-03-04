@@ -237,6 +237,59 @@ async def login_with_credentials(page, naver_id: str, naver_password: str) -> bo
         return False
 
 
+async def _share_cookies_for_cbox(context):
+    """로그인 쿠키를 cbox iframe 도메인에도 공유.
+    Chrome의 SameSite/third-party cookie 정책으로 인해
+    cbox iframe에서 로그인 상태가 안 되는 문제 해결."""
+    try:
+        cookies = await context.cookies()
+        naver_cookies = [c for c in cookies if '.naver.com' in (c.get('domain', ''))]
+        if not naver_cookies:
+            return
+
+        # cbox에서 필요한 인증 쿠키를 .naver.com 도메인으로 재설정
+        extra_cookies = []
+        for c in naver_cookies:
+            domain = c.get('domain', '')
+            name = c.get('name', '')
+            # NID 관련 인증 쿠키만 대상
+            if name.startswith('NID') or name in ('NNB', 'NACT', 'nid_inf'):
+                # .naver.com 도메인이 아닌 경우 .naver.com으로 확장
+                if domain != '.naver.com':
+                    new_cookie = {
+                        'name': c['name'],
+                        'value': c['value'],
+                        'domain': '.naver.com',
+                        'path': c.get('path', '/'),
+                        'secure': c.get('secure', True),
+                        'httpOnly': c.get('httpOnly', False),
+                        'sameSite': 'None',  # cross-site iframe 접근 허용
+                    }
+                    if c.get('expires') and c['expires'] > 0:
+                        new_cookie['expires'] = c['expires']
+                    extra_cookies.append(new_cookie)
+
+                # 기존 쿠키의 sameSite도 None으로 변경
+                updated_cookie = {
+                    'name': c['name'],
+                    'value': c['value'],
+                    'domain': domain,
+                    'path': c.get('path', '/'),
+                    'secure': True,  # sameSite=None은 secure 필수
+                    'httpOnly': c.get('httpOnly', False),
+                    'sameSite': 'None',
+                }
+                if c.get('expires') and c['expires'] > 0:
+                    updated_cookie['expires'] = c['expires']
+                extra_cookies.append(updated_cookie)
+
+        if extra_cookies:
+            await context.add_cookies(extra_cookies)
+            logger.info(f"cbox용 쿠키 공유 완료: {len(extra_cookies)}개")
+    except Exception as e:
+        logger.warning(f"cbox 쿠키 공유 실패 (무시): {e}")
+
+
 async def login(page, account_id: int, naver_id: str, naver_password: str) -> bool:
     """쿠키 우선 로그인, 실패 시 ID/PW 로그인"""
     cookie_loaded = await load_cookies(page.context, account_id)
@@ -244,6 +297,7 @@ async def login(page, account_id: int, naver_id: str, naver_password: str) -> bo
         is_logged_in = await check_login_status(page)
         if is_logged_in:
             logger.info(f"쿠키 로그인 성공: account_id={account_id}")
+            await _share_cookies_for_cbox(page.context)
             return True
         logger.info("쿠키 만료, ID/PW 로그인 시도")
 
@@ -251,6 +305,7 @@ async def login(page, account_id: int, naver_id: str, naver_password: str) -> bo
         success = await login_with_credentials(page, naver_id, naver_password)
         if success:
             await save_cookies(page, account_id)
+            await _share_cookies_for_cbox(page.context)
             return True
         logger.warning(f"로그인 재시도 {attempt + 2}/3")
         await random_delay(3, 5)
@@ -270,7 +325,8 @@ async def create_stealth_context(playwright_instance):
         "--disable-dev-shm-usage",
         "--disable-infobars",
         "--window-size=1920,1080",
-        "--disable-features=ThirdPartyCookieBlocking",
+        "--disable-features=ThirdPartyCookieBlocking,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure",
+        "--disable-site-isolation-trials",
     ]
 
     browser = None
@@ -295,7 +351,7 @@ async def create_stealth_context(playwright_instance):
         raise RuntimeError("사용 가능한 브라우저가 없습니다. Chrome 또는 Edge를 설치하세요.")
 
     context = await browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
         viewport={"width": 1920, "height": 1080},
         locale="ko-KR",
         timezone_id="Asia/Seoul",

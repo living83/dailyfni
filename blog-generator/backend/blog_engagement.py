@@ -25,7 +25,7 @@ from se_helpers import (
 logger = logging.getLogger("engagement")
 
 # 배포 확인용 버전 상수 (이 값이 로그에 보이면 최신 코드 실행 중)
-CODE_VERSION = "2026-03-02-v7"
+CODE_VERSION = "2026-03-04-v8"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1373,21 +1373,20 @@ async def write_comment(page, comment_text: str) -> dict:
 
     try:
         # ── 1. mainFrame 내부를 스크롤 (댓글 영역 로딩 트리거) ──
-        # 네이버 블로그는 포스트가 mainFrame iframe 안에 있고,
-        # 댓글 영역도 mainFrame 하단에 위치. 외부 page 스크롤로는 로딩 안 됨.
         main_frame = None
         for frame in page.frames:
             if frame.name == 'mainFrame':
                 main_frame = frame
                 break
 
-        # cbox iframe 탐색 헬퍼
+        # cbox iframe 탐색 헬퍼 (URL/이름/DOM 기반 복합 탐색)
         def _find_cbox_in_frames():
             for f in page.frames:
                 f_url = (f.url or '').lower()
                 f_name = (f.name or '').lower()
                 if ('cbox' in f_url or 'comment' in f_url or
-                    'cbox' in f_name or 'comment' in f_name):
+                    'cbox' in f_name or 'comment' in f_name or
+                    'reply' in f_url or 'reply' in f_name):
                     return f
             return None
 
@@ -1399,29 +1398,31 @@ async def write_comment(page, comment_text: str) -> dict:
         logger.info("댓글 영역 스크롤 시작")
         await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
         await random_delay(0.8, 1.2)
-        for _ in range(3):
+        for _ in range(5):
             await scroll_target.evaluate('window.scrollBy(0, 800)')
-            await random_delay(0.2, 0.3)
+            await random_delay(0.2, 0.4)
 
         # ── 1-2. "댓글" 버튼 클릭 (cbox iframe 로딩 트리거) ──
-        # 네이버 블로그는 "댓글 N" 버튼을 클릭해야 댓글 cbox iframe이 로드됨
         comment_btn_selectors = [
             'a.btn_comment',                          # 일반 블로그 댓글 버튼
             '.area_comment a',                         # 댓글 영역 링크
             'a[href*="#comment"]',                      # 해시 앵커 댓글 링크
             '.u_likeit_list_btn._comment',             # 좋아요 옆 댓글 버튼
             'button._comment',                         # 버튼형 댓글
-            'em.u_cnt._count',                         # 댓글 수 표시 영역 (클릭 가능)
+            'em.u_cnt._count',                         # 댓글 수 표시 영역
             '.comment_count',                          # 댓글 카운트 영역
             'a[class*="comment"]',                     # comment 포함 클래스
             '.area_sympathy + * a',                    # 공감 영역 다음 형제
+            '[data-cbox-module]',                      # cbox 데이터 속성
+            'a[data-action="comment"]',                # 데이터 액션 댓글
+            '.post_footer a',                          # 포스트 푸터 링크
+            '.wrap_postfoot a',                        # 포스트 하단 래퍼
         ]
         comment_btn_clicked = False
         for sel in comment_btn_selectors:
             try:
                 btn = scroll_target.locator(sel).first
-                if await btn.is_visible(timeout=1000):
-                    # 버튼 텍스트에 "댓글" 포함 여부 확인
+                if await btn.is_visible(timeout=1500):
                     btn_text = await btn.text_content() or ''
                     await btn.click(timeout=3000)
                     comment_btn_clicked = True
@@ -1434,8 +1435,7 @@ async def write_comment(page, comment_text: str) -> dict:
             # JS 폴백: 텍스트 기반 "댓글" 링크 탐색
             logger.info("댓글 버튼 locator 미발견 → JS 텍스트 탐색")
             js_clicked = await scroll_target.evaluate('''() => {
-                // "댓글" 텍스트를 포함하는 클릭 가능한 요소 탐색
-                const allLinks = document.querySelectorAll('a, button, span[onclick], em');
+                const allLinks = document.querySelectorAll('a, button, span[onclick], em, div[onclick]');
                 for (const el of allLinks) {
                     const text = (el.textContent || '').trim();
                     if (text.match(/댓글\\s*\\d*/)) {
@@ -1444,10 +1444,10 @@ async def write_comment(page, comment_text: str) -> dict:
                         return text.substring(0, 30);
                     }
                 }
-                // 클래스명 기반 폴백
                 const byClass = document.querySelector(
                     '[class*="comment_btn"], [class*="btn_comment"], ' +
-                    '[class*="comment_count"], [class*="reply"]'
+                    '[class*="comment_count"], [class*="reply"], ' +
+                    '[data-cbox-module], [class*="cbox"]'
                 );
                 if (byClass) {
                     byClass.scrollIntoView({ block: "center" });
@@ -1464,13 +1464,12 @@ async def write_comment(page, comment_text: str) -> dict:
 
         # 댓글 버튼 클릭 후 cbox iframe 로딩 대기
         if comment_btn_clicked:
-            await random_delay(1.5, 2.5)
+            await random_delay(2.0, 3.0)
 
-        # ── 1-3. cbox iframe 폴링 (최대 3라운드) ──
+        # ── 1-3. cbox iframe 폴링 (최대 4라운드, 총 ~30초) ──
         comment_target = None
-        for scroll_round in range(3):
-            # cbox iframe 폴링 (최대 5초)
-            for poll in range(10):
+        for scroll_round in range(4):
+            for poll in range(12):
                 comment_target = _find_cbox_in_frames()
                 if comment_target:
                     logger.info(
@@ -1481,18 +1480,35 @@ async def write_comment(page, comment_text: str) -> dict:
                 await asyncio.sleep(0.5)
             if comment_target:
                 break
-            # 추가 스크롤 후 재시도
-            logger.info(f"cbox iframe 미발견 (라운드 {scroll_round+1}/3), 추가 스크롤 후 재시도")
+            logger.info(f"cbox iframe 미발견 (라운드 {scroll_round+1}/4), 추가 스크롤 후 재시도")
             await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
             await random_delay(0.5, 0.8)
-            for _ in range(3):
+            for _ in range(4):
                 await scroll_target.evaluate('window.scrollBy(0, 1000)')
                 await random_delay(0.2, 0.3)
+            # 댓글 버튼 재클릭 시도 (2라운드 이후)
+            if scroll_round >= 1 and not comment_btn_clicked:
+                try:
+                    re_clicked = await scroll_target.evaluate('''() => {
+                        const els = document.querySelectorAll('a, button, em');
+                        for (const el of els) {
+                            if ((el.textContent || '').match(/댓글\\s*\\d*/)) {
+                                el.click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    }''')
+                    if re_clicked:
+                        logger.info("댓글 버튼 재클릭 성공")
+                        await random_delay(2.0, 3.0)
+                except Exception:
+                    pass
 
         # cbox iframe 로드 대기
         if comment_target:
             try:
-                await comment_target.wait_for_load_state("load", timeout=8000)
+                await comment_target.wait_for_load_state("load", timeout=10000)
             except Exception:
                 logger.info("cbox iframe load 대기 타임아웃, 계속 진행")
 
@@ -1507,7 +1523,8 @@ async def write_comment(page, comment_text: str) -> dict:
                     has_cbox = await frame.evaluate('''() => {
                         return !!document.querySelector(
                             '.u_cbox_wrap, .u_cbox_area, .u_cbox_write_wrap, ' +
-                            '[class*="u_cbox"], .cbox_module'
+                            '[class*="u_cbox"], .cbox_module, ' +
+                            '[class*="comment_writer"], [class*="comment_input"]'
                         );
                     }''')
                     if has_cbox:
@@ -1517,7 +1534,23 @@ async def write_comment(page, comment_text: str) -> dict:
                 except Exception:
                     continue
 
-        # 폴백 방법 2: textarea 포함 프레임 (일부 블로그는 post + 댓글이 같은 iframe)
+        # 폴백 방법 2: mainFrame 내부 댓글 영역 (iframe 없이 인라인)
+        if not comment_target and main_frame:
+            try:
+                has_inline_comment = await main_frame.evaluate('''() => {
+                    return !!document.querySelector(
+                        '.u_cbox_wrap, [class*="u_cbox"], textarea[class*="cbox"], ' +
+                        '.comment_write, [class*="comment_input"], ' +
+                        '[class*="reply_write"]'
+                    );
+                }''')
+                if has_inline_comment:
+                    comment_target = main_frame
+                    logger.info("mainFrame 내 인라인 댓글 영역 발견")
+            except Exception:
+                pass
+
+        # 폴백 방법 3: textarea 포함 프레임
         if not comment_target:
             for frame in page.frames:
                 if frame == page.main_frame:
@@ -1535,15 +1568,14 @@ async def write_comment(page, comment_text: str) -> dict:
                     continue
 
         if not comment_target:
-            # 메인 페이지에서도 시도
             comment_target = page
             logger.warning("댓글 iframe 미발견, 메인 페이지에서 시도")
 
         # ── 2-1. cbox 로그인 상태 확인 ──
+        cbox_not_logged_in = False
         if comment_target and comment_target != page:
             try:
                 login_status = await comment_target.evaluate('''() => {
-                    // 로그인 버튼 감지 (실제 로그인 유도 버튼만 선택, 래퍼 제외)
                     const loginBtnSelectors = [
                         '.u_cbox_login_btn',
                         '.u_cbox_btn_login',
@@ -1554,7 +1586,6 @@ async def write_comment(page, comment_text: str) -> dict:
                     for (const sel of loginBtnSelectors) {
                         const el = document.querySelector(sel);
                         if (el) {
-                            // 실제 화면에 보이는 요소만 인정
                             const rect = el.getBoundingClientRect();
                             const style = window.getComputedStyle(el);
                             if (rect.width > 0 && rect.height > 0 &&
@@ -1570,38 +1601,129 @@ async def write_comment(page, comment_text: str) -> dict:
                     const hasPlaceholder = !!document.querySelector(
                         '.u_cbox_placeholder, .u_cbox_inbox, .u_cbox_write_wrap'
                     );
+                    const hasWriteArea = !!document.querySelector(
+                        '.u_cbox_write_box, [class*="cbox_write"], [class*="comment_write"]'
+                    );
                     return {
                         loginBtnFound: !!loginBtn,
                         loginBtnText: loginBtn ? loginBtn.textContent.trim().substring(0, 30) : '',
                         hasTextarea: hasTextarea,
                         hasPlaceholder: hasPlaceholder,
+                        hasWriteArea: hasWriteArea,
                     };
                 }''')
                 logger.info(
                     f"cbox 상태: 로그인버튼={login_status.get('loginBtnFound')}, "
                     f"textarea={login_status.get('hasTextarea')}, "
-                    f"placeholder={login_status.get('hasPlaceholder')}"
+                    f"placeholder={login_status.get('hasPlaceholder')}, "
+                    f"writeArea={login_status.get('hasWriteArea')}"
                 )
-                # 로그인 버튼이 보이고, textarea도 placeholder도 없을 때만 미로그인 판정
-                # (로그인 상태에서는 placeholder가 존재 → textarea는 클릭 후 나타남)
+                # 로그인 버튼이 보이고, textarea/placeholder/writeArea 모두 없을 때만 미로그인
                 if (login_status.get('loginBtnFound')
                         and not login_status.get('hasTextarea')
-                        and not login_status.get('hasPlaceholder')):
+                        and not login_status.get('hasPlaceholder')
+                        and not login_status.get('hasWriteArea')):
+                    cbox_not_logged_in = True
                     logger.warning(
-                        f"cbox에서 로그인 미감지! 로그인 버튼 텍스트: "
-                        f"'{login_status.get('loginBtnText')}' → 3PC 쿠키 문제 가능성"
+                        f"cbox에서 로그인 미감지! 버튼: "
+                        f"'{login_status.get('loginBtnText')}' → 쿠키 재공유 후 재시도"
                     )
                     await capture_debug(page, "cbox_not_logged_in")
-                    result["error"] = "cbox 로그인 미감지 (third-party cookie 차단 가능성)"
-                    return result
             except Exception as e:
                 logger.info(f"cbox 로그인 상태 확인 실패 (무시): {e}")
 
+        # ── 2-2. cbox 미로그인 시 페이지 새로고침으로 재시도 ──
+        if cbox_not_logged_in:
+            logger.info("cbox 미로그인 → 페이지 새로고침 후 댓글 재시도")
+            try:
+                # 쿠키 재공유
+                from se_helpers import _share_cookies_for_cbox
+                await _share_cookies_for_cbox(page.context)
+            except Exception:
+                pass
+            # 페이지 새로고침
+            try:
+                current_url = page.url
+                await page.reload(wait_until="load", timeout=20000)
+                await random_delay(2, 3)
+                # mainFrame 재탐색
+                main_frame = None
+                for frame in page.frames:
+                    if frame.name == 'mainFrame':
+                        main_frame = frame
+                        break
+                scroll_target = main_frame or page
+                # 다시 스크롤 + 댓글 버튼 클릭
+                await scroll_target.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                await random_delay(1, 1.5)
+                # 댓글 버튼 재클릭
+                await scroll_target.evaluate('''() => {
+                    const els = document.querySelectorAll('a, button, em');
+                    for (const el of els) {
+                        if ((el.textContent || '').match(/댓글\\s*\\d*/)) {
+                            el.scrollIntoView({ block: "center" });
+                            el.click();
+                            return;
+                        }
+                    }
+                }''')
+                await random_delay(2.5, 3.5)
+                # cbox iframe 재탐색
+                comment_target = None
+                for poll in range(15):
+                    comment_target = _find_cbox_in_frames()
+                    if comment_target:
+                        logger.info(f"새로고침 후 cbox iframe 발견: name={comment_target.name}")
+                        break
+                    await asyncio.sleep(0.5)
+
+                if not comment_target:
+                    # DOM 기반 재탐색
+                    for frame in page.frames:
+                        if frame == page.main_frame:
+                            continue
+                        try:
+                            has_cbox = await frame.evaluate('''() => {
+                                return !!document.querySelector(
+                                    '.u_cbox_wrap, [class*="u_cbox"], .cbox_module'
+                                );
+                            }''')
+                            if has_cbox:
+                                comment_target = frame
+                                break
+                        except Exception:
+                            continue
+
+                if not comment_target:
+                    result["error"] = "cbox 로그인 미감지 (third-party cookie 차단 가능성)"
+                    return result
+
+                # 재확인: 새로고침 후에도 여전히 미로그인인지
+                try:
+                    await comment_target.wait_for_load_state("load", timeout=8000)
+                    retry_status = await comment_target.evaluate('''() => {
+                        const hasWrite = !!document.querySelector(
+                            '.u_cbox_placeholder, .u_cbox_inbox, .u_cbox_write_wrap, ' +
+                            'textarea.u_cbox_text, .u_cbox_write_box'
+                        );
+                        return { hasWrite };
+                    }''')
+                    if not retry_status.get('hasWrite'):
+                        result["error"] = "cbox 로그인 미감지 (새로고침 후에도 실패)"
+                        return result
+                    logger.info("새로고침 후 cbox 로그인 상태 확인됨")
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.warning(f"cbox 새로고침 재시도 실패: {e}")
+                result["error"] = f"cbox 로그인 미감지 (재시도 실패: {e})"
+                return result
+
         # ── 3. 댓글 영역으로 스크롤 + placeholder 클릭 (textarea 활성화) ──
-        # JS scrollIntoView로 댓글 작성 영역을 뷰포트에 배치
         await comment_target.evaluate('''() => {
             const area = document.querySelector(
-                '.u_cbox_write_wrap, .u_cbox_area, .u_cbox_inbox'
+                '.u_cbox_write_wrap, .u_cbox_area, .u_cbox_inbox, ' +
+                '.u_cbox_write_box, [class*="comment_write"]'
             );
             if (area) {
                 area.scrollIntoView({ block: "center" });
@@ -1612,18 +1734,18 @@ async def write_comment(page, comment_text: str) -> dict:
         await random_delay(0.5, 1)
 
         # Playwright locator.click()으로 placeholder 클릭 (실제 마우스 이벤트)
-        # JS .click()은 네이버 React 이벤트 핸들러가 감지하지 못할 수 있음
         placeholder_selectors = [
             '.u_cbox_placeholder',
             '.u_cbox_inbox',
             '.u_cbox_write_wrap',
             '.u_cbox_write_box',
+            '.u_cbox_text',
         ]
         placeholder_clicked = False
         for sel in placeholder_selectors:
             try:
                 el = comment_target.locator(sel).first
-                if await el.is_visible(timeout=1000):
+                if await el.is_visible(timeout=1500):
                     await el.click(timeout=3000)
                     placeholder_clicked = True
                     logger.info(f"placeholder 클릭 성공 (locator): {sel}")
@@ -1632,20 +1754,24 @@ async def write_comment(page, comment_text: str) -> dict:
                 continue
 
         if not placeholder_clicked:
-            # JS 폴백: dispatchEvent로 실제 마우스 이벤트 시뮬레이션
             logger.info("placeholder locator 클릭 실패 → JS dispatchEvent 폴백")
             await comment_target.evaluate('''() => {
                 const targets = document.querySelectorAll(
                     '.u_cbox_inbox, .u_cbox_write_wrap, .u_cbox_write_box, ' +
-                    '.u_cbox_placeholder'
+                    '.u_cbox_placeholder, .u_cbox_text'
                 );
                 for (const el of targets) {
-                    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtName => {
-                        el.dispatchEvent(new PointerEvent(evtName, {bubbles: true, cancelable: true}));
+                    el.scrollIntoView({ block: "center" });
+                    ['focus', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtName => {
+                        if (evtName === 'focus') {
+                            el.focus();
+                        } else {
+                            el.dispatchEvent(new PointerEvent(evtName, {bubbles: true, cancelable: true}));
+                        }
                     });
                 }
             }''')
-        await random_delay(0.5, 1)
+        await random_delay(0.8, 1.2)
 
         # ── 4. textarea 찾기 ──
         comment_input = await try_selectors(comment_target, [
@@ -1654,19 +1780,30 @@ async def write_comment(page, comment_text: str) -> dict:
             'textarea[class*="u_cbox"]',
             '.u_cbox_inbox textarea',
             'textarea[placeholder*="댓글"]',
+            'textarea[placeholder*="의견"]',
             'textarea',
-        ], timeout=5000, description="댓글 textarea")
+        ], timeout=6000, description="댓글 textarea")
 
         if not comment_input:
-            # 재시도: Playwright locator로 textarea 직접 클릭 활성화
-            logger.info("textarea 미발견 → locator 클릭 재시도")
-            for sel in ['textarea.u_cbox_text', 'textarea[class*="u_cbox"]', 'textarea']:
+            # placeholder 재클릭 후 textarea 재시도
+            logger.info("textarea 미발견 → placeholder 재클릭 + textarea 재탐색")
+            for sel in placeholder_selectors:
                 try:
                     el = comment_target.locator(sel).first
                     if await el.is_visible(timeout=1000):
                         await el.click(timeout=3000)
+                        await random_delay(0.5, 0.8)
+                        break
+                except Exception:
+                    continue
+
+            for sel in ['textarea.u_cbox_text', 'textarea[class*="u_cbox"]', 'textarea']:
+                try:
+                    el = comment_target.locator(sel).first
+                    if await el.is_visible(timeout=2000):
+                        await el.click(timeout=3000)
                         comment_input = el
-                        logger.info(f"textarea locator 클릭 성공: {sel}")
+                        logger.info(f"textarea locator 클릭 성공 (2차): {sel}")
                         break
                 except Exception:
                     continue
@@ -1675,7 +1812,7 @@ async def write_comment(page, comment_text: str) -> dict:
             # 최종 폴백: contenteditable div
             try:
                 editable = comment_target.locator('[contenteditable="true"]').first
-                if await editable.is_visible(timeout=1000):
+                if await editable.is_visible(timeout=1500):
                     await editable.click(timeout=3000)
                     comment_input = editable
                     logger.info("contenteditable 요소 발견, 사용")
@@ -1709,6 +1846,12 @@ async def write_comment(page, comment_text: str) -> dict:
         # ── 5. 댓글 타이핑 ──
         await comment_input.click()
         await random_delay(0.3, 0.5)
+        # focus 이벤트도 명시적으로 발생시킴 (React 핸들러 대응)
+        try:
+            await comment_input.focus()
+        except Exception:
+            pass
+        await random_delay(0.2, 0.3)
         await comment_input.type(comment_text,
                                  delay=30 + random.randint(-10, 15))
         await random_delay(0.5, 1)
@@ -1718,24 +1861,26 @@ async def write_comment(page, comment_text: str) -> dict:
             'button.u_cbox_btn_upload',
             'a.u_cbox_btn_upload',
             '.u_cbox_btn_upload',
+            'button.u_cbox_btn_register',
+            '.u_cbox_btn_register',
             'button:has-text("등록")',
             'a:has-text("등록")',
         ], timeout=5000, description="댓글 등록 버튼")
 
         if submit_btn:
             await submit_btn.click()
-            await random_delay(1, 1.5)
+            await random_delay(1.5, 2.0)
             result["success"] = True
             logger.info("댓글 등록 성공")
         else:
             # JS 폴백
             clicked = await comment_target.evaluate('''() => {
-                const btns = document.querySelectorAll('button, a');
+                const btns = document.querySelectorAll('button, a, span[role="button"]');
                 for (const btn of btns) {
                     const text = (btn.textContent || '').trim();
                     const cls = btn.className || '';
                     if (text === '등록' || cls.includes('upload') ||
-                        cls.includes('btn_register')) {
+                        cls.includes('btn_register') || cls.includes('btn_submit')) {
                         btn.click();
                         return true;
                     }
@@ -1745,7 +1890,7 @@ async def write_comment(page, comment_text: str) -> dict:
             if clicked:
                 result["success"] = True
                 logger.info("댓글 등록 성공 (JS 폴백)")
-                await random_delay(1, 1.5)
+                await random_delay(1.5, 2.0)
             else:
                 result["error"] = "댓글 등록 버튼 미발견"
 
