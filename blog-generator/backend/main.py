@@ -1092,6 +1092,16 @@ async def get_scheduler_config():
 async def update_scheduler_config(req: SchedulerConfigUpdate):
     data = {k: v for k, v in req.dict().items() if v is not None}
     await db.update_scheduler_config(data)
+
+    # 참여 관련 설정이 변경되면 스케줄러 잡 즉시 갱신
+    engagement_keys = {"engagement_enabled", "engagement_hour", "engagement_minute"}
+    if engagement_keys & data.keys():
+        try:
+            from scheduler import update_engagement_job
+            await update_engagement_job()
+        except Exception as e:
+            logger.warning(f"참여 잡 갱신 실패: {e}")
+
     return await db.get_scheduler_config()
 
 

@@ -554,6 +554,37 @@ async def start_scheduler():
     logger.info(f"스케줄러 시작: 글 생성 {gen_h:02d}:{gen_m:02d}, 발행 {start_h:02d}:{start_m:02d}{eng_str}")
 
 
+async def update_engagement_job():
+    """참여(공감/댓글) 잡만 갱신 — 설정 변경 시 스케줄러 재시작 없이 적용"""
+    if not _is_running:
+        return
+
+    config = await _get_config()
+    eng_enabled = config.get("engagement_enabled", 0)
+    eng_h = config.get("engagement_hour", 14)
+    eng_m = config.get("engagement_minute", 0)
+
+    # 기존 잡 제거
+    try:
+        scheduler.remove_job("daily_engagement")
+    except Exception:
+        pass
+
+    # 활성화 시 새 잡 등록
+    if eng_enabled:
+        scheduler.add_job(
+            daily_engagement_job,
+            "cron",
+            hour=eng_h,
+            minute=eng_m,
+            id="daily_engagement",
+            replace_existing=True,
+        )
+        logger.info(f"참여 잡 갱신: {eng_h:02d}:{eng_m:02d}")
+    else:
+        logger.info("참여 잡 비활성화됨")
+
+
 async def stop_scheduler():
     """스케줄러 중지"""
     global _is_running
@@ -574,7 +605,9 @@ def get_scheduler_status() -> dict:
         "jobs": [
             {
                 "id": job.id,
-                "name": "글 사전 생성" if job.id == "article_generation" else "네이버 발행",
+                "name": "글 사전 생성" if job.id == "article_generation"
+                        else "참여(공감/댓글)" if job.id == "daily_engagement"
+                        else "네이버 발행",
                 "next_run_time": str(job.next_run_time) if job.next_run_time else None,
             }
             for job in jobs
