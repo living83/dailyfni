@@ -1543,12 +1543,27 @@ async def write_comment(page, comment_text: str) -> dict:
         if comment_target and comment_target != page:
             try:
                 login_status = await comment_target.evaluate('''() => {
-                    // 로그인 버튼이 있으면 미로그인 상태
-                    const loginBtn = document.querySelector(
-                        '.u_cbox_login_btn, .u_cbox_btn_login, ' +
-                        'a[href*="nidlogin"], button[class*="login"], ' +
-                        '.u_cbox_write_login, [class*="login_area"]'
-                    );
+                    // 로그인 버튼 감지 (실제 로그인 유도 버튼만 선택, 래퍼 제외)
+                    const loginBtnSelectors = [
+                        '.u_cbox_login_btn',
+                        '.u_cbox_btn_login',
+                        'a[href*="nidlogin"]',
+                        '.u_cbox_write_login',
+                    ];
+                    let loginBtn = null;
+                    for (const sel of loginBtnSelectors) {
+                        const el = document.querySelector(sel);
+                        if (el) {
+                            // 실제 화면에 보이는 요소만 인정
+                            const rect = el.getBoundingClientRect();
+                            const style = window.getComputedStyle(el);
+                            if (rect.width > 0 && rect.height > 0 &&
+                                style.display !== 'none' && style.visibility !== 'hidden') {
+                                loginBtn = el;
+                                break;
+                            }
+                        }
+                    }
                     const hasTextarea = !!document.querySelector(
                         'textarea.u_cbox_text, textarea[class*="u_cbox"], textarea'
                     );
@@ -1567,7 +1582,11 @@ async def write_comment(page, comment_text: str) -> dict:
                     f"textarea={login_status.get('hasTextarea')}, "
                     f"placeholder={login_status.get('hasPlaceholder')}"
                 )
-                if login_status.get('loginBtnFound') and not login_status.get('hasTextarea'):
+                # 로그인 버튼이 보이고, textarea도 placeholder도 없을 때만 미로그인 판정
+                # (로그인 상태에서는 placeholder가 존재 → textarea는 클릭 후 나타남)
+                if (login_status.get('loginBtnFound')
+                        and not login_status.get('hasTextarea')
+                        and not login_status.get('hasPlaceholder')):
                     logger.warning(
                         f"cbox에서 로그인 미감지! 로그인 버튼 텍스트: "
                         f"'{login_status.get('loginBtnText')}' → 3PC 쿠키 문제 가능성"
