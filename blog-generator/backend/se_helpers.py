@@ -325,8 +325,9 @@ async def create_stealth_context(playwright_instance):
         "--disable-dev-shm-usage",
         "--disable-infobars",
         "--window-size=1920,1080",
-        "--disable-features=ThirdPartyCookieBlocking,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure",
+        "--disable-features=ThirdPartyCookieBlocking,ThirdPartyCookiePhaseout,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,TrackingProtection3pcd",
         "--disable-site-isolation-trials",
+        "--disable-third-party-cookie-phaseout",
     ]
 
     browser = None

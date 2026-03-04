@@ -25,7 +25,7 @@ from se_helpers import (
 logger = logging.getLogger("engagement")
 
 # 배포 확인용 버전 상수 (이 값이 로그에 보이면 최신 코드 실행 중)
-CODE_VERSION = "2026-03-04-v8"
+CODE_VERSION = "2026-03-04-v9"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1634,13 +1634,24 @@ async def write_comment(page, comment_text: str) -> dict:
 
         # ── 2-2. cbox 미로그인 시 페이지 새로고침으로 재시도 ──
         if cbox_not_logged_in:
-            logger.info("cbox 미로그인 → 페이지 새로고침 후 댓글 재시도")
+            logger.info("cbox 미로그인 → cbox 도메인 쿠키 워밍 + 새로고침 후 재시도")
             try:
                 # 쿠키 재공유
                 from se_helpers import _share_cookies_for_cbox
                 await _share_cookies_for_cbox(page.context)
             except Exception:
                 pass
+            # cbox 도메인에 직접 접근하여 쿠키 설정 (third-party cookie 우회)
+            try:
+                warmup_page = await page.context.new_page()
+                await warmup_page.goto(
+                    "https://cbox5.apis.naver.com/", timeout=8000,
+                )
+                await asyncio.sleep(1)
+                await warmup_page.close()
+                logger.info("cbox 도메인 쿠키 워밍 완료")
+            except Exception as e:
+                logger.info(f"cbox 도메인 쿠키 워밍 실패 (무시): {e}")
             # 페이지 새로고침
             try:
                 current_url = page.url
@@ -1867,11 +1878,11 @@ async def write_comment(page, comment_text: str) -> dict:
             'a:has-text("등록")',
         ], timeout=5000, description="댓글 등록 버튼")
 
+        btn_clicked = False
         if submit_btn:
             await submit_btn.click()
-            await random_delay(1.5, 2.0)
-            result["success"] = True
-            logger.info("댓글 등록 성공")
+            btn_clicked = True
+            logger.info("댓글 등록 버튼 클릭")
         else:
             # JS 폴백
             clicked = await comment_target.evaluate('''() => {
@@ -1888,11 +1899,60 @@ async def write_comment(page, comment_text: str) -> dict:
                 return false;
             }''')
             if clicked:
+                btn_clicked = True
+                logger.info("댓글 등록 버튼 클릭 (JS 폴백)")
+
+        if btn_clicked:
+            await random_delay(2.0, 3.0)
+            # 등록 성공 검증: textarea가 비워졌거나 댓글 목록에 새 댓글이 추가되었는지 확인
+            try:
+                verify = await comment_target.evaluate('''() => {
+                    // 1) textarea가 비워졌으면 등록 성공
+                    const ta = document.querySelector(
+                        'textarea.u_cbox_text, textarea[class*="u_cbox"], textarea'
+                    );
+                    const taEmpty = ta ? ta.value.trim().length === 0 : true;
+
+                    // 2) 에러 메시지 존재 여부
+                    const errorEl = document.querySelector(
+                        '.u_cbox_alert, .u_cbox_layer_error, [class*="cbox_error"]'
+                    );
+                    const hasError = errorEl ? (
+                        errorEl.offsetWidth > 0 && errorEl.offsetHeight > 0
+                    ) : false;
+                    const errorText = errorEl ? errorEl.textContent.trim().substring(0, 100) : '';
+
+                    // 3) 로그인 요구 팝업
+                    const loginPopup = document.querySelector(
+                        '.u_cbox_layer_login, [class*="login_layer"]'
+                    );
+                    const hasLoginPopup = loginPopup ? (
+                        loginPopup.offsetWidth > 0 && loginPopup.offsetHeight > 0
+                    ) : false;
+
+                    return { taEmpty, hasError, errorText, hasLoginPopup };
+                }''')
+
+                if verify.get('hasLoginPopup'):
+                    result["error"] = "cbox 로그인 필요 (댓글 등록 실패)"
+                    logger.warning("댓글 등록 실패: cbox 로그인 팝업 감지")
+                elif verify.get('hasError'):
+                    err_text = verify.get('errorText', '알 수 없는 오류')
+                    result["error"] = f"댓글 등록 오류: {err_text}"
+                    logger.warning(f"댓글 등록 실패: {err_text}")
+                elif verify.get('taEmpty'):
+                    result["success"] = True
+                    logger.info("댓글 등록 성공 (textarea 비워짐 확인)")
+                else:
+                    # textarea가 비워지지 않았지만 에러도 없음 → 일단 성공으로 처리
+                    result["success"] = True
+                    logger.info("댓글 등록 버튼 클릭 완료 (검증 불확실)")
+            except Exception as e:
+                # 검증 실패해도 버튼 클릭은 됐으므로 성공으로 처리
                 result["success"] = True
-                logger.info("댓글 등록 성공 (JS 폴백)")
-                await random_delay(1.5, 2.0)
-            else:
-                result["error"] = "댓글 등록 버튼 미발견"
+                logger.info(f"댓글 등록 버튼 클릭 완료 (검증 중 오류: {e})")
+        else:
+            result["error"] = "댓글 등록 버튼 미발견"
 
     except Exception as e:
         result["error"] = str(e)
@@ -2012,6 +2072,13 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
                     await page.goto(post_url, wait_until="load",
                                     timeout=15000)
                     await random_delay(1, 2)
+
+                # 댓글 작성 전 cbox 쿠키 재공유 (third-party cookie 차단 대응)
+                try:
+                    from se_helpers import _share_cookies_for_cbox
+                    await _share_cookies_for_cbox(page.context)
+                except Exception:
+                    pass
 
                 comment_result = await write_comment(page, comment_text)
                 result["comment_success"] = comment_result["success"]
