@@ -125,17 +125,17 @@ async def article_generation_job(manual: bool = False):
             "used_count": kw["used_count"] + 1,
         })
 
-        # 배치 생성 (status = articles_ready)
-        batch = await create_batch(keyword)
+        # 글 타입 결정 (일반/광고)
+        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
+
+        # 배치 생성 (status = articles_ready, post_type 포함)
+        batch = await create_batch(keyword, post_type=post_type)
 
         # API 키 (환경변수에서)
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
             await create_notification("error", "API 키 없음", "ANTHROPIC_API_KEY가 설정되지 않았습니다.")
             return
-
-        # 글 타입 결정 (일반/광고)
-        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
 
         # 문서 생성
         try:
@@ -360,10 +360,16 @@ async def daily_publish_job(manual: bool = False):
                 except Exception:
                     tags = [keyword]
 
-                # 기본 하단 링크 (DB 설정 → 환경변수 순)
-                footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
-                footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
-                logger.info(f"하단 링크: footer_link={footer_link!r}, footer_link_text={footer_link_text!r}")
+                # 하단 링크: 광고(ad)만 삽입, 일반(general)은 링크 없음
+                post_type = batch.get("post_type", "ad")
+                if post_type == "general":
+                    footer_link = ""
+                    footer_link_text = ""
+                    logger.info("일반(general) 타입 → 하단 링크 삽입 건너뜀")
+                else:
+                    footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
+                    footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+                    logger.info(f"광고(ad) 타입 → 하단 링크: {footer_link!r}")
 
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,

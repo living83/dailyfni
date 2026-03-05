@@ -161,6 +161,7 @@ async def init_db():
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     scheduled_start_time VARCHAR(50) DEFAULT '',
                     status VARCHAR(50) DEFAULT 'pending',
+                    post_type VARCHAR(20) DEFAULT 'ad',
                     total_count INT DEFAULT 3,
                     success_count INT DEFAULT 0,
                     failed_count INT DEFAULT 0
@@ -282,6 +283,12 @@ async def init_db():
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+
+            # ─── publish_batches에 post_type 컬럼 추가 (없을 때만) ───
+            try:
+                await cur.execute("ALTER TABLE publish_batches ADD COLUMN post_type VARCHAR(20) DEFAULT 'ad'")
+            except Exception:
+                pass  # 이미 존재
 
             # ─── priority 값 마이그레이션 (high/medium/low → ad/general) ───
             try:
@@ -448,13 +455,13 @@ async def delete_category(cat_id: int) -> bool:
 
 # ─── 발행 배치 CRUD ──────────────────────────────────────
 
-async def create_batch(keyword: str, scheduled_start_time: str = "") -> dict:
+async def create_batch(keyword: str, scheduled_start_time: str = "", post_type: str = "ad") -> dict:
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "INSERT INTO publish_batches (keyword, scheduled_start_time) VALUES (%s, %s)",
-                (keyword, scheduled_start_time),
+                "INSERT INTO publish_batches (keyword, scheduled_start_time, post_type) VALUES (%s, %s, %s)",
+                (keyword, scheduled_start_time, post_type),
             )
             await cur.execute("SELECT * FROM publish_batches WHERE id = %s", (cur.lastrowid,))
             return await cur.fetchone()

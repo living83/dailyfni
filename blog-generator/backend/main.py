@@ -41,7 +41,7 @@ def _load_env_file(env_path):
 
 _load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Body
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
@@ -1079,6 +1079,23 @@ async def update_keyword_api(kw_id: int, req: KeywordUpdate):
         data["status"] = req.status
     await db.update_keyword(kw_id, data)
     return {"message": "키워드가 수정되었습니다."}
+
+
+@app.put("/api/keywords/bulk-priority")
+async def bulk_update_priority(req: dict = Body(...)):
+    """대기 중인 모든 키워드의 priority 일괄 변경"""
+    priority = req.get("priority", "ad")
+    if priority not in ("ad", "general"):
+        raise HTTPException(status_code=400, detail="priority는 ad 또는 general이어야 합니다.")
+    pool = await db._get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE keyword_queue SET priority = %s WHERE status = 'pending'",
+                (priority,),
+            )
+            count = cur.rowcount
+    return {"message": f"{count}개 키워드의 우선순위가 {'광고' if priority == 'ad' else '일반'}로 변경되었습니다."}
 
 
 @app.delete("/api/keywords/{kw_id}")
