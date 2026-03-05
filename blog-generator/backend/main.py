@@ -388,6 +388,14 @@ class SchedulerConfigUpdate(BaseModel):
     engagement_do_like: Optional[int] = None
     engagement_do_comment: Optional[int] = None
     engagement_account_ids: Optional[List[int]] = None
+    footer_link: Optional[str] = None
+    footer_link_text: Optional[str] = None
+
+    @validator("footer_link")
+    def check_footer_link(cls, v):
+        if v is not None and v != "" and not v.startswith(("http://", "https://")):
+            raise ValueError("링크는 http:// 또는 https://로 시작해야 합니다.")
+        return v
 
     @validator("start_hour", "end_hour")
     def check_hour(cls, v):
