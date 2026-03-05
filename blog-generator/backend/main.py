@@ -1037,6 +1037,8 @@ async def create_keywords_bulk(request: Request):
             kw = item.get("keyword", "").strip()
             pi = item.get("product_info", product_info)
             pr = item.get("priority", priority)
+            if pr not in ("ad", "general"):
+                pr = "ad"
         else:
             continue
         if kw:
