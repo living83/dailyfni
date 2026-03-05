@@ -975,7 +975,7 @@ async def se_input_body(page, editor, content: str,
 
 
 async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text: str = ""):
-    """SE ONE 에디터에 하단 링크 삽입 (JS execCommand → Ctrl+K 폴백)"""
+    """SE ONE 에디터에 하단 링크 삽입 (Ctrl+K 다이얼로그)"""
     if not footer_link:
         logger.warning("하단 링크 미설정 (footer_link 빈 값) → 링크 삽입 건너뜀. "
                        "스케줄러 설정 또는 .env의 DEFAULT_FOOTER_LINK를 확인하세요.")
@@ -1010,55 +1010,9 @@ async def se_insert_footer_link(page, editor, footer_link: str, footer_link_text
     except Exception:
         pass
 
-    # ── 방법 A: JavaScript execCommand('createLink') ──
-    # DOM에 텍스트를 삽입 → 선택 → createLink 로 하이퍼링크 생성 (가장 안정적)
-    try:
-        js_result = await editor.evaluate('''([url, displayText]) => {
-            try {
-                const paragraphs = document.querySelectorAll('.se-text-paragraph');
-                if (paragraphs.length === 0) return false;
-                const lastP = paragraphs[paragraphs.length - 1];
-
-                // 빈 줄 + 링크 텍스트 삽입
-                const br1 = document.createElement('br');
-                const br2 = document.createElement('br');
-                const textNode = document.createTextNode(displayText);
-                lastP.appendChild(br1);
-                lastP.appendChild(br2);
-                lastP.appendChild(textNode);
-
-                // 텍스트 노드 전체 선택
-                const sel = window.getSelection();
-                if (!sel) return false;
-                const range = document.createRange();
-                range.selectNode(textNode);
-                sel.removeAllRanges();
-                sel.addRange(range);
-
-                // 하이퍼링크 생성
-                document.execCommand('createLink', false, url);
-
-                // SE ONE 에디터 변경 감지 트리거
-                lastP.dispatchEvent(new Event('input', { bubbles: true }));
-
-                return true;
-            } catch (e) {
-                return false;
-            }
-        }''', [footer_link, link_display])
-
-        if js_result:
-            logger.info(f"하단 링크 삽입 완료 (JS execCommand): {footer_link}")
-            # 에디터 커서를 링크 뒤로 이동
-            await page.keyboard.press("End")
-            await random_delay(0.5, 1)
-            return
-        else:
-            logger.info("JS execCommand 링크 삽입 실패 → Ctrl+K 폴백")
-    except Exception as e:
-        logger.info(f"JS execCommand 예외 → Ctrl+K 폴백: {e}")
-
-    # ── 방법 B: Ctrl+K 링크 다이얼로그 (폴백) ──
+    # ── Ctrl+K 링크 다이얼로그 ──
+    # execCommand('createLink')는 DOM만 수정하고 SE ONE 내부 모델에 반영되지 않아
+    # 저장 시 링크가 누락되므로, Ctrl+K 다이얼로그만 사용한다.
     # 차단 오버레이를 텍스트 입력/선택 전에 제거 (선택 후 제거하면 selection이 풀림)
     await _dismiss_all_overlays(page, editor)
 
