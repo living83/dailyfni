@@ -1021,10 +1021,10 @@ async def create_keywords_bulk(request: Request):
 
     raw_keywords = body.get("keywords", [])
     product_info = body.get("product_info", "")
-    priority = body.get("priority", "medium")
+    priority = body.get("priority", "ad")
 
-    if priority not in ("high", "medium", "low"):
-        priority = "medium"
+    if priority not in ("ad", "general"):
+        priority = "ad"
 
     # keywords가 문자열 배열이든 객체 배열이든 모두 처리
     keywords = []

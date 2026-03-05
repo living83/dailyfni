@@ -85,8 +85,18 @@ async def article_generation_job(manual: bool = False):
                 await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
                 return
 
-        # 다음 키워드 가져오기
-        kw = await get_next_keyword()
+        # 교대 발행: 어제 타입의 반대 타입 우선 선택 (일반 ↔ 광고)
+        config = await _get_config() if manual else config
+        last_post_type = config.get("last_post_type", "")
+        if last_post_type == "ad":
+            preferred_type = "general"
+        elif last_post_type == "general":
+            preferred_type = "ad"
+        else:
+            preferred_type = "ad"  # 첫 발행은 광고부터
+
+        # 다음 키워드 가져오기 (선호 타입 우선, 없으면 다른 타입)
+        kw = await get_next_keyword(preferred_type)
         if not kw:
             logger.warning("발행할 키워드가 없습니다")
             await create_notification("warning", "키워드 부족", "발행할 키워드가 없습니다. 키워드를 추가해주세요.")
@@ -198,10 +208,15 @@ async def article_generation_job(manual: bool = False):
             # 배치 상태를 articles_ready로 업데이트
             await update_batch(batch["id"], {"status": "articles_ready"})
 
+            # 교대 발행: 이번에 사용한 타입 기록 (다음엔 반대 타입 선택)
+            from database import update_scheduler_config
+            await update_scheduler_config({"last_post_type": post_type})
+            logger.info(f"교대 발행 타입 기록: {post_type} (다음엔 {'general' if post_type == 'ad' else 'ad'})")
+
             await create_notification(
                 "success",
                 f"글 사전 생성 완료 ({keyword})",
-                f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']}",
+                f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']} (타입: {'광고' if post_type == 'ad' else '일반'})",
             )
 
             logger.info(f"글 사전 생성 완료: 키워드={keyword}, 배치 #{batch['id']}")

@@ -302,6 +302,15 @@ async def init_db():
             except Exception:
                 pass
 
+            # ─── 교대 발행 설정 컬럼 추가 (scheduler_config) ───
+            for col, col_def in [
+                ("last_post_type", "VARCHAR(20) DEFAULT ''"),
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
+                except Exception:
+                    pass  # 이미 존재
+
             # ─── 참여 설정 컬럼 추가 (scheduler_config) ───
             for col, col_def in [
                 ("engagement_enabled", "TINYINT DEFAULT 0"),
@@ -621,20 +630,36 @@ async def get_keywords(status: str = None) -> list:
             return list(await cur.fetchall())
 
 
-async def get_next_keyword() -> dict | None:
+async def get_next_keyword(preferred_type: str = "") -> dict | None:
+    """키워드 큐에서 다음 키워드를 가져온다.
+    preferred_type이 'ad' 또는 'general'이면 해당 타입을 우선 선택하고,
+    해당 타입이 없으면 다른 타입에서 가져온다."""
     now = datetime.now().isoformat()
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                """SELECT * FROM keyword_queue
-                   WHERE status = 'pending'
-                   AND (next_available_at = '' OR next_available_at <= %s)
-                   ORDER BY FIELD(priority, 'ad', 'general'),
-                            created_at ASC
-                   LIMIT 1""",
-                (now,),
-            )
+            if preferred_type in ("ad", "general"):
+                # 선호 타입 우선 조회
+                other_type = "general" if preferred_type == "ad" else "ad"
+                await cur.execute(
+                    """SELECT * FROM keyword_queue
+                       WHERE status = 'pending'
+                       AND (next_available_at = '' OR next_available_at <= %s)
+                       ORDER BY FIELD(priority, %s, %s),
+                                created_at ASC
+                       LIMIT 1""",
+                    (now, preferred_type, other_type),
+                )
+            else:
+                await cur.execute(
+                    """SELECT * FROM keyword_queue
+                       WHERE status = 'pending'
+                       AND (next_available_at = '' OR next_available_at <= %s)
+                       ORDER BY FIELD(priority, 'ad', 'general'),
+                                created_at ASC
+                       LIMIT 1""",
+                    (now,),
+                )
             return await cur.fetchone()
 
 
