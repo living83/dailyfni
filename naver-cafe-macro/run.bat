@@ -6,15 +6,12 @@ echo   DailyFNI Cafe Macro Server
 echo ========================================
 echo.
 
-:: Find working Python
 set PYTHON=
 
-:: Try python on PATH first (most reliable)
 python -c "print()" >nul 2>nul
 if %errorlevel%==0 set PYTHON=python
 if defined PYTHON goto :found
 
-:: Try py launcher without version (picks default)
 py -c "print()" >nul 2>nul
 if %errorlevel%==0 set PYTHON=py
 if defined PYTHON goto :found
@@ -29,7 +26,6 @@ echo Using: %PYTHON%
 %PYTHON% --version
 echo.
 
-:: Use venv to avoid permission issues
 if not exist "%~dp0.venv" (
     echo [0/2] Creating virtual environment...
     %PYTHON% -m venv "%~dp0.venv"

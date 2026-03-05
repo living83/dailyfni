@@ -11,10 +11,8 @@ echo.
 echo ========================================
 echo.
 
-:: Start Blog Generator in a new window
 start "DailyFNI Blog Generator" cmd /c "%~dp0blog-generator\run.bat"
 
-:: Start Cafe Macro in a new window
 start "DailyFNI Cafe Macro" cmd /c "%~dp0naver-cafe-macro\run.bat"
 
 echo   Blog Generator  : http://localhost:8000
