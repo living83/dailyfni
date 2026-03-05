@@ -1091,7 +1091,7 @@ async def bulk_update_priority(req: dict = Body(...)):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "UPDATE keyword_queue SET priority = %s WHERE status = 'pending'",
+                "UPDATE keyword_queue SET priority = %s",
                 (priority,),
             )
             count = cur.rowcount

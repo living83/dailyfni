@@ -369,8 +369,6 @@
           <button class="btn btn-sm btn-secondary" onclick="loadKeywords()">전체</button>
           <button class="btn btn-sm btn-secondary" onclick="loadKeywords('pending')">대기</button>
           <button class="btn btn-sm btn-secondary" onclick="loadKeywords('used')">사용됨</button>
-          <button class="btn btn-sm" style="background:#e74c3c;color:#fff;margin-left:12px" onclick="bulkChangePriority('ad')">전체→광고</button>
-          <button class="btn btn-sm" style="background:#3498db;color:#fff" onclick="bulkChangePriority('general')">전체→일반</button>
         </div>
         <table class="data-table">
           <thead><tr><th>키워드</th><th>상품소개</th><th>우선순위</th><th>상태</th><th>사용 횟수</th><th>등록일</th><th>작업</th></tr></thead>
@@ -942,18 +940,6 @@ async function deleteKeyword(id) {
   } catch (e) { showToast(e.message, 'error'); }
 }
 
-async function bulkChangePriority(priority) {
-  const label = priority === 'ad' ? '광고' : '일반';
-  if (!confirm(`대기 중인 모든 키워드를 "${label}"로 변경하시겠습니까?`)) return;
-  try {
-    const result = await api('/api/keywords/bulk-priority', {
-      method: 'PUT',
-      body: JSON.stringify({ priority })
-    });
-    showToast(result.message);
-    loadKeywords();
-  } catch (e) { showToast(e.message, 'error'); }
-}
 
 /* ━━━ 스케줄러 ━━━ */
 async function loadSchedulerConfig() {
