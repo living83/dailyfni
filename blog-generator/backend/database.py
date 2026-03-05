@@ -288,7 +288,12 @@ async def init_db():
                 await cur.execute("""
                     UPDATE keyword_queue
                     SET priority = 'ad'
-                    WHERE priority IN ('high', 'medium', 'low')
+                    WHERE priority = 'high'
+                """)
+                await cur.execute("""
+                    UPDATE keyword_queue
+                    SET priority = 'general'
+                    WHERE priority IN ('medium', 'low')
                 """)
             except Exception:
                 pass

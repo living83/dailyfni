@@ -899,8 +899,8 @@ async function loadKeywords(status) {
     const keywords = await api(url);
     const tbody = document.getElementById('kwTableBody');
     if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
-    const prioMap = { ad: '광고', general: '일반', high: '광고', medium: '광고', low: '일반' };
-    const prioTag = { ad: 'tag-red', general: 'tag-blue', high: 'tag-red', medium: 'tag-red', low: 'tag-blue' };
+    const prioMap = { ad: '광고', general: '일반', high: '광고', medium: '일반', low: '일반' };
+    const prioTag = { ad: 'tag-red', general: 'tag-blue', high: 'tag-red', medium: 'tag-blue', low: 'tag-blue' };
     const statusMap = { pending: '대기', used: '사용됨', reserved: '예약' };
     const statusTag = { pending: 'tag-yellow', used: 'tag-green', reserved: 'tag-blue' };
     tbody.innerHTML = keywords.map(kw => `<tr>
