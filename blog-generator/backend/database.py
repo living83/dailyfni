@@ -295,14 +295,6 @@ async def init_db():
                     SET priority = 'general'
                     WHERE priority IN ('medium', 'low')
                 """)
-                # 상품소개가 있는 키워드는 일반(general)으로 보정
-                await cur.execute("""
-                    UPDATE keyword_queue
-                    SET priority = 'general'
-                    WHERE product_info IS NOT NULL
-                      AND product_info != ''
-                      AND priority = 'ad'
-                """)
             except Exception:
                 pass
 
