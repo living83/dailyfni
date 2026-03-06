@@ -1,50 +1,33 @@
-#!/usr/bin/env bash
-set -e
-
+#!/bin/bash
 echo "========================================"
 echo "  DailyFNI Blog Generator Server"
 echo "========================================"
-echo
+echo ""
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/.venv"
+DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Find Python
-PYTHON=""
-for cmd in python3.12 python3.13 python3; do
-    if command -v "$cmd" &>/dev/null; then
-        PYTHON="$cmd"
-        break
-    fi
-done
-
-if [ -z "$PYTHON" ]; then
-    echo "[ERROR] Python not found. Install Python 3.12+"
+if ! command -v python3 &>/dev/null; then
+    echo "[ERROR] Python3 not found."
     exit 1
 fi
 
-echo "Using: $PYTHON"
-$PYTHON --version
-echo
+echo "Using: $(python3 --version)"
+echo ""
 
-# Create venv if it doesn't exist
-if [ ! -d "$VENV_DIR" ]; then
+if [ ! -d "$DIR/.venv" ]; then
     echo "[0/2] Creating virtual environment..."
-    $PYTHON -m venv "$VENV_DIR"
+    python3 -m venv "$DIR/.venv"
 fi
 
-# Activate venv
-source "$VENV_DIR/bin/activate"
-
 echo "[1/2] Installing packages..."
-pip install -r "$SCRIPT_DIR/requirements.txt" -q
+"$DIR/.venv/bin/pip" install -r "$DIR/requirements.txt" -q
 
 echo "[2/2] Starting server..."
-echo
+echo ""
 echo "  Open http://localhost:8000"
 echo "  Press Ctrl+C to stop"
-echo
+echo ""
 echo "========================================"
 
-cd "$SCRIPT_DIR/backend"
-python main.py
+cd "$DIR/backend"
+"$DIR/.venv/bin/python" main.py
