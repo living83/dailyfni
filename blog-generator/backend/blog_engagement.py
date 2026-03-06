@@ -1372,6 +1372,18 @@ async def write_comment(page, comment_text: str) -> dict:
         return result
 
     try:
+        # ── 0. cbox 도메인 쿠키 사전 워밍업 (third-party cookie 차단 대응) ──
+        try:
+            from se_helpers import _share_cookies_for_cbox
+            await _share_cookies_for_cbox(page.context)
+            warmup_page = await page.context.new_page()
+            await warmup_page.goto("https://cbox5.apis.naver.com/", timeout=8000)
+            await asyncio.sleep(0.5)
+            await warmup_page.close()
+            logger.info("댓글 작성 전 cbox 도메인 쿠키 워밍업 완료")
+        except Exception as e:
+            logger.info(f"cbox 쿠키 워밍업 실패 (무시): {e}")
+
         # ── 1. mainFrame 내부를 스크롤 (댓글 영역 로딩 트리거) ──
         main_frame = None
         for frame in page.frames:
@@ -1462,9 +1474,9 @@ async def write_comment(page, comment_text: str) -> dict:
             else:
                 logger.warning("댓글 버튼 미발견 - cbox iframe이 이미 로드되었을 수 있음")
 
-        # 댓글 버튼 클릭 후 cbox iframe 로딩 대기
-        if comment_btn_clicked:
-            await random_delay(2.0, 3.0)
+        # 댓글 버튼 클릭/미클릭 관계없이 cbox iframe 로딩 대기
+        # (댓글 영역이 이미 로드되어 있는 블로그도 있으므로 항상 대기)
+        await random_delay(2.0, 3.0)
 
         # ── 1-3. cbox iframe 폴링 (최대 4라운드, 총 ~30초) ──
         comment_target = None
@@ -1634,24 +1646,26 @@ async def write_comment(page, comment_text: str) -> dict:
 
         # ── 2-2. cbox 미로그인 시 페이지 새로고침으로 재시도 ──
         if cbox_not_logged_in:
-            logger.info("cbox 미로그인 → cbox 도메인 쿠키 워밍 + 새로고침 후 재시도")
+            logger.info("cbox 미로그인 → 쿠키 재공유 + cbox 도메인 직접 로그인 + 새로고침")
             try:
-                # 쿠키 재공유
                 from se_helpers import _share_cookies_for_cbox
                 await _share_cookies_for_cbox(page.context)
             except Exception:
                 pass
-            # cbox 도메인에 직접 접근하여 쿠키 설정 (third-party cookie 우회)
-            try:
-                warmup_page = await page.context.new_page()
-                await warmup_page.goto(
-                    "https://cbox5.apis.naver.com/", timeout=8000,
-                )
-                await asyncio.sleep(1)
-                await warmup_page.close()
-                logger.info("cbox 도메인 쿠키 워밍 완료")
-            except Exception as e:
-                logger.info(f"cbox 도메인 쿠키 워밍 실패 (무시): {e}")
+
+            # cbox 도메인에 직접 접근 + 네이버 로그인 페이지 경유하여 쿠키 연결
+            for warmup_url in [
+                "https://nid.naver.com/nidlogin.login?svctype=262144",
+                "https://cbox5.apis.naver.com/",
+            ]:
+                try:
+                    warmup_page = await page.context.new_page()
+                    await warmup_page.goto(warmup_url, timeout=8000)
+                    await asyncio.sleep(1)
+                    await warmup_page.close()
+                except Exception:
+                    pass
+            logger.info("cbox 도메인 쿠키 워밍 완료 (nid + cbox)")
             # 페이지 새로고침
             try:
                 current_url = page.url
@@ -1944,13 +1958,15 @@ async def write_comment(page, comment_text: str) -> dict:
                     result["success"] = True
                     logger.info("댓글 등록 성공 (textarea 비워짐 확인)")
                 else:
-                    # textarea가 비워지지 않았지만 에러도 없음 → 일단 성공으로 처리
-                    result["success"] = True
-                    logger.info("댓글 등록 버튼 클릭 완료 (검증 불확실)")
+                    # textarea에 내용이 남아있음 → 등록 실패 가능성 높음
+                    result["error"] = "댓글 등록 불확실 (textarea 미비워짐)"
+                    logger.warning("댓글 등록 실패 가능: textarea에 내용 잔존")
+                    await capture_debug(page, "comment_submit_uncertain")
             except Exception as e:
-                # 검증 실패해도 버튼 클릭은 됐으므로 성공으로 처리
-                result["success"] = True
-                logger.info(f"댓글 등록 버튼 클릭 완료 (검증 중 오류: {e})")
+                # 검증 예외 → 실패로 처리
+                result["error"] = f"댓글 등록 검증 실패: {e}"
+                logger.warning(f"댓글 등록 검증 중 오류: {e}")
+                await capture_debug(page, "comment_verify_error")
         else:
             result["error"] = "댓글 등록 버튼 미발견"
 
@@ -2073,13 +2089,7 @@ async def engage_single_post(page, post_url: str, api_key: str = "",
                                     timeout=15000)
                     await random_delay(1, 2)
 
-                # 댓글 작성 전 cbox 쿠키 재공유 (third-party cookie 차단 대응)
-                try:
-                    from se_helpers import _share_cookies_for_cbox
-                    await _share_cookies_for_cbox(page.context)
-                except Exception:
-                    pass
-
+                # cbox 쿠키 재공유는 write_comment 내부에서 처리
                 comment_result = await write_comment(page, comment_text)
                 result["comment_success"] = comment_result["success"]
                 if comment_result.get("error"):

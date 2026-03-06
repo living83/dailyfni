@@ -321,52 +321,70 @@ async def login_with_credentials(page, naver_id: str, naver_password: str) -> bo
 async def _share_cookies_for_cbox(context):
     """로그인 쿠키를 cbox iframe 도메인에도 공유.
     Chrome의 SameSite/third-party cookie 정책으로 인해
-    cbox iframe에서 로그인 상태가 안 되는 문제 해결."""
+    cbox iframe에서 로그인 상태가 안 되는 문제 해결.
+
+    수정 2026-03-06: .apis.naver.com 도메인에도 명시적으로 쿠키 복제,
+    인증 쿠키 범위 확대 (NID*, NNB, NACT, nid_inf + SES, nid_slevel 등)
+    """
     try:
         cookies = await context.cookies()
         naver_cookies = [c for c in cookies if '.naver.com' in (c.get('domain', ''))]
         if not naver_cookies:
             return
 
-        # cbox에서 필요한 인증 쿠키를 .naver.com 도메인으로 재설정
+        # cbox에서 필요한 인증 쿠키 이름 (확대)
+        AUTH_PREFIXES = ('NID',)
+        AUTH_NAMES = {'NNB', 'NACT', 'nid_inf', 'nid_slevel',
+                      'SES', 'JSESSIONID', 'NM_srt_chzzk'}
+
+        # 쿠키를 복제할 대상 도메인 목록
+        TARGET_DOMAINS = ['.naver.com', '.apis.naver.com']
+
         extra_cookies = []
         for c in naver_cookies:
             domain = c.get('domain', '')
             name = c.get('name', '')
-            # NID 관련 인증 쿠키만 대상
-            if name.startswith('NID') or name in ('NNB', 'NACT', 'nid_inf'):
-                # .naver.com 도메인이 아닌 경우 .naver.com으로 확장
-                if domain != '.naver.com':
-                    new_cookie = {
-                        'name': c['name'],
-                        'value': c['value'],
-                        'domain': '.naver.com',
-                        'path': c.get('path', '/'),
-                        'secure': c.get('secure', True),
-                        'httpOnly': c.get('httpOnly', False),
-                        'sameSite': 'None',  # cross-site iframe 접근 허용
-                    }
-                    if c.get('expires') and c['expires'] > 0:
-                        new_cookie['expires'] = c['expires']
-                    extra_cookies.append(new_cookie)
 
-                # 기존 쿠키의 sameSite도 None으로 변경
-                updated_cookie = {
+            is_auth = (any(name.startswith(p) for p in AUTH_PREFIXES)
+                       or name in AUTH_NAMES)
+            if not is_auth:
+                continue
+
+            # 1) 기존 쿠키의 sameSite를 None으로 변경
+            updated_cookie = {
+                'name': c['name'],
+                'value': c['value'],
+                'domain': domain,
+                'path': c.get('path', '/'),
+                'secure': True,
+                'httpOnly': c.get('httpOnly', False),
+                'sameSite': 'None',
+            }
+            if c.get('expires') and c['expires'] > 0:
+                updated_cookie['expires'] = c['expires']
+            extra_cookies.append(updated_cookie)
+
+            # 2) 각 대상 도메인에 쿠키 복제
+            for target_domain in TARGET_DOMAINS:
+                if domain == target_domain:
+                    continue
+                new_cookie = {
                     'name': c['name'],
                     'value': c['value'],
-                    'domain': domain,
+                    'domain': target_domain,
                     'path': c.get('path', '/'),
-                    'secure': True,  # sameSite=None은 secure 필수
+                    'secure': True,
                     'httpOnly': c.get('httpOnly', False),
                     'sameSite': 'None',
                 }
                 if c.get('expires') and c['expires'] > 0:
-                    updated_cookie['expires'] = c['expires']
-                extra_cookies.append(updated_cookie)
+                    new_cookie['expires'] = c['expires']
+                extra_cookies.append(new_cookie)
 
         if extra_cookies:
             await context.add_cookies(extra_cookies)
-            logger.info(f"cbox용 쿠키 공유 완료: {len(extra_cookies)}개")
+            logger.info(f"cbox용 쿠키 공유 완료: {len(extra_cookies)}개 "
+                        f"(대상 도메인: {TARGET_DOMAINS})")
     except Exception as e:
         logger.warning(f"cbox 쿠키 공유 실패 (무시): {e}")
 
@@ -407,7 +425,11 @@ async def create_stealth_context(playwright_instance, account_id: int = None):
         "--disable-dev-shm-usage",
         "--disable-infobars",
         "--window-size=1920,1080",
-        "--disable-features=ThirdPartyCookieBlocking,ThirdPartyCookiePhaseout,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,TrackingProtection3pcd",
+        "--disable-features=ThirdPartyCookieBlocking,ThirdPartyCookiePhaseout,"
+        "SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,"
+        "TrackingProtection3pcd,ThirdPartyCookieTopLevelSitePartitioning,"
+        "PartitionedCookies,CookiePartitioning,StoragePartitioning,"
+        "ThirdPartyStoragePartitioning",
         "--disable-site-isolation-trials",
         "--disable-third-party-cookie-phaseout",
     ]
