@@ -5,7 +5,7 @@ REM Change to script's own directory
 cd /d "%~dp0"
 
 echo ================================================
-echo   DailyFNI - Blog Generator
+echo   DailyFNI - Cafe Generator
 echo ================================================
 echo.
 
@@ -73,7 +73,7 @@ REM [5/5] Start server
 echo [5/5] Starting server...
 echo.
 echo ================================================
-echo   Open http://localhost:8000 in your browser
+echo   Open http://localhost:8001 in your browser
 echo   Press Ctrl+C to stop
 echo ================================================
 echo.

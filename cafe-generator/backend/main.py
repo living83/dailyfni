@@ -1,5 +1,5 @@
 """
-FastAPI 서버 - 네이버 블로그 자동 발행 시스템
+FastAPI 서버 - 네이버 카페 자동 발행 시스템
 SSE(Server-Sent Events)로 진행 상태를 실시간 전송합니다.
 """
 
@@ -76,7 +76,7 @@ DEFAULT_FOOTER_LINK_TEXT = os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
 
 # ─── FastAPI 앱 ──────────────────────────────────────────
 
-app = FastAPI(title="DailyFNI - 네이버 블로그 자동 발행 시스템")
+app = FastAPI(title="DailyFNI - 네이버 카페 자동 발행 시스템")
 
 # asyncio.create_task 참조 보관 (GC 방지)
 _background_tasks: set = set()
@@ -124,7 +124,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 # ─── CORS 미들웨어 ──────────────────────────────────────────
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -1531,4 +1531,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
