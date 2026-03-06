@@ -95,12 +95,16 @@ echo   Press Ctrl+C in each window to stop
 echo ================================================
 echo.
 
+REM Save root path for start commands
+set "ROOT_DIR=%~dp0"
+
 REM Start Node.js server in a new window
-start "DailyFNI - Node.js (port 3000)" cmd /k "cd /d "%~dp0" && npm start"
+start "DailyFNI - Node.js (port 3000)" /D "%ROOT_DIR%" cmd /k npm start
 
 REM Start Python server in a new window
-start "DailyFNI - Python (port 8000)" cmd /k "cd /d "%~dp0\blog-generator\backend" && "%~dp0\blog-generator\.venv\Scripts\python.exe" main.py"
+start "DailyFNI - Python (port 8000)" /D "%ROOT_DIR%blog-generator\backend" cmd /k "%ROOT_DIR%blog-generator\.venv\Scripts\python.exe" main.py
 
+echo.
 echo Both servers launched in separate windows.
 echo Close this window or press any key to exit launcher.
 pause
