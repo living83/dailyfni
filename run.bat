@@ -3,6 +3,7 @@ chcp 65001 >nul 2>&1
 
 REM Change to script's own directory
 cd /d "%~dp0"
+set "ROOT_DIR=%~dp0"
 
 echo ================================================
 echo   DailyFNI - All Servers Launcher
@@ -22,42 +23,40 @@ if %ERRORLEVEL% NEQ 0 (
 for /f "tokens=*" %%i in ('python --version') do set PYVER=%%i
 echo [1/4] Python: %PYVER%
 
-REM ---- Blog Generator: Python venv & dependencies ----
+REM ---- Blog Generator: venv & packages ----
 echo [2/4] Preparing Blog Generator environment...
-if not exist "blog-generator\.venv\Scripts\activate.bat" (
+if not exist "%ROOT_DIR%blog-generator\.venv\Scripts\python.exe" (
     echo   Creating virtual environment (blog)...
-    if exist "blog-generator\.venv" rmdir /s /q "blog-generator\.venv"
-    python -m venv "blog-generator\.venv"
+    if exist "%ROOT_DIR%blog-generator\.venv" rmdir /s /q "%ROOT_DIR%blog-generator\.venv"
+    python -m venv "%ROOT_DIR%blog-generator\.venv"
     if %ERRORLEVEL% NEQ 0 (
         echo [ERROR] Failed to create blog virtual environment.
         pause
         exit /b 1
     )
 )
-
-call "blog-generator\.venv\Scripts\activate.bat"
-pip install -q -r "blog-generator\requirements.txt"
+echo   Installing blog packages...
+"%ROOT_DIR%blog-generator\.venv\Scripts\pip.exe" install -q -r "%ROOT_DIR%blog-generator\requirements.txt"
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Failed to install blog packages.
     pause
     exit /b 1
 )
 
-REM ---- Cafe Generator: Python venv & dependencies ----
+REM ---- Cafe Generator: venv & packages ----
 echo [3/4] Preparing Cafe Generator environment...
-if not exist "cafe-generator\.venv\Scripts\activate.bat" (
+if not exist "%ROOT_DIR%cafe-generator\.venv\Scripts\python.exe" (
     echo   Creating virtual environment (cafe)...
-    if exist "cafe-generator\.venv" rmdir /s /q "cafe-generator\.venv"
-    python -m venv "cafe-generator\.venv"
+    if exist "%ROOT_DIR%cafe-generator\.venv" rmdir /s /q "%ROOT_DIR%cafe-generator\.venv"
+    python -m venv "%ROOT_DIR%cafe-generator\.venv"
     if %ERRORLEVEL% NEQ 0 (
         echo [ERROR] Failed to create cafe virtual environment.
         pause
         exit /b 1
     )
 )
-
-call "cafe-generator\.venv\Scripts\activate.bat"
-pip install -q -r "cafe-generator\requirements.txt"
+echo   Installing cafe packages...
+"%ROOT_DIR%cafe-generator\.venv\Scripts\pip.exe" install -q -r "%ROOT_DIR%cafe-generator\requirements.txt"
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Failed to install cafe packages.
     pause
@@ -67,22 +66,22 @@ if %ERRORLEVEL% NEQ 0 (
 REM Playwright browser install (first time only)
 if not exist "%USERPROFILE%\.cache\ms-playwright" (
     echo   Playwright browser installing... (first time, may take a while)
-    playwright install chromium
+    "%ROOT_DIR%blog-generator\.venv\Scripts\playwright.exe" install chromium
 )
 
 REM .env file checks
-if not exist "blog-generator\.env" (
+if not exist "%ROOT_DIR%blog-generator\.env" (
     echo [WARNING] blog-generator\.env file not found! Copy .env.example to .env
 )
-if not exist "cafe-generator\.env" (
+if not exist "%ROOT_DIR%cafe-generator\.env" (
     echo [WARNING] cafe-generator\.env file not found! Copy .env.example to .env
 )
 
 REM Create data directories
-if not exist "blog-generator\data\cookies" mkdir "blog-generator\data\cookies"
-if not exist "blog-generator\data\logs" mkdir "blog-generator\data\logs"
-if not exist "cafe-generator\data\cookies" mkdir "cafe-generator\data\cookies"
-if not exist "cafe-generator\data\logs" mkdir "cafe-generator\data\logs"
+if not exist "%ROOT_DIR%blog-generator\data\cookies" mkdir "%ROOT_DIR%blog-generator\data\cookies"
+if not exist "%ROOT_DIR%blog-generator\data\logs" mkdir "%ROOT_DIR%blog-generator\data\logs"
+if not exist "%ROOT_DIR%cafe-generator\data\cookies" mkdir "%ROOT_DIR%cafe-generator\data\cookies"
+if not exist "%ROOT_DIR%cafe-generator\data\logs" mkdir "%ROOT_DIR%cafe-generator\data\logs"
 
 echo.
 echo [4/4] Starting all servers simultaneously...
@@ -93,9 +92,6 @@ echo   Cafe Generator:    http://localhost:8001
 echo   Press Ctrl+C in each window to stop
 echo ================================================
 echo.
-
-REM Save root path for start commands
-set "ROOT_DIR=%~dp0"
 
 REM Start Blog Generator server in a new window
 start "DailyFNI - Blog (port 8000)" /D "%ROOT_DIR%blog-generator\backend" cmd /k "%ROOT_DIR%blog-generator\.venv\Scripts\python.exe" main.py
