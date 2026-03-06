@@ -1367,6 +1367,59 @@ async def se_input_tags(page, editor, tags: list):
         logger.warning(f"태그 입력 실패: {e}")
 
 
+async def _uncheck_kakao_channel(page, editor):
+    """발행 다이얼로그에서 카카오채널 링크 체크박스를 해제합니다."""
+    for target in ([editor, page] if editor != page else [page]):
+        try:
+            unchecked = await target.evaluate('''() => {
+                // 체크박스 직접 탐색
+                const checkboxes = document.querySelectorAll(
+                    'input[type="checkbox"], [role="checkbox"], [class*="check"]'
+                );
+                for (const cb of checkboxes) {
+                    const parent = cb.closest('[class*="kakao"], [class*="channel"], [class*="sns"], [class*="share"]')
+                        || cb.parentElement;
+                    const text = (parent?.textContent || "").trim();
+                    if (text.includes("카카오") || text.includes("채널") || text.includes("kakao")) {
+                        if (cb.checked || cb.getAttribute("aria-checked") === "true"
+                            || cb.classList.contains("on") || cb.classList.contains("is_active")) {
+                            cb.click();
+                            return "checkbox_clicked";
+                        }
+                        return "already_unchecked";
+                    }
+                }
+                // 라벨/텍스트 기반 탐색
+                const labels = document.querySelectorAll(
+                    '[class*="publish"] label, [class*="publish"] span, '
+                    + '[class*="layer"] label, [class*="layer"] span, '
+                    + '[class*="popup"] label, [class*="popup"] span'
+                );
+                for (const label of labels) {
+                    const text = (label.textContent || "").trim();
+                    if (text.includes("카카오") || text.includes("채널")) {
+                        const cb = label.closest('label, div')?.querySelector(
+                            'input[type="checkbox"], [role="checkbox"], [class*="check"]'
+                        ) || label.previousElementSibling || label.nextElementSibling;
+                        if (cb && (cb.checked || cb.getAttribute("aria-checked") === "true"
+                            || cb.classList.contains("on") || cb.classList.contains("is_active"))) {
+                            cb.click();
+                            return "label_clicked";
+                        }
+                        return "label_already_unchecked";
+                    }
+                }
+                return null;
+            }''')
+            if unchecked:
+                logger.info(f"카카오채널 링크 해제: {unchecked}")
+                await random_delay(0.3, 0.5)
+                return
+        except Exception as e:
+            logger.debug(f"카카오채널 체크 해제 시도 실패: {e}")
+    logger.info("카카오채널 링크 체크박스 미발견 (없거나 이미 해제됨)")
+
+
 async def se_click_publish(page, editor) -> bool:
     """SE ONE 에디터 발행 버튼 클릭 + 확인 다이얼로그 처리. 성공 여부 반환."""
     await random_delay(1, 2)
@@ -1424,6 +1477,9 @@ async def se_click_publish(page, editor) -> bool:
             return False
 
         await random_delay(2, 3)
+
+        # 카카오채널 링크 해제
+        await _uncheck_kakao_channel(page, editor)
 
         # 발행 확인 다이얼로그
         confirm_clicked = False
