@@ -25,8 +25,24 @@ COOKIE_DIR.mkdir(parents=True, exist_ok=True)
 # 프록시 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def _get_proxy_for_account(account_id: int) -> dict | None:
-    """계정 ID에 매핑된 프록시 설정을 반환. 설정 없으면 None."""
+async def _get_proxy_for_account(account_id: int) -> dict | None:
+    """계정 ID에 매핑된 프록시 설정을 반환. DB 우선, .env 폴백. 없으면 None."""
+    # 1) DB에서 암호화된 프록시 조회
+    try:
+        from database import get_account_proxy
+        db_proxy = await get_account_proxy(account_id)
+        if db_proxy:
+            logger.info(f"프록시 설정(DB): 계정 {account_id} → {db_proxy['server']}")
+            return db_proxy
+    except Exception as e:
+        logger.warning(f"DB 프록시 조회 실패 (계정 {account_id}): {e}")
+
+    # 2) .env 환경변수 폴백
+    return _get_proxy_from_env(account_id)
+
+
+def _get_proxy_from_env(account_id: int) -> dict | None:
+    """환경변수에서 프록시 설정 조회 (.env 폴백)"""
     host = os.getenv("PROXY_HOST", "").strip()
     username = os.getenv("PROXY_USERNAME", "").strip()
     password = os.getenv("PROXY_PASSWORD", "").strip()
@@ -57,7 +73,7 @@ def _get_proxy_for_account(account_id: int) -> dict | None:
     if password:
         proxy["password"] = password
 
-    logger.info(f"프록시 설정: 계정 {account_id} → {host}:{port}")
+    logger.info(f"프록시 설정(env): 계정 {account_id} → {host}:{port}")
     return proxy
 
 
@@ -396,8 +412,8 @@ async def create_stealth_context(playwright_instance, account_id: int = None):
         "--disable-third-party-cookie-phaseout",
     ]
 
-    # 프록시 설정
-    proxy = _get_proxy_for_account(account_id) if account_id else None
+    # 프록시 설정 (DB 우선, .env 폴백)
+    proxy = (await _get_proxy_for_account(account_id)) if account_id else None
 
     browser = None
     for channel in ["chrome", "msedge", None]:

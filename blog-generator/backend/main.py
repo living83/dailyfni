@@ -531,7 +531,21 @@ async def create_account(req: AccountCreate):
     # 응답에서 암호화된 비밀번호는 마스킹
     account["naver_id"] = "***암호화됨***"
     account["naver_password"] = "***암호화됨***"
+    account["proxy_server"] = None
+    account["proxy_username"] = None
+    account["proxy_password"] = None
     return account
+
+
+def _mask_account(a: dict) -> dict:
+    """계정 응답에서 민감 필드 마스킹"""
+    a["naver_id"] = "***암호화됨***"
+    a["naver_password"] = "***암호화됨***"
+    a["has_proxy"] = bool(a.get("proxy_server"))
+    a["proxy_server"] = "••••••••" if a.get("proxy_server") else None
+    a["proxy_username"] = "••••••••" if a.get("proxy_username") else None
+    a["proxy_password"] = None
+    return a
 
 
 @app.get("/api/accounts")
@@ -539,8 +553,7 @@ async def get_accounts():
     """계정 목록"""
     accounts = await db.get_accounts()
     for a in accounts:
-        a["naver_id"] = "***암호화됨***"
-        a["naver_password"] = "***암호화됨***"
+        _mask_account(a)
     return accounts
 
 
@@ -564,9 +577,7 @@ async def update_account(account_id: int, req: AccountUpdate):
     account = await db.update_account(account_id, data)
     if not account:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
-    account["naver_id"] = "***암호화됨***"
-    account["naver_password"] = "***암호화됨***"
-    return account
+    return _mask_account(account)
 
 
 @app.delete("/api/accounts/{account_id}")
@@ -601,29 +612,59 @@ async def test_account_login(account_id: int):
 
 @app.get("/api/proxy/status")
 async def get_proxy_status():
-    """계정별 프록시 매핑 상태 조회"""
+    """계정별 프록시 매핑 상태 조회 (DB 우선, .env 폴백)"""
     from se_helpers import get_all_proxy_mappings
     accounts = await db.get_accounts()
-    mappings = get_all_proxy_mappings()
-    mapping_dict = {m["account_id"]: m for m in mappings}
+    env_mappings = get_all_proxy_mappings()
+    env_map = {m["account_id"]: m for m in env_mappings}
 
     result = []
     for acc in accounts:
-        proxy_info = mapping_dict.get(acc["id"])
+        # DB 프록시 우선
+        has_db_proxy = bool(acc.get("proxy_server"))
+        env_info = env_map.get(acc["id"])
+        connected = has_db_proxy or (env_info is not None)
+        source = "db" if has_db_proxy else ("env" if env_info else None)
         result.append({
             "account_id": acc["id"],
             "account_name": acc["account_name"],
-            "proxy_connected": proxy_info is not None,
-            "proxy_server": proxy_info["proxy_server"] if proxy_info else None,
+            "proxy_connected": connected,
+            "proxy_source": source,
+            "proxy_server": "프록시 설정됨" if has_db_proxy else (env_info["proxy_server"] if env_info else None),
         })
     return result
+
+
+@app.put("/api/accounts/{account_id}/proxy")
+async def set_account_proxy(account_id: int, req: dict):
+    """계정 프록시 설정 (AES-256 암호화 저장)"""
+    account = await db.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
+    server = req.get("server", "").strip()
+    if not server:
+        raise HTTPException(status_code=400, detail="프록시 서버 주소를 입력하세요.")
+    username = req.get("username", "").strip()
+    password = req.get("password", "").strip()
+    await db.update_account_proxy(account_id, server, username, password)
+    return {"message": "프록시가 설정되었습니다.", "account_id": account_id}
+
+
+@app.delete("/api/accounts/{account_id}/proxy")
+async def remove_account_proxy(account_id: int):
+    """계정 프록시 제거"""
+    account = await db.get_account(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
+    await db.delete_account_proxy(account_id)
+    return {"message": "프록시가 제거되었습니다.", "account_id": account_id}
 
 
 @app.get("/api/proxy/test/{account_id}")
 async def test_proxy_connection(account_id: int):
     """계정별 프록시 연결 테스트 (IP 확인)"""
     from se_helpers import _get_proxy_for_account
-    proxy = _get_proxy_for_account(account_id)
+    proxy = await _get_proxy_for_account(account_id)
     if not proxy:
         return {"success": False, "account_id": account_id, "error": "프록시 설정 없음"}
 

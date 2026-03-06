@@ -293,6 +293,17 @@ async def init_db():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
 
+            # ─── accounts에 proxy 컬럼 추가 (없을 때만) ───
+            for col, col_def in [
+                ("proxy_server", "TEXT DEFAULT NULL"),
+                ("proxy_username", "TEXT DEFAULT NULL"),
+                ("proxy_password", "TEXT DEFAULT NULL"),
+            ]:
+                try:
+                    await cur.execute(f"ALTER TABLE accounts ADD COLUMN {col} {col_def}")
+                except Exception:
+                    pass  # 이미 존재
+
             # ─── publish_batches에 post_type 컬럼 추가 (없을 때만) ───
             try:
                 await cur.execute("ALTER TABLE publish_batches ADD COLUMN post_type VARCHAR(20) DEFAULT 'ad'")
@@ -409,6 +420,61 @@ async def delete_account(account_id: int) -> bool:
         async with conn.cursor() as cur:
             await cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
             return cur.rowcount > 0
+
+
+async def update_account_proxy(account_id: int, server: str, username: str = "", password: str = ""):
+    """프록시 정보를 AES-256 암호화하여 저장"""
+    from crypto import encrypt
+    enc_server = encrypt(server) if server else None
+    enc_username = encrypt(username) if username else None
+    enc_password = encrypt(password) if password else None
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE accounts SET proxy_server = %s, proxy_username = %s, proxy_password = %s WHERE id = %s",
+                (enc_server, enc_username, enc_password, account_id),
+            )
+
+
+async def delete_account_proxy(account_id: int):
+    """프록시 정보 제거"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE accounts SET proxy_server = NULL, proxy_username = NULL, proxy_password = NULL WHERE id = %s",
+                (account_id,),
+            )
+
+
+async def get_account_proxy(account_id: int) -> dict | None:
+    """복호화된 프록시 정보 반환. 없거나 복호화 실패 시 None."""
+    from crypto import decrypt
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT proxy_server, proxy_username, proxy_password FROM accounts WHERE id = %s",
+                (account_id,),
+            )
+            row = await cur.fetchone()
+            if not row or not row.get("proxy_server"):
+                return None
+            try:
+                server = decrypt(row["proxy_server"])
+            except Exception:
+                # 하위 호환: 평문으로 저장된 경우 원본 반환
+                server = row["proxy_server"]
+            try:
+                username = decrypt(row["proxy_username"]) if row.get("proxy_username") else ""
+            except Exception:
+                username = row.get("proxy_username", "")
+            try:
+                password = decrypt(row["proxy_password"]) if row.get("proxy_password") else ""
+            except Exception:
+                password = row.get("proxy_password", "")
+            return {"server": server, "username": username, "password": password}
 
 
 # ─── 카테고리 CRUD ──────────────────────────────────────
