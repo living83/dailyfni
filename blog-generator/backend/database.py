@@ -420,9 +420,14 @@ async def update_account(account_id: int, data: dict) -> dict | None:
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s", values)
+            sql = f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s"
+            logger.warning(f"[DEBUG] SQL: {sql}, values: {values}")
+            await cur.execute(sql, values)
+            logger.warning(f"[DEBUG] rowcount: {cur.rowcount}")
             await conn.commit()
-    return await get_account(account_id)
+    result = await get_account(account_id)
+    logger.warning(f"[DEBUG] after commit, get_account tier={result.get('account_tier') if result else 'None'}")
+    return result
 
 
 async def delete_account(account_id: int) -> bool:

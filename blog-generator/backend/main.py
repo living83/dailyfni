@@ -579,7 +579,10 @@ async def update_account(account_id: int, req: AccountUpdate):
     if req.is_active is not None:
         data["is_active"] = req.is_active
 
+    import logging
+    logging.getLogger("uvicorn").warning(f"[DEBUG] update_account id={account_id}, data={data}")
     account = await db.update_account(account_id, data)
+    logging.getLogger("uvicorn").warning(f"[DEBUG] after update, account_tier={account.get('account_tier') if account else 'None'}")
     if not account:
         raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
     return _mask_account(account)
