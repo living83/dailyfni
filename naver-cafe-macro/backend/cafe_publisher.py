@@ -107,8 +107,8 @@ def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0
 _PROFILE_BASE = Path(__file__).resolve().parent.parent / "data" / "chrome_profiles"
 
 
-def create_driver(headless: bool = True, account_id: int = None) -> webdriver.Chrome:
-    """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent, 계정별 독립 프로파일)"""
+def create_driver(headless: bool = True, account_id: int = None, proxy_address: str = None) -> webdriver.Chrome:
+    """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent, 계정별 독립 프로파일, 프록시 지원)"""
     ua = random.choice(_USER_AGENTS)
     logger.debug(f"User-Agent: {ua}")
 
@@ -122,6 +122,11 @@ def create_driver(headless: bool = True, account_id: int = None) -> webdriver.Ch
     options.add_argument(f"--user-agent={ua}")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+
+    # 프록시 설정
+    if proxy_address:
+        options.add_argument(f"--proxy-server={proxy_address}")
+        logger.info(f"프록시 적용: {proxy_address}")
 
     # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
     if account_id is not None:
@@ -1699,7 +1704,7 @@ def publish_to_cafe(
     try:
         if on_progress:
             on_progress("driver", "브라우저 시작 중...")
-        driver = create_driver(headless=headless, account_id=account.get("id"))
+        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=account.get("proxy_address"))
 
         # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         if on_progress:
@@ -1793,7 +1798,7 @@ def post_comment(
     result = {"success": False, "error": None, "cookies": None}
 
     try:
-        driver = create_driver(headless=headless, account_id=account.get("id"))
+        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=account.get("proxy_address"))
 
         # 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         logged_in = check_profile_login(driver)

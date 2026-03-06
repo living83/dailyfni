@@ -461,6 +461,15 @@ function AccountCafeTab({ accounts, cafes, reload }) {
     reload();
   };
 
+  const updateProxy = async (id, proxy) => {
+    await fetch(`${API}/api/accounts/${id}/proxy`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proxy_address: proxy })
+    });
+    reload();
+  };
+
   const toggleAccount = async (id) => {
     await fetch(`${API}/api/accounts/${id}/toggle`, { method: 'PUT' });
     reload();
@@ -547,6 +556,20 @@ function AccountCafeTab({ accounts, cafes, reload }) {
               <div className="sub">
                 {a.active ? <span className="badge badge-success">활성</span> : <span className="badge badge-danger">비활성</span>}
                 {' '}{a.last_published_at ? `마지막 발행: ${new Date(a.last_published_at).toLocaleString('ko')}` : '발행 이력 없음'}
+                {a.proxy_address && <span style={{ marginLeft: 8, color: '#38bd94', fontSize: 11 }}>proxy: {a.proxy_address}</span>}
+              </div>
+              <div className="input-row" style={{ marginTop: 6 }}>
+                <input
+                  type="text"
+                  placeholder="프록시 (예: http://user:pass@host:port)"
+                  defaultValue={a.proxy_address || ''}
+                  style={{ fontSize: 12, flex: 1 }}
+                  onBlur={e => {
+                    const v = e.target.value.trim();
+                    if (v !== (a.proxy_address || '')) updateProxy(a.id, v);
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                />
               </div>
             </div>
             <div className="actions">

@@ -162,9 +162,12 @@ def init_db():
         ("schedule_config", "daily_post_limit", "3"),
         ("schedule_config", "daily_comment_limit", "10"),
         ("cafe_boards", "cafe_group_id", "NULL"),
+        ("accounts", "proxy_address", "TEXT_NULL"),
     ]:
         try:
-            if default == "NULL":
+            if default == "TEXT_NULL":
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
+            elif default == "NULL":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER")
             else:
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER DEFAULT {default}")
@@ -267,6 +270,13 @@ def delete_account(account_id: int):
 def update_account_cookie(account_id: int, cookie_data: str):
     conn = get_connection()
     conn.execute("UPDATE accounts SET cookie_data = ? WHERE id = ?", (cookie_data, account_id))
+    conn.commit()
+    conn.close()
+
+
+def update_account_proxy(account_id: int, proxy_address: str):
+    conn = get_connection()
+    conn.execute("UPDATE accounts SET proxy_address = ? WHERE id = ?", (proxy_address or None, account_id))
     conn.commit()
     conn.close()
 

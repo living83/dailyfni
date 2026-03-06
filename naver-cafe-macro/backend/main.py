@@ -60,6 +60,9 @@ class AccountCreate(BaseModel):
     username: str
     password: str
 
+class AccountProxyUpdate(BaseModel):
+    proxy_address: Optional[str] = None
+
 class CafeBoardCreate(BaseModel):
     cafe_url: str
     board_name: str
@@ -147,6 +150,12 @@ async def create_account(req: AccountCreate):
 async def toggle_account(account_id: int):
     db.toggle_account(account_id)
     return {"message": "계정 상태 변경됨"}
+
+
+@app.put("/api/accounts/{account_id}/proxy")
+async def update_account_proxy(account_id: int, req: AccountProxyUpdate):
+    db.update_account_proxy(account_id, (req.proxy_address or "").strip() or None)
+    return {"message": "프록시 설정 업데이트됨"}
 
 
 @app.delete("/api/accounts/{account_id}")
