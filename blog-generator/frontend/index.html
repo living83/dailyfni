@@ -431,10 +431,6 @@
           <input type="number" id="schedWeekendPercent" value="30" min="0" max="100" style="width:60px" /> %
         </div>
         <div class="form-row">
-          <label>연속 강제 휴식</label>
-          <input type="number" id="schedForceRest" value="3" min="0" max="14" style="width:60px" /> 일 후
-        </div>
-        <div class="form-row">
           <label>하단 링크 URL</label>
           <input type="text" id="schedFooterLink" placeholder="https://example.com" style="flex:1;padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px" />
         </div>
@@ -957,7 +953,6 @@ async function loadSchedulerConfig() {
     document.getElementById('schedRestPercent').value = cfg.random_rest_percent || 20;
     document.getElementById('schedWeekendLow').checked = !!cfg.weekend_low_prob;
     document.getElementById('schedWeekendPercent').value = cfg.weekend_prob_percent || 30;
-    document.getElementById('schedForceRest').value = cfg.force_rest_after_days || 3;
     document.getElementById('schedFooterLink').value = cfg.footer_link || '';
     document.getElementById('schedFooterLinkText').value = cfg.footer_link_text || '';
     const days = cfg.days_of_week || [1,2,3,4,5];
@@ -988,7 +983,6 @@ async function saveSchedulerConfig() {
       random_rest_percent: parseInt(document.getElementById('schedRestPercent').value),
       weekend_low_prob: document.getElementById('schedWeekendLow').checked ? 1 : 0,
       weekend_prob_percent: parseInt(document.getElementById('schedWeekendPercent').value),
-      force_rest_after_days: parseInt(document.getElementById('schedForceRest').value),
       footer_link: document.getElementById('schedFooterLink').value.trim(),
       footer_link_text: document.getElementById('schedFooterLinkText').value.trim(),
     })});

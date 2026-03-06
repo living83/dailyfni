@@ -243,7 +243,6 @@ async def init_db():
                     random_rest_percent INT DEFAULT 20,
                     weekend_low_prob TINYINT DEFAULT 1,
                     weekend_prob_percent INT DEFAULT 30,
-                    force_rest_after_days INT DEFAULT 3,
                     consecutive_publish_days INT DEFAULT 0,
                     last_publish_date VARCHAR(50) DEFAULT '',
                     footer_link VARCHAR(500) DEFAULT '',

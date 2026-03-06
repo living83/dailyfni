@@ -380,7 +380,6 @@ class SchedulerConfigUpdate(BaseModel):
     random_rest_percent: Optional[int] = None
     weekend_low_prob: Optional[int] = None
     weekend_prob_percent: Optional[int] = None
-    force_rest_after_days: Optional[int] = None
     engagement_enabled: Optional[int] = None
     engagement_hour: Optional[int] = None
     engagement_minute: Optional[int] = None

@@ -41,13 +41,6 @@ async def _should_skip_today(config: dict) -> bool:
             logger.info(f"주말 발행 확률({prob*100}%)에 의해 건너뜁니다.")
             return True
 
-    # 연속 발행일 체크
-    consecutive = config.get("consecutive_publish_days", 0)
-    force_rest = config.get("force_rest_after_days", 3)
-    if force_rest > 0 and consecutive >= force_rest:
-        logger.info(f"연속 {consecutive}일 발행 후 강제 휴식")
-        return True
-
     # 랜덤 휴식
     if config.get("random_rest_enabled"):
         rest_prob = config.get("random_rest_percent", 20) / 100
