@@ -147,7 +147,7 @@ async def add_security_headers(request: Request, call_next):
 
 # ─── 간단 Rate Limiter (IP 기반, 인메모리) ──────────────────
 _rate_limit_store: dict = {}  # {ip: [timestamp, ...]}
-RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "30"))  # 분당 최대 요청
+RATE_LIMIT_MAX = int(os.getenv("RATE_LIMIT_MAX", "120"))  # 분당 최대 요청
 RATE_LIMIT_WINDOW = 60  # 초
 
 
