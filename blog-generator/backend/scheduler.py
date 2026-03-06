@@ -55,20 +55,22 @@ async def _should_skip_today(config: dict) -> bool:
 # 1단계: 글 사전 생성 잡 (발행 2시간 전 실행)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def article_generation_job(manual: bool = False):
+async def article_generation_job(manual: bool = False, forced_type: str = ""):
     """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
-    manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다."""
+    manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다.
+    forced_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다."""
     try:
-        print(f"[scheduler] article_generation_job 시작 (manual={manual})", flush=True)
-        logger.info(f"article_generation_job 시작 (manual={manual})")
+        print(f"[scheduler] article_generation_job 시작 (manual={manual}, forced_type={forced_type})", flush=True)
+        logger.info(f"article_generation_job 시작 (manual={manual}, forced_type={forced_type})")
         from database import (
             get_next_keyword, update_keyword, get_accounts,
             create_batch, create_publish_history, update_batch,
             create_notification, get_categories,
         )
 
+        config = await _get_config()
+
         if not manual:
-            config = await _get_config()
             if not config.get("is_active"):
                 logger.info("스케줄러 비활성 → 생성 건너뜀")
                 return
@@ -78,15 +80,18 @@ async def article_generation_job(manual: bool = False):
                 await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
                 return
 
-        # 교대 발행: 어제 타입의 반대 타입 우선 선택 (일반 ↔ 광고)
-        config = await _get_config() if manual else config
-        last_post_type = config.get("last_post_type", "")
-        if last_post_type == "ad":
-            preferred_type = "general"
-        elif last_post_type == "general":
-            preferred_type = "ad"
+        # 타입 결정: forced_type > 교대 발행
+        if forced_type in ("ad", "general"):
+            preferred_type = forced_type
         else:
-            preferred_type = "ad"  # 첫 발행은 광고부터
+            # 교대 발행: 어제 타입의 반대 타입 우선 선택 (일반 ↔ 광고)
+            last_post_type = config.get("last_post_type", "")
+            if last_post_type == "ad":
+                preferred_type = "general"
+            elif last_post_type == "general":
+                preferred_type = "ad"
+            else:
+                preferred_type = "ad"  # 첫 발행은 광고부터
 
         # 다음 키워드 가져오기 (선호 타입 우선, 없으면 다른 타입)
         kw = await get_next_keyword(preferred_type)

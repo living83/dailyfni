@@ -445,25 +445,38 @@ async def serve_frontend():
 # 글 사전 생성 API (키워드 큐 → 3개 글 생성 후 DB 저장)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+class GenerateBatchRequest(BaseModel):
+    post_type: str = ""
+
+    @validator("post_type")
+    def check_type(cls, v):
+        if v and v not in ("ad", "general"):
+            raise ValueError("post_type은 ad 또는 general이어야 합니다.")
+        return v
+
+
 @app.post("/api/articles/generate-batch")
-async def generate_batch():
-    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장"""
+async def generate_batch(req: GenerateBatchRequest = GenerateBatchRequest()):
+    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
+    post_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다."""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY가 설정되지 않았습니다.")
 
-    kw = await db.get_next_keyword()
+    forced_type = req.post_type
+    kw = await db.get_next_keyword(forced_type if forced_type else "")
     if not kw:
-        raise HTTPException(status_code=404, detail="발행할 키워드가 없습니다. 키워드를 추가해주세요.")
+        type_label = "광고" if forced_type == "ad" else "일반" if forced_type == "general" else ""
+        raise HTTPException(status_code=404, detail=f"발행할 {type_label} 키워드가 없습니다. 키워드를 추가해주세요.")
 
-    print(f"[generate-batch] 키워드 '{kw['keyword']}' 생성 task 시작", flush=True)
-    logger.info(f"[generate-batch] 키워드 '{kw['keyword']}' 생성 task 시작")
+    print(f"[generate-batch] 키워드 '{kw['keyword']}' (타입: {forced_type or '자동'}) 생성 task 시작", flush=True)
+    logger.info(f"[generate-batch] 키워드 '{kw['keyword']}' (타입: {forced_type or '자동'}) 생성 task 시작")
     from scheduler import article_generation_job
-    task = asyncio.create_task(article_generation_job(manual=True))
+    task = asyncio.create_task(article_generation_job(manual=True, forced_type=forced_type))
     _background_tasks.add(task)
     task.add_done_callback(_on_task_done)
-    print(f"[generate-batch] task 생성 완료, 현재 background tasks: {len(_background_tasks)}개", flush=True)
-    return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}", "keyword": kw["keyword"]}
+    type_label = " (광고)" if forced_type == "ad" else " (일반)" if forced_type == "general" else ""
+    return {"message": f"글 생성이 시작되었습니다. 키워드: {kw['keyword']}{type_label}", "keyword": kw["keyword"]}
 
 
 @app.get("/api/articles/generated")
