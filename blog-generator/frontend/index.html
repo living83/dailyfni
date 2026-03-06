@@ -803,7 +803,7 @@ async function loadAccounts() {
     if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">계정이 없습니다</td></tr>'; return; }
     tbody.innerHTML = accounts.map(a => `<tr>
       <td><strong>${escapeHtml(a.account_name)}</strong></td>
-      <td><span class="tag ${a.account_group === 'ad' ? 'tag-red' : 'tag-blue'}">${a.account_group === 'ad' ? '광고' : '일반'}</span></td>
+      <td><span class="tag ${a.account_group === 'ad' ? 'tag-red' : 'tag-blue'}" style="cursor:pointer" onclick="toggleAccountGroup(${a.id},'${a.account_group}')" title="클릭하여 그룹 변경">${a.account_group === 'ad' ? '광고' : '일반'}</span></td>
       <td>${a.specialty ? `<span class="tag tag-blue">${a.specialty}</span>` : '-'}</td>
       <td>${a.is_active ? '<span class="tag tag-green">활성</span>' : '<span class="tag tag-gray">비활성</span>'}</td>
       <td style="font-size:12px">${a.last_used || '-'}</td>
@@ -832,6 +832,16 @@ async function addAccount() {
     document.getElementById('accName').value = '';
     document.getElementById('accNaverId').value = '';
     document.getElementById('accNaverPw').value = '';
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function toggleAccountGroup(id, currentGroup) {
+  const newGroup = currentGroup === 'ad' ? 'general' : 'ad';
+  const label = newGroup === 'ad' ? '광고' : '일반';
+  try {
+    await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ account_group: newGroup }) });
+    showToast(`그룹이 '${label}'(으)로 변경되었습니다`);
     loadAccounts();
   } catch (e) { showToast(e.message, 'error'); }
 }
