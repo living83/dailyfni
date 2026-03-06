@@ -1814,7 +1814,10 @@ def publish_to_cafe(
     try:
         if on_progress:
             on_progress("driver", "브라우저 시작 중...")
-        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=account.get("proxy_address"))
+        # 프록시: DB에서 복호화하여 가져오기
+        from database import get_account_proxy
+        proxy_addr = get_account_proxy(account["id"]) if account.get("id") else account.get("proxy_address")
+        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
 
         # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         if on_progress:
@@ -1908,7 +1911,10 @@ def post_comment(
     result = {"success": False, "error": None, "cookies": None}
 
     try:
-        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=account.get("proxy_address"))
+        # 프록시: DB에서 복호화하여 가져오기
+        from database import get_account_proxy
+        proxy_addr = get_account_proxy(account["id"]) if account.get("id") else account.get("proxy_address")
+        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
 
         # 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         logged_in = check_profile_login(driver)

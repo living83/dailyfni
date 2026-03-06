@@ -275,10 +275,28 @@ def update_account_cookie(account_id: int, cookie_data: str):
 
 
 def update_account_proxy(account_id: int, proxy_address: str):
+    """프록시 주소 업데이트 (암호화하여 저장)"""
+    from crypto import encrypt_password
+    enc = encrypt_password(proxy_address) if proxy_address else None
     conn = get_connection()
-    conn.execute("UPDATE accounts SET proxy_address = ? WHERE id = ?", (proxy_address or None, account_id))
+    conn.execute("UPDATE accounts SET proxy_address = ? WHERE id = ?", (enc, account_id))
     conn.commit()
     conn.close()
+
+
+def get_account_proxy(account_id: int) -> str | None:
+    """계정의 프록시 주소를 복호화하여 반환"""
+    from crypto import decrypt_password
+    conn = get_connection()
+    row = conn.execute("SELECT proxy_address FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    conn.close()
+    if not row or not row["proxy_address"]:
+        return None
+    try:
+        return decrypt_password(row["proxy_address"])
+    except Exception:
+        # 이전에 평문으로 저장된 경우 그대로 반환
+        return row["proxy_address"]
 
 
 def update_account_last_published(account_id: int):

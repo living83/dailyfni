@@ -556,20 +556,22 @@ function AccountCafeTab({ accounts, cafes, reload }) {
               <div className="sub">
                 {a.active ? <span className="badge badge-success">활성</span> : <span className="badge badge-danger">비활성</span>}
                 {' '}{a.last_published_at ? `마지막 발행: ${new Date(a.last_published_at).toLocaleString('ko')}` : '발행 이력 없음'}
-                {a.proxy_address && <span style={{ marginLeft: 8, color: '#38bd94', fontSize: 11 }}>proxy: {a.proxy_address}</span>}
+                {a.proxy_address ? <span style={{ marginLeft: 8, color: '#38bd94', fontSize: 11 }}>🔒 프록시 설정됨</span> : null}
               </div>
               <div className="input-row" style={{ marginTop: 6 }}>
                 <input
                   type="text"
-                  placeholder="프록시 (예: http://user:pass@host:port)"
-                  defaultValue={a.proxy_address || ''}
+                  placeholder={a.proxy_address ? "새 프록시 입력 (빈칸=제거)" : "프록시 (예: http://user:pass@host:port)"}
                   style={{ fontSize: 12, flex: 1 }}
                   onBlur={e => {
                     const v = e.target.value.trim();
-                    if (v !== (a.proxy_address || '')) updateProxy(a.id, v);
+                    if (v) { updateProxy(a.id, v); e.target.value = ''; }
                   }}
-                  onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
                 />
+                {a.proxy_address && <button className="btn btn-sm" style={{ marginLeft: 4, fontSize: 11, padding: '2px 8px' }} onClick={() => updateProxy(a.id, '')}>제거</button>}
               </div>
             </div>
             <div className="actions">

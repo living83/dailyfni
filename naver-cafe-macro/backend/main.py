@@ -126,9 +126,14 @@ class ScheduleConfigUpdate(BaseModel):
 @app.get("/api/accounts")
 async def list_accounts():
     accounts = db.get_accounts()
-    # 비밀번호 필드는 마스킹
     for acc in accounts:
+        # 비밀번호 마스킹
         acc["password_enc"] = "••••••••"
+        # 프록시: 암호화된 값 → 마스킹 표시 (유무만 알려줌)
+        if acc.get("proxy_address"):
+            acc["proxy_address"] = "••••••••"
+        else:
+            acc["proxy_address"] = None
     return accounts
 
 
