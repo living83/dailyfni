@@ -107,14 +107,114 @@ def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0
 _PROFILE_BASE = Path(__file__).resolve().parent.parent / "data" / "chrome_profiles"
 
 
+def _parse_proxy_url(proxy_address: str) -> dict:
+    """프록시 URL 파싱 → {scheme, host, port, username, password}
+
+    지원 형식:
+      http://user:pass@host:port
+      host:port:user:pass
+      host:port
+    """
+    result = {"scheme": "http", "host": "", "port": "", "username": "", "password": ""}
+    if not proxy_address:
+        return result
+
+    addr = proxy_address.strip()
+
+    # http://user:pass@host:port 형식
+    if "://" in addr:
+        from urllib.parse import urlparse
+        parsed = urlparse(addr)
+        result["scheme"] = parsed.scheme or "http"
+        result["host"] = parsed.hostname or ""
+        result["port"] = str(parsed.port) if parsed.port else ""
+        result["username"] = parsed.username or ""
+        result["password"] = parsed.password or ""
+    elif "@" in addr:
+        # user:pass@host:port
+        cred_part, server_part = addr.rsplit("@", 1)
+        parts = server_part.split(":")
+        result["host"] = parts[0]
+        result["port"] = parts[1] if len(parts) > 1 else ""
+        cred_parts = cred_part.split(":", 1)
+        result["username"] = cred_parts[0]
+        result["password"] = cred_parts[1] if len(cred_parts) > 1 else ""
+    else:
+        # host:port 또는 host:port:user:pass
+        parts = addr.split(":")
+        result["host"] = parts[0]
+        result["port"] = parts[1] if len(parts) > 1 else ""
+        if len(parts) >= 4:
+            result["username"] = parts[2]
+            result["password"] = parts[3]
+
+    return result
+
+
+def _create_proxy_auth_extension(proxy: dict) -> str:
+    """인증이 필요한 프록시를 위한 Chrome 확장 프로그램 생성 → zip 파일 경로 반환"""
+    import zipfile
+
+    manifest = """{
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Proxy Auth",
+        "permissions": ["proxy", "tabs", "unlimitedStorage", "storage", "<all_urls>", "webRequest", "webRequestBlocking"],
+        "background": {"scripts": ["background.js"]},
+        "minimum_chrome_version": "22.0.0"
+    }"""
+
+    background = """var config = {
+        mode: "fixed_servers",
+        rules: {
+            singleProxy: {
+                scheme: "%s",
+                host: "%s",
+                port: parseInt(%s)
+            },
+            bypassList: ["localhost"]
+        }
+    };
+    chrome.proxy.settings.set({value: config, scope: "regular"}, function(){});
+    function callbackFn(details) {
+        return {
+            authCredentials: {
+                username: "%s",
+                password: "%s"
+            }
+        };
+    }
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {urls: ["<all_urls>"]},
+        ['blocking']
+    );""" % (proxy["scheme"], proxy["host"], proxy["port"], proxy["username"], proxy["password"])
+
+    ext_dir = Path(tempfile.mkdtemp(prefix="proxy_ext_"))
+    ext_path = ext_dir / "proxy_auth.zip"
+
+    with zipfile.ZipFile(str(ext_path), "w") as zf:
+        zf.writestr("manifest.json", manifest)
+        zf.writestr("background.js", background)
+
+    return str(ext_path)
+
+
 def create_driver(headless: bool = True, account_id: int = None, proxy_address: str = None) -> webdriver.Chrome:
     """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent, 계정별 독립 프로파일, 프록시 지원)"""
     ua = random.choice(_USER_AGENTS)
     logger.debug(f"User-Agent: {ua}")
 
+    proxy = _parse_proxy_url(proxy_address) if proxy_address else None
+    has_proxy_auth = proxy and proxy["username"] and proxy["password"]
+
     options = Options()
-    if headless:
+    # 인증 프록시 + headless는 확장 프로그램 비호환 → headless 비활성화하고 window 숨김
+    if headless and not has_proxy_auth:
         options.add_argument("--headless=new")
+    elif headless and has_proxy_auth:
+        # Manifest V2 확장은 headless에서 동작하지 않음 → 창 최소화로 대체
+        options.add_argument("--window-position=-9999,-9999")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -124,9 +224,19 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
     options.add_experimental_option("useAutomationExtension", False)
 
     # 프록시 설정
-    if proxy_address:
-        options.add_argument(f"--proxy-server={proxy_address}")
-        logger.info(f"프록시 적용: {proxy_address}")
+    if proxy and proxy["host"]:
+        if has_proxy_auth:
+            # 인증 프록시: Chrome 확장으로 처리
+            ext_path = _create_proxy_auth_extension(proxy)
+            options.add_extension(ext_path)
+            logger.info(f"인증 프록시 확장 적용: {proxy['host']}:{proxy['port']} (user={proxy['username']})")
+        else:
+            # 인증 없는 프록시: --proxy-server 플래그
+            proxy_server = f"{proxy['scheme']}://{proxy['host']}"
+            if proxy["port"]:
+                proxy_server += f":{proxy['port']}"
+            options.add_argument(f"--proxy-server={proxy_server}")
+            logger.info(f"프록시 적용: {proxy_server}")
 
     # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
     if account_id is not None:
