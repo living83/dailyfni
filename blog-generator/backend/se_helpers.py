@@ -22,6 +22,71 @@ COOKIE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 프록시 설정
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _get_proxy_for_account(account_id: int) -> dict | None:
+    """계정 ID에 매핑된 프록시 설정을 반환. 설정 없으면 None."""
+    host = os.getenv("PROXY_HOST", "").strip()
+    username = os.getenv("PROXY_USERNAME", "").strip()
+    password = os.getenv("PROXY_PASSWORD", "").strip()
+    port_map_str = os.getenv("PROXY_PORT_MAP", "").strip()
+
+    if not host or not port_map_str:
+        return None
+
+    # "1:10001,2:10002,..." 파싱
+    port_map = {}
+    for entry in port_map_str.split(","):
+        entry = entry.strip()
+        if ":" in entry:
+            aid, port = entry.split(":", 1)
+            try:
+                port_map[int(aid.strip())] = int(port.strip())
+            except ValueError:
+                continue
+
+    port = port_map.get(account_id)
+    if not port:
+        logger.warning(f"계정 {account_id}에 매핑된 프록시 포트 없음")
+        return None
+
+    proxy = {"server": f"http://{host}:{port}"}
+    if username:
+        proxy["username"] = username
+    if password:
+        proxy["password"] = password
+
+    logger.info(f"프록시 설정: 계정 {account_id} → {host}:{port}")
+    return proxy
+
+
+def get_all_proxy_mappings() -> list:
+    """모든 계정-프록시 매핑 정보 반환."""
+    host = os.getenv("PROXY_HOST", "").strip()
+    username = os.getenv("PROXY_USERNAME", "").strip()
+    port_map_str = os.getenv("PROXY_PORT_MAP", "").strip()
+
+    if not host or not port_map_str:
+        return []
+
+    mappings = []
+    for entry in port_map_str.split(","):
+        entry = entry.strip()
+        if ":" in entry:
+            aid, port = entry.split(":", 1)
+            try:
+                mappings.append({
+                    "account_id": int(aid.strip()),
+                    "proxy_server": f"{host}:{port.strip()}",
+                    "username": username,
+                })
+            except ValueError:
+                continue
+    return mappings
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 유틸리티
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -317,8 +382,9 @@ async def login(page, account_id: int, naver_id: str, naver_password: str) -> bo
 # 스텔스 브라우저
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def create_stealth_context(playwright_instance):
-    """네이버 봇 감지를 우회하기 위한 스텔스 브라우저 컨텍스트 생성"""
+async def create_stealth_context(playwright_instance, account_id: int = None):
+    """네이버 봇 감지를 우회하기 위한 스텔스 브라우저 컨텍스트 생성.
+    account_id가 주어지면 해당 계정의 프록시를 자동 적용."""
     launch_args = [
         "--disable-blink-features=AutomationControlled",
         "--no-sandbox",
@@ -330,19 +396,20 @@ async def create_stealth_context(playwright_instance):
         "--disable-third-party-cookie-phaseout",
     ]
 
+    # 프록시 설정
+    proxy = _get_proxy_for_account(account_id) if account_id else None
+
     browser = None
     for channel in ["chrome", "msedge", None]:
         try:
+            launch_kwargs = {"headless": True, "args": launch_args}
             if channel:
-                browser = await playwright_instance.chromium.launch(
-                    channel=channel, headless=True, args=launch_args,
-                )
-                logger.info(f"브라우저 시작: channel={channel}")
-            else:
-                browser = await playwright_instance.chromium.launch(
-                    headless=True, args=launch_args,
-                )
-                logger.info("브라우저 시작: 기본 Chromium")
+                launch_kwargs["channel"] = channel
+            if proxy:
+                launch_kwargs["proxy"] = proxy
+            browser = await playwright_instance.chromium.launch(**launch_kwargs)
+            proxy_info = f", proxy={proxy['server']}" if proxy else ""
+            logger.info(f"브라우저 시작: channel={channel or '기본 Chromium'}{proxy_info}")
             break
         except Exception as e:
             logger.warning(f"브라우저 시작 실패 (channel={channel}): {e}")

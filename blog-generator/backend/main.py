@@ -596,6 +596,57 @@ async def test_account_login(account_id: int):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 프록시 관리 API
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/proxy/status")
+async def get_proxy_status():
+    """계정별 프록시 매핑 상태 조회"""
+    from se_helpers import get_all_proxy_mappings
+    accounts = await db.get_accounts()
+    mappings = get_all_proxy_mappings()
+    mapping_dict = {m["account_id"]: m for m in mappings}
+
+    result = []
+    for acc in accounts:
+        proxy_info = mapping_dict.get(acc["id"])
+        result.append({
+            "account_id": acc["id"],
+            "account_name": acc["account_name"],
+            "proxy_connected": proxy_info is not None,
+            "proxy_server": proxy_info["proxy_server"] if proxy_info else None,
+        })
+    return result
+
+
+@app.get("/api/proxy/test/{account_id}")
+async def test_proxy_connection(account_id: int):
+    """계정별 프록시 연결 테스트 (IP 확인)"""
+    from se_helpers import _get_proxy_for_account
+    proxy = _get_proxy_for_account(account_id)
+    if not proxy:
+        return {"success": False, "account_id": account_id, "error": "프록시 설정 없음"}
+
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox"],
+                proxy=proxy,
+            )
+            context = await browser.new_context()
+            page = await context.new_page()
+            await page.goto("https://api.ipify.org?format=json", timeout=15000)
+            ip_text = await page.inner_text("body")
+            await browser.close()
+            ip_data = json.loads(ip_text)
+            return {"success": True, "account_id": account_id, "proxy_ip": ip_data.get("ip", ""), "proxy_server": proxy["server"]}
+    except Exception as e:
+        return {"success": False, "account_id": account_id, "error": str(e)}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 카테고리 관리 API
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

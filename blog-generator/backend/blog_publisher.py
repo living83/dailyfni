@@ -396,7 +396,7 @@ async def _test_login_impl(account_id: int, naver_id: str, naver_password: str) 
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p)
+        browser, context = await create_stealth_context(p, account_id=account_id)
         page = await context.new_page()
 
         try:
@@ -432,7 +432,7 @@ async def _run_publish_task_impl(
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p)
+        browser, context = await create_stealth_context(p, account_id=account_id)
         page = await context.new_page()
 
         try:
