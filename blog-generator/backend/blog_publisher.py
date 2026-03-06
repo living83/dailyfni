@@ -31,6 +31,58 @@ from se_helpers import (
 logger = logging.getLogger("blog_publisher")
 
 
+def _split_content_by_headings(content: str, image_count: int) -> list:
+    """본문을 소제목(## / #) 기준으로 분할하여 이미지 삽입 위치를 만든다.
+    image_count개의 이미지가 섹션 사이에 들어갈 수 있도록 (image_count + 1)개 섹션으로 분할.
+    소제목이 부족하면 빈 줄 기준으로 균등 분할한다."""
+    target_sections = image_count + 1
+    lines = content.split("\n")
+
+    # 소제목 위치 찾기 (첫 줄 제외)
+    heading_indices = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if i > 0 and (stripped.startswith("## ") or stripped.startswith("# ")):
+            heading_indices.append(i)
+
+    # 소제목이 충분하면 소제목 기준으로 분할
+    if len(heading_indices) >= image_count:
+        # image_count개의 분할 지점 선택 (균등 분포)
+        step = len(heading_indices) / target_sections
+        split_indices = []
+        for j in range(1, target_sections):
+            idx = int(j * step)
+            idx = min(idx, len(heading_indices) - 1)
+            split_indices.append(heading_indices[idx])
+        # 중복 제거 및 정렬
+        split_indices = sorted(set(split_indices))
+    else:
+        # 소제목 부족 시 줄 수 기준 균등 분할
+        total_lines = len(lines)
+        split_indices = []
+        for j in range(1, target_sections):
+            split_indices.append(int(total_lines * j / target_sections))
+
+    # 분할 실행
+    sections = []
+    prev = 0
+    for si in split_indices:
+        section = "\n".join(lines[prev:si])
+        if section.strip():
+            sections.append(section)
+        prev = si
+    # 마지막 섹션
+    last_section = "\n".join(lines[prev:])
+    if last_section.strip():
+        sections.append(last_section)
+
+    # 섹션이 비었으면 원본 그대로
+    if not sections:
+        sections = [content]
+
+    return sections
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 블로그 전용: 글쓰기 페이지 이동
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -297,12 +349,18 @@ async def publish_to_blog(
         # 8-1. 대표이미지 삽입
         await se_insert_image(page, editor, image_path)
 
-        # 8-2. 추가 이미지 삽입 (Gemini 생성 이미지 등)
-        for extra_img in extra_image_paths:
-            await se_insert_image(page, editor, extra_img)
-
-        # 9. 본문 입력
-        await se_input_body(page, editor, content)
+        # 8-2. 본문 + 추가 이미지 분산 삽입
+        if extra_image_paths:
+            # 본문을 소제목(##) 기준으로 섹션 분할하여 이미지를 중간에 배치
+            sections = _split_content_by_headings(content, len(extra_image_paths))
+            for sec_idx, section_text in enumerate(sections):
+                await se_input_body(page, editor, section_text)
+                # 섹션 뒤에 이미지 삽입 (마지막 섹션 제외, 이미지가 남아있을 때)
+                if sec_idx < len(extra_image_paths):
+                    await se_insert_image(page, editor, extra_image_paths[sec_idx])
+        else:
+            # 9. 본문 입력 (추가 이미지 없으면 기존 방식)
+            await se_input_body(page, editor, content)
 
         # 9-1. 하단 링크 삽입
         await se_insert_footer_link(page, editor, footer_link, footer_link_text)
