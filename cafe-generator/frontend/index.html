@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DailyFNI - 네이버 카페 자동 발행 시스템</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f6fa;
+      color: #2d3436;
+      min-height: 100vh;
+    }
+    /* === 헤더 === */
+    .header {
+      background: linear-gradient(135deg, #0984e3, #6c5ce7);
+      color: #fff;
+      padding: 20px 0 14px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .header p { font-size: 12px; opacity: 0.8; }
+    .notification-badge {
+      position: absolute;
+      top: 16px;
+      right: 24px;
+      background: #e17055;
+      color: #fff;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .notification-badge.show { display: flex; }
+
+    /* === 탭 네비 === */
+    .tab-nav {
+      display: flex;
+      background: #fff;
+      border-bottom: 2px solid #dfe6e9;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tab-nav button {
+      flex: none;
+      padding: 12px 18px;
+      border: none;
+      background: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: #636e72;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .tab-nav button:hover { color: #0984e3; }
+    .tab-nav button.active { color: #0984e3; border-bottom-color: #0984e3; }
+
+    /* === 컨테이너 === */
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* === 공통 컴포넌트 === */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: #2d3436; }
+    .form-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+    .form-row label { font-size: 13px; font-weight: 600; min-width: 80px; color: #636e72; }
+    .form-row input, .form-row select, .form-row textarea {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid #dfe6e9;
+      border-radius: 8px;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus { border-color: #0984e3; outline: none; }
+    .btn {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: linear-gradient(135deg, #0984e3, #6c5ce7); color: #fff; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-danger { background: #d63031; color: #fff; }
+    .btn-danger:hover { opacity: 0.9; }
+    .btn-secondary { background: #dfe6e9; color: #2d3436; }
+    .btn-secondary:hover { background: #b2bec3; }
+    .btn-success { background: #00b894; color: #fff; }
+    .btn-success:hover { opacity: 0.9; }
+    .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn:disabled { background: #b2bec3; cursor: not-allowed; }
+
+    .tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin: 2px; }
+    .tag-green { background: #e6fff7; color: #00b894; }
+    .tag-blue { background: #e8f4fd; color: #0984e3; }
+    .tag-red { background: #fff5f5; color: #d63031; }
+    .tag-yellow { background: #fefce8; color: #f39c12; }
+    .tag-gray { background: #f0f0f0; color: #636e72; }
+
+    .toggle { position: relative; width: 48px; height: 26px; display: inline-block; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider { position: absolute; inset: 0; background: #b2bec3; border-radius: 26px; cursor: pointer; transition: 0.3s; }
+    .toggle .slider:before { content: ''; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.3s; }
+    .toggle input:checked + .slider { background: #00b894; }
+    .toggle input:checked + .slider:before { transform: translateX(22px); }
+
+    /* === 테이블 === */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th { background: #f5f6fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #636e72; border-bottom: 2px solid #dfe6e9; }
+    .data-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+    .data-table tr:hover { background: #fafafa; }
+
+    /* === 진행 상태 === */
+    .progress-bar-track { background: #dfe6e9; border-radius: 20px; height: 8px; overflow: hidden; margin: 8px 0; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #0984e3, #6c5ce7); border-radius: 20px; width: 0%; transition: width 0.5s ease; }
+
+    .progress-steps { display: flex; justify-content: space-between; gap: 8px; }
+    .progress-step { flex: 1; text-align: center; padding: 10px 6px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #f0f0f0; color: #b2bec3; transition: all 0.3s; }
+    .progress-step.active { background: #dfe6e9; color: #2d3436; animation: pulse 1.5s infinite; }
+    .progress-step.done { background: #00b894; color: #fff; animation: none; }
+    .progress-step .icon { font-size: 18px; display: block; margin-bottom: 4px; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    /* === 토스트 알림 === */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 1000; }
+    .toast {
+      background: #2d3436;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      margin-top: 8px;
+      font-size: 13px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      animation: slideIn 0.3s ease;
+      max-width: 350px;
+    }
+    .toast.success { border-left: 4px solid #00b894; }
+    .toast.error { border-left: 4px solid #d63031; }
+    .toast.warning { border-left: 4px solid #fdcb6e; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* === 모달 === */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; justify-content: center; align-items: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: #fff; border-radius: 16px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .modal h3 { margin-bottom: 16px; }
+    .modal-close { float: right; background: none; border: none; font-size: 20px; cursor: pointer; color: #636e72; }
+
+    /* === 에러 === */
+    .error-box { display: none; margin-top: 12px; padding: 12px 16px; background: #fff5f5; border: 1.5px solid #e17055; border-radius: 8px; color: #d63031; font-size: 13px; }
+    .error-box.active { display: block; }
+
+    /* === 결과 카드 그리드 === */
+    .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .cards-grid { grid-template-columns: 1fr; } }
+
+    .doc-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: flex; flex-direction: column; }
+    .doc-card-header { padding: 14px 18px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .doc-card-header.tutorial { background: linear-gradient(135deg, #00b894, #00cec9); }
+    .doc-card-header.review { background: linear-gradient(135deg, #0984e3, #74b9ff); }
+    .doc-card-header.analysis { background: linear-gradient(135deg, #a29bfe, #fd79a8); }
+    .doc-card-header h4 { font-size: 14px; font-weight: 700; }
+    .doc-card-header .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; background: rgba(255,255,255,0.25); font-weight: 600; }
+    .doc-card-title { padding: 12px 18px 0; font-size: 14px; font-weight: 700; }
+    .doc-card-content { padding: 10px 18px; font-size: 12px; line-height: 1.7; flex: 1; max-height: 300px; overflow-y: auto; }
+    .doc-card-content h1,.doc-card-content h2,.doc-card-content h3 { margin: 12px 0 6px; font-size: 14px; font-weight: 700; }
+    .doc-card-content p { margin-bottom: 8px; }
+    .doc-card-content ul { margin: 6px 0 6px 16px; }
+    .doc-card-footer { padding: 12px 18px; border-top: 1px solid #f0f0f0; display: flex; gap: 8px; }
+    .doc-card-footer select { padding: 6px; border: 1px solid #dfe6e9; border-radius: 6px; font-size: 12px; }
+
+    .char-count { font-size: 11px; color: #636e72; }
+    .char-count.ok { color: #00b894; }
+    .char-count.short { color: #d63031; }
+
+    /* === 발행 상태 패널 === */
+    .publish-status-panel { border: 2px solid #dfe6e9; border-radius: 12px; padding: 20px; }
+    .publish-status-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+    .publish-status-item:last-child { border-bottom: none; }
+    .publish-status-icon { font-size: 24px; }
+    .publish-status-info { flex: 1; }
+    .publish-status-info .title { font-size: 14px; font-weight: 600; }
+    .publish-status-info .detail { font-size: 12px; color: #636e72; margin-top: 2px; }
+
+    /* === 대시보드 === */
+    .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+    .dash-stat { background: #fff; border-radius: 12px; padding: 18px; text-align: center; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .dash-stat .label { font-size: 11px; color: #636e72; margin-bottom: 6px; }
+    .dash-stat .value { font-size: 30px; font-weight: 800; }
+    .dash-stat .sub { font-size: 11px; color: #b2bec3; margin-top: 4px; }
+    .quick-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .quick-actions .btn { flex: 1; min-width: 140px; padding: 14px; font-size: 14px; }
+
+    /* === 알림 사이드 패널 === */
+    .notif-panel { position: fixed; top: 0; right: -380px; width: 380px; height: 100vh; background: #fff; box-shadow: -4px 0 24px rgba(0,0,0,0.12); z-index: 300; transition: right 0.3s ease; display: flex; flex-direction: column; }
+    .notif-panel.open { right: 0; }
+    .notif-panel-header { padding: 20px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+    .notif-panel-header h3 { margin: 0; font-size: 16px; }
+    .notif-panel-body { flex: 1; overflow-y: auto; padding: 12px 20px; }
+    .notif-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 250; }
+    .notif-overlay.show { display: block; }
+
+    /* === 키워드 상품정보 구조화 === */
+    .product-fields { background: #f8f9fa; border-radius: 8px; padding: 14px; margin-top: 8px; border: 1px dashed #dfe6e9; }
+    .product-fields .form-row { margin-bottom: 8px; }
+    .product-fields .form-row:last-child { margin-bottom: 0; }
+    .product-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #0984e3; font-weight: 600; margin-top: 8px; }
+    .product-toggle:hover { text-decoration: underline; }
+
+    /* === 반응형 === */
+    @media (max-width: 768px) {
+      .form-row { flex-direction: column; }
+      .form-row label { min-width: auto; }
+      .container { padding: 12px; }
+      .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>DailyFNI Blog Auto Publisher</h1>
+    <p>네이버 카페 자동 글 생성 & 발행 시스템</p>
+    <div class="notification-badge" id="notifBadge" onclick="openNotifPanel()">0</div>
+  </div>
+
+  <nav class="tab-nav" id="tabNav">
+    <button class="active" onclick="switchTab('dashboard')">대시보드</button>
+    <button onclick="switchTab('keywords')">키워드 관리</button>
+    <button onclick="switchTab('articles')">글 관리</button>
+    <button onclick="switchTab('publish')">발행</button>
+    <button onclick="switchTab('accounts')">계정 관리</button>
+    <button onclick="switchTab('scheduler')">자동 스케줄</button>
+    <button onclick="switchTab('engagement')">참여 관리</button>
+    <button onclick="switchTab('stats')">통계</button>
+  </nav>
+
+  <div class="container">
+
+    <!-- ═══ 대시보드 ═══ -->
+    <div class="tab-content active" id="tab-dashboard">
+      <div class="dashboard-grid">
+        <div class="dash-stat">
+          <div class="label">대기 키워드</div>
+          <div class="value" id="dashPendingKw" style="color:#0984e3">-</div>
+          <div class="sub">등록된 키워드</div>
+        </div>
+        <div class="dash-stat">
+          <div class="label">발행 대기 글</div>
+          <div class="value" id="dashReadyArticles" style="color:#6c5ce7">-</div>
+          <div class="sub">생성 완료 글</div>
+        </div>
+        <div class="dash-stat">
+          <div class="label">오늘 발행</div>
+          <div class="value" id="dashTodayPublish" style="color:#00b894">-</div>
+          <div class="sub">성공 건수</div>
+        </div>
+        <div class="dash-stat">
+          <div class="label">활성 계정</div>
+          <div class="value" id="dashActiveAccounts" style="color:#e17055">-</div>
+          <div class="sub">사용 가능 계정</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>빠른 실행</h3>
+        <div class="quick-actions">
+          <button class="btn btn-primary" onclick="triggerBatchGeneration(); switchTab('articles');">글 생성</button>
+          <button class="btn btn-success" onclick="triggerPublishNow(); switchTab('publish');">즉시 발행</button>
+          <button class="btn btn-secondary" onclick="switchTab('keywords')">키워드 등록</button>
+          <button class="btn btn-secondary" onclick="switchTab('scheduler')">스케줄 설정</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <h3>스케줄러 상태</h3>
+          <div id="dashSchedulerStatus" style="font-size:13px;color:#636e72">로딩 중...</div>
+        </div>
+        <div class="card">
+          <h3>최근 발행</h3>
+          <div id="dashRecentPublish" style="font-size:13px;color:#636e72">로딩 중...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 탭: 글 관리 (사전 생성 + 발행 대기) ═══ -->
+    <div class="tab-content" id="tab-articles">
+      <div class="card">
+        <h3>글 사전 생성</h3>
+        <p style="font-size:13px;color:#636e72;margin-bottom:14px">
+          키워드 큐에서 다음 키워드를 가져와 3개 글(튜토리얼/후기/분석)을 자동 생성하고 서버에 저장합니다.
+          스케줄러가 설정된 시간에 자동으로 생성하지만, 수동으로도 생성할 수 있습니다.
+        </p>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="genPostType" style="padding:8px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:13px">
+            <option value="">자동 (교대)</option>
+            <option value="ad">광고</option>
+            <option value="general">일반</option>
+          </select>
+          <button class="btn btn-primary" id="btnAutoGenerate" onclick="triggerBatchGeneration()" style="flex:1">키워드 큐에서 글 생성</button>
+          <button class="btn btn-success" id="btnPublishReady" onclick="triggerPublishNow()">대기 글 즉시 발행</button>
+        </div>
+        <div id="autoGenMsg" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:13px"></div>
+      </div>
+
+      <div class="card">
+        <h3>발행 대기 중인 배치</h3>
+        <table class="data-table">
+          <thead><tr><th>배치 ID</th><th>키워드</th><th>상태</th><th>생성일</th></tr></thead>
+          <tbody id="readyBatchesBody"><tr><td colspan="4" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>사전 생성된 글 목록 (발행 대기)</h3>
+        <table class="data-table">
+          <thead><tr><th>키워드</th><th>형식</th><th>제목</th><th>계정</th><th>글자수</th><th>생성일</th></tr></thead>
+          <tbody id="generatedArticlesBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 발행 (진행 + 배치 + 이력 통합) ═══ -->
+    <div class="tab-content" id="tab-publish">
+      <div class="card">
+        <h3>발행 진행 상황</h3>
+        <div id="publishStatusPanel">
+          <p style="color:#636e72;font-size:13px">진행 중인 발행이 없습니다.</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>발행 배치</h3>
+        <table class="data-table">
+          <thead><tr><th>ID</th><th>키워드</th><th>상태</th><th>성공</th><th>실패</th><th>일시</th><th>작업</th></tr></thead>
+          <tbody id="batchesTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>발행 이력</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <input type="text" id="histKeyword" placeholder="키워드 검색" style="padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px" />
+          <select id="histStatus" style="padding:6px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px">
+            <option value="">전체 상태</option>
+            <option value="success">성공</option>
+            <option value="failed">실패</option>
+            <option value="generated">생성 완료</option>
+            <option value="pending">대기</option>
+          </select>
+          <select id="histAccount" style="padding:6px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px">
+            <option value="">전체 계정</option>
+          </select>
+          <button class="btn btn-sm btn-secondary" onclick="loadHistory()">검색</button>
+          <button class="btn btn-sm btn-secondary" onclick="exportHistory()">CSV 내보내기</button>
+          <button class="btn btn-sm btn-secondary" onclick="deleteAllHistory()" style="background:#d63031;color:#fff;border-color:#d63031">전체 삭제 (새 세션)</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>날짜</th><th>계정</th><th>제목</th><th>키워드</th><th>상태</th><th>URL</th><th>작업</th></tr></thead>
+          <tbody id="histTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 3: 계정 관리 ═══ -->
+    <div class="tab-content" id="tab-accounts">
+      <div class="card">
+        <h3>계정 추가</h3>
+        <div class="form-row">
+          <label>별칭</label>
+          <input type="text" id="accName" placeholder="예: 메인카페" />
+        </div>
+        <div class="form-row">
+          <label>네이버 ID</label>
+          <input type="text" id="accNaverId" placeholder="네이버 아이디" />
+        </div>
+        <div class="form-row">
+          <label>비밀번호</label>
+          <input type="password" id="accNaverPw" placeholder="네이버 비밀번호" />
+        </div>
+        <div class="form-row">
+          <label>계정 단계</label>
+          <select id="accTier">
+            <option value="1">1단계 (신규 — 매일 일반)</option>
+            <option value="2">2단계 (성장 — 매일 일반 + 5일 광고)</option>
+            <option value="3">3단계 (전환 — 2일 일반 + 4일 광고)</option>
+            <option value="4">4단계 (수익화 — 2일 일반 + 3일 광고)</option>
+            <option value="5">5단계 (숙련 — 3일 일반 + 3일 광고)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>특화 분야</label>
+          <select id="accSpecialty">
+            <option value="">선택 안함</option>
+            <option value="IT/개발">IT/개발</option>
+            <option value="일상/리뷰">일상/리뷰</option>
+            <option value="여행/취미">여행/취미</option>
+            <option value="맛집/요리">맛집/요리</option>
+            <option value="건강/운동">건강/운동</option>
+            <option value="재테크/경제">재테크/경제</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="addAccount()">계정 추가</button>
+      </div>
+      <div class="card">
+        <h3>등록된 계정</h3>
+        <table class="data-table">
+          <thead><tr><th>별칭</th><th>단계</th><th>특화 분야</th><th>프록시</th><th>상태</th><th>마지막 사용</th><th>카테고리</th><th>작업</th></tr></thead>
+          <tbody id="accountsTableBody"><tr><td colspan="8" style="text-align:center;color:#636e72">계정이 없습니다</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- 카테고리 관리 모달 -->
+      <div class="modal-overlay" id="catModal">
+        <div class="modal">
+          <button class="modal-close" onclick="closeCatModal()">&times;</button>
+          <h3 id="catModalTitle">카테고리 관리</h3>
+          <div class="form-row">
+            <input type="text" id="catNameInput" placeholder="카테고리명" />
+            <button class="btn btn-primary btn-sm" onclick="addCategory()">추가</button>
+          </div>
+          <table class="data-table" style="margin-top:12px">
+            <thead><tr><th>카테고리명</th><th>기본</th><th>작업</th></tr></thead>
+            <tbody id="catTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 키워드 관리 ═══ -->
+    <div class="tab-content" id="tab-keywords">
+      <div class="card">
+        <h3>Claude API Key</h3>
+        <div class="form-row">
+          <label>API Key</label>
+          <input type="password" id="kwApiKey" placeholder="Claude API Key (sk-ant-...)" />
+          <span id="kwApiKeySaved" style="font-size:11px;color:#00b894;display:none">자동 저장됨</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>키워드 등록</h3>
+        <div class="form-row">
+          <label>키워드</label>
+          <textarea id="kwInput" rows="4" placeholder="키워드를 입력하세요 (줄바꿈으로 여러 개)&#10;예) 강아지 사료 추천&#10;고양이 장난감 순위"></textarea>
+        </div>
+        <div class="form-row">
+          <label>유형</label>
+          <select id="kwPriority" style="flex:none;width:120px">
+            <option value="ad" selected>광고</option>
+            <option value="general">일반</option>
+          </select>
+          <span style="font-size:11px;color:#636e72;margin-left:4px">광고: 하단 링크 삽입 / 일반: 링크 없음</span>
+        </div>
+        <div class="product-toggle" onclick="toggleProductFields()">
+          <span id="productToggleIcon">&#9654;</span> 상품 정보 입력 (선택사항)
+        </div>
+        <div class="product-fields" id="productFieldsArea" style="display:none">
+          <div class="form-row">
+            <label style="min-width:90px">상품명</label>
+            <input type="text" id="kwProductName" placeholder="예: 퓨리나 프로플랜 어덜트" />
+          </div>
+          <div class="form-row">
+            <label style="min-width:90px">상품 URL</label>
+            <input type="text" id="kwProductUrl" placeholder="https://smartstore.naver.com/..." />
+          </div>
+          <div class="form-row">
+            <label style="min-width:90px">핵심 특징</label>
+            <textarea id="kwProductFeatures" rows="2" placeholder="예: 고단백 / 알러지 방지 / 수의사 추천"></textarea>
+          </div>
+          <div class="form-row">
+            <label style="min-width:90px">추가 정보</label>
+            <textarea id="kwProductInfo" rows="2" placeholder="상품에 대한 추가 설명 (글에 자연스럽게 반영됩니다)"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addKeywords()" style="width:100%;margin-top:12px">키워드 등록</button>
+      </div>
+      <div class="card">
+        <h3>키워드 목록</h3>
+        <div style="margin-bottom:12px">
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords()">전체</button>
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords('pending')">대기</button>
+          <button class="btn btn-sm btn-secondary" onclick="loadKeywords('used')">사용됨</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>키워드</th><th>상품소개</th><th>우선순위</th><th>상태</th><th>사용 횟수</th><th>등록일</th><th>작업</th></tr></thead>
+          <tbody id="kwTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 5: 자동 스케줄 ═══ -->
+    <div class="tab-content" id="tab-scheduler">
+      <div class="card">
+        <h3>자동 발행 설정</h3>
+        <div class="form-row">
+          <label>자동 발행</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedActive" />
+            <span class="slider"></span>
+          </label>
+          <span id="schedStatusText" style="font-size:13px;color:#636e72">비활성</span>
+        </div>
+        <div class="form-row">
+          <label>발행 시작</label>
+          <input type="number" id="schedStartH" min="0" max="23" value="8" style="width:60px" /> 시
+          <input type="number" id="schedStartM" min="0" max="59" value="0" style="width:60px" /> 분 ~
+          <input type="number" id="schedEndH" min="0" max="23" value="10" style="width:60px" /> 시
+          <input type="number" id="schedEndM" min="0" max="59" value="0" style="width:60px" /> 분
+        </div>
+        <div class="form-row">
+          <label>발행 요일</label>
+          <div id="schedDays">
+            <label><input type="checkbox" value="1" checked /> 월</label>
+            <label><input type="checkbox" value="2" checked /> 화</label>
+            <label><input type="checkbox" value="3" checked /> 수</label>
+            <label><input type="checkbox" value="4" checked /> 목</label>
+            <label><input type="checkbox" value="5" checked /> 금</label>
+            <label><input type="checkbox" value="6" /> 토</label>
+            <label><input type="checkbox" value="7" /> 일</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>계정 간 간격</label>
+          <input type="number" id="schedMinInterval" value="2" min="1" max="12" style="width:60px" /> 시간 ~
+          <input type="number" id="schedMaxInterval" value="4" min="1" max="12" style="width:60px" /> 시간
+        </div>
+        <div class="form-row">
+          <label>랜덤 휴식</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedRandomRest" checked />
+            <span class="slider"></span>
+          </label>
+          <span style="font-size:12px;color:#636e72">확률:</span>
+          <input type="number" id="schedRestPercent" value="20" min="0" max="100" style="width:60px" /> %
+        </div>
+        <div class="form-row">
+          <label>주말 확률</label>
+          <label class="toggle">
+            <input type="checkbox" id="schedWeekendLow" checked />
+            <span class="slider"></span>
+          </label>
+          <input type="number" id="schedWeekendPercent" value="30" min="0" max="100" style="width:60px" /> %
+        </div>
+        <div class="form-row">
+          <label>하단 링크 URL</label>
+          <input type="text" id="schedFooterLink" placeholder="https://example.com" style="flex:1;padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px" />
+        </div>
+        <div class="form-row">
+          <label>링크 표시 텍스트</label>
+          <input type="text" id="schedFooterLinkText" placeholder="링크 텍스트 (없으면 URL 그대로)" style="flex:1;padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;font-size:12px" />
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary" onclick="saveSchedulerConfig()">설정 저장</button>
+          <button class="btn btn-success" onclick="startScheduler()">스케줄러 시작</button>
+          <button class="btn btn-danger" onclick="stopScheduler()">스케줄러 중지</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>스케줄러 상태</h3>
+        <div id="schedulerStatusInfo" style="font-size:13px;color:#636e72">로딩 중...</div>
+      </div>
+    </div>
+
+    <!-- 발행 이력: 발행 탭에 통합됨 -->
+
+    <!-- ═══ 탭: 참여 관리 (공감/댓글) ═══ -->
+    <div class="tab-content" id="tab-engagement">
+      <div class="cards-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">오늘 공감</div>
+          <div id="engTodayLikes" style="font-size:24px;font-weight:800;color:#e17055">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">오늘 댓글</div>
+          <div id="engTodayComments" style="font-size:24px;font-weight:800;color:#0984e3">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">전체 참여</div>
+          <div id="engTotal" style="font-size:24px;font-weight:800;color:#6c5ce7">0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>참여 설정</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engDoLike" checked /> 공감(하트) 클릭
+          </label>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engDoComment" checked /> AI 댓글 작성
+          </label>
+          <label style="font-size:13px">
+            포스팅 수 (최대)
+            <input type="number" id="engMaxPosts" value="10" min="1" max="20"
+                   style="width:60px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />
+          </label>
+          <div></div>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="engScheduleEnabled" /> 자동 스케줄 활성화
+          </label>
+          <label style="font-size:13px">
+            실행 시간
+            <input type="number" id="engHour" value="14" min="0" max="23"
+                   style="width:50px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />시
+            <input type="number" id="engMinute" value="0" min="0" max="59"
+                   style="width:50px;padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;margin-left:6px" />분
+          </label>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px">참여 실행 계정 선택</div>
+          <div id="engAccountList" style="display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:#636e72">
+            계정을 불러오는 중...
+          </div>
+          <div style="font-size:11px;color:#b2bec3;margin-top:4px">선택하지 않으면 모든 활성 계정으로 실행됩니다.</div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="saveEngagementConfig()">설정 저장</button>
+          <button class="btn btn-secondary" onclick="runEngagementNow()" id="engRunBtn">지금 실행</button>
+        </div>
+        <div id="engRunStatus" style="margin-top:10px;font-size:13px;color:#636e72"></div>
+      </div>
+
+      <div class="card">
+        <h3>참여 이력</h3>
+        <table class="data-table">
+          <thead><tr><th>날짜</th><th>계정</th><th>글 제목</th><th>공감</th><th>댓글</th><th>에러</th></tr></thead>
+          <tbody id="engTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">로딩 중...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ 탭 7: 통계 ═══ -->
+    <div class="tab-content" id="tab-stats">
+      <div class="cards-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">총 발행 성공</div>
+          <div id="statSuccess" style="font-size:28px;font-weight:800;color:#00b894">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">총 발행 실패</div>
+          <div id="statFailed" style="font-size:28px;font-weight:800;color:#d63031">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">대기 키워드</div>
+          <div id="statPendingKw" style="font-size:28px;font-weight:800;color:#0984e3">0</div>
+        </div>
+        <div class="card" style="text-align:center">
+          <div style="font-size:11px;color:#636e72">사용된 키워드</div>
+          <div id="statUsedKw" style="font-size:28px;font-weight:800;color:#636e72">0</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>계정별 발행 현황</h3>
+        <div id="statsByAccount" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+      <div class="card">
+        <h3>자주 사용한 키워드 TOP 10</h3>
+        <div id="topKeywords" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+      <div class="card">
+        <h3>최근 7일 발행 추이</h3>
+        <div id="dailyTrend" style="min-height:60px"><p style="color:#636e72;font-size:13px">데이터 없음</p></div>
+      </div>
+    </div>
+
+    <!-- 알림: 사이드 패널로 이동 -->
+  </div>
+
+  <!-- ═══ 알림 사이드 패널 ═══ -->
+  <div class="notif-overlay" id="notifOverlay" onclick="closeNotifPanel()"></div>
+  <div class="notif-panel" id="notifPanel">
+    <div class="notif-panel-header">
+      <h3>알림</h3>
+      <button style="background:none;border:none;font-size:20px;cursor:pointer;color:#636e72" onclick="closeNotifPanel()">&times;</button>
+    </div>
+    <div class="notif-panel-body" id="notifList">
+      <p style="color:#636e72;font-size:13px">알림이 없습니다</p>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ━━━ 전역 상태 ━━━ */
+let accounts = [];
+let generatedDocs = [];
+let currentCatAccountId = null;
+
+/* ━━━ 유틸 ━━━ */
+function showToast(msg, type = 'success') {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function markdownToHtml(md) {
+  if (!md) return '';
+  let html = escapeHtml(md);
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+  html = html.replace(/\|(.+)\|/g, (match) => {
+    const cells = match.split('|').filter(c => c.trim());
+    if (cells.every(c => /^[\s-:]+$/.test(c))) return '';
+    return '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+  });
+  html = html.replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table style="width:100%;border-collapse:collapse;font-size:11px;margin:8px 0">${m}</table>`);
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br/>');
+  return `<p>${html}</p>`;
+}
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '서버 오류' }));
+    let msg = err.detail || '요청 실패';
+    if (Array.isArray(msg)) msg = msg.map(e => e.msg || JSON.stringify(e)).join(', ');
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+/* ━━━ 탭 전환 ━━━ */
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-nav button').forEach(el => el.classList.remove('active'));
+  const tabEl = document.getElementById(`tab-${tabName}`);
+  if (tabEl) tabEl.classList.add('active');
+  const btns = document.querySelectorAll('.tab-nav button');
+  const tabs = ['dashboard','keywords','articles','publish','accounts','scheduler','engagement','stats'];
+  const idx = tabs.indexOf(tabName);
+  if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
+
+  // 탭 전환 시 데이터 로드
+  if (tabName === 'dashboard') loadDashboard();
+  if (tabName === 'articles') loadGeneratedArticles();
+  if (tabName === 'accounts') loadAccounts();
+  if (tabName === 'keywords') loadKeywords();
+  if (tabName === 'scheduler') loadSchedulerConfig();
+  if (tabName === 'engagement') loadEngagement();
+  if (tabName === 'stats') loadStats();
+  if (tabName === 'publish') { loadBatches(); loadHistory(); }
+}
+
+/* ━━━ 대시보드 ━━━ */
+async function loadDashboard() {
+  try {
+    const [stats, schedStatus, history] = await Promise.all([
+      api('/api/history/stats'),
+      api('/api/scheduler/status').catch(() => ({ is_running: false, jobs: [] })),
+      api('/api/history?limit=5').catch(() => []),
+    ]);
+
+    document.getElementById('dashPendingKw').textContent = stats.pending_keywords || 0;
+    document.getElementById('dashReadyArticles').textContent = stats.ready_articles || 0;
+    document.getElementById('dashTodayPublish').textContent = stats.today_success || 0;
+
+    // 활성 계정 수
+    try {
+      const accs = await api('/api/accounts');
+      const activeCount = accs.filter(a => a.is_active).length;
+      document.getElementById('dashActiveAccounts').textContent = activeCount;
+    } catch(e) { document.getElementById('dashActiveAccounts').textContent = '-'; }
+
+    // 스케줄러 상태
+    const schedEl = document.getElementById('dashSchedulerStatus');
+    if (schedStatus.is_running) {
+      let html = '<p style="color:#00b894;font-weight:600">실행 중</p>';
+      schedStatus.jobs.forEach(j => {
+        html += `<p style="font-size:12px;margin-top:4px">${j.name || j.id}: 다음 ${j.next_run_time || '-'}</p>`;
+      });
+      schedEl.innerHTML = html;
+    } else {
+      schedEl.innerHTML = '<p style="color:#d63031;font-weight:600">중지됨</p><p style="font-size:12px;margin-top:4px">자동 스케줄 탭에서 시작하세요</p>';
+    }
+
+    // 최근 발행
+    const recentEl = document.getElementById('dashRecentPublish');
+    if (history.length) {
+      recentEl.innerHTML = history.slice(0, 5).map(h => {
+        const statusIcon = h.status === 'success' ? '<span style="color:#00b894">&#10003;</span>' : h.status === 'failed' ? '<span style="color:#d63031">&#10007;</span>' : '<span style="color:#f39c12">&#9679;</span>';
+        return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:12px">
+          ${statusIcon}
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.title || h.keywords || '-')}</span>
+          <span style="color:#b2bec3">${(h.published_at || h.created_at || '').slice(5,16)}</span>
+        </div>`;
+      }).join('');
+    } else {
+      recentEl.innerHTML = '<p style="color:#b2bec3;font-size:12px">발행 이력이 없습니다</p>';
+    }
+  } catch (e) { console.error('대시보드 로드 실패:', e); }
+}
+
+/* ━━━ 알림 사이드 패널 ━━━ */
+function openNotifPanel() {
+  document.getElementById('notifPanel').classList.add('open');
+  document.getElementById('notifOverlay').classList.add('show');
+  loadNotifications();
+}
+function closeNotifPanel() {
+  document.getElementById('notifPanel').classList.remove('open');
+  document.getElementById('notifOverlay').classList.remove('show');
+}
+
+/* ━━━ 상품 정보 토글 ━━━ */
+function toggleProductFields() {
+  const area = document.getElementById('productFieldsArea');
+  const icon = document.getElementById('productToggleIcon');
+  if (area.style.display === 'none') {
+    area.style.display = 'block';
+    icon.innerHTML = '&#9660;';
+  } else {
+    area.style.display = 'none';
+    icon.innerHTML = '&#9654;';
+  }
+}
+
+/* ━━━ 글 사전 생성 / 관리 ━━━ */
+const DOC_CFG = { tutorial: { label: '튜토리얼/가이드', cls: 'tutorial' }, review: { label: '경험담/후기', cls: 'review' }, analysis: { label: '비교/분석', cls: 'analysis' } };
+
+async function triggerBatchGeneration() {
+  const btn = document.getElementById('btnAutoGenerate');
+  const msgBox = document.getElementById('autoGenMsg');
+  btn.disabled = true;
+  btn.textContent = '생성 중...';
+  msgBox.style.display = 'block';
+  msgBox.style.background = '#e8f4fd';
+  msgBox.style.color = '#0984e3';
+  msgBox.textContent = '키워드 큐에서 글을 생성하고 있습니다. 완료 시 알림이 표시됩니다...';
+
+  try {
+    const postType = document.getElementById('genPostType').value;
+    const result = await api('/api/articles/generate-batch', { method: 'POST', body: JSON.stringify({ post_type: postType }) });
+    msgBox.style.background = '#e6fff7';
+    msgBox.style.color = '#00b894';
+    msgBox.textContent = result.message;
+    showToast(result.message, 'success');
+    setTimeout(() => loadGeneratedArticles(), 3000);
+  } catch (e) {
+    msgBox.style.background = '#fff5f5';
+    msgBox.style.color = '#d63031';
+    msgBox.textContent = e.message;
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '키워드 큐에서 글 생성';
+  }
+}
+
+async function triggerPublishNow() {
+  const btn = document.getElementById('btnPublishReady');
+  btn.disabled = true;
+  btn.textContent = '발행 시작 중...';
+  try {
+    const result = await api('/api/articles/publish-now', { method: 'POST' });
+    showToast(result.message, 'success');
+    switchTab('publish');
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '대기 글 즉시 발행';
+  }
+}
+
+async function loadGeneratedArticles() {
+  // 발행 대기 배치 로드
+  try {
+    const batches = await api('/api/articles/ready-batches');
+    const batchBody = document.getElementById('readyBatchesBody');
+    if (!batches.length) {
+      batchBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#636e72">발행 대기 중인 배치가 없습니다</td></tr>';
+    } else {
+      batchBody.innerHTML = batches.map(b => `<tr>
+        <td>#${b.id}</td>
+        <td><strong>${escapeHtml(b.keyword)}</strong></td>
+        <td><span class="tag tag-blue">발행 대기</span></td>
+        <td style="font-size:11px">${(b.created_at || '').slice(0,16)}</td>
+      </tr>`).join('');
+    }
+  } catch (e) {}
+
+  // 사전 생성된 글 목록 로드
+  try {
+    const articles = await api('/api/articles/generated');
+    const tbody = document.getElementById('generatedArticlesBody');
+    if (!articles.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">사전 생성된 글이 없습니다. 키워드 큐에서 글을 생성하세요.</td></tr>';
+      return;
+    }
+    const fmtMap = { tutorial: '튜토리얼', review: '후기', analysis: '분석' };
+    const fmtTag = { tutorial: 'tag-green', review: 'tag-blue', analysis: 'tag-yellow' };
+    tbody.innerHTML = articles.map(a => `<tr>
+      <td>${escapeHtml(a.batch_keyword || '')}</td>
+      <td><span class="tag ${fmtTag[a.document_format] || 'tag-gray'}">${fmtMap[a.document_format] || a.document_format}</span></td>
+      <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(a.title || '')}</td>
+      <td>${a.account_name || '-'}</td>
+      <td>${(a.content || '').length}자</td>
+      <td style="font-size:11px">${(a.created_at || '').slice(0,16)}</td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 발행 상태 폴링 ━━━ */
+async function pollPublishStatus(batchId) {
+  const panel = document.getElementById('publishStatusPanel');
+  const poll = async () => {
+    try {
+      const status = await api(`/api/publish/status/${batchId}`);
+      let html = '<div class="publish-status-panel">';
+      (status.documents || []).forEach(doc => {
+        const icon = doc.status === 'success' ? '✅' : doc.status === 'failed' ? '❌' : '⏳';
+        html += `<div class="publish-status-item">
+          <div class="publish-status-icon">${icon}</div>
+          <div class="publish-status-info">
+            <div class="title">문서 ${doc.document_number} → ${doc.account_name || '계정'}</div>
+            <div class="detail">${doc.status === 'success' ? doc.url : doc.status === 'failed' ? doc.error : '발행 대기 중...'}</div>
+          </div></div>`;
+      });
+      html += '</div>';
+      panel.innerHTML = html;
+      if (status.status === 'publishing') setTimeout(poll, 3000);
+      else {
+        showToast('발행이 완료되었습니다!');
+        loadBatches();
+      }
+    } catch (e) { panel.innerHTML = `<p style="color:#d63031">${e.message}</p>`; }
+  };
+  poll();
+}
+
+/* ━━━ 계정 관리 ━━━ */
+async function loadAccounts() {
+  try {
+    accounts = await api('/api/accounts');
+    console.log('[loadAccounts] 계정 데이터:', accounts.map(a => `id=${a.id},tier=${a.account_tier}`).join(' | '));
+    let proxyStatus = [];
+    try { proxyStatus = await api('/api/proxy/status'); } catch (_) {}
+    const proxyMap = {};
+    proxyStatus.forEach(p => { proxyMap[p.account_id] = p; });
+    const tbody = document.getElementById('accountsTableBody');
+    if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#636e72">계정이 없습니다</td></tr>'; return; }
+    tbody.innerHTML = accounts.map(a => {
+      const px = proxyMap[a.id];
+      const hasProxy = a.has_proxy || (px && px.proxy_connected);
+      let proxyCell;
+      if (hasProxy) {
+        const src = px && px.proxy_source === 'db' ? 'DB' : 'ENV';
+        proxyCell = `<span class="tag tag-green" style="cursor:pointer" onclick="testProxy(${a.id})" title="클릭하여 테스트">프록시 설정됨 (${src})</span>`
+          + ` <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:10px;margin-left:4px" onclick="removeProxy(${a.id})">제거</button>`;
+      } else {
+        proxyCell = `<button class="btn btn-sm btn-secondary" style="padding:2px 8px;font-size:11px" onclick="openProxyModal(${a.id})">설정</button>`;
+      }
+      return `<tr>
+      <td><strong>${escapeHtml(a.account_name)}</strong></td>
+      <td><select style="padding:4px 8px;border:1px solid #dfe6e9;border-radius:6px;font-size:11px;background:#fff;" onchange="changeAccountTier(${a.id},this.value)">
+        ${[1,2,3,4,5].map(t => `<option value="${t}" ${(a.account_tier||1)==t?'selected':''}>${t}단계</option>`).join('')}
+      </select></td>
+      <td>${a.specialty ? `<span class="tag tag-blue">${a.specialty}</span>` : '-'}</td>
+      <td>${proxyCell}</td>
+      <td>${a.is_active ? '<span class="tag tag-green">활성</span>' : '<span class="tag tag-gray">비활성</span>'}</td>
+      <td style="font-size:12px">${a.last_used || '-'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="openCatModal(${a.id},'${escapeHtml(a.account_name)}')">관리</button></td>
+      <td>
+        <button class="btn btn-sm ${a.is_active ? 'btn-secondary' : 'btn-success'}" onclick="toggleAccount(${a.id},${a.is_active ? 0 : 1})">${a.is_active ? '비활성화' : '활성화'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteAccount(${a.id})">삭제</button>
+      </td>
+    </tr>`;
+    }).join('');
+    // 이력 필터 업데이트
+    const sel = document.getElementById('histAccount');
+    sel.innerHTML = '<option value="">전체 계정</option>' + accounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function testProxy(accountId) {
+  showToast('프록시 연결 테스트 중...');
+  try {
+    const result = await api(`/api/proxy/test/${accountId}`);
+    if (result.success) {
+      showToast(`프록시 연결 성공! IP: ${result.proxy_ip}`);
+    } else {
+      showToast(`프록시 연결 실패: ${result.error}`, 'error');
+    }
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function openProxyModal(accountId) {
+  const html = `<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center" id="proxyModal" onclick="if(event.target===this)this.remove()">
+    <div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-width:90vw">
+      <h3 style="margin:0 0 16px">프록시 설정</h3>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:13px;margin-bottom:4px;font-weight:600">서버 주소 *</label>
+        <input id="proxyServer" placeholder="http://host:port" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="display:block;font-size:13px;margin-bottom:4px;font-weight:600">아이디</label>
+        <input id="proxyUsername" placeholder="(선택)" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:13px;margin-bottom:4px;font-weight:600">비밀번호</label>
+        <input id="proxyPassword" type="password" placeholder="(선택)" style="width:100%;padding:8px 12px;border:1px solid #dfe6e9;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('proxyModal').remove()">취소</button>
+        <button class="btn btn-primary" onclick="saveProxy(${accountId})">저장</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveProxy(accountId) {
+  const server = document.getElementById('proxyServer').value.trim();
+  const username = document.getElementById('proxyUsername').value.trim();
+  const password = document.getElementById('proxyPassword').value.trim();
+  if (!server) return showToast('서버 주소를 입력하세요', 'error');
+  try {
+    await api(`/api/accounts/${accountId}/proxy`, { method: 'PUT', body: JSON.stringify({ server, username, password }) });
+    showToast('프록시가 설정되었습니다');
+    document.getElementById('proxyModal').remove();
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function removeProxy(accountId) {
+  if (!confirm('프록시 설정을 제거하시겠습니까?')) return;
+  try {
+    await api(`/api/accounts/${accountId}/proxy`, { method: 'DELETE' });
+    showToast('프록시가 제거되었습니다');
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addAccount() {
+  const name = document.getElementById('accName').value.trim();
+  const naverId = document.getElementById('accNaverId').value.trim();
+  const naverPw = document.getElementById('accNaverPw').value.trim();
+  const accountTier = parseInt(document.getElementById('accTier').value);
+  const specialty = document.getElementById('accSpecialty').value;
+  if (!name || !naverId || !naverPw) return showToast('모든 필드를 입력하세요', 'error');
+  try {
+    await api('/api/accounts', { method: 'POST', body: JSON.stringify({ account_name: name, naver_id: naverId, naver_password: naverPw, account_tier: accountTier, specialty }) });
+    showToast('계정이 추가되었습니다');
+    document.getElementById('accName').value = '';
+    document.getElementById('accNaverId').value = '';
+    document.getElementById('accNaverPw').value = '';
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function changeAccountTier(id, newTier) {
+  const tierLabels = {1:'신규',2:'성장',3:'전환',4:'수익화',5:'숙련'};
+  console.log(`[단계변경] 요청: account_id=${id}, newTier=${newTier} (type: ${typeof newTier})`);
+  try {
+    const result = await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ account_tier: parseInt(newTier) }) });
+    console.log(`[단계변경] 응답: account_tier=${result.account_tier}`);
+    showToast(`${newTier}단계 (${tierLabels[newTier]})로 변경되었습니다`);
+    await loadAccounts();
+    // 변경 후 검증
+    const acc = accounts.find(a => a.id === id);
+    console.log(`[단계변경] 검증: account_id=${id}, 현재 tier=${acc ? acc.account_tier : 'NOT FOUND'}`);
+    if (acc && acc.account_tier !== parseInt(newTier)) {
+      console.error(`[단계변경] 불일치! 요청=${newTier}, 실제=${acc.account_tier}`);
+      showToast(`단계 변경 불일치: 요청=${newTier}, 서버=${acc.account_tier}`, 'error');
+    }
+  } catch (e) {
+    console.error(`[단계변경] 에러:`, e);
+    showToast(e.message, 'error');
+  }
+}
+
+async function toggleAccount(id, active) {
+  try {
+    await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: active }) });
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteAccount(id) {
+  if (!confirm('정말 삭제하시겠습니까?')) return;
+  try {
+    await api(`/api/accounts/${id}`, { method: 'DELETE' });
+    showToast('계정이 삭제되었습니다');
+    loadAccounts();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 카테고리 모달 ━━━ */
+function openCatModal(accountId, accountName) {
+  currentCatAccountId = accountId;
+  document.getElementById('catModalTitle').textContent = `카테고리 관리 - ${accountName}`;
+  document.getElementById('catModal').classList.add('show');
+  loadCategories();
+}
+
+function closeCatModal() {
+  document.getElementById('catModal').classList.remove('show');
+  currentCatAccountId = null;
+}
+
+async function loadCategories() {
+  if (!currentCatAccountId) return;
+  try {
+    const cats = await api(`/api/categories/${currentCatAccountId}`);
+    const tbody = document.getElementById('catTableBody');
+    if (!cats.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#636e72">카테고리 없음</td></tr>'; return; }
+    tbody.innerHTML = cats.map(c => `<tr>
+      <td>${escapeHtml(c.category_name)}</td>
+      <td>${c.is_default ? '<span class="tag tag-green">기본</span>' : `<button class="btn btn-sm btn-secondary" onclick="setDefaultCat(${c.id})">기본 설정</button>`}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteCat(${c.id})">삭제</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addCategory() {
+  const name = document.getElementById('catNameInput').value.trim();
+  if (!name || !currentCatAccountId) return;
+  try {
+    await api('/api/categories', { method: 'POST', body: JSON.stringify({ account_id: currentCatAccountId, category_name: name }) });
+    document.getElementById('catNameInput').value = '';
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function setDefaultCat(catId) {
+  try {
+    await api(`/api/categories/${catId}`, { method: 'PUT', body: JSON.stringify({ is_default: true }) });
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteCat(catId) {
+  try {
+    await api(`/api/categories/${catId}`, { method: 'DELETE' });
+    loadCategories();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 키워드 큐 ━━━ */
+async function loadKeywords(status) {
+  try {
+    const url = status ? `/api/keywords?status=${status}` : '/api/keywords';
+    const keywords = await api(url);
+    const tbody = document.getElementById('kwTableBody');
+    if (!keywords.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">키워드가 없습니다</td></tr>'; return; }
+    const prioMap = { ad: '광고', general: '일반', high: '광고', medium: '일반', low: '일반' };
+    const prioTag = { ad: 'tag-red', general: 'tag-blue', high: 'tag-red', medium: 'tag-blue', low: 'tag-blue' };
+    const statusMap = { pending: '대기', used: '사용됨', reserved: '예약' };
+    const statusTag = { pending: 'tag-yellow', used: 'tag-green', reserved: 'tag-blue' };
+    tbody.innerHTML = keywords.map(kw => `<tr>
+      <td><strong>${escapeHtml(kw.keyword)}</strong></td>
+      <td style="max-width:200px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(kw.product_info || '')}">${kw.product_info ? escapeHtml(kw.product_info).slice(0, 30) + (kw.product_info.length > 30 ? '...' : '') : '<span style="color:#b2bec3">-</span>'}</td>
+      <td><span class="tag ${prioTag[kw.priority] || 'tag-gray'}">${prioMap[kw.priority] || kw.priority}</span></td>
+      <td><span class="tag ${statusTag[kw.status] || 'tag-gray'}">${statusMap[kw.status] || kw.status}</span></td>
+      <td>${kw.used_count}</td>
+      <td style="font-size:11px">${(kw.created_at || '').slice(0,10)}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteKeyword(${kw.id})">삭제</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function addKeywords() {
+  const text = document.getElementById('kwInput').value.trim();
+  if (!text) return showToast('키워드를 입력하세요', 'error');
+  const priority = document.getElementById('kwPriority').value;
+
+  // 구조화된 상품 정보 조합
+  const productName = (document.getElementById('kwProductName').value || '').trim();
+  const productUrl = (document.getElementById('kwProductUrl').value || '').trim();
+  const productFeatures = (document.getElementById('kwProductFeatures').value || '').trim();
+  const productExtra = (document.getElementById('kwProductInfo').value || '').trim();
+  let productInfo = '';
+  if (productName || productUrl || productFeatures || productExtra) {
+    const parts = [];
+    if (productName) parts.push(`[상품명] ${productName}`);
+    if (productUrl) parts.push(`[URL] ${productUrl}`);
+    if (productFeatures) parts.push(`[핵심특징] ${productFeatures}`);
+    if (productExtra) parts.push(`[추가정보] ${productExtra}`);
+    productInfo = parts.join('\n');
+  }
+
+  const keywords = text.split('\n').map(k => k.trim()).filter(k => k);
+  if (!keywords.length) return showToast('키워드를 입력하세요', 'error');
+  try {
+    const result = await api('/api/keywords/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ keywords, product_info: productInfo, priority })
+    });
+    showToast(result.message);
+    document.getElementById('kwInput').value = '';
+    document.getElementById('kwProductName').value = '';
+    document.getElementById('kwProductUrl').value = '';
+    document.getElementById('kwProductFeatures').value = '';
+    document.getElementById('kwProductInfo').value = '';
+    loadKeywords();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function deleteKeyword(id) {
+  try {
+    await api(`/api/keywords/${id}`, { method: 'DELETE' });
+    loadKeywords();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+
+/* ━━━ 스케줄러 ━━━ */
+async function loadSchedulerConfig() {
+  try {
+    const cfg = await api('/api/scheduler/config');
+    document.getElementById('schedActive').checked = !!cfg.is_active;
+    document.getElementById('schedStatusText').textContent = cfg.is_active ? '활성' : '비활성';
+    document.getElementById('schedStartH').value = cfg.start_hour || 8;
+    document.getElementById('schedStartM').value = cfg.start_minute || 0;
+    document.getElementById('schedEndH').value = cfg.end_hour || 10;
+    document.getElementById('schedEndM').value = cfg.end_minute || 0;
+    document.getElementById('schedMinInterval').value = cfg.min_interval_hours || 2;
+    document.getElementById('schedMaxInterval').value = cfg.max_interval_hours || 4;
+    document.getElementById('schedRandomRest').checked = !!cfg.random_rest_enabled;
+    document.getElementById('schedRestPercent').value = cfg.random_rest_percent || 10;
+    document.getElementById('schedWeekendLow').checked = !!cfg.weekend_low_prob;
+    document.getElementById('schedWeekendPercent').value = cfg.weekend_prob_percent || 30;
+    document.getElementById('schedFooterLink').value = cfg.footer_link || '';
+    document.getElementById('schedFooterLinkText').value = cfg.footer_link_text || '';
+    const days = cfg.days_of_week || [1,2,3,4,5];
+    document.querySelectorAll('#schedDays input').forEach(cb => {
+      cb.checked = days.includes(parseInt(cb.value));
+    });
+
+    const status = await api('/api/scheduler/status');
+    document.getElementById('schedulerStatusInfo').innerHTML = `
+      <p>상태: <strong>${status.is_running ? '실행 중' : '중지됨'}</strong></p>
+      ${status.jobs.map(j => `<p>${j.name || j.id}: 다음 실행 ${j.next_run_time || '-'}</p>`).join('')}`;
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function saveSchedulerConfig() {
+  const days = [];
+  document.querySelectorAll('#schedDays input:checked').forEach(cb => days.push(parseInt(cb.value)));
+  try {
+    await api('/api/scheduler/config', { method: 'PUT', body: JSON.stringify({
+      start_hour: parseInt(document.getElementById('schedStartH').value),
+      start_minute: parseInt(document.getElementById('schedStartM').value),
+      end_hour: parseInt(document.getElementById('schedEndH').value),
+      end_minute: parseInt(document.getElementById('schedEndM').value),
+      days_of_week: days,
+      min_interval_hours: parseInt(document.getElementById('schedMinInterval').value),
+      max_interval_hours: parseInt(document.getElementById('schedMaxInterval').value),
+      random_rest_enabled: document.getElementById('schedRandomRest').checked ? 1 : 0,
+      random_rest_percent: parseInt(document.getElementById('schedRestPercent').value),
+      weekend_low_prob: document.getElementById('schedWeekendLow').checked ? 1 : 0,
+      weekend_prob_percent: parseInt(document.getElementById('schedWeekendPercent').value),
+      footer_link: document.getElementById('schedFooterLink').value.trim(),
+      footer_link_text: document.getElementById('schedFooterLinkText').value.trim(),
+    })});
+    showToast('설정이 저장되었습니다');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function startScheduler() {
+  try {
+    await api('/api/scheduler/start', { method: 'POST' });
+    showToast('스케줄러가 시작되었습니다');
+    loadSchedulerConfig();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function stopScheduler() {
+  try {
+    await api('/api/scheduler/stop', { method: 'POST' });
+    showToast('스케줄러가 중지되었습니다');
+    loadSchedulerConfig();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 발행 이력 ━━━ */
+async function loadHistory() {
+  try {
+    const params = new URLSearchParams();
+    const kw = document.getElementById('histKeyword').value.trim();
+    const st = document.getElementById('histStatus').value;
+    const acc = document.getElementById('histAccount').value;
+    if (kw) params.set('keyword', kw);
+    if (st) params.set('status', st);
+    if (acc) params.set('account_id', acc);
+    const history = await api(`/api/history?${params.toString()}`);
+    const tbody = document.getElementById('histTableBody');
+    if (!history.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">이력이 없습니다</td></tr>'; return; }
+    tbody.innerHTML = history.map(h => `<tr>
+      <td style="font-size:11px">${(h.published_at || h.created_at || '').slice(0,16)}</td>
+      <td>${h.account_name || '-'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.title || '')}</td>
+      <td style="font-size:11px">${h.keywords || ''}</td>
+      <td><span class="tag ${h.status === 'success' ? 'tag-green' : h.status === 'failed' ? 'tag-red' : 'tag-yellow'}">${h.status}</span></td>
+      <td>${h.naver_post_url ? `<a href="${h.naver_post_url}" target="_blank" style="font-size:11px;color:#0984e3">보기</a>` : '-'}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="republish(${h.id})">재발행</button></td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function republish(id) {
+  try {
+    const result = await api(`/api/history/${id}/republish`, { method: 'POST' });
+    showToast(result.message);
+    switchTab('publish');
+    pollPublishStatus(result.batch_id);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function exportHistory() {
+  const params = new URLSearchParams();
+  const st = document.getElementById('histStatus').value;
+  const acc = document.getElementById('histAccount').value;
+  if (st) params.set('status', st);
+  if (acc) params.set('account_id', acc);
+  window.open(`/api/history/export?${params.toString()}`);
+}
+
+async function deleteAllHistory() {
+  if (!confirm('모든 이전 글을 삭제하고 새 세션을 시작하시겠습니까?\n\n삭제 전 CSV 내보내기를 먼저 하시려면 "취소"를 눌러주세요.')) return;
+  if (!confirm('정말로 모든 발행 이력을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  try {
+    const result = await api('/api/history/all', { method: 'DELETE' });
+    showToast(result.message);
+    loadHistory();
+    loadBatches();
+    loadGeneratedArticles();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 배치 목록 ━━━ */
+async function loadBatches() {
+  try {
+    const batches = await api('/api/batches');
+    const tbody = document.getElementById('batchesTableBody');
+    if (!batches.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">배치가 없습니다</td></tr>'; return; }
+    const statusMap = { all_success: '전체 성공', partial_success: '부분 성공', all_failed: '전체 실패', pending: '대기 중', publishing: '발행 중', articles_ready: '글 생성 완료' };
+    const statusTag = { all_success: 'tag-green', partial_success: 'tag-yellow', all_failed: 'tag-red', pending: 'tag-gray', articles_ready: 'tag-blue' };
+    tbody.innerHTML = batches.map(b => `<tr>
+      <td>#${b.id}</td>
+      <td>${escapeHtml(b.keyword)}</td>
+      <td><span class="tag ${statusTag[b.status] || 'tag-gray'}">${statusMap[b.status] || b.status}</span></td>
+      <td>${b.success_count}</td>
+      <td>${b.failed_count}</td>
+      <td style="font-size:11px">${(b.created_at || '').slice(0,16)}</td>
+      <td>${b.failed_count > 0 ? `<button class="btn btn-sm btn-secondary" onclick="retryBatch(${b.id})">재시도</button>` : ''}</td>
+    </tr>`).join('');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function retryBatch(batchId) {
+  try {
+    const result = await api(`/api/batches/${batchId}/retry`, { method: 'POST' });
+    showToast(result.message);
+    pollPublishStatus(batchId);
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 통계 ━━━ */
+async function loadStats() {
+  try {
+    const stats = await api('/api/history/stats');
+    document.getElementById('statSuccess').textContent = stats.total_success || 0;
+    document.getElementById('statFailed').textContent = stats.total_failed || 0;
+    document.getElementById('statPendingKw').textContent = stats.pending_keywords || 0;
+    document.getElementById('statUsedKw').textContent = stats.used_keywords || 0;
+
+    // 계정별
+    if (stats.by_account && stats.by_account.length) {
+      const maxCount = Math.max(...stats.by_account.map(a => a.count));
+      document.getElementById('statsByAccount').innerHTML = stats.by_account.map(a =>
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="min-width:100px;font-size:13px;font-weight:600">${a.account_name}</span>
+          <div style="flex:1;background:#dfe6e9;border-radius:4px;height:24px;overflow:hidden">
+            <div style="width:${(a.count/maxCount*100).toFixed(0)}%;background:linear-gradient(90deg,#0984e3,#6c5ce7);height:100%;border-radius:4px;display:flex;align-items:center;padding:0 8px">
+              <span style="color:#fff;font-size:11px;font-weight:600">${a.count}건</span>
+            </div>
+          </div>
+        </div>`
+      ).join('');
+    }
+
+    // 키워드 TOP 10
+    const topKw = await api('/api/history/keywords?limit=10');
+    if (topKw.length) {
+      const maxC = Math.max(...topKw.map(k => k.total_count));
+      document.getElementById('topKeywords').innerHTML = topKw.map(k =>
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <span style="min-width:120px;font-size:13px">${k.keyword}</span>
+          <div style="flex:1;background:#dfe6e9;border-radius:4px;height:20px;overflow:hidden">
+            <div style="width:${(k.total_count/maxC*100).toFixed(0)}%;background:#00b894;height:100%;border-radius:4px;display:flex;align-items:center;padding:0 8px">
+              <span style="color:#fff;font-size:10px">${k.total_count}회</span>
+            </div>
+          </div>
+        </div>`
+      ).join('');
+    }
+
+    // 일별 추이
+    if (stats.daily_trend && stats.daily_trend.length) {
+      const maxD = Math.max(...stats.daily_trend.map(d => d.count));
+      document.getElementById('dailyTrend').innerHTML = `<div style="display:flex;align-items:flex-end;gap:8px;height:100px">
+        ${stats.daily_trend.map(d =>
+          `<div style="flex:1;text-align:center">
+            <div style="background:linear-gradient(180deg,#0984e3,#6c5ce7);height:${Math.max((d.count/maxD*80),4)}px;border-radius:4px 4px 0 0;margin-bottom:4px"></div>
+            <div style="font-size:10px;color:#636e72">${(d.date||'').slice(5)}</div>
+            <div style="font-size:11px;font-weight:600">${d.count}</div>
+          </div>`
+        ).join('')}
+      </div>`;
+    }
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+/* ━━━ 알림 ━━━ */
+async function loadNotifications() {
+  try {
+    const notifs = await api('/api/notifications');
+    const unread = notifs.filter(n => !n.is_read).length;
+    const badge = document.getElementById('notifBadge');
+    if (unread > 0) { badge.textContent = unread; badge.classList.add('show'); }
+    else { badge.classList.remove('show'); }
+
+    const container = document.getElementById('notifList');
+    if (!notifs.length) { container.innerHTML = '<p style="color:#636e72;font-size:13px">알림이 없습니다</p>'; return; }
+    const typeIcon = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    container.innerHTML = notifs.map(n =>
+      `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;${n.is_read ? 'opacity:0.6' : ''}">
+        <span style="font-size:20px">${typeIcon[n.type] || 'ℹ️'}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">${escapeHtml(n.title)}</div>
+          <div style="font-size:12px;color:#636e72">${escapeHtml(n.message || '')}</div>
+          <div style="font-size:11px;color:#b2bec3;margin-top:2px">${(n.created_at || '').slice(0,16)}</div>
+        </div>
+        <div>
+          ${!n.is_read ? `<button class="btn btn-sm btn-secondary" onclick="markNotifRead(${n.id})">읽음</button>` : ''}
+          <button class="btn btn-sm btn-danger" onclick="deleteNotif(${n.id})">삭제</button>
+        </div>
+      </div>`
+    ).join('');
+  } catch (e) {}
+}
+
+async function markNotifRead(id) {
+  try { await api(`/api/notifications/${id}/read`, { method: 'PUT' }); loadNotifications(); } catch(e){}
+}
+async function deleteNotif(id) {
+  try { await api(`/api/notifications/${id}`, { method: 'DELETE' }); loadNotifications(); } catch(e){}
+}
+
+/* ━━━ API Key 저장 (키워드 큐 탭) ━━━ */
+function syncApiKeys() {
+  const val = document.getElementById('kwApiKey').value.trim();
+  if (val) localStorage.setItem('claude_api_key', val);
+  else localStorage.removeItem('claude_api_key');
+  const badge = document.getElementById('kwApiKeySaved');
+  if (val) { badge.style.display = 'inline'; setTimeout(() => badge.style.display = 'none', 2000); }
+}
+
+/* ━━━ 참여 관리 (공감/댓글) ━━━ */
+async function loadEngagement() {
+  try {
+    const [stats, history] = await Promise.all([
+      api('/api/engagement/stats'),
+      api('/api/engagement/history?limit=50'),
+    ]);
+
+    document.getElementById('engTodayLikes').textContent = stats.today_likes || 0;
+    document.getElementById('engTodayComments').textContent = stats.today_comments || 0;
+    document.getElementById('engTotal').textContent = stats.total || 0;
+
+    const tbody = document.getElementById('engTableBody');
+    if (!history || history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">참여 이력이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = history.map(h => `<tr>
+      <td style="font-size:11px">${(h.created_at||'').substring(0,16)}</td>
+      <td>${escapeHtml(h.account_name||'?')}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <a href="${escapeHtml(h.post_url)}" target="_blank" style="color:#0984e3">${escapeHtml((h.post_title||'').substring(0,40))}</a>
+      </td>
+      <td>${h.like_success ? '<span style="color:#00b894">O</span>' : '<span style="color:#d63031">X</span>'}</td>
+      <td>${h.comment_success ? '<span style="color:#00b894">O</span>' : '<span style="color:#d63031">X</span>'}
+        ${h.comment_text ? '<br><span style="font-size:10px;color:#636e72">' + escapeHtml((h.comment_text||'').substring(0,50)) + '</span>' : ''}
+      </td>
+      <td style="font-size:10px;color:#d63031;max-width:120px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(h.error_message||'')}</td>
+    </tr>`).join('');
+
+    // 설정 로드
+    const config = await api('/api/scheduler/config');
+    document.getElementById('engDoLike').checked = config.engagement_do_like !== 0;
+    document.getElementById('engDoComment').checked = config.engagement_do_comment !== 0;
+    document.getElementById('engMaxPosts').value = config.engagement_max_posts || 10;
+    document.getElementById('engScheduleEnabled').checked = !!config.engagement_enabled;
+    document.getElementById('engHour').value = config.engagement_hour || 14;
+    document.getElementById('engMinute').value = config.engagement_minute || 0;
+
+    // 계정 목록 로드 및 체크박스 렌더링
+    try {
+      const accounts = await api('/api/accounts');
+      const selectedIds = config.engagement_account_ids || [];
+      const container = document.getElementById('engAccountList');
+      if (!accounts || accounts.length === 0) {
+        container.innerHTML = '<span style="color:#b2bec3">등록된 계정이 없습니다. 계정 관리 탭에서 추가해주세요.</span>';
+      } else {
+        container.innerHTML = accounts.map(acc => {
+          const checked = selectedIds.includes(acc.id) ? 'checked' : '';
+          const inactive = !acc.is_active ? ' (비활성)' : '';
+          const opacity = !acc.is_active ? 'opacity:0.5;' : '';
+          return `<label style="display:flex;align-items:center;gap:4px;padding:6px 10px;border:1px solid #dfe6e9;border-radius:6px;cursor:pointer;${opacity}">
+            <input type="checkbox" class="eng-account-cb" value="${acc.id}" ${checked} ${!acc.is_active ? 'disabled' : ''} />
+            ${escapeHtml(acc.account_name)}${inactive}
+          </label>`;
+        }).join('');
+      }
+    } catch (e) {
+      document.getElementById('engAccountList').innerHTML = '<span style="color:#d63031">계정 목록 로드 실패</span>';
+    }
+  } catch (e) {
+    console.error('참여 데이터 로드 실패:', e);
+  }
+}
+
+async function saveEngagementConfig() {
+  try {
+    const selectedAccountIds = Array.from(document.querySelectorAll('.eng-account-cb:checked'))
+      .map(cb => parseInt(cb.value));
+
+    await api('/api/scheduler/config', {
+      method: 'PUT',
+      body: JSON.stringify({
+        engagement_enabled: document.getElementById('engScheduleEnabled').checked ? 1 : 0,
+        engagement_hour: parseInt(document.getElementById('engHour').value) || 14,
+        engagement_minute: parseInt(document.getElementById('engMinute').value) || 0,
+        engagement_max_posts: parseInt(document.getElementById('engMaxPosts').value) || 10,
+        engagement_do_like: document.getElementById('engDoLike').checked ? 1 : 0,
+        engagement_do_comment: document.getElementById('engDoComment').checked ? 1 : 0,
+        engagement_account_ids: selectedAccountIds,
+      }),
+    });
+    showToast('참여 설정이 저장되었습니다');
+  } catch (e) {
+    showToast('설정 저장 실패: ' + e.message, 'error');
+  }
+}
+
+let _engPollTimer = null;
+async function runEngagementNow() {
+  const btn = document.getElementById('engRunBtn');
+  const statusEl = document.getElementById('engRunStatus');
+  btn.disabled = true;
+  btn.textContent = '실행 중...';
+  statusEl.textContent = '참여 실행을 시작합니다...';
+
+  try {
+    // 현재 화면에서 선택된 계정 ID를 직접 전달
+    const selectedAccountIds = Array.from(document.querySelectorAll('.eng-account-cb:checked'))
+      .map(cb => parseInt(cb.value));
+    const res = await api('/api/engagement/run', {
+      method: 'POST',
+      body: JSON.stringify({ account_ids: selectedAccountIds }),
+    });
+    const runId = res.run_id;
+    statusEl.textContent = res.message;
+
+    // 상태 폴링
+    _engPollTimer = setInterval(async () => {
+      try {
+        const st = await api(`/api/engagement/status/${runId}`);
+        statusEl.textContent = `진행: ${st.completed_accounts}/${st.total_accounts} 계정 | 공감 ${st.total_likes} | 댓글 ${st.total_comments}`;
+        if (st.status === 'completed') {
+          clearInterval(_engPollTimer);
+          btn.disabled = false;
+          btn.textContent = '지금 실행';
+          statusEl.textContent += ' (완료)';
+          loadEngagement();
+        }
+      } catch (e) {
+        clearInterval(_engPollTimer);
+        btn.disabled = false;
+        btn.textContent = '지금 실행';
+      }
+    }, 5000);
+  } catch (e) {
+    showToast('참여 실행 실패: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '지금 실행';
+    statusEl.textContent = '';
+  }
+}
+
+/* ━━━ 초기화 ━━━ */
+(function() {
+  const saved = localStorage.getItem('claude_api_key');
+  if (saved) {
+    document.getElementById('kwApiKey').value = saved;
+  }
+  document.getElementById('kwApiKey').addEventListener('input', function() { syncApiKeys(); });
+  // 초기 데이터 로드
+  loadDashboard();
+  loadNotifications();
+})();
+</script>
+</body>
+</html>
