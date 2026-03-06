@@ -421,6 +421,7 @@ async def update_account(account_id: int, data: dict) -> dict | None:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s", values)
+            await conn.commit()
     return await get_account(account_id)
 
 
