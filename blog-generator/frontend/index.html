@@ -973,6 +973,7 @@ async function pollPublishStatus(batchId) {
 async function loadAccounts() {
   try {
     accounts = await api('/api/accounts');
+    console.log('[loadAccounts] 계정 데이터:', accounts.map(a => `id=${a.id},tier=${a.account_tier}`).join(' | '));
     let proxyStatus = [];
     try { proxyStatus = await api('/api/proxy/status'); } catch (_) {}
     const proxyMap = {};
@@ -1090,11 +1091,23 @@ async function addAccount() {
 
 async function changeAccountTier(id, newTier) {
   const tierLabels = {1:'신규',2:'성장',3:'전환',4:'수익화',5:'숙련'};
+  console.log(`[단계변경] 요청: account_id=${id}, newTier=${newTier} (type: ${typeof newTier})`);
   try {
-    await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ account_tier: parseInt(newTier) }) });
+    const result = await api(`/api/accounts/${id}`, { method: 'PUT', body: JSON.stringify({ account_tier: parseInt(newTier) }) });
+    console.log(`[단계변경] 응답: account_tier=${result.account_tier}`);
     showToast(`${newTier}단계 (${tierLabels[newTier]})로 변경되었습니다`);
-    loadAccounts();
-  } catch (e) { showToast(e.message, 'error'); }
+    await loadAccounts();
+    // 변경 후 검증
+    const acc = accounts.find(a => a.id === id);
+    console.log(`[단계변경] 검증: account_id=${id}, 현재 tier=${acc ? acc.account_tier : 'NOT FOUND'}`);
+    if (acc && acc.account_tier !== parseInt(newTier)) {
+      console.error(`[단계변경] 불일치! 요청=${newTier}, 실제=${acc.account_tier}`);
+      showToast(`단계 변경 불일치: 요청=${newTier}, 서버=${acc.account_tier}`, 'error');
+    }
+  } catch (e) {
+    console.error(`[단계변경] 에러:`, e);
+    showToast(e.message, 'error');
+  }
 }
 
 async function toggleAccount(id, active) {
