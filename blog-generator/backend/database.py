@@ -419,14 +419,21 @@ async def update_account(account_id: int, data: dict) -> dict | None:
     values.append(account_id)
     pool = await _get_pool()
     async with pool.acquire() as conn:
+        # autocommit 강제 설정 (풀 커넥션 재사용 시 상태 보장)
+        await conn.autocommit(True)
         async with conn.cursor() as cur:
             sql = f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s"
             logger.warning(f"[DEBUG] SQL: {sql}, values: {values}")
             await cur.execute(sql, values)
             logger.warning(f"[DEBUG] rowcount: {cur.rowcount}")
+            # autocommit=True여도 명시적 commit으로 확실히 반영
             await conn.commit()
+            # 같은 커넥션에서 즉시 검증
+            await cur.execute("SELECT account_tier FROM accounts WHERE id = %s", (account_id,))
+            verify = await cur.fetchone()
+            logger.warning(f"[DEBUG] 즉시 검증 (같은 conn): account_tier={verify.get('account_tier') if verify else 'NOT FOUND'}")
     result = await get_account(account_id)
-    logger.warning(f"[DEBUG] after commit, get_account tier={result.get('account_tier') if result else 'None'}")
+    logger.warning(f"[DEBUG] get_account 결과: account_tier={result.get('account_tier') if result else 'None'}")
     return result
 
 
