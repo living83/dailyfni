@@ -417,23 +417,27 @@ async def update_account(account_id: int, data: dict) -> dict | None:
     if not fields:
         return await get_account(account_id)
     values.append(account_id)
-    pool = await _get_pool()
-    async with pool.acquire() as conn:
-        # autocommit 강제 설정 (풀 커넥션 재사용 시 상태 보장)
-        await conn.autocommit(True)
+    sql = f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s"
+    logger.warning(f"[DEBUG] update_account SQL: {sql}, values: {values}")
+
+    # 풀 커넥션의 autocommit/트랜잭션 상태를 신뢰하지 않고
+    # 새 커넥션으로 직접 연결하여 UPDATE + 결과 읽기를 한 번에 처리
+    import aiomysql
+    conn = await aiomysql.connect(
+        host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
+        password=MYSQL_PASSWORD, db=MYSQL_DB, charset="utf8mb4",
+        autocommit=True, cursorclass=aiomysql.DictCursor,
+    )
+    try:
         async with conn.cursor() as cur:
-            sql = f"UPDATE accounts SET {', '.join(fields)} WHERE id = %s"
-            logger.warning(f"[DEBUG] SQL: {sql}, values: {values}")
             await cur.execute(sql, values)
             logger.warning(f"[DEBUG] rowcount: {cur.rowcount}")
-            # autocommit=True여도 명시적 commit으로 확실히 반영
-            await conn.commit()
-            # 같은 커넥션에서 즉시 검증
-            await cur.execute("SELECT account_tier FROM accounts WHERE id = %s", (account_id,))
-            verify = await cur.fetchone()
-            logger.warning(f"[DEBUG] 즉시 검증 (같은 conn): account_tier={verify.get('account_tier') if verify else 'NOT FOUND'}")
-    result = await get_account(account_id)
-    logger.warning(f"[DEBUG] get_account 결과: account_tier={result.get('account_tier') if result else 'None'}")
+            # 같은 커넥션에서 결과 읽기
+            await cur.execute("SELECT * FROM accounts WHERE id = %s", (account_id,))
+            result = await cur.fetchone()
+            logger.warning(f"[DEBUG] 결과: account_tier={result.get('account_tier') if result else 'None'}")
+    finally:
+        conn.close()
     return result
 
 
