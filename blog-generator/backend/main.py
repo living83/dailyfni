@@ -555,6 +555,8 @@ async def update_account(account_id: int, req: AccountUpdate):
         data["naver_password"] = encrypt(req.naver_password)
     if req.specialty is not None:
         data["specialty"] = req.specialty
+    if req.account_group is not None:
+        data["account_group"] = req.account_group
     if req.is_active is not None:
         data["is_active"] = req.is_active
 
