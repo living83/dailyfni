@@ -25,7 +25,7 @@ from se_helpers import (
 logger = logging.getLogger("engagement")
 
 # 배포 확인용 버전 상수 (이 값이 로그에 보이면 최신 코드 실행 중)
-CODE_VERSION = "2026-03-04-v9"
+CODE_VERSION = "2026-03-06-v10"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1360,17 +1360,194 @@ def generate_comment(api_key: str, post_title: str, post_content: str) -> str:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 댓글 작성
+# 댓글 작성 (API 직접 호출)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async def write_comment_via_api(page, comment_text: str) -> dict:
+    """cbox iframe URL에서 파라미터를 추출하여 Naver 댓글 API를 직접 호출.
+    UI 조작 없이 HTTP POST로 댓글을 등록하므로 iframe 렌더링/타이밍 이슈 회피."""
+    result = {"success": False, "error": ""}
+    import re as _re
+    from urllib.parse import urlparse, parse_qs
+
+    try:
+        # 1. cbox iframe URL 찾기
+        cbox_url = None
+        for f in page.frames:
+            f_url = (f.url or '')
+            if 'cbox' in f_url.lower() and 'apis.naver.com' in f_url.lower():
+                cbox_url = f_url
+                break
+
+        # mainFrame 내부에서 cbox iframe src 추출 시도
+        if not cbox_url:
+            for target in [page] + [f for f in page.frames if f.name == 'mainFrame']:
+                try:
+                    cbox_url = await target.evaluate('''() => {
+                        const iframes = document.querySelectorAll('iframe');
+                        for (const iframe of iframes) {
+                            const src = iframe.src || iframe.getAttribute('data-src') || '';
+                            if (src.includes('cbox') && src.includes('apis.naver.com')) {
+                                return src;
+                            }
+                        }
+                        return null;
+                    }''')
+                    if cbox_url:
+                        break
+                except Exception:
+                    continue
+
+        if not cbox_url:
+            result["error"] = "cbox iframe URL 미발견 (API 방식 불가)"
+            return result
+
+        logger.info(f"cbox iframe URL 발견: {cbox_url[:120]}")
+
+        # 2. URL에서 필수 파라미터 추출
+        parsed = urlparse(cbox_url)
+        params = parse_qs(parsed.query)
+
+        ticket = params.get('ticket', [None])[0]
+        pool = params.get('pool', [None])[0]
+        object_id = params.get('objectId', [None])[0]
+        lang = params.get('lang', ['ko'])[0]
+        _cv = params.get('_cv', [None])[0]
+        consumerKey = params.get('consumerKey', [None])[0]
+        livere_ver = params.get('_livere_version', [None])[0]
+
+        if not all([ticket, pool, object_id]):
+            result["error"] = f"cbox 필수 파라미터 미발견: ticket={ticket}, pool={pool}, objectId={object_id}"
+            return result
+
+        logger.info(f"cbox 파라미터: ticket={ticket}, pool={pool}, objectId={object_id}")
+
+        # 3. cbox iframe에서 _cv(클라이언트 버전)와 추가 토큰 추출
+        cbox_frame = None
+        for f in page.frames:
+            if 'cbox' in (f.url or '').lower() and 'apis.naver.com' in (f.url or '').lower():
+                cbox_frame = f
+                break
+
+        # cbox 프레임 내부에서 _cv 파라미터와 세션 토큰 추출 시도
+        if cbox_frame and not _cv:
+            try:
+                _cv = await cbox_frame.evaluate('''() => {
+                    // cbox JS에서 _cv 값 추출
+                    if (window.__cbox_config && window.__cbox_config._cv) return window.__cbox_config._cv;
+                    // meta 태그에서 추출
+                    const meta = document.querySelector('meta[name="_cv"]');
+                    if (meta) return meta.content;
+                    // 스크립트 내에서 추출
+                    const scripts = document.querySelectorAll('script');
+                    for (const s of scripts) {
+                        const m = (s.textContent || '').match(/"_cv"\s*:\s*"([^"]+)"/);
+                        if (m) return m[1];
+                    }
+                    return null;
+                }''')
+            except Exception:
+                pass
+
+        # 4. API 호출 (page.request 사용 → 브라우저 쿠키 자동 포함)
+        api_base = f"{parsed.scheme}://{parsed.netloc}"
+        # Naver cbox 댓글 작성 엔드포인트
+        comment_api_url = f"{api_base}/commentbox/cbox/web_naver_blog_comment_write.json"
+
+        form_data = {
+            "ticket": ticket,
+            "pool": pool,
+            "objectId": object_id,
+            "lang": lang,
+            "contents": comment_text,
+            "mimeType": "text",
+        }
+        if _cv:
+            form_data["_cv"] = _cv
+        if consumerKey:
+            form_data["consumerKey"] = consumerKey
+
+        # Referer 헤더 설정 (CSRF 방어 우회)
+        headers = {
+            "Referer": cbox_url,
+            "Origin": api_base,
+        }
+
+        logger.info(f"댓글 API 호출: {comment_api_url}")
+        try:
+            response = await page.request.post(
+                comment_api_url,
+                form=form_data,
+                headers=headers,
+                timeout=15000,
+            )
+            status = response.status
+            body_text = await response.text()
+            logger.info(f"댓글 API 응답: status={status}, body={body_text[:300]}")
+
+            if status == 200:
+                import json
+                try:
+                    body_json = json.loads(body_text)
+                    api_result = body_json.get("result", {})
+                    # Naver cbox API: success 시 result.status == "success" 또는 "OK"
+                    api_status = str(api_result.get("status", "")).upper()
+                    if api_status in ("SUCCESS", "OK", "CREATED"):
+                        result["success"] = True
+                        logger.info(f"댓글 API 등록 성공: {api_status}")
+                    elif body_json.get("success"):
+                        result["success"] = True
+                        logger.info("댓글 API 등록 성공 (success=true)")
+                    else:
+                        # status=200이지만 에러인 경우
+                        error_msg = api_result.get("message", "") or body_json.get("message", "")
+                        error_code = api_result.get("errorCode", "") or body_json.get("errorCode", "")
+                        result["error"] = f"API 응답 에러: {error_code} {error_msg}"[:200]
+                        logger.warning(f"댓글 API 에러: code={error_code}, msg={error_msg}")
+                except json.JSONDecodeError:
+                    # JSON이 아닌 응답 → HTML 에러 등
+                    if "success" in body_text.lower() or "comment" in body_text.lower():
+                        result["success"] = True
+                        logger.info("댓글 API 등록 성공 (비JSON 응답)")
+                    else:
+                        result["error"] = f"API 비정상 응답: {body_text[:150]}"
+            elif status == 401 or status == 403:
+                result["error"] = f"API 인증 실패 (status={status}) - 로그인 상태 확인 필요"
+            else:
+                result["error"] = f"API HTTP 에러: status={status}, body={body_text[:150]}"
+
+        except Exception as e:
+            result["error"] = f"API 호출 실패: {e}"
+            logger.warning(f"댓글 API 호출 예외: {e}")
+
+    except Exception as e:
+        result["error"] = f"API 방식 실패: {e}"
+        logger.warning(f"댓글 API 방식 예외: {e}")
+
+    return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 댓글 작성 (UI 조작)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def write_comment(page, comment_text: str) -> dict:
-    """현재 페이지에 댓글 작성"""
+    """현재 페이지에 댓글 작성 (API 우선, UI 폴백)"""
     result = {"success": False, "error": ""}
 
     if not comment_text:
         result["error"] = "댓글 내용 없음"
         return result
 
+    # ── 전략 1: API 직접 호출 (가장 안정적) ──
+    api_result = await write_comment_via_api(page, comment_text)
+    if api_result["success"]:
+        logger.info("댓글 등록 성공 (API 방식)")
+        return api_result
+    else:
+        logger.info(f"API 방식 실패 ({api_result.get('error', '?')[:80]}), UI 방식으로 폴백")
+
+    # ── 전략 2: UI 조작 (기존 방식) ──
     try:
         # ── 0. cbox 도메인 쿠키 사전 워밍업 (third-party cookie 차단 대응) ──
         try:
@@ -1744,190 +1921,253 @@ async def write_comment(page, comment_text: str) -> dict:
                 result["error"] = f"cbox 로그인 미감지 (재시도 실패: {e})"
                 return result
 
-        # ── 3. 댓글 영역으로 스크롤 + placeholder 클릭 (textarea 활성화) ──
-        await comment_target.evaluate('''() => {
-            const area = document.querySelector(
-                '.u_cbox_write_wrap, .u_cbox_area, .u_cbox_inbox, ' +
-                '.u_cbox_write_box, [class*="comment_write"]'
-            );
-            if (area) {
-                area.scrollIntoView({ block: "center" });
-            } else {
-                window.scrollTo(0, document.body.scrollHeight);
-            }
-        }''')
-        await random_delay(0.5, 1)
+        # ── 3. 단일 JS로 댓글 입력 + 등록 시도 (타이밍 이슈 최소화) ──
+        js_comment_done = False
+        try:
+            js_result = await comment_target.evaluate('''(commentText) => {
+                const result = { step: '', error: '', success: false };
 
-        # Playwright locator.click()으로 placeholder 클릭 (실제 마우스 이벤트)
-        placeholder_selectors = [
-            '.u_cbox_placeholder',
-            '.u_cbox_inbox',
-            '.u_cbox_write_wrap',
-            '.u_cbox_write_box',
-            '.u_cbox_text',
-        ]
-        placeholder_clicked = False
-        for sel in placeholder_selectors:
-            try:
-                el = comment_target.locator(sel).first
-                if await el.is_visible(timeout=1500):
-                    await el.click(timeout=3000)
-                    placeholder_clicked = True
-                    logger.info(f"placeholder 클릭 성공 (locator): {sel}")
-                    break
-            except Exception:
-                continue
-
-        if not placeholder_clicked:
-            logger.info("placeholder locator 클릭 실패 → JS dispatchEvent 폴백")
-            await comment_target.evaluate('''() => {
-                const targets = document.querySelectorAll(
-                    '.u_cbox_inbox, .u_cbox_write_wrap, .u_cbox_write_box, ' +
-                    '.u_cbox_placeholder, .u_cbox_text'
+                // --- Step 1: 댓글 입력 영역 찾기 ---
+                // placeholder 클릭으로 textarea 활성화
+                const placeholders = document.querySelectorAll(
+                    '.u_cbox_placeholder, .u_cbox_inbox, .u_cbox_write_wrap, ' +
+                    '.u_cbox_write_box, .u_cbox_text'
                 );
-                for (const el of targets) {
-                    el.scrollIntoView({ block: "center" });
-                    ['focus', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtName => {
-                        if (evtName === 'focus') {
-                            el.focus();
-                        } else {
-                            el.dispatchEvent(new PointerEvent(evtName, {bubbles: true, cancelable: true}));
-                        }
-                    });
+                for (const ph of placeholders) {
+                    if (ph.offsetWidth > 0 && ph.offsetHeight > 0) {
+                        ph.scrollIntoView({ block: "center" });
+                        ph.click();
+                        ph.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                        ph.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                        break;
+                    }
                 }
+
+                // --- Step 2: textarea 또는 contenteditable 찾기 ---
+                let input = null;
+                const taSels = [
+                    'textarea.u_cbox_text',
+                    'textarea[class*="u_cbox"]',
+                    '.u_cbox_write_wrap textarea',
+                    '.u_cbox_inbox textarea',
+                    'textarea[placeholder*="댓글"]',
+                    'textarea',
+                ];
+                for (const sel of taSels) {
+                    const ta = document.querySelector(sel);
+                    if (ta && (ta.offsetWidth > 0 || ta.offsetHeight > 0 ||
+                               getComputedStyle(ta).display !== 'none')) {
+                        input = ta;
+                        result.step = 'textarea:' + sel;
+                        break;
+                    }
+                }
+                if (!input) {
+                    // contenteditable 폴백
+                    const editable = document.querySelector('[contenteditable="true"]');
+                    if (editable && editable.offsetWidth > 0) {
+                        input = editable;
+                        result.step = 'contenteditable';
+                    }
+                }
+                if (!input) {
+                    result.error = 'input_not_found';
+                    return result;
+                }
+
+                // --- Step 3: 댓글 텍스트 입력 ---
+                input.focus();
+                if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+                    // 네이티브 setter로 값 설정 (React controlled 컴포넌트 대응)
+                    const nativeSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLTextAreaElement.prototype, 'value'
+                    )?.set || Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype, 'value'
+                    )?.set;
+                    if (nativeSetter) {
+                        nativeSetter.call(input, commentText);
+                    } else {
+                        input.value = commentText;
+                    }
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    // React 16+ synthetic event trigger
+                    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+                } else {
+                    // contenteditable
+                    input.textContent = commentText;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                // --- Step 4: 등록 버튼 찾기 + 클릭 ---
+                const btnSels = [
+                    'button.u_cbox_btn_upload', 'a.u_cbox_btn_upload',
+                    '.u_cbox_btn_upload', 'button.u_cbox_btn_register',
+                    '.u_cbox_btn_register',
+                ];
+                let submitBtn = null;
+                for (const sel of btnSels) {
+                    const btn = document.querySelector(sel);
+                    if (btn && btn.offsetWidth > 0) {
+                        submitBtn = btn;
+                        break;
+                    }
+                }
+                if (!submitBtn) {
+                    // 텍스트 기반 폴백
+                    const allBtns = document.querySelectorAll('button, a, span[role="button"]');
+                    for (const btn of allBtns) {
+                        const text = (btn.textContent || '').trim();
+                        if (text === '등록' && btn.offsetWidth > 0) {
+                            submitBtn = btn;
+                            break;
+                        }
+                    }
+                }
+                if (!submitBtn) {
+                    result.error = 'submit_btn_not_found';
+                    return result;
+                }
+
+                submitBtn.click();
+                result.success = true;
+                result.step += ' → submit_clicked';
+                return result;
+            }''', comment_text)
+
+            if js_result.get('success'):
+                logger.info(f"단일 JS 댓글 입력+등록 완료: {js_result.get('step', '')}")
+                await random_delay(2.0, 3.0)
+                js_comment_done = True
+            elif js_result.get('error') == 'input_not_found':
+                logger.info("단일 JS: 입력 영역 미발견 → Playwright 방식 폴백")
+            elif js_result.get('error') == 'submit_btn_not_found':
+                logger.info("단일 JS: 등록 버튼 미발견 → Playwright 방식 폴백")
+            else:
+                logger.info(f"단일 JS 실패: {js_result}")
+        except Exception as e:
+            logger.info(f"단일 JS evaluate 실패 ({e}), Playwright 방식 폴백")
+
+        # ── 4. Playwright 방식 폴백 (단일 JS 실패 시) ──
+        if not js_comment_done:
+            await comment_target.evaluate('''() => {
+                const area = document.querySelector(
+                    '.u_cbox_write_wrap, .u_cbox_area, .u_cbox_inbox, ' +
+                    '.u_cbox_write_box, [class*="comment_write"]'
+                );
+                if (area) area.scrollIntoView({ block: "center" });
+                else window.scrollTo(0, document.body.scrollHeight);
             }''')
-        await random_delay(0.8, 1.2)
+            await random_delay(0.5, 1)
 
-        # ── 4. textarea 찾기 ──
-        comment_input = await try_selectors(comment_target, [
-            'textarea.u_cbox_text',
-            '.u_cbox_write_wrap textarea',
-            'textarea[class*="u_cbox"]',
-            '.u_cbox_inbox textarea',
-            'textarea[placeholder*="댓글"]',
-            'textarea[placeholder*="의견"]',
-            'textarea',
-        ], timeout=6000, description="댓글 textarea")
-
-        if not comment_input:
-            # placeholder 재클릭 후 textarea 재시도
-            logger.info("textarea 미발견 → placeholder 재클릭 + textarea 재탐색")
+            placeholder_selectors = [
+                '.u_cbox_placeholder', '.u_cbox_inbox',
+                '.u_cbox_write_wrap', '.u_cbox_write_box', '.u_cbox_text',
+            ]
             for sel in placeholder_selectors:
                 try:
                     el = comment_target.locator(sel).first
-                    if await el.is_visible(timeout=1000):
+                    if await el.is_visible(timeout=1500):
                         await el.click(timeout=3000)
-                        await random_delay(0.5, 0.8)
+                        logger.info(f"placeholder 클릭 성공: {sel}")
                         break
                 except Exception:
                     continue
+            await random_delay(0.8, 1.2)
 
-            for sel in ['textarea.u_cbox_text', 'textarea[class*="u_cbox"]', 'textarea']:
+            comment_input = await try_selectors(comment_target, [
+                'textarea.u_cbox_text', '.u_cbox_write_wrap textarea',
+                'textarea[class*="u_cbox"]', '.u_cbox_inbox textarea',
+                'textarea[placeholder*="댓글"]', 'textarea',
+            ], timeout=6000, description="댓글 textarea")
+
+            if not comment_input:
                 try:
-                    el = comment_target.locator(sel).first
-                    if await el.is_visible(timeout=2000):
-                        await el.click(timeout=3000)
-                        comment_input = el
-                        logger.info(f"textarea locator 클릭 성공 (2차): {sel}")
-                        break
+                    editable = comment_target.locator('[contenteditable="true"]').first
+                    if await editable.is_visible(timeout=1500):
+                        await editable.click(timeout=3000)
+                        comment_input = editable
+                        logger.info("contenteditable 요소 발견")
                 except Exception:
-                    continue
+                    pass
 
-        if not comment_input:
-            # 최종 폴백: contenteditable div
+            if not comment_input:
+                frame_info = []
+                for f in page.frames:
+                    try:
+                        f_url = f.url or 'none'
+                        f_name = f.name or 'unnamed'
+                        el_count = await f.evaluate('document.querySelectorAll("*").length')
+                        has_ta = await f.evaluate('!!document.querySelector("textarea")')
+                        has_cbox = await f.evaluate('!!document.querySelector("[class*=u_cbox]")')
+                        frame_info.append(
+                            f"[{f_name}] url={f_url[:60]} els={el_count} "
+                            f"textarea={has_ta} cbox={has_cbox}"
+                        )
+                    except Exception:
+                        frame_info.append(f"[{f.name or '?'}] (접근불가)")
+                logger.warning(f"댓글 입력 영역 미발견. 프레임:\n" + "\n".join(frame_info))
+                await capture_debug(page, "comment_not_found")
+                result["error"] = "댓글 입력 영역 미발견"
+                return result
+
+            await comment_input.click()
+            await random_delay(0.3, 0.5)
             try:
-                editable = comment_target.locator('[contenteditable="true"]').first
-                if await editable.is_visible(timeout=1500):
-                    await editable.click(timeout=3000)
-                    comment_input = editable
-                    logger.info("contenteditable 요소 발견, 사용")
+                await comment_input.focus()
             except Exception:
                 pass
+            await comment_input.type(comment_text, delay=30 + random.randint(-10, 15))
+            await random_delay(0.5, 1)
 
-        if not comment_input:
-            # 디버그: 모든 프레임 정보 로깅
-            frame_info = []
-            for f in page.frames:
-                try:
-                    f_url = f.url or 'none'
-                    f_name = f.name or 'unnamed'
-                    el_count = await f.evaluate('document.querySelectorAll("*").length')
-                    has_ta = await f.evaluate('!!document.querySelector("textarea")')
-                    has_cbox = await f.evaluate('!!document.querySelector("[class*=u_cbox]")')
-                    has_login = await f.evaluate(
-                        '!!document.querySelector("[class*=login], a[href*=nidlogin]")'
-                    )
-                    frame_info.append(
-                        f"[{f_name}] url={f_url[:60]} els={el_count} "
-                        f"textarea={has_ta} cbox={has_cbox} login={has_login}"
-                    )
-                except Exception:
-                    frame_info.append(f"[{f.name or '?'}] (접근불가)")
-            logger.warning(f"댓글 입력 영역 미발견. 프레임 목록:\n" + "\n".join(frame_info))
-            await capture_debug(page, "comment_not_found")
-            result["error"] = "댓글 입력 영역 미발견"
-            return result
+            submit_btn = await try_selectors(comment_target, [
+                'button.u_cbox_btn_upload', 'a.u_cbox_btn_upload',
+                '.u_cbox_btn_upload', 'button.u_cbox_btn_register',
+                '.u_cbox_btn_register', 'button:has-text("등록")', 'a:has-text("등록")',
+            ], timeout=5000, description="댓글 등록 버튼")
 
-        # ── 5. 댓글 타이핑 ──
-        await comment_input.click()
-        await random_delay(0.3, 0.5)
-        # focus 이벤트도 명시적으로 발생시킴 (React 핸들러 대응)
-        try:
-            await comment_input.focus()
-        except Exception:
-            pass
-        await random_delay(0.2, 0.3)
-        await comment_input.type(comment_text,
-                                 delay=30 + random.randint(-10, 15))
-        await random_delay(0.5, 1)
-
-        # ── 6. 등록 버튼 클릭 ──
-        submit_btn = await try_selectors(comment_target, [
-            'button.u_cbox_btn_upload',
-            'a.u_cbox_btn_upload',
-            '.u_cbox_btn_upload',
-            'button.u_cbox_btn_register',
-            '.u_cbox_btn_register',
-            'button:has-text("등록")',
-            'a:has-text("등록")',
-        ], timeout=5000, description="댓글 등록 버튼")
-
-        btn_clicked = False
-        if submit_btn:
-            await submit_btn.click()
-            btn_clicked = True
-            logger.info("댓글 등록 버튼 클릭")
-        else:
-            # JS 폴백
-            clicked = await comment_target.evaluate('''() => {
-                const btns = document.querySelectorAll('button, a, span[role="button"]');
-                for (const btn of btns) {
-                    const text = (btn.textContent || '').trim();
-                    const cls = btn.className || '';
-                    if (text === '등록' || cls.includes('upload') ||
-                        cls.includes('btn_register') || cls.includes('btn_submit')) {
-                        btn.click();
-                        return true;
+            if submit_btn:
+                await submit_btn.click()
+                logger.info("댓글 등록 버튼 클릭 (Playwright)")
+            else:
+                clicked = await comment_target.evaluate('''() => {
+                    const btns = document.querySelectorAll('button, a, span[role="button"]');
+                    for (const btn of btns) {
+                        const text = (btn.textContent || '').trim();
+                        const cls = btn.className || '';
+                        if (text === '등록' || cls.includes('upload') ||
+                            cls.includes('btn_register')) {
+                            btn.click();
+                            return true;
+                        }
                     }
-                }
-                return false;
-            }''')
-            if clicked:
-                btn_clicked = True
-                logger.info("댓글 등록 버튼 클릭 (JS 폴백)")
+                    return false;
+                }''')
+                if clicked:
+                    logger.info("댓글 등록 버튼 클릭 (JS 폴백)")
+                else:
+                    result["error"] = "댓글 등록 버튼 미발견"
+                    return result
 
-        if btn_clicked:
             await random_delay(2.0, 3.0)
-            # 등록 성공 검증: textarea가 비워졌거나 댓글 목록에 새 댓글이 추가되었는지 확인
+            js_comment_done = True
+
+        # ── 5. 등록 성공 검증 ──
+        if js_comment_done:
             try:
                 verify = await comment_target.evaluate('''() => {
-                    // 1) textarea가 비워졌으면 등록 성공
+                    // textarea 존재 여부 먼저 확인
                     const ta = document.querySelector(
                         'textarea.u_cbox_text, textarea[class*="u_cbox"], textarea'
                     );
-                    const taEmpty = ta ? ta.value.trim().length === 0 : true;
+                    const taFound = !!ta;
+                    const taEmpty = ta ? ta.value.trim().length === 0 : false;
 
-                    // 2) 에러 메시지 존재 여부
+                    // contenteditable 확인
+                    const ce = document.querySelector('[contenteditable="true"]');
+                    const ceEmpty = ce ? (ce.textContent || '').trim().length === 0 : false;
+
+                    // 에러 메시지
                     const errorEl = document.querySelector(
                         '.u_cbox_alert, .u_cbox_layer_error, [class*="cbox_error"]'
                     );
@@ -1936,7 +2176,7 @@ async def write_comment(page, comment_text: str) -> dict:
                     ) : false;
                     const errorText = errorEl ? errorEl.textContent.trim().substring(0, 100) : '';
 
-                    // 3) 로그인 요구 팝업
+                    // 로그인 팝업
                     const loginPopup = document.querySelector(
                         '.u_cbox_layer_login, [class*="login_layer"]'
                     );
@@ -1944,7 +2184,16 @@ async def write_comment(page, comment_text: str) -> dict:
                         loginPopup.offsetWidth > 0 && loginPopup.offsetHeight > 0
                     ) : false;
 
-                    return { taEmpty, hasError, errorText, hasLoginPopup };
+                    // 댓글 수 변화 확인 (등록 후 카운트 증가)
+                    const commentItems = document.querySelectorAll(
+                        '.u_cbox_comment_box, .u_cbox_area li, [class*="cbox_comment"]'
+                    );
+
+                    return {
+                        taFound, taEmpty, ceEmpty,
+                        hasError, errorText, hasLoginPopup,
+                        commentCount: commentItems.length,
+                    };
                 }''')
 
                 if verify.get('hasLoginPopup'):
@@ -1954,21 +2203,26 @@ async def write_comment(page, comment_text: str) -> dict:
                     err_text = verify.get('errorText', '알 수 없는 오류')
                     result["error"] = f"댓글 등록 오류: {err_text}"
                     logger.warning(f"댓글 등록 실패: {err_text}")
-                elif verify.get('taEmpty'):
+                elif verify.get('taFound') and verify.get('taEmpty'):
                     result["success"] = True
                     logger.info("댓글 등록 성공 (textarea 비워짐 확인)")
+                elif not verify.get('taFound') and verify.get('ceEmpty'):
+                    result["success"] = True
+                    logger.info("댓글 등록 성공 (contenteditable 비워짐 확인)")
+                elif not verify.get('taFound'):
+                    # textarea도 contenteditable도 못 찾음 → 등록 불확실
+                    # 버튼 클릭은 했으므로 성공 가능성이 있지만 확인 불가
+                    result["error"] = "댓글 등록 불확실 (입력 영역 미발견으로 검증 불가)"
+                    logger.warning("댓글 등록 검증 불가: 입력 영역 미발견")
+                    await capture_debug(page, "comment_verify_no_input")
                 else:
-                    # textarea에 내용이 남아있음 → 등록 실패 가능성 높음
                     result["error"] = "댓글 등록 불확실 (textarea 미비워짐)"
                     logger.warning("댓글 등록 실패 가능: textarea에 내용 잔존")
                     await capture_debug(page, "comment_submit_uncertain")
             except Exception as e:
-                # 검증 예외 → 실패로 처리
                 result["error"] = f"댓글 등록 검증 실패: {e}"
                 logger.warning(f"댓글 등록 검증 중 오류: {e}")
                 await capture_debug(page, "comment_verify_error")
-        else:
-            result["error"] = "댓글 등록 버튼 미발견"
 
     except Exception as e:
         result["error"] = str(e)
@@ -2135,7 +2389,7 @@ async def _run_engagement_impl(
     }
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p)
+        browser, context = await create_stealth_context(p, account_id=account_id)
         page = await context.new_page()
 
         try:
