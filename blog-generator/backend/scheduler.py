@@ -412,11 +412,20 @@ async def daily_publish_job(manual: bool = False):
                 except Exception as e:
                     logger.warning(f"Gemini 이미지 로드 실패: {e}")
 
+                # 대표이미지 결정: 일반 포스팅은 Gemini 이미지, 광고는 키워드 이미지
+                if post_type == "general" and extra_image_paths:
+                    # Gemini 첫 번째 이미지를 대표이미지로, 나머지를 본문 이미지로
+                    main_image = extra_image_paths[0]
+                    extra_image_paths = extra_image_paths[1:]
+                    logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+                else:
+                    main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
+
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
                     article["title"], article["content"],
                     cat_name, tags,
-                    keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else "",
+                    main_image,
                     footer_link, footer_link_text,
                     extra_image_paths=extra_image_paths,
                 )
