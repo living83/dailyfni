@@ -925,6 +925,19 @@ async def get_all_generated_articles() -> list:
             return list(await cur.fetchall())
 
 
+async def delete_all_history() -> int:
+    """모든 발행 이력 및 관련 배치 삭제"""
+    pool = await _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT COUNT(*) AS cnt FROM publish_history")
+            row = await cur.fetchone()
+            count = row["cnt"] if row else 0
+            await cur.execute("DELETE FROM publish_history")
+            await cur.execute("DELETE FROM publish_batches")
+            return count
+
+
 async def check_keyword_duplicate(keyword: str, days: int = 7) -> bool:
     """최근 N일 내에 같은 키워드가 사용되었는지 확인"""
     pool = await _get_pool()

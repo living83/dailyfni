@@ -373,6 +373,7 @@
           </select>
           <button class="btn btn-sm btn-secondary" onclick="loadHistory()">검색</button>
           <button class="btn btn-sm btn-secondary" onclick="exportHistory()">CSV 내보내기</button>
+          <button class="btn btn-sm btn-secondary" onclick="deleteAllHistory()" style="background:#d63031;color:#fff;border-color:#d63031">전체 삭제 (새 세션)</button>
         </div>
         <table class="data-table">
           <thead><tr><th>날짜</th><th>계정</th><th>제목</th><th>키워드</th><th>상태</th><th>URL</th><th>작업</th></tr></thead>
@@ -1263,6 +1264,18 @@ function exportHistory() {
   if (st) params.set('status', st);
   if (acc) params.set('account_id', acc);
   window.open(`/api/history/export?${params.toString()}`);
+}
+
+async function deleteAllHistory() {
+  if (!confirm('모든 이전 글을 삭제하고 새 세션을 시작하시겠습니까?\n\n삭제 전 CSV 내보내기를 먼저 하시려면 "취소"를 눌러주세요.')) return;
+  if (!confirm('정말로 모든 발행 이력을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  try {
+    const result = await api('/api/history/all', { method: 'DELETE' });
+    showToast(result.message);
+    loadHistory();
+    loadBatches();
+    loadGeneratedArticles();
+  } catch (e) { showToast(e.message, 'error'); }
 }
 
 /* ━━━ 배치 목록 ━━━ */

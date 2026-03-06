@@ -1036,6 +1036,13 @@ async def export_history(
     )
 
 
+@app.delete("/api/history/all")
+async def delete_all_history():
+    """모든 발행 이력 삭제 (새 세션 시작)"""
+    count = await db.delete_all_history()
+    return {"message": f"총 {count}건의 이력이 삭제되었습니다.", "deleted_count": count}
+
+
 @app.post("/api/history/{history_id}/republish")
 async def republish(history_id: int, background_tasks: BackgroundTasks):
     """재발행"""
