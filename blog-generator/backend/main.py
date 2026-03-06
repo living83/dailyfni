@@ -245,6 +245,7 @@ class AccountCreate(BaseModel):
     naver_password: str
     specialty: str = ""
     account_group: str = "ad"
+    account_tier: int = 1
 
     @validator("account_name")
     def check_name(cls, v):
@@ -262,10 +263,10 @@ class AccountCreate(BaseModel):
     def check_spec(cls, v):
         return _validate_max_length(v, 500, "전문분야")
 
-    @validator("account_group")
-    def check_group(cls, v):
-        if v not in ("ad", "general"):
-            raise ValueError("account_group은 ad 또는 general이어야 합니다.")
+    @validator("account_tier")
+    def check_tier(cls, v):
+        if v not in (1, 2, 3, 4, 5):
+            raise ValueError("account_tier는 1~5 사이여야 합니다.")
         return v
 
 
@@ -275,12 +276,13 @@ class AccountUpdate(BaseModel):
     naver_password: Optional[str] = None
     specialty: Optional[str] = None
     account_group: Optional[str] = None
+    account_tier: Optional[int] = None
     is_active: Optional[int] = None
 
-    @validator("account_group")
-    def check_group(cls, v):
-        if v is not None and v not in ("ad", "general"):
-            raise ValueError("account_group은 ad 또는 general이어야 합니다.")
+    @validator("account_tier")
+    def check_tier(cls, v):
+        if v is not None and v not in (1, 2, 3, 4, 5):
+            raise ValueError("account_tier는 1~5 사이여야 합니다.")
         return v
 
     @validator("is_active")
@@ -527,6 +529,7 @@ async def create_account(req: AccountCreate):
         "naver_password": encrypted_pw,
         "specialty": req.specialty,
         "account_group": req.account_group,
+        "account_tier": req.account_tier,
     })
     # 응답에서 암호화된 비밀번호는 마스킹
     account["naver_id"] = "***암호화됨***"
@@ -571,6 +574,8 @@ async def update_account(account_id: int, req: AccountUpdate):
         data["specialty"] = req.specialty
     if req.account_group is not None:
         data["account_group"] = req.account_group
+    if req.account_tier is not None:
+        data["account_tier"] = req.account_tier
     if req.is_active is not None:
         data["is_active"] = req.is_active
 
@@ -604,6 +609,13 @@ async def test_account_login(account_id: int):
     from publisher import test_login
     result = await test_login(account_id, naver_id, naver_pw)
     return result
+
+
+@app.get("/api/tier-rules")
+async def get_tier_rules():
+    """단계별 스케줄 규칙 조회"""
+    from scheduler import TIER_RULES
+    return TIER_RULES
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

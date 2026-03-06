@@ -55,8 +55,41 @@ async def _should_skip_today(config: dict) -> bool:
 # 1단계: 글 사전 생성 잡 (발행 2시간 전 실행)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# ─── 단계별 스케줄 규칙 ─────────────────────────────────
+# general_every: N일마다 일반 포스팅 (1=매일)
+# ad_every: N일마다 광고 포스팅 (0=안함)
+TIER_RULES = {
+    1: {"general_every": 1, "ad_every": 0,  "label": "신규 (매일 일반)"},
+    2: {"general_every": 1, "ad_every": 5,  "label": "성장 (매일 일반 + 5일마다 광고)"},
+    3: {"general_every": 2, "ad_every": 4,  "label": "전환 (2일 일반 + 4일 광고)"},
+    4: {"general_every": 2, "ad_every": 3,  "label": "수익화 (2일 일반 + 3일 광고)"},
+    5: {"general_every": 3, "ad_every": 3,  "label": "숙련 (3일 일반 + 3일 광고)"},
+}
+
+
+def _should_account_post_today(account: dict, day_index: int) -> str | None:
+    """계정의 단계 규칙에 따라 오늘 발행할 타입 결정.
+    day_index: 연속 발행일 기준 인덱스 (0부터).
+    반환: 'ad', 'general', 또는 None (오늘 쉼)"""
+    tier = account.get("account_tier", 1)
+    rule = TIER_RULES.get(tier, TIER_RULES[1])
+
+    general_every = rule["general_every"]
+    ad_every = rule["ad_every"]
+
+    # 광고 발행일 우선 체크 (광고일이면 일반은 건너뜀)
+    if ad_every > 0 and day_index % ad_every == 0:
+        return "ad"
+
+    # 일반 발행일 체크
+    if general_every > 0 and day_index % general_every == 0:
+        return "general"
+
+    return None
+
+
 async def article_generation_job(manual: bool = False, forced_type: str = ""):
-    """키워드 큐에서 다음 키워드를 가져와 3개 글을 생성하고 DB에 저장
+    """단계별 로테이션: 각 계정의 tier에 따라 오늘 발행할 글을 생성.
     manual=True이면 스케줄러 활성 여부/오늘 건너뛰기 체크를 무시한다.
     forced_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다."""
     try:
@@ -80,32 +113,7 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 await create_notification("info", "오늘 자동 발행 건너뜀", "스케줄 설정에 의해 오늘은 발행을 건너뜁니다.")
                 return
 
-        # 타입 결정: forced_type > 교대 발행
-        if forced_type in ("ad", "general"):
-            preferred_type = forced_type
-        else:
-            # 교대 발행: 어제 타입의 반대 타입 우선 선택 (일반 ↔ 광고)
-            last_post_type = config.get("last_post_type", "")
-            if last_post_type == "ad":
-                preferred_type = "general"
-            elif last_post_type == "general":
-                preferred_type = "ad"
-            else:
-                preferred_type = "ad"  # 첫 발행은 광고부터
-
-        # 다음 키워드 가져오기 (선호 타입 우선, 없으면 다른 타입)
-        kw = await get_next_keyword(preferred_type)
-        if not kw:
-            logger.warning("발행할 키워드가 없습니다")
-            await create_notification("warning", "키워드 부족", "발행할 키워드가 없습니다. 키워드를 추가해주세요.")
-            return
-
-        keyword = kw["keyword"]
-        product_info = kw.get("product_info", "")
-        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
-        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}, 타입 = {post_type}")
-
-        # 활성 계정 가져오기 (키워드 타입에 맞는 그룹만 선택)
+        # 활성 계정 가져오기
         accounts = await get_accounts()
         active_accounts = [a for a in accounts if a.get("is_active")]
         logger.info(f"활성 계정 수: {len(active_accounts)}")
@@ -113,24 +121,25 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             await create_notification("error", "계정 없음", "활성 계정이 없습니다. 계정을 추가해주세요.")
             return
 
-        # 키워드 타입(ad/general)에 맞는 계정 그룹 필터링
-        group_accounts = [a for a in active_accounts if a.get("account_group") == post_type]
-        if not group_accounts:
-            logger.warning(f"'{post_type}' 그룹 계정이 없어 전체 활성 계정에서 선택합니다.")
-            group_accounts = active_accounts
-        accounts_to_use = group_accounts[:3]
+        # 연속 발행일 기반 day_index 계산
+        consecutive = config.get("consecutive_publish_days", 0)
 
-        # 키워드 상태 업데이트
-        now = datetime.now()
-        await update_keyword(kw["id"], {
-            "status": "used",
-            "last_used_at": now.isoformat(),
-            "next_available_at": (now + timedelta(days=30)).isoformat(),
-            "used_count": kw["used_count"] + 1,
-        })
+        # 각 계정별 오늘 발행 타입 결정
+        today_tasks = []  # [(account, post_type)]
+        for acc in active_accounts:
+            if forced_type in ("ad", "general"):
+                post_type = forced_type
+            else:
+                post_type = _should_account_post_today(acc, consecutive)
+            if post_type:
+                today_tasks.append((acc, post_type))
 
-        # 배치 생성 (status = articles_ready, post_type 포함)
-        batch = await create_batch(keyword, post_type=post_type)
+        if not today_tasks:
+            logger.info("오늘 발행할 계정이 없습니다 (모든 계정 휴식)")
+            return
+
+        logger.info(f"오늘 발행 계정: {len(today_tasks)}개 — " +
+                    ", ".join(f"{a['account_name']}({t})" for a, t in today_tasks))
 
         # API 키 (환경변수에서)
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -138,42 +147,59 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             await create_notification("error", "API 키 없음", "ANTHROPIC_API_KEY가 설정되지 않았습니다.")
             return
 
-        # 문서 생성
-        try:
-            from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
-            from prompts import AD_FOOTER, GENERAL_FOOTER
-            from agents import _call_claude
+        from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
+        from prompts import AD_FOOTER, GENERAL_FOOTER
+        from agents import _call_claude
 
-            ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
+        all_doc_formats = [
+            ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
+            ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
+            ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
+        ]
 
-            all_doc_formats = [
-                ("tutorial", DOC_TUTORIAL_PROMPT, "튜토리얼/가이드"),
-                ("review", DOC_REVIEW_PROMPT, "경험담/후기"),
-                ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
-            ]
-            # 활성 계정 수만큼만 생성
-            doc_formats = all_doc_formats[:len(accounts_to_use)]
+        # 계정별로 1개씩 글 생성 (각 계정에 랜덤 문서 포맷 배정)
+        for task_idx, (account, post_type) in enumerate(today_tasks):
+            # 키워드 가져오기 (타입 우선)
+            kw = await get_next_keyword(post_type)
+            if not kw:
+                logger.warning(f"계정 {account['account_name']}: '{post_type}' 키워드 없음, 건너뜀")
+                continue
 
-            product_info_section = ""
-            if product_info.strip():
-                product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
+            keyword = kw["keyword"]
+            product_info = kw.get("product_info", "")
+            logger.info(f"글 생성: 계정={account['account_name']}, 키워드={keyword}, 타입={post_type}")
 
-            # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
-            keyword_image_paths = []
+            # 키워드 상태 업데이트
+            now = datetime.now()
+            await update_keyword(kw["id"], {
+                "status": "used",
+                "last_used_at": now.isoformat(),
+                "next_available_at": (now + timedelta(days=30)).isoformat(),
+                "used_count": kw["used_count"] + 1,
+            })
+
+            # 배치 생성
+            batch = await create_batch(keyword, post_type=post_type)
+
             try:
-                from image_generator import generate_keyword_image_variants
-                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+                ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
-            # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (최대 3장 랜덤)
-            gemini_image_map = {}  # {document_index: [image_paths]}
+                # 문서 포맷 순환 배정
+                fmt, prompt_template, desc = all_doc_formats[task_idx % len(all_doc_formats)]
 
-            for i, (fmt, prompt_template, desc) in enumerate(doc_formats):
-                account = accounts_to_use[i]
+                product_info_section = ""
+                if product_info.strip():
+                    product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-                # 카테고리 가져오기
+                # 키워드 대표이미지
+                keyword_image_paths = []
+                try:
+                    from image_generator import generate_keyword_image_variants
+                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                except Exception as e:
+                    logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
+                # 카테고리
                 categories = await get_categories(account["id"])
                 default_cat = next((c for c in categories if c.get("is_default")), None)
                 cat_id = default_cat["id"] if default_cat else None
@@ -186,27 +212,25 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 )
                 result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
 
-                # 제목과 본문 분리
                 lines = result.strip().split("\n", 1)
                 title = lines[0].strip().lstrip("# ").strip()
                 body = lines[1].strip() if len(lines) > 1 else result
 
-                # 일반 포스팅일 때 Gemini 이미지 생성
+                # 일반 포스팅: Gemini 이미지
+                gemini_paths = []
                 if post_type == "general" and os.getenv("GEMINI_API_KEY"):
                     try:
                         from gemini_image_generator import generate_gemini_images
                         gemini_paths = await asyncio.to_thread(
                             generate_gemini_images, keyword, body, 3
                         )
-                        gemini_image_map[i] = gemini_paths
-                        logger.info(f"Gemini 이미지 {len(gemini_paths)}장 생성 (문서 {i+1})")
                     except Exception as e:
-                        logger.warning(f"Gemini 이미지 생성 실패 (문서 {i+1}): {e}")
+                        logger.warning(f"Gemini 이미지 생성 실패: {e}")
 
-                # DB에 저장 (status = 'generated')
+                # DB 저장
                 history = await create_publish_history({
                     "batch_id": batch["id"],
-                    "document_number": i + 1,
+                    "document_number": 1,
                     "account_id": account["id"],
                     "category_id": cat_id,
                     "title": title,
@@ -215,39 +239,32 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                     "document_format": fmt,
                 })
 
-                # status를 generated로 업데이트
                 from database import update_publish_history
                 await update_publish_history(history["id"], {"status": "generated"})
 
-                # Gemini 이미지 경로를 DB에 저장
-                if i in gemini_image_map:
+                if gemini_paths:
                     import json as _json
                     await update_publish_history(history["id"], {
-                        "gemini_images": _json.dumps(gemini_image_map[i]),
+                        "gemini_images": _json.dumps(gemini_paths),
                     })
 
-                logger.info(f"글 생성 완료 [{i+1}/{len(doc_formats)}]: {title[:30]}... → 계정: {account['account_name']}")
+                await update_batch(batch["id"], {"status": "articles_ready"})
+                logger.info(f"글 생성 완료: {title[:30]}... → 계정: {account['account_name']} (단계 {account.get('account_tier', 1)})")
 
-            # 배치 상태를 articles_ready로 업데이트
-            await update_batch(batch["id"], {"status": "articles_ready"})
+            except Exception as e:
+                logger.error(f"글 생성 오류 (계정 {account['account_name']}): {e}")
+                await update_batch(batch["id"], {"status": "all_failed"})
 
-            # 교대 발행: 이번에 사용한 타입 기록 (다음엔 반대 타입 선택)
-            from database import update_scheduler_config
-            await update_scheduler_config({"last_post_type": post_type})
-            logger.info(f"교대 발행 타입 기록: {post_type} (다음엔 {'general' if post_type == 'ad' else 'ad'})")
+        # 발행 타입 기록
+        from database import update_scheduler_config
+        types_used = list(set(t for _, t in today_tasks))
+        await update_scheduler_config({"last_post_type": types_used[-1] if types_used else ""})
 
-            await create_notification(
-                "success",
-                f"글 사전 생성 완료 ({keyword})",
-                f"{len(doc_formats)}개 글이 생성되어 발행 대기 중입니다. 배치 #{batch['id']} (타입: {'광고' if post_type == 'ad' else '일반'})",
-            )
-
-            logger.info(f"글 사전 생성 완료: 키워드={keyword}, 배치 #{batch['id']}")
-
-        except Exception as e:
-            logger.error(f"글 사전 생성 오류: {e}")
-            await update_batch(batch["id"], {"status": "all_failed"})
-            await create_notification("error", "글 사전 생성 실패", str(e))
+        await create_notification(
+            "success",
+            f"글 사전 생성 완료 ({len(today_tasks)}개 계정)",
+            f"계정별 단계 로테이션: " + ", ".join(f"{a['account_name']}({t})" for a, t in today_tasks),
+        )
 
     except Exception as e:
         logger.error(f"article_generation_job 예외: {e}", exc_info=True)
@@ -304,34 +321,8 @@ async def daily_publish_job(manual: bool = False):
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
-        # 계정 자동 분배: 배치 타입(ad/general)에 맞는 그룹 계정으로 순차 분배
-        from database import get_accounts, get_account, get_categories
-        account_ids = [a["account_id"] for a in articles if a.get("account_id")]
-        unique_accounts = set(account_ids)
-        if len(unique_accounts) <= 1 and len(articles) > 1:
-            all_accounts = await get_accounts()
-            active_accounts = [a for a in all_accounts if a.get("is_active")]
-            # 배치 타입에 맞는 그룹 계정 필터링
-            post_type = batch.get("post_type", "ad")
-            group_accounts = [a for a in active_accounts if a.get("account_group") == post_type]
-            if not group_accounts:
-                group_accounts = active_accounts
-            if len(group_accounts) > 1:
-                logger.info(f"계정 그룹 분배({post_type}): {len(articles)}개 글 → {len(group_accounts)}개 계정")
-                for idx, article in enumerate(articles):
-                    assigned = group_accounts[idx % len(group_accounts)]
-                    article["account_id"] = assigned["id"]
-                    # 카테고리도 해당 계정의 기본 카테고리로 재설정
-                    try:
-                        cats = await get_categories(assigned["id"])
-                        default_cat = next((c for c in cats if c.get("is_default")), None)
-                        if default_cat:
-                            article["category_name"] = default_cat.get("category_name", "")
-                    except Exception:
-                        pass
-                    logger.info(f"  글 {idx+1} → 계정: {assigned.get('account_name', assigned['id'])}")
-
-        # 계정 교차 발행: 같은 계정 연속 방지 (저품질 방지)
+        # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
+        from database import get_account, get_categories
         if len(articles) > 1:
             from collections import defaultdict
             groups = defaultdict(list)

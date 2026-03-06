@@ -139,6 +139,7 @@ async def init_db():
                     specialty VARCHAR(500) DEFAULT '',
                     last_used VARCHAR(50) DEFAULT '',
                     account_group VARCHAR(20) DEFAULT 'ad',
+                    account_tier INT DEFAULT 1,
                     is_active TINYINT DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -151,6 +152,14 @@ async def init_db():
                 """)
             except Exception:
                 pass  # 이미 존재하면 무시
+
+            # account_tier 컬럼 마이그레이션 + 기존 데이터 변환
+            try:
+                await cur.execute("ALTER TABLE accounts ADD COLUMN account_tier INT DEFAULT 1")
+                # 기존 account_group → account_tier 변환 (ad=5, general=1)
+                await cur.execute("UPDATE accounts SET account_tier = 5 WHERE account_group = 'ad' AND account_tier = 1")
+            except Exception:
+                pass  # 이미 존재
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
@@ -372,9 +381,10 @@ async def create_account(data: dict) -> dict:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                """INSERT INTO accounts (account_name, naver_id, naver_password, specialty, account_group)
-                   VALUES (%s, %s, %s, %s, %s)""",
-                (data["account_name"], data["naver_id"], data["naver_password"], data.get("specialty", ""), data.get("account_group", "ad")),
+                """INSERT INTO accounts (account_name, naver_id, naver_password, specialty, account_group, account_tier)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (data["account_name"], data["naver_id"], data["naver_password"], data.get("specialty", ""),
+                 data.get("account_group", "ad"), data.get("account_tier", 1)),
             )
             account_id = cur.lastrowid
             await cur.execute("SELECT * FROM accounts WHERE id = %s", (account_id,))
@@ -400,7 +410,7 @@ async def get_account(account_id: int) -> dict | None:
 async def update_account(account_id: int, data: dict) -> dict | None:
     fields = []
     values = []
-    for key in ["account_name", "naver_id", "naver_password", "specialty", "account_group", "is_active", "default_category_id", "cookie_file_path", "last_used"]:
+    for key in ["account_name", "naver_id", "naver_password", "specialty", "account_group", "account_tier", "is_active", "default_category_id", "cookie_file_path", "last_used"]:
         if key in data:
             fields.append(f"{key} = %s")
             values.append(data[key])
