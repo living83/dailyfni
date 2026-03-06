@@ -138,10 +138,19 @@ async def init_db():
                     default_category_id BIGINT DEFAULT NULL,
                     specialty VARCHAR(500) DEFAULT '',
                     last_used VARCHAR(50) DEFAULT '',
+                    account_group VARCHAR(20) DEFAULT 'ad',
                     is_active TINYINT DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+
+            # account_group 컬럼 마이그레이션 (기존 DB 호환)
+            try:
+                await cur.execute("""
+                    ALTER TABLE accounts ADD COLUMN account_group VARCHAR(20) DEFAULT 'ad'
+                """)
+            except Exception:
+                pass  # 이미 존재하면 무시
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS categories (
@@ -240,7 +249,7 @@ async def init_db():
                     min_interval_hours INT DEFAULT 2,
                     max_interval_hours INT DEFAULT 4,
                     random_rest_enabled TINYINT DEFAULT 1,
-                    random_rest_percent INT DEFAULT 20,
+                    random_rest_percent INT DEFAULT 10,
                     weekend_low_prob TINYINT DEFAULT 1,
                     weekend_prob_percent INT DEFAULT 30,
                     consecutive_publish_days INT DEFAULT 0,
@@ -345,9 +354,9 @@ async def create_account(data: dict) -> dict:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                """INSERT INTO accounts (account_name, naver_id, naver_password, specialty)
-                   VALUES (%s, %s, %s, %s)""",
-                (data["account_name"], data["naver_id"], data["naver_password"], data.get("specialty", "")),
+                """INSERT INTO accounts (account_name, naver_id, naver_password, specialty, account_group)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (data["account_name"], data["naver_id"], data["naver_password"], data.get("specialty", ""), data.get("account_group", "ad")),
             )
             account_id = cur.lastrowid
             await cur.execute("SELECT * FROM accounts WHERE id = %s", (account_id,))
@@ -373,7 +382,7 @@ async def get_account(account_id: int) -> dict | None:
 async def update_account(account_id: int, data: dict) -> dict | None:
     fields = []
     values = []
-    for key in ["account_name", "naver_id", "naver_password", "specialty", "is_active", "default_category_id", "cookie_file_path", "last_used"]:
+    for key in ["account_name", "naver_id", "naver_password", "specialty", "account_group", "is_active", "default_category_id", "cookie_file_path", "last_used"]:
         if key in data:
             fields.append(f"{key} = %s")
             values.append(data[key])

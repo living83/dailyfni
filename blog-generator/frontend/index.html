@@ -299,6 +299,13 @@
           <input type="password" id="accNaverPw" placeholder="네이버 비밀번호" />
         </div>
         <div class="form-row">
+          <label>계정 그룹</label>
+          <select id="accGroup">
+            <option value="ad">광고</option>
+            <option value="general">일반</option>
+          </select>
+        </div>
+        <div class="form-row">
           <label>특화 분야</label>
           <select id="accSpecialty">
             <option value="">선택 안함</option>
@@ -315,8 +322,8 @@
       <div class="card">
         <h3>등록된 계정</h3>
         <table class="data-table">
-          <thead><tr><th>별칭</th><th>특화 분야</th><th>상태</th><th>마지막 사용</th><th>카테고리</th><th>작업</th></tr></thead>
-          <tbody id="accountsTableBody"><tr><td colspan="6" style="text-align:center;color:#636e72">계정이 없습니다</td></tr></tbody>
+          <thead><tr><th>별칭</th><th>그룹</th><th>특화 분야</th><th>상태</th><th>마지막 사용</th><th>카테고리</th><th>작업</th></tr></thead>
+          <tbody id="accountsTableBody"><tr><td colspan="7" style="text-align:center;color:#636e72">계정이 없습니다</td></tr></tbody>
         </table>
       </div>
 
@@ -787,9 +794,10 @@ async function loadAccounts() {
   try {
     accounts = await api('/api/accounts');
     const tbody = document.getElementById('accountsTableBody');
-    if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#636e72">계정이 없습니다</td></tr>'; return; }
+    if (!accounts.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#636e72">계정이 없습니다</td></tr>'; return; }
     tbody.innerHTML = accounts.map(a => `<tr>
       <td><strong>${escapeHtml(a.account_name)}</strong></td>
+      <td><span class="tag ${a.account_group === 'ad' ? 'tag-red' : 'tag-blue'}">${a.account_group === 'ad' ? '광고' : '일반'}</span></td>
       <td>${a.specialty ? `<span class="tag tag-blue">${a.specialty}</span>` : '-'}</td>
       <td>${a.is_active ? '<span class="tag tag-green">활성</span>' : '<span class="tag tag-gray">비활성</span>'}</td>
       <td style="font-size:12px">${a.last_used || '-'}</td>
@@ -809,10 +817,11 @@ async function addAccount() {
   const name = document.getElementById('accName').value.trim();
   const naverId = document.getElementById('accNaverId').value.trim();
   const naverPw = document.getElementById('accNaverPw').value.trim();
+  const accountGroup = document.getElementById('accGroup').value;
   const specialty = document.getElementById('accSpecialty').value;
   if (!name || !naverId || !naverPw) return showToast('모든 필드를 입력하세요', 'error');
   try {
-    await api('/api/accounts', { method: 'POST', body: JSON.stringify({ account_name: name, naver_id: naverId, naver_password: naverPw, specialty }) });
+    await api('/api/accounts', { method: 'POST', body: JSON.stringify({ account_name: name, naver_id: naverId, naver_password: naverPw, account_group: accountGroup, specialty }) });
     showToast('계정이 추가되었습니다');
     document.getElementById('accName').value = '';
     document.getElementById('accNaverId').value = '';
@@ -950,7 +959,7 @@ async function loadSchedulerConfig() {
     document.getElementById('schedMinInterval').value = cfg.min_interval_hours || 2;
     document.getElementById('schedMaxInterval').value = cfg.max_interval_hours || 4;
     document.getElementById('schedRandomRest').checked = !!cfg.random_rest_enabled;
-    document.getElementById('schedRestPercent').value = cfg.random_rest_percent || 20;
+    document.getElementById('schedRestPercent').value = cfg.random_rest_percent || 10;
     document.getElementById('schedWeekendLow').checked = !!cfg.weekend_low_prob;
     document.getElementById('schedWeekendPercent').value = cfg.weekend_prob_percent || 30;
     document.getElementById('schedFooterLink').value = cfg.footer_link || '';

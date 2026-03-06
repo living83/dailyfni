@@ -243,6 +243,7 @@ class AccountCreate(BaseModel):
     naver_id: str
     naver_password: str
     specialty: str = ""
+    account_group: str = "ad"
 
     @validator("account_name")
     def check_name(cls, v):
@@ -260,13 +261,26 @@ class AccountCreate(BaseModel):
     def check_spec(cls, v):
         return _validate_max_length(v, 500, "전문분야")
 
+    @validator("account_group")
+    def check_group(cls, v):
+        if v not in ("ad", "general"):
+            raise ValueError("account_group은 ad 또는 general이어야 합니다.")
+        return v
+
 
 class AccountUpdate(BaseModel):
     account_name: Optional[str] = None
     naver_id: Optional[str] = None
     naver_password: Optional[str] = None
     specialty: Optional[str] = None
+    account_group: Optional[str] = None
     is_active: Optional[int] = None
+
+    @validator("account_group")
+    def check_group(cls, v):
+        if v is not None and v not in ("ad", "general"):
+            raise ValueError("account_group은 ad 또는 general이어야 합니다.")
+        return v
 
     @validator("is_active")
     def check_active(cls, v):
@@ -498,6 +512,7 @@ async def create_account(req: AccountCreate):
         "naver_id": encrypted_id,
         "naver_password": encrypted_pw,
         "specialty": req.specialty,
+        "account_group": req.account_group,
     })
     # 응답에서 암호화된 비밀번호는 마스킹
     account["naver_id"] = "***암호화됨***"

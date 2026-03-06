@@ -43,7 +43,7 @@ async def _should_skip_today(config: dict) -> bool:
 
     # 랜덤 휴식
     if config.get("random_rest_enabled"):
-        rest_prob = config.get("random_rest_percent", 20) / 100
+        rest_prob = config.get("random_rest_percent", 10) / 100
         if random.random() < rest_prob:
             logger.info(f"랜덤 휴식({rest_prob*100}%)에 의해 건너뜁니다.")
             return True
@@ -97,9 +97,10 @@ async def article_generation_job(manual: bool = False):
 
         keyword = kw["keyword"]
         product_info = kw.get("product_info", "")
-        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}, 타입 = {kw.get('priority', 'ad')}")
+        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
+        logger.info(f"글 사전 생성 시작: 키워드 = {keyword}, 타입 = {post_type}")
 
-        # 활성 계정 가져오기
+        # 활성 계정 가져오기 (키워드 타입에 맞는 그룹만 선택)
         accounts = await get_accounts()
         active_accounts = [a for a in accounts if a.get("is_active")]
         logger.info(f"활성 계정 수: {len(active_accounts)}")
@@ -107,7 +108,12 @@ async def article_generation_job(manual: bool = False):
             await create_notification("error", "계정 없음", "활성 계정이 없습니다. 계정을 추가해주세요.")
             return
 
-        accounts_to_use = active_accounts[:3]
+        # 키워드 타입(ad/general)에 맞는 계정 그룹 필터링
+        group_accounts = [a for a in active_accounts if a.get("account_group") == post_type]
+        if not group_accounts:
+            logger.warning(f"'{post_type}' 그룹 계정이 없어 전체 활성 계정에서 선택합니다.")
+            group_accounts = active_accounts
+        accounts_to_use = group_accounts[:3]
 
         # 키워드 상태 업데이트
         now = datetime.now()
@@ -117,9 +123,6 @@ async def article_generation_job(manual: bool = False):
             "next_available_at": (now + timedelta(days=30)).isoformat(),
             "used_count": kw["used_count"] + 1,
         })
-
-        # 글 타입 결정 (일반/광고)
-        post_type = kw.get("priority", "ad")  # priority 컬럼에 "ad" 또는 "general" 저장
 
         # 배치 생성 (status = articles_ready, post_type 포함)
         batch = await create_batch(keyword, post_type=post_type)
@@ -274,17 +277,22 @@ async def daily_publish_job(manual: bool = False):
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
-        # 계정 자동 분배: 모든 글이 같은 account_id면 활성 계정들에 순차 분배
+        # 계정 자동 분배: 배치 타입(ad/general)에 맞는 그룹 계정으로 순차 분배
         from database import get_accounts, get_account, get_categories
         account_ids = [a["account_id"] for a in articles if a.get("account_id")]
         unique_accounts = set(account_ids)
         if len(unique_accounts) <= 1 and len(articles) > 1:
             all_accounts = await get_accounts()
             active_accounts = [a for a in all_accounts if a.get("is_active")]
-            if len(active_accounts) > 1:
-                logger.info(f"계정 자동 분배: {len(articles)}개 글 → {len(active_accounts)}개 활성 계정")
+            # 배치 타입에 맞는 그룹 계정 필터링
+            post_type = batch.get("post_type", "ad")
+            group_accounts = [a for a in active_accounts if a.get("account_group") == post_type]
+            if not group_accounts:
+                group_accounts = active_accounts
+            if len(group_accounts) > 1:
+                logger.info(f"계정 그룹 분배({post_type}): {len(articles)}개 글 → {len(group_accounts)}개 계정")
                 for idx, article in enumerate(articles):
-                    assigned = active_accounts[idx % len(active_accounts)]
+                    assigned = group_accounts[idx % len(group_accounts)]
                     article["account_id"] = assigned["id"]
                     # 카테고리도 해당 계정의 기본 카테고리로 재설정
                     try:
