@@ -167,6 +167,9 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             except Exception as e:
                 logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
+            # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (최대 3장 랜덤)
+            gemini_image_map = {}  # {document_index: [image_paths]}
+
             for i, (fmt, prompt_template, desc) in enumerate(doc_formats):
                 account = accounts_to_use[i]
 
@@ -188,6 +191,18 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 title = lines[0].strip().lstrip("# ").strip()
                 body = lines[1].strip() if len(lines) > 1 else result
 
+                # 일반 포스팅일 때 Gemini 이미지 생성
+                if post_type == "general" and os.getenv("GEMINI_API_KEY"):
+                    try:
+                        from gemini_image_generator import generate_gemini_images
+                        gemini_paths = await asyncio.to_thread(
+                            generate_gemini_images, keyword, body, 3
+                        )
+                        gemini_image_map[i] = gemini_paths
+                        logger.info(f"Gemini 이미지 {len(gemini_paths)}장 생성 (문서 {i+1})")
+                    except Exception as e:
+                        logger.warning(f"Gemini 이미지 생성 실패 (문서 {i+1}): {e}")
+
                 # DB에 저장 (status = 'generated')
                 history = await create_publish_history({
                     "batch_id": batch["id"],
@@ -203,6 +218,13 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 # status를 generated로 업데이트
                 from database import update_publish_history
                 await update_publish_history(history["id"], {"status": "generated"})
+
+                # Gemini 이미지 경로를 DB에 저장
+                if i in gemini_image_map:
+                    import json as _json
+                    await update_publish_history(history["id"], {
+                        "gemini_images": _json.dumps(gemini_image_map[i]),
+                    })
 
                 logger.info(f"글 생성 완료 [{i+1}/{len(doc_formats)}]: {title[:30]}... → 계정: {account['account_name']}")
 
@@ -377,12 +399,26 @@ async def daily_publish_job(manual: bool = False):
                     footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
                     logger.info(f"광고(ad) 타입 → 하단 링크: {footer_link!r}")
 
+                # Gemini 이미지 로드 (일반 포스팅)
+                extra_image_paths = []
+                try:
+                    gemini_json = article.get("gemini_images", "")
+                    if gemini_json:
+                        extra_image_paths = json.loads(gemini_json) if isinstance(gemini_json, str) else gemini_json
+                        # 파일 존재 확인
+                        extra_image_paths = [p for p in extra_image_paths if os.path.exists(p)]
+                        if extra_image_paths:
+                            logger.info(f"Gemini 이미지 {len(extra_image_paths)}장 사용")
+                except Exception as e:
+                    logger.warning(f"Gemini 이미지 로드 실패: {e}")
+
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
                     article["title"], article["content"],
                     cat_name, tags,
                     keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else "",
                     footer_link, footer_link_text,
+                    extra_image_paths=extra_image_paths,
                 )
 
                 if pub_result["success"]:

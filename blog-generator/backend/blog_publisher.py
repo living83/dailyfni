@@ -227,10 +227,12 @@ async def publish_to_blog(
     image_path: str = "",
     footer_link: str = "",
     footer_link_text: str = "",
+    extra_image_paths: list = None,
 ) -> dict:
     """네이버 블로그에 글을 발행합니다."""
     result = {"success": False, "url": "", "error": ""}
     tags = tags or []
+    extra_image_paths = extra_image_paths or []
 
     try:
         # 1. 로그인
@@ -294,6 +296,10 @@ async def publish_to_blog(
 
         # 8-1. 대표이미지 삽입
         await se_insert_image(page, editor, image_path)
+
+        # 8-2. 추가 이미지 삽입 (Gemini 생성 이미지 등)
+        for extra_img in extra_image_paths:
+            await se_insert_image(page, editor, extra_img)
 
         # 9. 본문 입력
         await se_input_body(page, editor, content)
@@ -363,6 +369,7 @@ async def _run_publish_task_impl(
     image_path: str = "",
     footer_link: str = "",
     footer_link_text: str = "",
+    extra_image_paths: list = None,
 ) -> dict:
     from playwright.async_api import async_playwright
 
@@ -375,6 +382,7 @@ async def _run_publish_task_impl(
                 page, account_id, naver_id, naver_password,
                 title, content, category_name, tags, image_path,
                 footer_link, footer_link_text,
+                extra_image_paths=extra_image_paths,
             )
             return result
         except Exception as e:
@@ -394,6 +402,7 @@ async def run_publish_task(
     image_path: str = "",
     footer_link: str = "",
     footer_link_text: str = "",
+    extra_image_paths: list = None,
 ) -> dict:
     """단일 문서 발행 실행 (Windows ProactorEventLoop 호환)"""
     if sys.platform == "win32":
@@ -401,10 +410,10 @@ async def run_publish_task(
             _run_in_proactor_loop, _run_publish_task_impl,
             account_id, naver_id, naver_password,
             title, content, category_name, tags, image_path,
-            footer_link, footer_link_text,
+            footer_link, footer_link_text, extra_image_paths,
         )
     return await _run_publish_task_impl(
         account_id, naver_id, naver_password,
         title, content, category_name, tags, image_path,
-        footer_link, footer_link_text,
+        footer_link, footer_link_text, extra_image_paths,
     )

@@ -193,6 +193,7 @@ async def init_db():
                     error_message TEXT,
                     naver_post_url VARCHAR(1000) DEFAULT '',
                     document_format VARCHAR(50) DEFAULT 'tutorial',
+                    gemini_images TEXT DEFAULT '',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (batch_id) REFERENCES publish_batches(id) ON DELETE CASCADE,
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
@@ -345,6 +346,12 @@ async def init_db():
                     await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
                 except Exception:
                     pass  # 이미 존재
+
+            # publish_history에 gemini_images 컬럼 추가 (기존 DB 마이그레이션)
+            try:
+                await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT DEFAULT ''")
+            except Exception:
+                pass  # 이미 존재
 
 
 # ─── 계정 CRUD ──────────────────────────────────────────

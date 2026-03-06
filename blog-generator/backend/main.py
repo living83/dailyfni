@@ -54,6 +54,7 @@ from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
 from image_generator import generate_keyword_image, generate_keyword_image_variants
+from gemini_image_generator import generate_gemini_images
 
 # ─── 로깅 설정 ──────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
@@ -686,6 +687,22 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     except Exception as e:
         logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
+    # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
+    gemini_image_map = {}  # {document_index: [image_paths]}
+    batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
+    is_general = (batch_info.get("post_type") == "general") if batch_info else False
+    if is_general and os.getenv("GEMINI_API_KEY"):
+        for i, doc in enumerate(documents):
+            try:
+                content = doc.get("content", "")
+                gemini_paths = await asyncio.to_thread(
+                    generate_gemini_images, keyword, content, 3
+                )
+                gemini_image_map[i] = gemini_paths
+                logger.info(f"Gemini 이미지 {len(gemini_paths)}장 생성 (문서 {i+1})")
+            except Exception as e:
+                logger.warning(f"Gemini 이미지 생성 실패 (문서 {i+1}, 계속 진행): {e}")
+
     # 계정 자동 분배: 모든 문서가 같은 account_id면 활성 계정들에 순차 분배
     account_ids = [doc.get("account_id") for doc in documents]
     unique_accounts = set(aid for aid in account_ids if aid)
@@ -784,6 +801,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 cat_name, tags,
                 keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else "",
                 footer_link, footer_link_text,
+                extra_image_paths=gemini_image_map.get(i, []),
             )
 
             if pub_result["success"]:
