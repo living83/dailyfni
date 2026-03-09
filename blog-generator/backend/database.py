@@ -128,6 +128,12 @@ async def init_db():
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # 기존 테이블의 TEXT 컬럼 DEFAULT 값 수정 (MySQL strict mode 호환)
+            try:
+                await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT")
+            except Exception:
+                pass  # 테이블이 아직 없으면 무시
+
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
