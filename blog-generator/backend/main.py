@@ -789,18 +789,23 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     }
     _publish_status_timestamps[batch_id] = datetime.now().timestamp()
 
-    # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+    # post_type 확인
+    batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
+    is_general = (batch_info.get("post_type") == "general") if batch_info else False
+
+    # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
     keyword_image_paths = []
-    try:
-        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
-        logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-    except Exception as e:
-        logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
+    if not is_general:
+        try:
+            keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
+            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+        except Exception as e:
+            logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
+    else:
+        logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
 
     # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
     gemini_image_map = {}  # {document_index: [image_paths]}
-    batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
-    is_general = (batch_info.get("post_type") == "general") if batch_info else False
     if is_general and os.getenv("GEMINI_API_KEY"):
         for i, doc in enumerate(documents):
             try:
@@ -911,6 +916,11 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 main_image = gemini_images_for_doc[0]
                 extra_images = gemini_images_for_doc[1:]
                 logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+            elif is_general:
+                # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                main_image = ""
+                extra_images = []
+                logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
             else:
                 main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
                 extra_images = gemini_image_map.get(i, [])
