@@ -584,8 +584,15 @@ async def create_batch(keyword: str, scheduled_start_time: str = "", post_type: 
                 "INSERT INTO publish_batches (keyword, scheduled_start_time, post_type) VALUES (%s, %s, %s)",
                 (keyword, scheduled_start_time, post_type),
             )
-            await cur.execute("SELECT * FROM publish_batches WHERE id = %s", (cur.lastrowid,))
-            return await cur.fetchone()
+            last_id = cur.lastrowid
+            if not last_id:
+                logger.warning(f"create_batch: lastrowid가 없음 (keyword={keyword})")
+                return None
+            await cur.execute("SELECT * FROM publish_batches WHERE id = %s", (last_id,))
+            result = await cur.fetchone()
+            if not result:
+                logger.warning(f"create_batch: fetchone 실패 (lastrowid={last_id}, keyword={keyword})")
+            return result
 
 
 async def get_batches(limit: int = 50, offset: int = 0) -> list:

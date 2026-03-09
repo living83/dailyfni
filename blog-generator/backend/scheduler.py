@@ -179,9 +179,12 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             })
 
             # 배치 생성
-            batch = await create_batch(keyword, post_type=post_type)
-
+            batch = None
             try:
+                batch = await create_batch(keyword, post_type=post_type)
+                if not batch:
+                    logger.error(f"배치 생성 실패: 키워드={keyword}")
+                    continue
                 ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
                 # 문서 포맷 순환 배정
@@ -262,7 +265,10 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
             except Exception as e:
                 logger.error(f"글 생성 오류 (계정 {account['account_name']}): {e}")
-                await update_batch(batch["id"], {"status": "all_failed"})
+                import traceback
+                logger.error(traceback.format_exc())
+                if batch:
+                    await update_batch(batch["id"], {"status": "all_failed"})
 
         # 발행 타입 기록
         from database import update_scheduler_config
