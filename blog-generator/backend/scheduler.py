@@ -228,6 +228,10 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                         logger.warning(f"Gemini 이미지 생성 실패: {e}")
 
                 # DB 저장
+                if not batch:
+                    logger.error(f"배치 생성 실패: 키워드={keyword}")
+                    continue
+
                 history = await create_publish_history({
                     "batch_id": batch["id"],
                     "document_number": 1,
@@ -238,6 +242,11 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                     "keywords": [keyword],
                     "document_format": fmt,
                 })
+
+                if not history:
+                    logger.error(f"publish_history 생성 실패: 키워드={keyword}")
+                    await update_batch(batch["id"], {"status": "all_failed"})
+                    continue
 
                 from database import update_publish_history
                 await update_publish_history(history["id"], {"status": "generated"})

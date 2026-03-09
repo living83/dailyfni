@@ -86,8 +86,11 @@ def generate_gemini_image(keyword: str, content: str = "", image_index: int = 0)
 
         client = genai.Client(api_key=api_key)
 
+        # 모델 우선순위: imagen-4.0-fast (저렴/빠름) → imagen-4.0 (고품질)
+        model_name = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-fast-generate-001")
+
         response = client.models.generate_images(
-            model="imagen-3.0-generate-002",
+            model=model_name,
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,

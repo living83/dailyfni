@@ -53,7 +53,7 @@ from agents import _call_claude
 from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
-from image_generator import generate_keyword_image, generate_keyword_image_variants
+from image_generator import generate_keyword_image, generate_keyword_image_variants, generate_ad_banner, generate_ad_banner_variants, generate_ad_banner_all_templates
 from gemini_image_generator import generate_gemini_images
 
 # ─── 로깅 설정 ──────────────────────────────────────────

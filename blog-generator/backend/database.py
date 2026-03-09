@@ -648,7 +648,7 @@ async def create_publish_history(data: dict) -> dict:
 async def update_publish_history(history_id: int, data: dict):
     fields = []
     values = []
-    for key in ["status", "error_message", "naver_post_url", "published_at", "account_id", "category_id", "scheduled_time"]:
+    for key in ["status", "error_message", "naver_post_url", "published_at", "account_id", "category_id", "scheduled_time", "gemini_images"]:
         if key in data:
             fields.append(f"{key} = %s")
             values.append(data[key])
