@@ -772,23 +772,22 @@ async def get_keywords(status: str = None) -> list:
 
 async def get_next_keyword(preferred_type: str = "") -> dict | None:
     """키워드 큐에서 다음 키워드를 가져온다.
-    preferred_type이 'ad' 또는 'general'이면 해당 타입을 우선 선택하고,
-    해당 타입이 없으면 다른 타입에서 가져온다."""
+    preferred_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다.
+    지정하지 않으면 ad 우선으로 가져온다."""
     now = datetime.now().isoformat()
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             if preferred_type in ("ad", "general"):
-                # 선호 타입 우선 조회
-                other_type = "general" if preferred_type == "ad" else "ad"
+                # 해당 타입 키워드만 가져오기 (다른 타입 혼용 방지)
                 await cur.execute(
                     """SELECT * FROM keyword_queue
                        WHERE status = 'pending'
+                       AND priority = %s
                        AND (next_available_at = '' OR next_available_at <= %s)
-                       ORDER BY FIELD(priority, %s, %s),
-                                created_at ASC
+                       ORDER BY created_at ASC
                        LIMIT 1""",
-                    (now, preferred_type, other_type),
+                    (preferred_type, now),
                 )
             else:
                 await cur.execute(
