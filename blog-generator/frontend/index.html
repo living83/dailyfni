@@ -286,7 +286,8 @@
       <div class="card">
         <h3>빠른 실행</h3>
         <div class="quick-actions">
-          <button class="btn btn-primary" onclick="triggerBatchGeneration(); switchTab('articles');">글 생성</button>
+          <button class="btn btn-primary" onclick="quickGenerate('ad')" style="background:#e17055">광고 글 생성</button>
+          <button class="btn btn-primary" onclick="quickGenerate('general')">일반 글 생성</button>
           <button class="btn btn-success" onclick="triggerPublishNow(); switchTab('publish');">즉시 발행</button>
           <button class="btn btn-secondary" onclick="switchTab('keywords')">키워드 등록</button>
           <button class="btn btn-secondary" onclick="switchTab('scheduler')">스케줄 설정</button>
@@ -852,6 +853,24 @@ function toggleProductFields() {
   } else {
     area.style.display = 'none';
     icon.innerHTML = '&#9654;';
+  }
+}
+
+/* ━━━ 대시보드 빠른 글 생성 ━━━ */
+async function quickGenerate(postType) {
+  const label = postType === 'ad' ? '광고' : '일반';
+  const btns = document.querySelectorAll('.quick-actions .btn');
+  btns.forEach(b => b.disabled = true);
+  showToast(`${label} 글 생성을 시작합니다...`, 'info');
+  try {
+    const result = await api('/api/articles/generate-batch', { method: 'POST', body: JSON.stringify({ post_type: postType }) });
+    showToast(result.message, 'success');
+    switchTab('articles');
+    setTimeout(() => loadGeneratedArticles(), 3000);
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    btns.forEach(b => b.disabled = false);
   }
 }
 
