@@ -414,6 +414,21 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
         return False
 
 
+def _find_login_element(driver, selectors: list, description: str, timeout: int = 15):
+    """여러 셀렉터를 순서대로 시도하여 로그인 요소를 찾는다."""
+    for by, value in selectors:
+        try:
+            el = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((by, value))
+            )
+            _log(f"[credentials] {description} 셀렉터 매칭: ({by}, {value})")
+            return el
+        except Exception:
+            _log(f"[credentials] {description} 셀렉터 실패: ({by}, {value})")
+            timeout = 3  # 첫 셀렉터 이후는 짧게
+    return None
+
+
 def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc: str) -> bool:
     """ID/PW로 네이버 로그인 (2FA 대기 포함)"""
     try:
@@ -429,38 +444,94 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             return False
         driver.get("https://nid.naver.com/nidlogin.login")
         random_delay(2, 3)
-        _log(f"[credentials] 로그인 페이지 URL: {driver.current_url}")
+        current_url = driver.current_url
+        _log(f"[credentials] 로그인 페이지 URL: {current_url}")
 
-        wait = WebDriverWait(driver, 30)
+        # 로그인 페이지 로드 실패 감지
+        if "nid.naver.com" not in current_url:
+            _log(f"[credentials] 로그인 페이지 로드 실패 — 리다이렉트됨: {current_url}", "ERROR")
+            _save_debug_screenshot(driver, "login_page_redirect")
+            return False
 
-        # 아이디 입력 (value 설정 + input 이벤트 발행)
-        id_input = wait.until(EC.presence_of_element_located((By.ID, "id")))
+        # 디버그: 페이지 로드 직후 스크린샷 + 페이지 정보 로깅
+        _save_debug_screenshot(driver, "login_page_loaded")
+        try:
+            page_title = driver.title
+            body_text = driver.find_element(By.TAG_NAME, "body").text[:300]
+            _log(f"[credentials] 페이지 title: {page_title}")
+            _log(f"[credentials] 페이지 내용 (일부): {body_text}")
+            # 페이지에 있는 input 요소 목록 출력
+            inputs_info = driver.execute_script(
+                "return Array.from(document.querySelectorAll('input')).map(el => "
+                "({id: el.id, name: el.name, type: el.type, placeholder: el.placeholder})).slice(0, 10);"
+            )
+            _log(f"[credentials] 페이지 input 요소: {inputs_info}")
+        except Exception as diag_err:
+            _log(f"[credentials] 진단 정보 수집 실패: {diag_err}")
+
+        # 아이디 입력 — 다중 셀렉터로 탐색
+        id_selectors = [
+            (By.ID, "id"),
+            (By.CSS_SELECTOR, "input#id"),
+            (By.CSS_SELECTOR, "input[name='id']"),
+            (By.CSS_SELECTOR, "input[placeholder*='아이디']"),
+            (By.CSS_SELECTOR, "input[type='text'][tabindex]"),
+        ]
+        id_input = _find_login_element(driver, id_selectors, "아이디 필드")
+        if not id_input:
+            _log("[credentials] 아이디 입력 필드를 찾을 수 없음 — 페이지 구조 변경 가능", "ERROR")
+            _save_debug_screenshot(driver, "login_id_field_not_found")
+            return False
         id_input.click()
         random_delay(0.2, 0.4)
+
+        # 아이디 값 입력 (JS + 이벤트 발행) — 찾은 요소에 직접 입력
         driver.execute_script(
-            "var el = document.getElementById('id');"
-            "el.value = arguments[0];"
+            "var el = arguments[0];"
+            "el.value = arguments[1];"
             "el.dispatchEvent(new Event('input', {bubbles: true}));"
             "el.dispatchEvent(new Event('change', {bubbles: true}));",
-            username
+            id_input, username
         )
         random_delay(0.3, 0.8)
 
-        # 비밀번호 입력 (value 설정 + input 이벤트 발행)
-        pw_input = driver.find_element(By.ID, "pw")
+        # 비밀번호 입력 — 다중 셀렉터로 탐색
+        pw_selectors = [
+            (By.ID, "pw"),
+            (By.CSS_SELECTOR, "input#pw"),
+            (By.CSS_SELECTOR, "input[name='pw']"),
+            (By.CSS_SELECTOR, "input[placeholder*='비밀번호']"),
+            (By.CSS_SELECTOR, "input[type='password']"),
+        ]
+        pw_input = _find_login_element(driver, pw_selectors, "비밀번호 필드")
+        if not pw_input:
+            _log("[credentials] 비밀번호 입력 필드를 찾을 수 없음 — 페이지 구조 변경 가능", "ERROR")
+            _save_debug_screenshot(driver, "login_pw_field_not_found")
+            return False
         pw_input.click()
         random_delay(0.2, 0.4)
         driver.execute_script(
-            "var el = document.getElementById('pw');"
-            "el.value = arguments[0];"
+            "var el = arguments[0];"
+            "el.value = arguments[1];"
             "el.dispatchEvent(new Event('input', {bubbles: true}));"
             "el.dispatchEvent(new Event('change', {bubbles: true}));",
-            password
+            pw_input, password
         )
         random_delay(0.5, 1.0)
 
-        # 로그인 버튼 클릭
-        login_btn = driver.find_element(By.ID, "log.login")
+        # 로그인 버튼 클릭 — 다중 셀렉터
+        btn_selectors = [
+            (By.ID, "log.login"),
+            (By.CSS_SELECTOR, "button#log\\.login"),
+            (By.CSS_SELECTOR, "button[type='submit']"),
+            (By.CSS_SELECTOR, ".btn_login"),
+            (By.CSS_SELECTOR, "button[class*='login']"),
+        ]
+        login_btn = _find_login_element(driver, btn_selectors, "로그인 버튼")
+        if not login_btn:
+            _log("[credentials] 로그인 버튼을 찾을 수 없음 — 페이지 구조 변경 가능", "ERROR")
+            _save_debug_screenshot(driver, "login_btn_not_found")
+            return False
         login_btn.click()
         _log(f"[credentials] 로그인 버튼 클릭 완료, 결과 대기...")
 
