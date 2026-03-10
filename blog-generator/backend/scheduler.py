@@ -194,13 +194,16 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-                # 키워드 대표이미지
+                # 키워드 대표이미지: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
                 keyword_image_paths = []
-                try:
-                    from image_generator import generate_keyword_image_variants
-                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                except Exception as e:
-                    logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+                if post_type != "general":
+                    try:
+                        from image_generator import generate_keyword_image_variants
+                        keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                    except Exception as e:
+                        logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+                else:
+                    logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀")
 
                 # 카테고리
                 categories = await get_categories(account["id"])
