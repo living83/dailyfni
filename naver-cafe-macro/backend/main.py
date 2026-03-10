@@ -58,11 +58,10 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 @app.on_event("startup")
 async def startup():
     db.init_db()
-    # uvicorn reload 시 dictConfig가 핸들러를 덮어쓸 수 있으므로 재설정
+    # uvicorn reload 시 dictConfig가 핸들러를 덮어쓸 수 있으므로 검증
     for _name in ("cafe_publisher", "scheduler"):
         _lg = logging.getLogger(_name)
         _lg.setLevel(logging.DEBUG)
-        # stderr 핸들러가 없으면 추가
         has_stderr = any(
             isinstance(h, logging.StreamHandler) and getattr(h, 'stream', None) is sys.stderr
             for h in _lg.handlers
@@ -71,7 +70,7 @@ async def startup():
             _sh = logging.StreamHandler(sys.stderr)
             _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
             _lg.addHandler(_sh)
-            logger.info(f"{_name} 로거에 stderr 핸들러 추가됨")
+        logger.info(f"{_name} 로거 핸들러={len(_lg.handlers)}개, propagate={_lg.propagate}")
     logger.info("DB 초기화 완료")
 
 

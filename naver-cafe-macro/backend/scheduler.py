@@ -33,14 +33,15 @@ _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 _log_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-if not logger.handlers:
-    _sh = logging.StreamHandler(sys.stderr)
-    _sh.setFormatter(_log_fmt)
-    logger.addHandler(_sh)
-    _fh = logging.FileHandler(str(_LOG_DIR / "scheduler.log"), encoding="utf-8")
-    _fh.setFormatter(_log_fmt)
-    logger.addHandler(_fh)
-    logger.propagate = False
+# uvicorn dictConfig가 먼저 핸들러를 추가할 수 있으므로 항상 강제 재설정
+logger.handlers.clear()
+_sh = logging.StreamHandler(sys.stderr)
+_sh.setFormatter(_log_fmt)
+logger.addHandler(_sh)
+_fh = logging.FileHandler(str(_LOG_DIR / "scheduler.log"), encoding="utf-8")
+_fh.setFormatter(_log_fmt)
+logger.addHandler(_fh)
+logger.propagate = False
 
 
 def _slog(msg: str, level: str = "INFO"):

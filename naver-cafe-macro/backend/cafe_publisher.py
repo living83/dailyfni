@@ -47,14 +47,15 @@ _LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
 _log_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-if not logger.handlers:
-    _sh = logging.StreamHandler(sys.stderr)
-    _sh.setFormatter(_log_fmt)
-    logger.addHandler(_sh)
-    _fh = logging.FileHandler(str(_LOG_DIR / "cafe_publisher.log"), encoding="utf-8")
-    _fh.setFormatter(_log_fmt)
-    logger.addHandler(_fh)
-    logger.propagate = False
+# uvicorn dictConfig가 먼저 핸들러를 추가할 수 있으므로 항상 강제 재설정
+logger.handlers.clear()
+_sh = logging.StreamHandler(sys.stderr)
+_sh.setFormatter(_log_fmt)
+logger.addHandler(_sh)
+_fh = logging.FileHandler(str(_LOG_DIR / "cafe_publisher.log"), encoding="utf-8")
+_fh.setFormatter(_log_fmt)
+logger.addHandler(_fh)
+logger.propagate = False
 
 
 def _log(msg: str, level: str = "INFO"):
@@ -1943,21 +1944,33 @@ def publish_to_cafe(
 
         logged_in = check_profile_login(driver)
         _log(f"[로그인] 프로파일 세션: {'성공' if logged_in else '실패'}")
+        if on_progress:
+            on_progress("login", f"프로파일 세션: {'성공' if logged_in else '실패'}")
 
         if not logged_in and account.get("cookie_data"):
+            if on_progress:
+                on_progress("login", "쿠키 로그인 시도 중...")
             logged_in = login_with_cookie(driver, account["cookie_data"])
             _log(f"[로그인] 쿠키: {'성공' if logged_in else '실패'}")
+            if on_progress:
+                on_progress("login", f"쿠키 로그인: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
+            if on_progress:
+                on_progress("login", f"ID/PW 로그인 시도: {account['username']}")
             _log(f"[로그인] ID/PW 시도: {account['username']}")
             logged_in = login_with_credentials(
                 driver, account["username"], account["password_enc"]
             )
             _log(f"[로그인] ID/PW: {'성공' if logged_in else '실패'}")
+            if on_progress:
+                on_progress("login", f"ID/PW 로그인: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
             _save_debug_screenshot(driver, "login_failed")
             result["error"] = "로그인 실패"
+            if on_progress:
+                on_progress("error", "로그인 실패 (프로파일/쿠키/ID-PW 모두 실패)")
             return result
 
         # 쿠키 저장
@@ -1998,8 +2011,12 @@ def publish_to_cafe(
                     result["error"] = "재로그인 실패: 2단계 인증 필요"
                 elif "protect" in current_url:
                     result["error"] = "재로그인 실패: 보호 모드 (이상 로그인 감지)"
+                elif "nidlogin" in current_url:
+                    result["error"] = "재로그인 실패: ID/PW 불일치 또는 입력 미감지"
                 else:
-                    result["error"] = "재로그인 실패"
+                    result["error"] = f"재로그인 실패: 알 수 없는 URL ({current_url[:80]})"
+                if on_progress:
+                    on_progress("error", result["error"])
                 return result
 
         # 3. 글 작성 & 발행
