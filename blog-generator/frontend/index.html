@@ -1403,16 +1403,21 @@ async function loadBatches() {
       <td>${b.success_count}</td>
       <td>${b.failed_count}</td>
       <td style="font-size:11px">${(b.created_at || '').slice(0,16)}</td>
-      <td>${b.failed_count > 0 ? `<button class="btn btn-sm btn-secondary" onclick="retryBatch(${b.id})">재시도</button>` : ''}</td>
+      <td>${(b.failed_count > 0 || b.status === 'all_failed' || b.status === 'partial_success') ? `<button class="btn btn-sm btn-secondary" onclick="retryBatch(${b.id})">재시도</button>` : ''}</td>
     </tr>`).join('');
   } catch (e) { showToast(e.message, 'error'); }
 }
 
 async function retryBatch(batchId) {
+  if (!confirm('이 배치를 재시도하시겠습니까?')) return;
   try {
     const result = await api(`/api/batches/${batchId}/retry`, { method: 'POST' });
     showToast(result.message);
-    pollPublishStatus(batchId);
+    loadBatches();
+    // 발행 재시도인 경우 발행 상태 폴링
+    if (result.message && result.message.includes('문서 재시도')) {
+      pollPublishStatus(batchId);
+    }
   } catch (e) { showToast(e.message, 'error'); }
 }
 
