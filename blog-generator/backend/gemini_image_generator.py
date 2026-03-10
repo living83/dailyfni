@@ -95,7 +95,7 @@ def generate_gemini_image(keyword: str, content: str = "", image_index: int = 0)
             config=types.GenerateImagesConfig(
                 number_of_images=1,
                 aspect_ratio="16:9",
-                safety_filter_level="BLOCK_LOW_AND_ABOVE",
+                safety_filter_level="block_low_and_above",
             ),
         )
 

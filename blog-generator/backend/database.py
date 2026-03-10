@@ -132,9 +132,9 @@ async def init_db():
             await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
             await cur.execute("SET SESSION sql_mode = ''")
 
-            # 기존 테이블의 TEXT 컬럼 DEFAULT 값 수정
+            # gemini_images 컬럼에 기본값 설정 (기존 NOT NULL 컬럼 수정)
             try:
-                await cur.execute("ALTER TABLE publish_history ALTER COLUMN gemini_images DROP DEFAULT")
+                await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
             except Exception:
                 pass  # 테이블이 아직 없으면 무시
 
@@ -212,7 +212,7 @@ async def init_db():
                     error_message TEXT,
                     naver_post_url VARCHAR(1000) DEFAULT '',
                     document_format VARCHAR(50) DEFAULT 'tutorial',
-                    gemini_images TEXT NULL,
+                    gemini_images TEXT NULL DEFAULT ('[]'),
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (batch_id) REFERENCES publish_batches(id) ON DELETE CASCADE,
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
@@ -379,7 +379,7 @@ async def init_db():
 
             # publish_history에 gemini_images 컬럼 추가 (기존 DB 마이그레이션)
             try:
-                await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT")
+                await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
             except Exception:
                 pass  # 이미 존재
 
