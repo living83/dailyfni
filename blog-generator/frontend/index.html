@@ -975,10 +975,11 @@ async function pollPublishStatus(batchId) {
       });
       html += '</div>';
       panel.innerHTML = html;
-      if (status.status === 'publishing') setTimeout(poll, 3000);
+      if (status.status === 'publishing' || status.status === 'pending') setTimeout(poll, 3000);
       else {
         showToast('발행이 완료되었습니다!');
         loadBatches();
+        loadHistory();
       }
     } catch (e) { panel.innerHTML = `<p style="color:#d63031">${e.message}</p>`; }
   };
@@ -1411,8 +1412,9 @@ async function retryBatch(batchId) {
     const result = await api(`/api/batches/${batchId}/retry`, { method: 'POST' });
     showToast(result.message);
     loadBatches();
-    // 발행 재시도인 경우 발행 상태 폴링
-    if (result.message && result.message.includes('문서 재시도')) {
+    // 발행 상태 폴링 (문서 재시도 및 글 생성 재시도 모두)
+    if (result.message && (result.message.includes('재시도') || result.message.includes('재발행'))) {
+      switchTab('publish');
       pollPublishStatus(batchId);
     }
   } catch (e) { showToast(e.message, 'error'); }

@@ -1123,6 +1123,9 @@ async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTas
         raise HTTPException(status_code=400, detail="발행할 문서가 없습니다.")
 
     batch = await db.create_batch(req.keyword)
+    # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+    _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
+    _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
     background_tasks.add_task(
         _run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key,
         req.footer_link or "", req.footer_link_text or "",
@@ -1200,6 +1203,9 @@ async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
             for h in failed
         ]
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+        _publish_status[batch_id] = {"status": "publishing", "documents": [], "current": 0}
+        _publish_status_timestamps[batch_id] = datetime.now().timestamp()
         background_tasks.add_task(_run_publish_batch, batch_id, batch["keyword"], documents, api_key)
         return {"message": f"{len(failed)}개 문서 재시도 시작"}
 
@@ -1321,6 +1327,9 @@ async def republish(history_id: int, background_tasks: BackgroundTasks):
         "format": history["document_format"],
     }]
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+    _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
+    _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
     background_tasks.add_task(_run_publish_batch, batch["id"], history.get("title", ""), documents, api_key)
     return {"batch_id": batch["id"], "message": "재발행이 시작되었습니다."}
 
