@@ -191,7 +191,7 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 fmt, prompt_template, desc = all_doc_formats[task_idx % len(all_doc_formats)]
 
                 product_info_section = ""
-                if product_info.strip():
+                if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
                 # 키워드 대표이미지
