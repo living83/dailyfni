@@ -358,6 +358,18 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     # 6. 발행 실행
     def on_publish_progress(step, msg):
         logger.info(f"[{account['username']}] {step}: {msg}")
+        # SSE로 프론트엔드에 실시간 전달
+        import asyncio as _aio
+        try:
+            loop = _aio.get_event_loop()
+            if loop.is_running():
+                _aio.ensure_future(_notify_progress("info", {
+                    "message": f"{account['username']}: {msg}",
+                    "step": step,
+                    "account": account["username"],
+                }))
+        except Exception:
+            pass
 
     result = await asyncio.to_thread(
         publish_to_cafe,
