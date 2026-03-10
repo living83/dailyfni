@@ -388,16 +388,10 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
             except Exception:
                 continue
 
-        driver.get("https://www.naver.com")
-        random_delay(2, 3)
-
-        # 로그인 확인: 네이버 메일 또는 프로필 요소 존재 여부
-        try:
-            driver.find_element(By.CSS_SELECTOR, ".MyView-module__link_login___HpHMW")
-            logger.warning("쿠키 로그인 실패: 로그인 버튼이 여전히 표시됨")
-            return False  # 로그인 버튼이 보이면 실패
-        except NoSuchElementException:
-            pass  # 로그인 버튼 없음 — 1차 통과
+        # 로그인 확인: _is_logged_in 내부에서 naver.com 접속 + 대기 수행
+        if not _is_logged_in(driver):
+            logger.warning("쿠키 로그인 실패: _is_logged_in() 판정 미로그인")
+            return False
 
         # 2차 검증: 카페 서비스 세션 유효성 확인
         try:
@@ -502,6 +496,19 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         current_url = driver.current_url
         page_title = driver.title
         _log(f"로그인 {max_wait}초 대기 후 실패: url={current_url}, title={page_title}", "WARNING")
+
+        # 실패 원인 분류
+        if "captcha" in current_url:
+            _log("로그인 실패 원인: 캡챠(CAPTCHA) 발생 — 수동 해결 필요", "ERROR")
+        elif "2step" in current_url or "deviceConfirm" in current_url:
+            _log("로그인 실패 원인: 2단계 인증 미완료 (90초 타임아웃)", "ERROR")
+        elif "protect" in current_url:
+            _log("로그인 실패 원인: 보호 모드(이상 로그인 감지)", "ERROR")
+        elif "nidlogin" in current_url:
+            _log("로그인 실패 원인: ID/PW 불일치 또는 입력 미감지", "ERROR")
+        else:
+            _log(f"로그인 실패 원인: 알 수 없음 (URL={current_url})", "ERROR")
+
         # 스크린샷 + 페이지 내용 저장
         _save_debug_screenshot(driver, "login_credentials_failed")
         try:
@@ -1981,9 +1988,18 @@ def publish_to_cafe(
                     result["error"] = "글쓰기 페이지 이동 실패 (재로그인 후에도)"
                     return result
             else:
-                _log("재로그인 실패!")
+                current_url = driver.current_url
+                _log(f"재로그인 실패! URL: {current_url}")
                 _save_debug_screenshot(driver, "relogin_failed")
-                result["error"] = "재로그인 실패"
+                # 실패 원인을 에러 메시지에 포함
+                if "captcha" in current_url:
+                    result["error"] = "재로그인 실패: 캡챠 발생 (수동 로그인 필요)"
+                elif "2step" in current_url or "deviceConfirm" in current_url:
+                    result["error"] = "재로그인 실패: 2단계 인증 필요"
+                elif "protect" in current_url:
+                    result["error"] = "재로그인 실패: 보호 모드 (이상 로그인 감지)"
+                else:
+                    result["error"] = "재로그인 실패"
                 return result
 
         # 3. 글 작성 & 발행
