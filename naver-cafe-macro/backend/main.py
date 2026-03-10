@@ -449,4 +449,20 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
+
+    log_config = uvicorn.config.LOGGING_CONFIG
+    # uvicorn 기본 로그 설정에 cafe_publisher/scheduler 로거 추가
+    log_config["loggers"]["cafe_publisher"] = {
+        "handlers": ["default"],
+        "level": "DEBUG",
+        "propagate": False,
+    }
+    log_config["loggers"]["scheduler"] = {
+        "handlers": ["default"],
+        "level": "DEBUG",
+        "propagate": False,
+    }
+    # 핸들러 포맷을 상세 포맷으로 변경
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True, log_config=log_config)
