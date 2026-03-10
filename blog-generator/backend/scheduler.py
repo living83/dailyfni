@@ -157,34 +157,39 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             ("analysis", DOC_ANALYSIS_PROMPT, "비교/분석"),
         ]
 
+        # 키워드 소진 추적
+        skipped_no_keyword = []
+
         # 계정별로 1개씩 글 생성 (각 계정에 랜덤 문서 포맷 배정)
         for task_idx, (account, post_type) in enumerate(today_tasks):
             # 키워드 가져오기 (타입 우선)
             kw = await get_next_keyword(post_type)
             if not kw:
                 logger.warning(f"계정 {account['account_name']}: '{post_type}' 키워드 없음, 건너뜀")
+                skipped_no_keyword.append((account['account_name'], post_type))
                 continue
 
             keyword = kw["keyword"]
             product_info = kw.get("product_info", "")
             logger.info(f"글 생성: 계정={account['account_name']}, 키워드={keyword}, 타입={post_type}")
 
-            # 키워드 상태 업데이트
-            now = datetime.now()
-            await update_keyword(kw["id"], {
-                "status": "used",
-                "last_used_at": now.isoformat(),
-                "next_available_at": (now + timedelta(days=30)).isoformat(),
-                "used_count": kw["used_count"] + 1,
-            })
-
-            # 배치 생성
+            # 배치 생성 (키워드 상태는 배치 성공 후 업데이트)
             batch = None
             try:
                 batch = await create_batch(keyword, post_type=post_type)
                 if not batch:
                     logger.error(f"배치 생성 실패: 키워드={keyword}")
+                    await create_notification("error", "배치 생성 실패", f"키워드 '{keyword}' 배치 생성에 실패했습니다. 키워드는 재사용 가능합니다.")
                     continue
+
+                # 배치 생성 성공 후에만 키워드 상태 업데이트
+                now = datetime.now()
+                await update_keyword(kw["id"], {
+                    "status": "used",
+                    "last_used_at": now.isoformat(),
+                    "next_available_at": (now + timedelta(days=30)).isoformat(),
+                    "used_count": kw["used_count"] + 1,
+                })
                 ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
                 # 문서 포맷 순환 배정
@@ -273,19 +278,47 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 if batch:
                     await update_batch(batch["id"], {"status": "all_failed"})
 
+        # 키워드 소진 알림
+        if skipped_no_keyword:
+            skip_detail = ", ".join(f"{name}({ptype})" for name, ptype in skipped_no_keyword)
+            await create_notification(
+                "warning",
+                f"키워드 부족 ({len(skipped_no_keyword)}개 계정 건너뜀)",
+                f"다음 계정의 키워드가 부족합니다: {skip_detail}. 키워드를 추가해주세요.",
+            )
+            logger.warning(f"키워드 부족으로 건너뛴 계정: {skip_detail}")
+
+        # 전체 계정이 키워드 부족이면 별도 경고
+        if len(skipped_no_keyword) == len(today_tasks):
+            await create_notification(
+                "error",
+                "모든 계정 키워드 소진",
+                "모든 계정의 키워드가 소진되었습니다. 새 키워드를 추가하지 않으면 발행이 진행되지 않습니다.",
+            )
+
         # 발행 타입 기록
         from database import update_scheduler_config
         types_used = list(set(t for _, t in today_tasks))
         await update_scheduler_config({"last_post_type": types_used[-1] if types_used else ""})
 
+        generated_count = len(today_tasks) - len(skipped_no_keyword)
         await create_notification(
-            "success",
-            f"글 사전 생성 완료 ({len(today_tasks)}개 계정)",
+            "success" if generated_count > 0 else "warning",
+            f"글 사전 생성 완료 ({generated_count}/{len(today_tasks)}개 계정)",
             f"계정별 단계 로테이션: " + ", ".join(f"{a['account_name']}({t})" for a, t in today_tasks),
         )
 
     except Exception as e:
         logger.error(f"article_generation_job 예외: {e}", exc_info=True)
+        try:
+            from database import create_notification as _notify
+            await _notify(
+                "error",
+                "글 생성 중 오류 발생",
+                f"article_generation_job에서 예외가 발생했습니다: {str(e)[:200]}",
+            )
+        except Exception:
+            pass
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -309,195 +342,212 @@ async def daily_publish_job(manual: bool = False):
         if not config.get("is_active"):
             return
 
-    # 발행 대기 중인 배치 가져오기
-    batches = await get_ready_batches()
-    if not batches:
-        logger.info("발행할 사전 생성 글이 없습니다.")
-        return
+    try:
+        # 발행 대기 중인 배치 가져오기
+        batches = await get_ready_batches()
+        if not batches:
+            logger.info("발행할 사전 생성 글이 없습니다.")
+            await create_notification(
+                "warning",
+                "발행 대기 글 없음",
+                "발행할 사전 생성 글이 없습니다. 글 생성 잡이 정상 실행되었는지 확인해주세요.",
+            )
+            return
 
-    logger.info(f"발행 시작: {len(batches)}개 배치 대기 중")
+        logger.info(f"발행 시작: {len(batches)}개 배치 대기 중")
 
-    min_h = config.get("min_interval_hours", 2)
-    max_h = config.get("max_interval_hours", 4)
+        min_h = config.get("min_interval_hours", 2)
+        max_h = config.get("max_interval_hours", 4)
 
-    for batch in batches:
-        articles = await get_generated_articles(batch["id"])
-        if not articles:
-            logger.warning(f"배치 #{batch['id']}: 발행할 글이 없습니다.")
-            await update_batch(batch["id"], {"status": "all_failed"})
-            continue
-
-        keyword = batch["keyword"]
-        logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
-
-        # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
-        post_type_for_batch = batch.get("post_type", "ad")
-        keyword_image_paths = []
-        if post_type_for_batch != "general":
-            try:
-                from image_generator import generate_keyword_image_variants
-                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-        else:
-            logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
-
-        # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
-        from database import get_account, get_categories
-        if len(articles) > 1:
-            from collections import defaultdict
-            groups = defaultdict(list)
-            for article in articles:
-                groups[article.get("account_id")].append(article)
-            if len(groups) > 1:
-                reordered = []
-                while any(groups.values()):
-                    for aid in sorted(groups.keys()):
-                        if groups[aid]:
-                            reordered.append(groups[aid].pop(0))
-                articles = reordered
-                logger.info(f"계정 교차 정렬: {' → '.join(str(a.get('account_id')) for a in articles)}")
-
-        success_count = 0
-        failed_count = 0
-
-        for i, article in enumerate(articles):
-            account_id = article["account_id"]
-            if not account_id:
-                failed_count += 1
+        for batch in batches:
+            articles = await get_generated_articles(batch["id"])
+            if not articles:
+                logger.warning(f"배치 #{batch['id']}: 발행할 글이 없습니다.")
+                await update_batch(batch["id"], {"status": "all_failed"})
                 continue
 
-            # 계정 정보
-            account = await get_account(account_id)
-            logger.info(f"글 {i+1}/{len(articles)} 발행 시작: 계정={account.get('account_name', '?') if account else '미발견'}")
-            if not account:
-                await update_publish_history(article["id"], {
-                    "status": "failed",
-                    "error_message": "계정을 찾을 수 없습니다.",
-                })
-                failed_count += 1
-                continue
+            keyword = batch["keyword"]
+            logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
 
-            # 카테고리 이름
-            cat_name = article.get("category_name", "")
-
-            # 계정 간 발행 간격 (2~4시간)
-            if i > 0:
-                delay_hours = random.uniform(min_h, max_h)
-                delay_seconds = delay_hours * 3600
-                logger.info(f"다음 발행까지 {delay_hours:.1f}시간 대기")
-                await asyncio.sleep(delay_seconds)
-
-            # 발행 실행
-            try:
-                naver_id = decrypt(account["naver_id"])
-                naver_pw = decrypt(account["naver_password"])
-
-                tags = []
+            # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
+            post_type_for_batch = batch.get("post_type", "ad")
+            keyword_image_paths = []
+            if post_type_for_batch != "general":
                 try:
-                    kw_data = article.get("keywords", "[]")
-                    tags = json.loads(kw_data) if isinstance(kw_data, str) else kw_data
-                except Exception:
-                    tags = [keyword]
-
-                # 하단 링크: 광고(ad)만 삽입, 일반(general)은 링크 없음
-                post_type = batch.get("post_type", "ad")
-                if post_type == "general":
-                    footer_link = ""
-                    footer_link_text = ""
-                    logger.info("일반(general) 타입 → 하단 링크 삽입 건너뜀")
-                else:
-                    footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
-                    footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
-                    logger.info(f"광고(ad) 타입 → 하단 링크: {footer_link!r}")
-
-                # Gemini 이미지 로드 (일반 포스팅)
-                extra_image_paths = []
-                try:
-                    gemini_json = article.get("gemini_images", "")
-                    if gemini_json:
-                        extra_image_paths = json.loads(gemini_json) if isinstance(gemini_json, str) else gemini_json
-                        # 파일 존재 확인
-                        extra_image_paths = [p for p in extra_image_paths if os.path.exists(p)]
-                        if extra_image_paths:
-                            logger.info(f"Gemini 이미지 {len(extra_image_paths)}장 사용")
+                    from image_generator import generate_keyword_image_variants
+                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                    logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
                 except Exception as e:
-                    logger.warning(f"Gemini 이미지 로드 실패: {e}")
+                    logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+            else:
+                logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
 
-                # 대표이미지 결정: 일반 포스팅은 Gemini 이미지, 광고는 키워드 이미지
-                if post_type == "general" and extra_image_paths:
-                    # Gemini 첫 번째 이미지를 대표이미지로, 나머지를 본문 이미지로
-                    main_image = extra_image_paths[0]
-                    extra_image_paths = extra_image_paths[1:]
-                    logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
-                elif post_type == "general":
-                    # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
-                    main_image = ""
-                    logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
-                else:
-                    main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
+            # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
+            from database import get_account, get_categories
+            if len(articles) > 1:
+                from collections import defaultdict
+                groups = defaultdict(list)
+                for article in articles:
+                    groups[article.get("account_id")].append(article)
+                if len(groups) > 1:
+                    reordered = []
+                    while any(groups.values()):
+                        for aid in sorted(groups.keys()):
+                            if groups[aid]:
+                                reordered.append(groups[aid].pop(0))
+                    articles = reordered
+                    logger.info(f"계정 교차 정렬: {' → '.join(str(a.get('account_id')) for a in articles)}")
 
-                pub_result = await run_publish_task(
-                    account_id, naver_id, naver_pw,
-                    article["title"], article["content"],
-                    cat_name, tags,
-                    main_image,
-                    footer_link, footer_link_text,
-                    extra_image_paths=extra_image_paths,
-                )
+            success_count = 0
+            failed_count = 0
 
-                if pub_result["success"]:
-                    await update_publish_history(article["id"], {
-                        "status": "success",
-                        "naver_post_url": pub_result["url"],
-                        "published_at": datetime.now().isoformat(),
-                    })
-                    await update_keyword_stats(keyword, account_id)
-                    success_count += 1
-                    logger.info(f"발행 성공 [{i+1}/{len(articles)}]: {article['title'][:30]}...")
-                else:
+            for i, article in enumerate(articles):
+                account_id = article["account_id"]
+                if not account_id:
+                    failed_count += 1
+                    continue
+
+                # 계정 정보
+                account = await get_account(account_id)
+                logger.info(f"글 {i+1}/{len(articles)} 발행 시작: 계정={account.get('account_name', '?') if account else '미발견'}")
+                if not account:
                     await update_publish_history(article["id"], {
                         "status": "failed",
-                        "error_message": pub_result["error"],
+                        "error_message": "계정을 찾을 수 없습니다.",
                     })
                     failed_count += 1
-                    logger.warning(f"발행 실패 [{i+1}/{len(articles)}]: {pub_result['error']}")
+                    continue
 
-            except Exception as e:
-                await update_publish_history(article["id"], {
-                    "status": "failed",
-                    "error_message": str(e),
-                })
-                failed_count += 1
-                logger.error(f"발행 오류: {e}")
+                # 카테고리 이름
+                cat_name = article.get("category_name", "")
 
-        # 배치 결과 업데이트
-        status = "all_success" if failed_count == 0 else ("all_failed" if success_count == 0 else "partial_success")
-        await update_batch(batch["id"], {
-            "status": status,
-            "success_count": success_count,
-            "failed_count": failed_count,
+                # 계정 간 발행 간격 (2~4시간)
+                if i > 0:
+                    delay_hours = random.uniform(min_h, max_h)
+                    delay_seconds = delay_hours * 3600
+                    logger.info(f"다음 발행까지 {delay_hours:.1f}시간 대기")
+                    await asyncio.sleep(delay_seconds)
+
+                # 발행 실행
+                try:
+                    naver_id = decrypt(account["naver_id"])
+                    naver_pw = decrypt(account["naver_password"])
+
+                    tags = []
+                    try:
+                        kw_data = article.get("keywords", "[]")
+                        tags = json.loads(kw_data) if isinstance(kw_data, str) else kw_data
+                    except Exception:
+                        tags = [keyword]
+
+                    # 하단 링크: 광고(ad)만 삽입, 일반(general)은 링크 없음
+                    post_type = batch.get("post_type", "ad")
+                    if post_type == "general":
+                        footer_link = ""
+                        footer_link_text = ""
+                        logger.info("일반(general) 타입 → 하단 링크 삽입 건너뜀")
+                    else:
+                        footer_link = config.get("footer_link", "") or os.getenv("DEFAULT_FOOTER_LINK", "")
+                        footer_link_text = config.get("footer_link_text", "") or os.getenv("DEFAULT_FOOTER_LINK_TEXT", "")
+                        logger.info(f"광고(ad) 타입 → 하단 링크: {footer_link!r}")
+
+                    # Gemini 이미지 로드 (일반 포스팅)
+                    extra_image_paths = []
+                    try:
+                        gemini_json = article.get("gemini_images", "")
+                        if gemini_json:
+                            extra_image_paths = json.loads(gemini_json) if isinstance(gemini_json, str) else gemini_json
+                            # 파일 존재 확인
+                            extra_image_paths = [p for p in extra_image_paths if os.path.exists(p)]
+                            if extra_image_paths:
+                                logger.info(f"Gemini 이미지 {len(extra_image_paths)}장 사용")
+                    except Exception as e:
+                        logger.warning(f"Gemini 이미지 로드 실패: {e}")
+
+                    # 대표이미지 결정: 일반 포스팅은 Gemini 이미지, 광고는 키워드 이미지
+                    if post_type == "general" and extra_image_paths:
+                        # Gemini 첫 번째 이미지를 대표이미지로, 나머지를 본문 이미지로
+                        main_image = extra_image_paths[0]
+                        extra_image_paths = extra_image_paths[1:]
+                        logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+                    elif post_type == "general":
+                        # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                        main_image = ""
+                        logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
+                    else:
+                        main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
+
+                    pub_result = await run_publish_task(
+                        account_id, naver_id, naver_pw,
+                        article["title"], article["content"],
+                        cat_name, tags,
+                        main_image,
+                        footer_link, footer_link_text,
+                        extra_image_paths=extra_image_paths,
+                    )
+
+                    if pub_result["success"]:
+                        await update_publish_history(article["id"], {
+                            "status": "success",
+                            "naver_post_url": pub_result["url"],
+                            "published_at": datetime.now().isoformat(),
+                        })
+                        await update_keyword_stats(keyword, account_id)
+                        success_count += 1
+                        logger.info(f"발행 성공 [{i+1}/{len(articles)}]: {article['title'][:30]}...")
+                    else:
+                        await update_publish_history(article["id"], {
+                            "status": "failed",
+                            "error_message": pub_result["error"],
+                        })
+                        failed_count += 1
+                        logger.warning(f"발행 실패 [{i+1}/{len(articles)}]: {pub_result['error']}")
+
+                except Exception as e:
+                    await update_publish_history(article["id"], {
+                        "status": "failed",
+                        "error_message": str(e),
+                    })
+                    failed_count += 1
+                    logger.error(f"발행 오류: {e}")
+
+            # 배치 결과 업데이트
+            status = "all_success" if failed_count == 0 else ("all_failed" if success_count == 0 else "partial_success")
+            await update_batch(batch["id"], {
+                "status": status,
+                "success_count": success_count,
+                "failed_count": failed_count,
+            })
+
+            # 완료 알림
+            await create_notification(
+                "success" if status == "all_success" else "warning",
+                f"자동 발행 완료 ({keyword})",
+                f"성공: {success_count}개, 실패: {failed_count}개",
+            )
+
+        # 연속 발행일 업데이트
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_date = config.get("last_publish_date", "")
+        if last_date == (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"):
+            consecutive = config.get("consecutive_publish_days", 0) + 1
+        else:
+            consecutive = 1
+        await update_scheduler_config({
+            "consecutive_publish_days": consecutive,
+            "last_publish_date": today,
         })
 
-        # 완료 알림
-        await create_notification(
-            "success" if status == "all_success" else "warning",
-            f"자동 발행 완료 ({keyword})",
-            f"성공: {success_count}개, 실패: {failed_count}개",
-        )
-
-    # 연속 발행일 업데이트
-    today = datetime.now().strftime("%Y-%m-%d")
-    last_date = config.get("last_publish_date", "")
-    if last_date == (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"):
-        consecutive = config.get("consecutive_publish_days", 0) + 1
-    else:
-        consecutive = 1
-    await update_scheduler_config({
-        "consecutive_publish_days": consecutive,
-        "last_publish_date": today,
-    })
+    except Exception as e:
+        logger.error(f"daily_publish_job 예외: {e}", exc_info=True)
+        try:
+            await create_notification(
+                "error",
+                "발행 중 오류 발생",
+                f"daily_publish_job에서 예외가 발생했습니다: {str(e)[:200]}",
+            )
+        except Exception:
+            pass
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
