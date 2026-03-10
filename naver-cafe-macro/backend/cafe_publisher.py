@@ -17,6 +17,7 @@ Selenium 기반 카페 글쓰기 / 댓글 자동화
 
 import json
 import re
+import sys
 import time
 import random
 import logging
@@ -45,6 +46,29 @@ if not logger.handlers:
     _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
     logger.addHandler(_sh)
     logger.propagate = False
+
+
+def _log(msg: str, level: str = "INFO"):
+    """로거 + print 동시 출력 (uvicorn reload 환경에서 확실한 터미널 출력 보장)"""
+    getattr(logger, level.lower(), logger.info)(msg)
+    print(f"[cafe_publisher] {msg}", flush=True)
+
+
+# 스크린샷 저장 디렉토리
+_SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "debug_screenshots"
+_SCREENSHOT_DIR.mkdir(exist_ok=True)
+
+
+def _save_debug_screenshot(driver, prefix: str = "debug"):
+    """디버그용 스크린샷 저장"""
+    try:
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = _SCREENSHOT_DIR / f"{prefix}_{ts}.png"
+        driver.save_screenshot(str(path))
+        _log(f"스크린샷 저장: {path}")
+    except Exception as e:
+        _log(f"스크린샷 저장 실패: {e}", "WARNING")
 
 # ─── User-Agent 풀 ────────────────────────────────────────
 
@@ -400,22 +424,23 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
                 # 다만 2FA는 더 기다려야 하므로 계속 폴링
 
         if logged_in:
-            logger.info(f"ID/PW 로그인 성공 ({elapsed}초): {username}")
+            _log(f"ID/PW 로그인 성공 ({elapsed}초): {username}")
             return True
 
         current_url = driver.current_url
         page_title = driver.title
-        logger.warning(f"로그인 {max_wait}초 대기 후 실패: url={current_url}, title={page_title}")
-        # 페이지 소스 힌트 (에러 메시지 추출)
+        _log(f"로그인 {max_wait}초 대기 후 실패: url={current_url}, title={page_title}", "WARNING")
+        # 스크린샷 + 페이지 내용 저장
+        _save_debug_screenshot(driver, "login_credentials_failed")
         try:
             body_text = driver.find_element(By.TAG_NAME, "body").text[:500]
-            logger.warning(f"페이지 내용 (일부): {body_text}")
+            _log(f"페이지 내용 (일부): {body_text}", "WARNING")
         except Exception:
             pass
         return False
 
     except Exception as e:
-        logger.error(f"로그인 중 오류 ({type(e).__name__}): {e}")
+        _log(f"로그인 중 오류 ({type(e).__name__}): {e}", "ERROR")
         logger.debug(traceback.format_exc())
         return False
 
@@ -638,15 +663,14 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
         cafe_id = _resolve_numeric_cafe_id(driver, cafe_alias)
 
         if not cafe_id.isdigit():
-            logger.error(f"카페 숫자 ID 변환 실패! alias={cafe_alias}, 반환값={cafe_id}")
-            logger.error("숫자 ID 없이는 /ca-fe/ URL 접근 불가")
+            _log(f"카페 숫자 ID 변환 실패! alias={cafe_alias}, 반환값={cafe_id}", "ERROR")
             return False
 
         if menu_id:
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L&menuId={menu_id}"
         else:
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L"
-        logger.info(f"글쓰기 URL: {write_url}")
+        _log(f"글쓰기 URL: {write_url}")
         driver.get(write_url)
 
         # 페이지 로드 + JS 리다이렉트 대기 (충분히 기다려야 JS 리다이렉트 감지 가능)
@@ -655,23 +679,22 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
                 lambda d: d.execute_script("return document.readyState") == "complete"
             )
         except TimeoutException:
-            logger.warning("글쓰기 페이지 로드 타임아웃")
+            _log("글쓰기 페이지 로드 타임아웃", "WARNING")
         random_delay(2, 3)
 
         # 글쓰기 페이지 도달 확인 (JS 리다이렉트 후 URL 재검증)
         current_url = driver.current_url
-        logger.info(f"글쓰기 페이지 이동 후 URL: {current_url}")
+        _log(f"글쓰기 페이지 이동 후 URL: {current_url}")
 
         if "articles/write" in current_url or "ArticleWrite" in current_url:
-            logger.info(f"글쓰기 페이지 이동 성공: url={current_url}")
+            _log(f"글쓰기 페이지 이동 성공")
         elif "nid.naver.com" in current_url:
             # 로그인 페이지로 리다이렉트됨 — 쿠키/세션 만료
-            logger.error(f"로그인 페이지로 리다이렉트됨 — 세션 만료: {current_url}")
+            _log(f"로그인 페이지로 리다이렉트됨 — 세션 만료: {current_url}", "ERROR")
             return False
         elif "cafe.naver.com" not in current_url:
             # 네이버 메인이나 다른 페이지로 리다이렉트됨
-            logger.error(f"글쓰기 페이지에서 이탈! 현재 URL: {current_url}")
-            logger.error(f"cafe_id={cafe_id} 가 유효하지 않거나 세션 만료")
+            _log(f"글쓰기 페이지에서 이탈! 현재 URL: {current_url}", "ERROR")
             # 캐시 무효화
             if cafe_alias in _cafe_id_cache:
                 del _cafe_id_cache[cafe_alias]
@@ -1835,25 +1858,26 @@ def publish_to_cafe(
         driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
 
         # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
-        logger.info(f"[발행] 계정={account.get('username')}, 카페={cafe_url}, 게시판={menu_id}")
+        _log(f"[발행] 계정={account.get('username')}, 카페={cafe_url}, 게시판={menu_id}")
         if on_progress:
             on_progress("login", "로그인 시도 중...")
 
         logged_in = check_profile_login(driver)
-        logger.info(f"[로그인] 프로파일 세션: {'성공' if logged_in else '실패'}")
+        _log(f"[로그인] 프로파일 세션: {'성공' if logged_in else '실패'}")
 
         if not logged_in and account.get("cookie_data"):
             logged_in = login_with_cookie(driver, account["cookie_data"])
-            logger.info(f"[로그인] 쿠키: {'성공' if logged_in else '실패'}")
+            _log(f"[로그인] 쿠키: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
-            logger.info(f"[로그인] ID/PW 시도: {account['username']}")
+            _log(f"[로그인] ID/PW 시도: {account['username']}")
             logged_in = login_with_credentials(
                 driver, account["username"], account["password_enc"]
             )
-            logger.info(f"[로그인] ID/PW: {'성공' if logged_in else '실패'}")
+            _log(f"[로그인] ID/PW: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
+            _save_debug_screenshot(driver, "login_failed")
             result["error"] = "로그인 실패"
             return result
 
@@ -1866,20 +1890,27 @@ def publish_to_cafe(
 
         if not navigate_to_write_page(driver, cafe_url, menu_id):
             # 세션 만료일 수 있으므로 ID/PW 재로그인 후 재시도
-            logger.info("글쓰기 페이지 이동 실패 — ID/PW 재로그인 후 재시도")
+            _log("글쓰기 페이지 이동 실패 — 현재 URL 확인 중...")
+            _log(f"현재 URL: {driver.current_url}")
+            _save_debug_screenshot(driver, "navigate_failed")
             if on_progress:
                 on_progress("login", "세션 만료, 재로그인 중...")
+            _log("ID/PW 재로그인 시도...")
             re_logged_in = login_with_credentials(
                 driver, account["username"], account["password_enc"]
             )
             if re_logged_in:
+                _log("재로그인 성공 — 글쓰기 페이지 재시도")
                 result["cookies"] = get_login_cookies(driver)
                 if on_progress:
                     on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
                 if not navigate_to_write_page(driver, cafe_url, menu_id):
+                    _save_debug_screenshot(driver, "navigate_failed_after_relogin")
                     result["error"] = "글쓰기 페이지 이동 실패 (재로그인 후에도)"
                     return result
             else:
+                _log("재로그인 실패!")
+                _save_debug_screenshot(driver, "relogin_failed")
                 result["error"] = "재로그인 실패"
                 return result
 

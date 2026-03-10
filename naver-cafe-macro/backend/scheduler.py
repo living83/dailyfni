@@ -32,6 +32,12 @@ if not logger.handlers:
     logger.addHandler(_sh)
     logger.propagate = False
 
+
+def _slog(msg: str, level: str = "INFO"):
+    """로거 + print 동시 출력"""
+    getattr(logger, level.lower(), logger.info)(msg)
+    print(f"[scheduler] {msg}", flush=True)
+
 scheduler = AsyncIOScheduler()
 
 # 상태 관리
@@ -711,27 +717,27 @@ async def run_once_now():
     _is_running = True
 
     try:
-        logger.info("=== 수동 1회 발행 시작 ===")
+        _slog("=== 수동 1회 발행 시작 ===")
         config = db.get_schedule_config()
         eligible = _get_eligible_accounts(config)
-        logger.info(f"적격 계정: {len(eligible)}개")
+        _slog(f"적격 계정: {len(eligible)}개")
 
         if not eligible:
-            # 대기 시간 미충족이면 활성 계정 중 아무나 선택
             accounts = db.get_accounts()
             eligible = [a for a in accounts if a["active"]]
-            logger.info(f"적격 없음 → 활성 계정 폴백: {len(eligible)}개")
+            _slog(f"적격 없음 → 활성 계정 폴백: {len(eligible)}개")
 
         if eligible:
             account = random.choice(eligible)
-            logger.info(f"선택 계정: {account['username']} (id={account['id']})")
+            _slog(f"선택 계정: {account['username']} (id={account['id']})")
             await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
             await _publish_single(account, config, skip_comment=True)
         else:
-            logger.warning("활성 계정 없음 — 1회 발행 불가")
+            _slog("활성 계정 없음 — 1회 발행 불가", "WARNING")
             await _notify_progress("error", {"message": "활성 계정이 없습니다"})
     except Exception as e:
-        logger.error(f"수동 1회 발행 중 예외: {e}", exc_info=True)
+        _slog(f"수동 1회 발행 중 예외: {e}", "ERROR")
+        logger.error(f"수동 1회 발행 상세:", exc_info=True)
         await _notify_progress("error", {"message": f"1회 발행 오류: {str(e)}"})
     finally:
         if not was_running:
