@@ -356,18 +356,22 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     })
 
     # 6. 발행 실행
+    # asyncio.to_thread는 별도 스레드에서 실행되므로
+    # 메인 이벤트 루프 참조를 미리 캡처
+    _main_loop = asyncio.get_running_loop()
+
     def on_publish_progress(step, msg):
         logger.info(f"[{account['username']}] {step}: {msg}")
-        # SSE로 프론트엔드에 실시간 전달
-        import asyncio as _aio
+        # 별도 스레드 → 메인 이벤트 루프로 SSE 전달
         try:
-            loop = _aio.get_event_loop()
-            if loop.is_running():
-                _aio.ensure_future(_notify_progress("info", {
+            _main_loop.call_soon_threadsafe(
+                _main_loop.create_task,
+                _notify_progress("info", {
                     "message": f"{account['username']}: {msg}",
                     "step": step,
                     "account": account["username"],
-                }))
+                })
+            )
         except Exception:
             pass
 
