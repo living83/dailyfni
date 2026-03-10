@@ -23,9 +23,20 @@ import scheduler as sched
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    force=True,
 )
 logger = logging.getLogger(__name__)
+
+# cafe_publisher / scheduler 로거가 반드시 콘솔에 출력되도록 보장
+for _name in ("cafe_publisher", "scheduler"):
+    _lg = logging.getLogger(_name)
+    _lg.setLevel(logging.DEBUG)
+    if not _lg.handlers:
+        _lg.addHandler(logging.StreamHandler())
+        _lg.handlers[-1].setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
 
 # ─── FastAPI 앱 ────────────────────────────────────────────
 
