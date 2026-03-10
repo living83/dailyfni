@@ -1307,7 +1307,11 @@ async def republish(history_id: int, background_tasks: BackgroundTasks):
     if not history:
         raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
 
-    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}")
+    # 원본 배치의 post_type 유지 (일반/광고 구분)
+    original_batch = await db.get_batch(history["batch_id"]) if history.get("batch_id") else None
+    post_type = original_batch.get("post_type", "ad") if original_batch else "ad"
+
+    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}", post_type=post_type)
     documents = [{
         "account_id": history["account_id"],
         "category_id": history["category_id"],
