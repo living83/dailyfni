@@ -33,6 +33,20 @@
   4. `write_post`: WebDriverWait 타임아웃 15초 → 30초로 증가
 - **주의**: `_resolve_numeric_cafe_id` 실패 시 alias를 그대로 반환하면 안 됨 (isdigit 체크 필수)
 
+### 재로그인 실패 & 서버 로그 미출력 (2026-03-10)
+- **증상**: 프론트엔드에 "발행 실패: 재로그인 실패" 표시, 서버 터미널에는 로그가 전혀 안 나옴
+- **원인 1 (치명)**: `_is_logged_in`이 해시된 CSS 클래스(`.MyView-module__link_login___HpHMW`)에 의존
+  - 네이버 프론트엔드 업데이트 시 해시 변경 → 셀렉터 못 찾음 → **미로그인을 로그인으로 오판**
+  - 결과: 프로파일 세션 로그인 성공으로 통과 → 글쓰기 페이지 이동 시 세션 없어 리다이렉트 → 재로그인 실패
+- **원인 2**: `login_with_credentials`에서 `document.getElementById('id').value = '...'` 후 `input` 이벤트 미발행
+  - 네이버 로그인 폼(React)이 입력을 감지하지 못해 빈 값으로 로그인 시도
+- **원인 3**: `logger.propagate = False` + uvicorn `reload=True`의 `dictConfig`가 핸들러 덮어씀
+- **수정**:
+  1. `_is_logged_in`: 다중 셀렉터(해시 무관 패턴) + 양성 확인(로그아웃 버튼) + NID 쿠키 확인
+  2. `login_with_credentials`: value 설정 후 `dispatchEvent(new Event('input'))` 추가 (블로그 제너레이터와 동일)
+  3. `main.py` startup: uvicorn reload 후 로거 핸들러 재설정 보장
+- **교훈**: CSS 모듈 해시 클래스에 의존하지 말 것, JS value 할당 시 반드시 input 이벤트 발행
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.

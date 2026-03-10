@@ -305,16 +305,58 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
 # ─── 로그인 ────────────────────────────────────────────────
 
 def _is_logged_in(driver: webdriver.Chrome) -> bool:
-    """현재 브라우저가 네이버에 로그인되어 있는지 확인"""
+    """현재 브라우저가 네이버에 로그인되어 있는지 확인
+
+    네이버 프론트엔드 업데이트로 CSS 해시가 변경될 수 있으므로
+    여러 방법으로 로그인 상태를 판별한다.
+    """
     try:
         driver.get("https://www.naver.com")
         random_delay(2, 3)
-        try:
-            driver.find_element(By.CSS_SELECTOR, ".MyView-module__link_login___HpHMW")
-            return False  # 로그인 버튼이 보이면 미로그인
-        except NoSuchElementException:
-            return True  # 로그인 버튼 없으면 로그인 상태
-    except Exception:
+
+        # 방법 1: 로그인 버튼 존재 여부 (해시 무관 패턴)
+        login_selectors = [
+            "a[class*='link_login']",           # MyView-module__link_login___XXXX
+            "a[href*='nidlogin']",              # 로그인 링크
+            ".MyView-module__link_login___HpHMW",  # 기존 셀렉터 (폴백)
+        ]
+        for sel in login_selectors:
+            try:
+                driver.find_element(By.CSS_SELECTOR, sel)
+                _log(f"미로그인 감지 (셀렉터: {sel})")
+                return False  # 로그인 버튼이 보이면 미로그인
+            except NoSuchElementException:
+                continue
+
+        # 방법 2: 로그인 후에만 나타나는 요소 확인 (양성 확인)
+        logged_in_selectors = [
+            "a[class*='link_logout']",          # 로그아웃 버튼
+            "a[class*='btn_logout']",
+            "a[href*='nidlogin.logout']",       # 로그아웃 링크
+            ".MyView-module__name",             # 프로필 이름
+            "a[class*='link_name']",
+        ]
+        for sel in logged_in_selectors:
+            try:
+                driver.find_element(By.CSS_SELECTOR, sel)
+                _log(f"로그인 확인 (셀렉터: {sel})")
+                return True
+            except NoSuchElementException:
+                continue
+
+        # 방법 3: JavaScript로 쿠키 기반 확인
+        has_nid = driver.execute_script(
+            "return document.cookie.indexOf('NID_AUT') !== -1 "
+            "|| document.cookie.indexOf('NID_SES') !== -1;"
+        )
+        if has_nid:
+            _log("로그인 확인 (NID 쿠키 존재)")
+            return True
+
+        _log("로그인 상태 판별 불가 — 미로그인으로 처리", "WARNING")
+        return False
+    except Exception as e:
+        _log(f"로그인 상태 확인 중 오류: {e}", "ERROR")
         return False
 
 
@@ -396,17 +438,29 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
 
         wait = WebDriverWait(driver, 30)
 
-        # 아이디 입력 (클립보드 방식으로 우회)
+        # 아이디 입력 (value 설정 + input 이벤트 발행)
         id_input = wait.until(EC.presence_of_element_located((By.ID, "id")))
+        id_input.click()
+        random_delay(0.2, 0.4)
         driver.execute_script(
-            f"document.getElementById('id').value = '{username}';"
+            "var el = document.getElementById('id');"
+            "el.value = arguments[0];"
+            "el.dispatchEvent(new Event('input', {bubbles: true}));"
+            "el.dispatchEvent(new Event('change', {bubbles: true}));",
+            username
         )
         random_delay(0.3, 0.8)
 
-        # 비밀번호 입력
+        # 비밀번호 입력 (value 설정 + input 이벤트 발행)
         pw_input = driver.find_element(By.ID, "pw")
+        pw_input.click()
+        random_delay(0.2, 0.4)
         driver.execute_script(
-            f"document.getElementById('pw').value = arguments[0];", password
+            "var el = document.getElementById('pw');"
+            "el.value = arguments[0];"
+            "el.dispatchEvent(new Event('input', {bubbles: true}));"
+            "el.dispatchEvent(new Event('change', {bubbles: true}));",
+            password
         )
         random_delay(0.5, 1.0)
 
