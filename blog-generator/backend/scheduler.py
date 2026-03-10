@@ -179,16 +179,19 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             })
 
             # 배치 생성
-            batch = await create_batch(keyword, post_type=post_type)
-
+            batch = None
             try:
+                batch = await create_batch(keyword, post_type=post_type)
+                if not batch:
+                    logger.error(f"배치 생성 실패: 키워드={keyword}")
+                    continue
                 ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
                 # 문서 포맷 순환 배정
                 fmt, prompt_template, desc = all_doc_formats[task_idx % len(all_doc_formats)]
 
                 product_info_section = ""
-                if product_info.strip():
+                if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
                 # 키워드 대표이미지
@@ -228,6 +231,10 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                         logger.warning(f"Gemini 이미지 생성 실패: {e}")
 
                 # DB 저장
+                if not batch:
+                    logger.error(f"배치 생성 실패: 키워드={keyword}")
+                    continue
+
                 history = await create_publish_history({
                     "batch_id": batch["id"],
                     "document_number": 1,
@@ -238,6 +245,11 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                     "keywords": [keyword],
                     "document_format": fmt,
                 })
+
+                if not history:
+                    logger.error(f"publish_history 생성 실패: 키워드={keyword}")
+                    await update_batch(batch["id"], {"status": "all_failed"})
+                    continue
 
                 from database import update_publish_history
                 await update_publish_history(history["id"], {"status": "generated"})
@@ -253,7 +265,10 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
             except Exception as e:
                 logger.error(f"글 생성 오류 (계정 {account['account_name']}): {e}")
-                await update_batch(batch["id"], {"status": "all_failed"})
+                import traceback
+                logger.error(traceback.format_exc())
+                if batch:
+                    await update_batch(batch["id"], {"status": "all_failed"})
 
         # 발행 타입 기록
         from database import update_scheduler_config
@@ -312,14 +327,18 @@ async def daily_publish_job(manual: bool = False):
         keyword = batch["keyword"]
         logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
 
-        # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+        # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
+        post_type_for_batch = batch.get("post_type", "ad")
         keyword_image_paths = []
-        try:
-            from image_generator import generate_keyword_image_variants
-            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-        except Exception as e:
-            logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+        if post_type_for_batch != "general":
+            try:
+                from image_generator import generate_keyword_image_variants
+                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+            except Exception as e:
+                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+        else:
+            logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
 
         # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
         from database import get_account, get_categories
@@ -409,6 +428,10 @@ async def daily_publish_job(manual: bool = False):
                     main_image = extra_image_paths[0]
                     extra_image_paths = extra_image_paths[1:]
                     logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+                elif post_type == "general":
+                    # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                    main_image = ""
+                    logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
                 else:
                     main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
 

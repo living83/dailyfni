@@ -128,6 +128,16 @@ async def init_db():
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # MySQL strict mode 임시 해제 (기존 TEXT DEFAULT 호환)
+            await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
+            await cur.execute("SET SESSION sql_mode = ''")
+
+            # 기존 테이블의 TEXT 컬럼 DEFAULT 값 수정
+            try:
+                await cur.execute("ALTER TABLE publish_history ALTER COLUMN gemini_images DROP DEFAULT")
+            except Exception:
+                pass  # 테이블이 아직 없으면 무시
+
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -373,6 +383,9 @@ async def init_db():
             except Exception:
                 pass  # 이미 존재
 
+            # sql_mode 복원
+            await cur.execute("SET SESSION sql_mode = @saved_sql_mode")
+
 
 # ─── 계정 CRUD ──────────────────────────────────────────
 
@@ -571,8 +584,15 @@ async def create_batch(keyword: str, scheduled_start_time: str = "", post_type: 
                 "INSERT INTO publish_batches (keyword, scheduled_start_time, post_type) VALUES (%s, %s, %s)",
                 (keyword, scheduled_start_time, post_type),
             )
-            await cur.execute("SELECT * FROM publish_batches WHERE id = %s", (cur.lastrowid,))
-            return await cur.fetchone()
+            last_id = cur.lastrowid
+            if not last_id:
+                logger.warning(f"create_batch: lastrowid가 없음 (keyword={keyword})")
+                return None
+            await cur.execute("SELECT * FROM publish_batches WHERE id = %s", (last_id,))
+            result = await cur.fetchone()
+            if not result:
+                logger.warning(f"create_batch: fetchone 실패 (lastrowid={last_id}, keyword={keyword})")
+            return result
 
 
 async def get_batches(limit: int = 50, offset: int = 0) -> list:
@@ -635,7 +655,7 @@ async def create_publish_history(data: dict) -> dict:
 async def update_publish_history(history_id: int, data: dict):
     fields = []
     values = []
-    for key in ["status", "error_message", "naver_post_url", "published_at", "account_id", "category_id", "scheduled_time"]:
+    for key in ["status", "error_message", "naver_post_url", "published_at", "account_id", "category_id", "scheduled_time", "gemini_images"]:
         if key in data:
             fields.append(f"{key} = %s")
             values.append(data[key])
@@ -752,23 +772,22 @@ async def get_keywords(status: str = None) -> list:
 
 async def get_next_keyword(preferred_type: str = "") -> dict | None:
     """키워드 큐에서 다음 키워드를 가져온다.
-    preferred_type이 'ad' 또는 'general'이면 해당 타입을 우선 선택하고,
-    해당 타입이 없으면 다른 타입에서 가져온다."""
+    preferred_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다.
+    지정하지 않으면 ad 우선으로 가져온다."""
     now = datetime.now().isoformat()
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             if preferred_type in ("ad", "general"):
-                # 선호 타입 우선 조회
-                other_type = "general" if preferred_type == "ad" else "ad"
+                # 해당 타입 키워드만 가져오기 (다른 타입 혼용 방지)
                 await cur.execute(
                     """SELECT * FROM keyword_queue
                        WHERE status = 'pending'
+                       AND priority = %s
                        AND (next_available_at = '' OR next_available_at <= %s)
-                       ORDER BY FIELD(priority, %s, %s),
-                                created_at ASC
+                       ORDER BY created_at ASC
                        LIMIT 1""",
-                    (now, preferred_type, other_type),
+                    (preferred_type, now),
                 )
             else:
                 await cur.execute(
@@ -974,14 +993,35 @@ async def update_scheduler_config(data: dict):
 # ─── 중복 키워드 체크 ──────────────────────────────────
 
 async def get_ready_batches() -> list:
-    """발행 대기 중인 배치 조회 (status='articles_ready')"""
+    """발행 대기 중인 배치 조회 (status='articles_ready') — 계정명·키워드 포함"""
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
+                """SELECT pb.*,
+                          a.account_name,
+                          ph.keywords AS ph_keywords
+                   FROM publish_batches pb
+                   LEFT JOIN publish_history ph ON ph.batch_id = pb.id
+                   LEFT JOIN accounts a ON ph.account_id = a.id
+                   WHERE pb.status = 'articles_ready'
+                   GROUP BY pb.id
+                   ORDER BY pb.created_at ASC"""
             )
-            return list(await cur.fetchall())
+            rows = list(await cur.fetchall())
+            import json as _json
+            for row in rows:
+                # keyword가 비어있으면 publish_history.keywords에서 복구
+                if not row.get("keyword") and row.get("ph_keywords"):
+                    try:
+                        kw_list = row["ph_keywords"]
+                        if isinstance(kw_list, str):
+                            kw_list = _json.loads(kw_list)
+                        if isinstance(kw_list, list) and kw_list:
+                            row["keyword"] = kw_list[0]
+                    except Exception:
+                        pass
+            return rows
 
 
 async def get_generated_articles(batch_id: int) -> list:

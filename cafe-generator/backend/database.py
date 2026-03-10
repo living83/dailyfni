@@ -128,6 +128,16 @@ async def init_db():
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # MySQL strict mode 임시 해제 (기존 TEXT DEFAULT 호환)
+            await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
+            await cur.execute("SET SESSION sql_mode = ''")
+
+            # 기존 테이블의 TEXT 컬럼 DEFAULT 값 수정
+            try:
+                await cur.execute("ALTER TABLE publish_history ALTER COLUMN gemini_images DROP DEFAULT")
+            except Exception:
+                pass  # 테이블이 아직 없으면 무시
+
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -372,6 +382,9 @@ async def init_db():
                 await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT")
             except Exception:
                 pass  # 이미 존재
+
+            # sql_mode 복원
+            await cur.execute("SET SESSION sql_mode = @saved_sql_mode")
 
 
 # ─── 계정 CRUD ──────────────────────────────────────────

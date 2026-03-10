@@ -53,7 +53,7 @@ from agents import _call_claude
 from prompts import DOC_TUTORIAL_PROMPT, DOC_REVIEW_PROMPT, DOC_ANALYSIS_PROMPT
 import database as db
 from crypto import encrypt, decrypt
-from image_generator import generate_keyword_image, generate_keyword_image_variants
+from image_generator import generate_keyword_image, generate_keyword_image_variants, generate_ad_banner, generate_ad_banner_variants, generate_ad_banner_all_templates
 from gemini_image_generator import generate_gemini_images
 
 # ─── 로깅 설정 ──────────────────────────────────────────
@@ -789,18 +789,23 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     }
     _publish_status_timestamps[batch_id] = datetime.now().timestamp()
 
-    # 키워드 대표이미지 3개 생성 (색상 변형, 저품질 방지)
+    # post_type 확인
+    batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
+    is_general = (batch_info.get("post_type") == "general") if batch_info else False
+
+    # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
     keyword_image_paths = []
-    try:
-        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
-        logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-    except Exception as e:
-        logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
+    if not is_general:
+        try:
+            keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
+            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+        except Exception as e:
+            logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
+    else:
+        logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
 
     # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
     gemini_image_map = {}  # {document_index: [image_paths]}
-    batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
-    is_general = (batch_info.get("post_type") == "general") if batch_info else False
     if is_general and os.getenv("GEMINI_API_KEY"):
         for i, doc in enumerate(documents):
             try:
@@ -911,6 +916,11 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 main_image = gemini_images_for_doc[0]
                 extra_images = gemini_images_for_doc[1:]
                 logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+            elif is_general:
+                # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                main_image = ""
+                extra_images = []
+                logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
             else:
                 main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
                 extra_images = gemini_image_map.get(i, [])
@@ -984,6 +994,110 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     )
 
 
+async def _retry_article_generation(batch_id: int, keyword: str, post_type: str):
+    """글 생성이 안 된 실패 배치에 대해 글 생성부터 다시 시도"""
+    from prompts import DOC_TUTORIAL_PROMPT, AD_FOOTER, GENERAL_FOOTER
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        await db.update_batch(batch_id, {"status": "all_failed"})
+        logger.error(f"배치 #{batch_id} 재시도 실패: ANTHROPIC_API_KEY 미설정")
+        return
+
+    try:
+        # 활성 계정 가져오기
+        accounts = await db.get_accounts()
+        active_accounts = [a for a in accounts if a.get("is_active")]
+        if not active_accounts:
+            await db.update_batch(batch_id, {"status": "all_failed"})
+            logger.error(f"배치 #{batch_id} 재시도 실패: 활성 계정 없음")
+            return
+
+        account = active_accounts[0]
+        ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
+        fmt = "tutorial"
+        prompt_template = DOC_TUTORIAL_PROMPT
+
+        product_info_section = ""
+
+        prompt = prompt_template.format(
+            keyword=keyword,
+            product_info_section=product_info_section,
+            ad_footer=ad_footer,
+        )
+        result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
+
+        lines = result.strip().split("\n", 1)
+        title = lines[0].strip().lstrip("# ").strip()
+        body = lines[1].strip() if len(lines) > 1 else result
+
+        # 카테고리
+        categories = await db.get_categories(account["id"])
+        default_cat = next((c for c in categories if c.get("is_default")), None)
+        cat_id = default_cat["id"] if default_cat else None
+
+        # Gemini 이미지 (일반 포스팅)
+        gemini_paths = []
+        if post_type == "general" and os.getenv("GEMINI_API_KEY"):
+            try:
+                from gemini_image_generator import generate_gemini_images
+                gemini_paths = await asyncio.to_thread(
+                    generate_gemini_images, keyword, body, 3
+                )
+            except Exception as e:
+                logger.warning(f"Gemini 이미지 생성 실패: {e}")
+
+        # 키워드 대표이미지
+        keyword_image_paths = []
+        if post_type != "general":
+            try:
+                from image_generator import generate_keyword_image_variants
+                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+            except Exception as e:
+                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+
+        # DB에 publish_history 저장
+        history = await db.create_publish_history({
+            "batch_id": batch_id,
+            "document_number": 1,
+            "account_id": account["id"],
+            "category_id": cat_id,
+            "title": title,
+            "content": body,
+            "keywords": json.dumps([keyword]),
+            "document_format": fmt,
+        })
+
+        if not history:
+            await db.update_batch(batch_id, {"status": "all_failed"})
+            logger.error(f"배치 #{batch_id} 재시도: publish_history 생성 실패")
+            return
+
+        await db.update_publish_history(history["id"], {"status": "generated"})
+        if gemini_paths:
+            await db.update_publish_history(history["id"], {
+                "gemini_images": json.dumps(gemini_paths),
+            })
+
+        await db.update_batch(batch_id, {"status": "articles_ready"})
+        logger.info(f"배치 #{batch_id} 글 생성 재시도 성공: {title[:30]}...")
+
+        await db.create_notification(
+            "success",
+            f"글 재생성 완료: {keyword}",
+            f"계정: {account['account_name']}, 제목: {title[:30]}...",
+        )
+
+    except Exception as e:
+        logger.error(f"배치 #{batch_id} 글 생성 재시도 실패: {e}", exc_info=True)
+        await db.update_batch(batch_id, {"status": "all_failed"})
+        await db.create_notification(
+            "error",
+            f"글 재생성 실패: {keyword}",
+            str(e)[:200],
+        )
+
+
 @app.post("/api/publish/immediate")
 async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTasks):
     """즉시 발행 시작 (백그라운드 비동기)"""
@@ -1045,28 +1159,42 @@ async def get_batch(batch_id: int):
 
 @app.post("/api/batches/{batch_id}/retry")
 async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
-    """실패한 문서만 재시도"""
+    """실패한 배치 재시도 — 발행 실패 문서가 있으면 발행만 재시도,
+    아예 글 생성 자체가 안 됐으면 글 생성부터 다시 시작"""
+    batch = await db.get_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="배치를 찾을 수 없습니다.")
+
     histories = await db.get_batch_history(batch_id)
     failed = [h for h in histories if h["status"] == "failed"]
-    if not failed:
-        return {"message": "재시도할 문서가 없습니다."}
 
-    batch = await db.get_batch(batch_id)
-    documents = [
-        {
-            "account_id": h["account_id"],
-            "category_id": h["category_id"],
-            "title": h["title"],
-            "content": h["content"],
-            "keywords": json.loads(h["keywords"]) if isinstance(h["keywords"], str) else h["keywords"],
-            "format": h["document_format"],
-        }
-        for h in failed
-    ]
+    if failed:
+        # 발행 실패 문서가 있으면 발행만 재시도
+        documents = [
+            {
+                "account_id": h["account_id"],
+                "category_id": h["category_id"],
+                "title": h["title"],
+                "content": h["content"],
+                "keywords": json.loads(h["keywords"]) if isinstance(h["keywords"], str) else h["keywords"],
+                "format": h["document_format"],
+            }
+            for h in failed
+        ]
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        background_tasks.add_task(_run_publish_batch, batch_id, batch["keyword"], documents, api_key)
+        return {"message": f"{len(failed)}개 문서 재시도 시작"}
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    background_tasks.add_task(_run_publish_batch, batch_id, batch["keyword"], documents, api_key)
-    return {"message": f"{len(failed)}개 문서 재시도 시작"}
+    # 글 생성 자체가 안 된 경우 (publish_history에 기록 없음) → 글 생성부터 재시도
+    if batch.get("status") in ("all_failed", "pending"):
+        keyword = batch["keyword"]
+        post_type = batch.get("post_type", "ad")
+        # 배치 상태를 pending으로 초기화
+        await db.update_batch(batch_id, {"status": "pending", "success_count": 0, "failed_count": 0})
+        background_tasks.add_task(_retry_article_generation, batch_id, keyword, post_type)
+        return {"message": f"글 생성부터 재시도합니다: {keyword}"}
+
+    return {"message": "재시도할 문서가 없습니다."}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
