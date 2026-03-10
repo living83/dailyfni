@@ -993,14 +993,35 @@ async def update_scheduler_config(data: dict):
 # ─── 중복 키워드 체크 ──────────────────────────────────
 
 async def get_ready_batches() -> list:
-    """발행 대기 중인 배치 조회 (status='articles_ready')"""
+    """발행 대기 중인 배치 조회 (status='articles_ready') — 계정명·키워드 포함"""
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
+                """SELECT pb.*,
+                          a.account_name,
+                          ph.keywords AS ph_keywords
+                   FROM publish_batches pb
+                   LEFT JOIN publish_history ph ON ph.batch_id = pb.id
+                   LEFT JOIN accounts a ON ph.account_id = a.id
+                   WHERE pb.status = 'articles_ready'
+                   GROUP BY pb.id
+                   ORDER BY pb.created_at ASC"""
             )
-            return list(await cur.fetchall())
+            rows = list(await cur.fetchall())
+            import json as _json
+            for row in rows:
+                # keyword가 비어있으면 publish_history.keywords에서 복구
+                if not row.get("keyword") and row.get("ph_keywords"):
+                    try:
+                        kw_list = row["ph_keywords"]
+                        if isinstance(kw_list, str):
+                            kw_list = _json.loads(kw_list)
+                        if isinstance(kw_list, list) and kw_list:
+                            row["keyword"] = kw_list[0]
+                    except Exception:
+                        pass
+            return rows
 
 
 async def get_generated_articles(batch_id: int) -> list:
