@@ -24,7 +24,13 @@ from cafe_publisher import publish_to_cafe, post_comment
 from content_generator import generate_content, content_to_plain_text
 from crypto import decrypt_password
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("scheduler")
+logger.setLevel(logging.DEBUG)
+if not logger.handlers:
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_sh)
+    logger.propagate = False
 
 scheduler = AsyncIOScheduler()
 
@@ -704,20 +710,29 @@ async def run_once_now():
     was_running = _is_running
     _is_running = True
 
-    config = db.get_schedule_config()
-    eligible = _get_eligible_accounts(config)
+    try:
+        logger.info("=== 수동 1회 발행 시작 ===")
+        config = db.get_schedule_config()
+        eligible = _get_eligible_accounts(config)
+        logger.info(f"적격 계정: {len(eligible)}개")
 
-    if not eligible:
-        # 대기 시간 미충족이면 활성 계정 중 아무나 선택
-        accounts = db.get_accounts()
-        eligible = [a for a in accounts if a["active"]]
+        if not eligible:
+            # 대기 시간 미충족이면 활성 계정 중 아무나 선택
+            accounts = db.get_accounts()
+            eligible = [a for a in accounts if a["active"]]
+            logger.info(f"적격 없음 → 활성 계정 폴백: {len(eligible)}개")
 
-    if eligible:
-        account = random.choice(eligible)
-        await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
-        await _publish_single(account, config, skip_comment=True)
-    else:
-        await _notify_progress("error", {"message": "활성 계정이 없습니다"})
-
-    if not was_running:
-        _is_running = False
+        if eligible:
+            account = random.choice(eligible)
+            logger.info(f"선택 계정: {account['username']} (id={account['id']})")
+            await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
+            await _publish_single(account, config, skip_comment=True)
+        else:
+            logger.warning("활성 계정 없음 — 1회 발행 불가")
+            await _notify_progress("error", {"message": "활성 계정이 없습니다"})
+    except Exception as e:
+        logger.error(f"수동 1회 발행 중 예외: {e}", exc_info=True)
+        await _notify_progress("error", {"message": f"1회 발행 오류: {str(e)}"})
+    finally:
+        if not was_running:
+            _is_running = False
