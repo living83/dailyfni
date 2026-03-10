@@ -10,9 +10,11 @@ APScheduler 기반 자동 발행 관리
 5. 랜덤 딜레이: 각 발행 전 랜덤 오프셋 추가
 """
 
+import sys
 import random
 import logging
 import asyncio
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -26,17 +28,26 @@ from crypto import decrypt_password
 
 logger = logging.getLogger("scheduler")
 logger.setLevel(logging.DEBUG)
+
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_log_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
 if not logger.handlers:
-    _sh = logging.StreamHandler()
-    _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    _sh = logging.StreamHandler(sys.stderr)
+    _sh.setFormatter(_log_fmt)
     logger.addHandler(_sh)
+    _fh = logging.FileHandler(str(_LOG_DIR / "scheduler.log"), encoding="utf-8")
+    _fh.setFormatter(_log_fmt)
+    logger.addHandler(_fh)
     logger.propagate = False
 
 
 def _slog(msg: str, level: str = "INFO"):
-    """로거 + print 동시 출력"""
+    """로거 + stderr 직접 출력"""
     getattr(logger, level.lower(), logger.info)(msg)
-    print(f"[scheduler] {msg}", flush=True)
+    sys.stderr.write(f"[scheduler] {msg}\n")
+    sys.stderr.flush()
 
 scheduler = AsyncIOScheduler()
 

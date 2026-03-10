@@ -41,17 +41,27 @@ from content_generator import STYLE_EMPTY
 
 logger = logging.getLogger("cafe_publisher")
 logger.setLevel(logging.DEBUG)
+
+# 파일 핸들러: uvicorn reload 자식 프로세스에서도 확실히 로그 저장
+_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+_log_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
 if not logger.handlers:
-    _sh = logging.StreamHandler()
-    _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    _sh = logging.StreamHandler(sys.stderr)
+    _sh.setFormatter(_log_fmt)
     logger.addHandler(_sh)
+    _fh = logging.FileHandler(str(_LOG_DIR / "cafe_publisher.log"), encoding="utf-8")
+    _fh.setFormatter(_log_fmt)
+    logger.addHandler(_fh)
     logger.propagate = False
 
 
 def _log(msg: str, level: str = "INFO"):
-    """로거 + print 동시 출력 (uvicorn reload 환경에서 확실한 터미널 출력 보장)"""
+    """로거 + stderr 직접 출력"""
     getattr(logger, level.lower(), logger.info)(msg)
-    print(f"[cafe_publisher] {msg}", flush=True)
+    sys.stderr.write(f"[cafe_publisher] {msg}\n")
+    sys.stderr.flush()
 
 
 # 스크린샷 저장 디렉토리
@@ -282,6 +292,13 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
     )
+
+    # Chrome/ChromeDriver 버전 로그
+    caps = driver.capabilities
+    chrome_ver = caps.get("browserVersion", "?")
+    driver_ver = caps.get("chrome", {}).get("chromedriverVersion", "?")
+    _log(f"Chrome={chrome_ver}, ChromeDriver={driver_ver}, headless={headless}")
+
     return driver
 
 
@@ -363,20 +380,19 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
 def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc: str) -> bool:
     """ID/PW로 네이버 로그인 (2FA 대기 포함)"""
     try:
+        _log(f"[credentials] 로그인 시도: {username}")
         if not password_enc:
-            logger.error("비밀번호가 설정되지 않았습니다. 계정을 다시 등록해주세요.")
+            _log("비밀번호가 설정되지 않았습니다.", "ERROR")
             return False
         try:
             password = decrypt_password(password_enc)
+            _log(f"[credentials] 비밀번호 복호화 성공 (길이={len(password)})")
         except Exception as dec_err:
-            logger.error(
-                f"비밀번호 복호화 실패 ({type(dec_err).__name__}): "
-                f"master_key가 변경되었거나 비밀번호 데이터가 손상되었습니다. "
-                f"계정을 삭제 후 다시 등록해주세요."
-            )
+            _log(f"비밀번호 복호화 실패: {type(dec_err).__name__}", "ERROR")
             return False
         driver.get("https://nid.naver.com/nidlogin.login")
         random_delay(2, 3)
+        _log(f"[credentials] 로그인 페이지 URL: {driver.current_url}")
 
         wait = WebDriverWait(driver, 30)
 
@@ -397,6 +413,7 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         # 로그인 버튼 클릭
         login_btn = driver.find_element(By.ID, "log.login")
         login_btn.click()
+        _log(f"[credentials] 로그인 버튼 클릭 완료, 결과 대기...")
 
         # 2FA/캡챠 포함 최대 90초 대기 (5초 간격 폴링)
         max_wait = 90
@@ -408,6 +425,7 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             time.sleep(poll_interval)
             elapsed += poll_interval
             current_url = driver.current_url
+            _log(f"[credentials] {elapsed}초 경과, URL: {current_url}")
 
             # 로그인 성공: nidlogin/captcha 페이지를 벗어남
             if "nidlogin" not in current_url and "captcha" not in current_url:
