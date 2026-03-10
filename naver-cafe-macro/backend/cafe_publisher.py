@@ -348,7 +348,7 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         driver.get("https://nid.naver.com/nidlogin.login")
         random_delay(2, 3)
 
-        wait = WebDriverWait(driver, 10)
+        wait = WebDriverWait(driver, 30)
 
         # 아이디 입력 (클립보드 방식으로 우회)
         id_input = wait.until(EC.presence_of_element_located((By.ID, "id")))
