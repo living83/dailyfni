@@ -41,7 +41,7 @@ def _load_env_file(env_path):
 
 _load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Body
+from fastapi import FastAPI, HTTPException, Query, Request, Body
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
@@ -1117,19 +1117,21 @@ async def _retry_article_generation(batch_id: int, keyword: str, post_type: str)
 
 
 @app.post("/api/publish/immediate")
-async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTasks):
+async def publish_immediate(req: PublishRequest):
     """즉시 발행 시작 (백그라운드 비동기)"""
     if not req.documents:
         raise HTTPException(status_code=400, detail="발행할 문서가 없습니다.")
 
     batch = await db.create_batch(req.keyword)
-    # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+    # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
     _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
     _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
-    background_tasks.add_task(
-        _run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key,
+    task = asyncio.create_task(_run_publish_batch(
+        batch["id"], req.keyword, req.documents, req.api_key,
         req.footer_link or "", req.footer_link_text or "",
-    )
+    ))
+    _background_tasks.add(task)
+    task.add_done_callback(_on_task_done)
 
     return {"batch_id": batch["id"], "message": "발행이 시작되었습니다.", "status": "publishing"}
 
@@ -1179,7 +1181,7 @@ async def get_batch(batch_id: int):
 
 
 @app.post("/api/batches/{batch_id}/retry")
-async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
+async def retry_batch(batch_id: int):
     """실패한 배치 재시도 — 발행 실패 문서가 있으면 발행만 재시도,
     아예 글 생성 자체가 안 됐으면 글 생성부터 다시 시작"""
     batch = await db.get_batch(batch_id)
@@ -1203,10 +1205,12 @@ async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
             for h in failed
         ]
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+        # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
         _publish_status[batch_id] = {"status": "publishing", "documents": [], "current": 0}
         _publish_status_timestamps[batch_id] = datetime.now().timestamp()
-        background_tasks.add_task(_run_publish_batch, batch_id, batch["keyword"], documents, api_key)
+        task = asyncio.create_task(_run_publish_batch(batch_id, batch["keyword"], documents, api_key))
+        _background_tasks.add(task)
+        task.add_done_callback(_on_task_done)
         return {"message": f"{len(failed)}개 문서 재시도 시작"}
 
     # 글 생성 자체가 안 된 경우 (publish_history에 기록 없음) → 글 생성부터 재시도
@@ -1215,7 +1219,9 @@ async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
         post_type = batch.get("post_type", "ad")
         # 배치 상태를 pending으로 초기화
         await db.update_batch(batch_id, {"status": "pending", "success_count": 0, "failed_count": 0})
-        background_tasks.add_task(_retry_article_generation, batch_id, keyword, post_type)
+        task = asyncio.create_task(_retry_article_generation(batch_id, keyword, post_type))
+        _background_tasks.add(task)
+        task.add_done_callback(_on_task_done)
         return {"message": f"글 생성부터 재시도합니다: {keyword}"}
 
     return {"message": "재시도할 문서가 없습니다."}
@@ -1306,7 +1312,7 @@ async def delete_all_history():
 
 
 @app.post("/api/history/{history_id}/republish")
-async def republish(history_id: int, background_tasks: BackgroundTasks):
+async def republish(history_id: int):
     """재발행"""
     histories = await db.get_publish_history({"limit": 1000})
     history = next((h for h in histories if h["id"] == history_id), None)
@@ -1327,10 +1333,12 @@ async def republish(history_id: int, background_tasks: BackgroundTasks):
         "format": history["document_format"],
     }]
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    # 폴링 race condition 방지: 백그라운드 태스크 시작 전에 상태 미리 등록
+    # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
     _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
     _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
-    background_tasks.add_task(_run_publish_batch, batch["id"], history.get("title", ""), documents, api_key)
+    task = asyncio.create_task(_run_publish_batch(batch["id"], history.get("title", ""), documents, api_key))
+    _background_tasks.add(task)
+    task.add_done_callback(_on_task_done)
     return {"batch_id": batch["id"], "message": "재발행이 시작되었습니다."}
 
 
@@ -1519,7 +1527,7 @@ _engagement_status = {}
 
 
 @app.post("/api/engagement/run")
-async def run_engagement_now(request: Request, background_tasks: BackgroundTasks):
+async def run_engagement_now(request: Request):
     """수동으로 참여(공감/댓글) 실행"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
@@ -1569,10 +1577,11 @@ async def run_engagement_now(request: Request, background_tasks: BackgroundTasks
         "total_comments": 0,
     }
 
-    background_tasks.add_task(
-        _run_engagement_all_accounts,
+    task = asyncio.create_task(_run_engagement_all_accounts(
         run_id, active_accounts, api_key, max_posts, do_like, do_comment,
-    )
+    ))
+    _background_tasks.add(task)
+    task.add_done_callback(_on_task_done)
     return {"run_id": run_id, "message": f"{len(active_accounts)}개 계정으로 참여가 시작되었습니다."}
 
 
