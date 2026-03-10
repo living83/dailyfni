@@ -152,19 +152,21 @@ def _parse_proxy_url(proxy_address: str) -> dict:
 
 
 def _create_proxy_auth_extension(proxy: dict) -> str:
-    """인증이 필요한 프록시를 위한 Chrome 확장 프로그램 생성 → zip 파일 경로 반환"""
+    """인증이 필요한 프록시를 위한 Chrome 확장 프로그램 생성 (Manifest V3) → zip 파일 경로 반환"""
     import zipfile
 
     manifest = """{
         "version": "1.0.0",
-        "manifest_version": 2,
+        "manifest_version": 3,
         "name": "Proxy Auth",
-        "permissions": ["proxy", "tabs", "unlimitedStorage", "storage", "<all_urls>", "webRequest", "webRequestBlocking"],
-        "background": {"scripts": ["background.js"]},
-        "minimum_chrome_version": "22.0.0"
+        "permissions": ["proxy", "webRequest", "webRequestAuthProvider"],
+        "host_permissions": ["<all_urls>"],
+        "background": {"service_worker": "background.js"},
+        "minimum_chrome_version": "108.0.0"
     }"""
 
-    background = """var config = {
+    background = """chrome.proxy.settings.set({
+    value: {
         mode: "fixed_servers",
         rules: {
             singleProxy: {
@@ -174,21 +176,21 @@ def _create_proxy_auth_extension(proxy: dict) -> str:
             },
             bypassList: ["localhost"]
         }
-    };
-    chrome.proxy.settings.set({value: config, scope: "regular"}, function(){});
-    function callbackFn(details) {
-        return {
+    },
+    scope: "regular"
+});
+chrome.webRequest.onAuthRequired.addListener(
+    (details, callback) => {
+        callback({
             authCredentials: {
                 username: "%s",
                 password: "%s"
             }
-        };
-    }
-    chrome.webRequest.onAuthRequired.addListener(
-        callbackFn,
-        {urls: ["<all_urls>"]},
-        ['blocking']
-    );""" % (proxy["scheme"], proxy["host"], proxy["port"], proxy["username"], proxy["password"])
+        });
+    },
+    {urls: ["<all_urls>"]},
+    ["asyncBlocking"]
+);""" % (proxy["scheme"], proxy["host"], proxy["port"], proxy["username"], proxy["password"])
 
     ext_dir = Path(tempfile.mkdtemp(prefix="proxy_ext_"))
     ext_path = ext_dir / "proxy_auth.zip"
@@ -213,7 +215,7 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
     if headless and not has_proxy_auth:
         options.add_argument("--headless=new")
     elif headless and has_proxy_auth:
-        # Manifest V2 확장은 headless에서 동작하지 않음 → 창 최소화로 대체
+        # MV3 확장은 headless에서 동작하지 않음 → 창 숨김으로 대체
         options.add_argument("--window-position=-9999,-9999")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
