@@ -1088,6 +1088,18 @@ async def _retry_article_generation(batch_id: int, keyword: str, post_type: str)
             f"계정: {account['account_name']}, 제목: {title[:30]}...",
         )
 
+        # 글 생성 후 자동으로 발행 시작
+        documents = [{
+            "account_id": account["id"],
+            "category_id": cat_id,
+            "title": title,
+            "content": body,
+            "keywords": [keyword],
+            "format": fmt,
+        }]
+        logger.info(f"배치 #{batch_id} 글 생성 완료 → 자동 발행 시작")
+        await _run_publish_batch(batch_id, keyword, documents, api_key)
+
     except Exception as e:
         logger.error(f"배치 #{batch_id} 글 생성 재시도 실패: {e}", exc_info=True)
         await db.update_batch(batch_id, {"status": "all_failed"})
