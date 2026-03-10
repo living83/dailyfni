@@ -38,7 +38,13 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from crypto import decrypt_password
 from content_generator import STYLE_EMPTY
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cafe_publisher")
+logger.setLevel(logging.DEBUG)
+if not logger.handlers:
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_sh)
+    logger.propagate = False
 
 # ─── User-Agent 풀 ────────────────────────────────────────
 
@@ -398,7 +404,14 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             return True
 
         current_url = driver.current_url
-        logger.warning(f"로그인 {max_wait}초 대기 후 실패: {current_url}")
+        page_title = driver.title
+        logger.warning(f"로그인 {max_wait}초 대기 후 실패: url={current_url}, title={page_title}")
+        # 페이지 소스 힌트 (에러 메시지 추출)
+        try:
+            body_text = driver.find_element(By.TAG_NAME, "body").text[:500]
+            logger.warning(f"페이지 내용 (일부): {body_text}")
+        except Exception:
+            pass
         return False
 
     except Exception as e:
@@ -1822,18 +1835,23 @@ def publish_to_cafe(
         driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
 
         # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
+        logger.info(f"[발행] 계정={account.get('username')}, 카페={cafe_url}, 게시판={menu_id}")
         if on_progress:
             on_progress("login", "로그인 시도 중...")
 
         logged_in = check_profile_login(driver)
+        logger.info(f"[로그인] 프로파일 세션: {'성공' if logged_in else '실패'}")
 
         if not logged_in and account.get("cookie_data"):
             logged_in = login_with_cookie(driver, account["cookie_data"])
+            logger.info(f"[로그인] 쿠키: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
+            logger.info(f"[로그인] ID/PW 시도: {account['username']}")
             logged_in = login_with_credentials(
                 driver, account["username"], account["password_enc"]
             )
+            logger.info(f"[로그인] ID/PW: {'성공' if logged_in else '실패'}")
 
         if not logged_in:
             result["error"] = "로그인 실패"
