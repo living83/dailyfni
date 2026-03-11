@@ -224,8 +224,13 @@ async def init_db():
                 )
                 col_info = await cur.fetchone()
                 if col_info:
-                    # 컬럼 존재 → NULL 허용 + 기본값 보장
-                    if col_info.get("IS_NULLABLE") != "YES" or col_info.get("COLUMN_DEFAULT") is None:
+                    # 컬럼 존재 → 항상 NULL 허용 + 기본값 '[]' 보장
+                    needs_fix = (
+                        col_info.get("IS_NULLABLE") != "YES"
+                        or col_info.get("COLUMN_DEFAULT") is None
+                        or col_info.get("COLUMN_DEFAULT") == ""
+                    )
+                    if needs_fix:
                         await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
                         logger.info("gemini_images 컬럼을 NULL DEFAULT '[]'로 수정 완료")
                 else:
@@ -661,10 +666,11 @@ async def create_publish_history(data: dict) -> dict:
                     params,
                 )
             except Exception as e:
-                if getattr(e, 'args', (None,))[0] == 1364 and 'gemini_images' in str(e):
-                    # gemini_images 컬럼이 NOT NULL without default → 자동 수정 후 재시도
-                    logger.warning("gemini_images 컬럼 스키마 자동 수정 중...")
+                if getattr(e, 'args', (None,))[0] == 1364:
+                    # 컬럼이 NOT NULL without default → 자동 수정 후 재시도
+                    logger.warning(f"publish_history 컬럼 스키마 자동 수정 중: {e}")
                     await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                    await conn.commit()
                     await cur.execute(
                         """INSERT INTO publish_history
                            (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
