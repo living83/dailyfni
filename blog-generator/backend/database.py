@@ -132,11 +132,21 @@ async def init_db():
             await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
             await cur.execute("SET SESSION sql_mode = ''")
 
-            # gemini_images 컬럼에 기본값 설정 (기존 NOT NULL 컬럼 수정)
+            # gemini_images 컬럼 확인: 없으면 추가, 있으면 기본값 설정
             try:
-                await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                await cur.execute(
+                    "SELECT 1 FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'publish_history' AND COLUMN_NAME = 'gemini_images'"
+                )
+                row = await cur.fetchone()
+                if row:
+                    # 컬럼 존재 → 기본값/NULL 허용으로 수정
+                    await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                else:
+                    # 테이블은 있지만 컬럼 없음 → 추가
+                    await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
             except Exception:
-                pass  # 테이블이 아직 없으면 무시
+                pass  # 테이블 자체가 없으면 무시 (아래 CREATE TABLE에서 생성)
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
