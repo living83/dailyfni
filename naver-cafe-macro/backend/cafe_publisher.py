@@ -1777,11 +1777,18 @@ def write_post(
             """발행된 글 URL인지 확인 (write 페이지 제외)"""
             if "articles/write" in url or "ArticleWrite" in url:
                 return False
-            # 발행된 글: /articles/숫자 패턴
             import re
+            # /articles/숫자 (신형 URL)
             if re.search(r'/articles/\d+', url):
                 return True
+            # ArticleRead (iframe 형식 포함, URL 인코딩된 경우도)
             if "ArticleRead" in url:
+                return True
+            # articleid= query parameter (iframe_url_utf8 등에 인코딩된 경우)
+            if "articleid" in url.lower():
+                return True
+            # cafe.naver.com/alias/숫자 (구형 URL)
+            if re.search(r'cafe\.naver\.com/\w+/\d+', url):
                 return True
             return False
 
@@ -1789,9 +1796,10 @@ def write_post(
             logger.info(f"글 발행 성공: {current_url}")
             return current_url
 
-        # 아직 write 페이지면 → 페이지 전환 대기 (프록시 등 느린 네트워크 대비)
-        if "articles/write" in current_url or "ArticleWrite" in current_url:
-            logger.info("[발행확인] 아직 글쓰기 페이지 — 추가 대기 (최대 15초)")
+        # 발행 URL이 아니면 → 페이지 전환 대기 (프록시 등 느린 네트워크 대비)
+        if not _is_published_url(current_url):
+            is_write_page = "articles/write" in current_url or "ArticleWrite" in current_url
+            logger.info(f"[발행확인] 발행 URL 아님 — 추가 대기 (최대 15초), write페이지={is_write_page}")
             for i in range(5):
                 random_delay(2, 3)
                 current_url = driver.current_url
@@ -1799,8 +1807,6 @@ def write_post(
                 if _is_published_url(current_url):
                     logger.info(f"글 발행 성공 (추가 대기 후): {current_url}")
                     return current_url
-                if "articles/write" not in current_url and "ArticleWrite" not in current_url:
-                    break  # write 페이지를 벗어남 → 아래에서 재확인
 
         # 확인 다이얼로그 처리
         try:
