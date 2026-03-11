@@ -263,6 +263,7 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                     "content": body,
                     "keywords": [keyword],
                     "document_format": fmt,
+                    "gemini_images": gemini_paths,
                 })
 
                 if not history:
@@ -272,12 +273,6 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
                 from database import update_publish_history
                 await update_publish_history(history["id"], {"status": "generated"})
-
-                if gemini_paths:
-                    import json as _json
-                    await update_publish_history(history["id"], {
-                        "gemini_images": _json.dumps(gemini_paths),
-                    })
 
                 await update_batch(batch["id"], {"status": "articles_ready"})
                 logger.info(f"글 생성 완료: {title[:30]}... → 계정: {account['account_name']} (단계 {account.get('account_tier', 1)})")
