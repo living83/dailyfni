@@ -667,8 +667,12 @@ async def create_publish_history(data: dict) -> dict:
                 )
             except Exception as e:
                 if getattr(e, 'args', (None,))[0] == 1364:
-                    # 컬럼이 NOT NULL without default → 자동 수정 후 재시도
+                    # 컬럼이 NOT NULL without default → 롤백 후 자동 수정 재시도
                     logger.warning(f"publish_history 컬럼 스키마 자동 수정 중: {e}")
+                    try:
+                        await conn.rollback()
+                    except Exception:
+                        pass
                     await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
                     await conn.commit()
                     await cur.execute(

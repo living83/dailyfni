@@ -74,7 +74,7 @@ def _generate_via_rest_api(api_key: str, model_name: str, prompt: str) -> bytes:
         "parameters": {
             "sampleCount": 1,
             "aspectRatio": "16:9",
-            "safetySetting": "block_low_and_above",
+            "safetyFilterLevel": "block_low_and_above",
         },
     }
 
