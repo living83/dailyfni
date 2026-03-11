@@ -132,21 +132,7 @@ async def init_db():
             await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
             await cur.execute("SET SESSION sql_mode = ''")
 
-            # gemini_images 컬럼 확인: 없으면 추가, 있으면 기본값 설정
-            try:
-                await cur.execute(
-                    "SELECT 1 FROM information_schema.COLUMNS "
-                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'publish_history' AND COLUMN_NAME = 'gemini_images'"
-                )
-                row = await cur.fetchone()
-                if row:
-                    # 컬럼 존재 → 기본값/NULL 허용으로 수정
-                    await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-                else:
-                    # 테이블은 있지만 컬럼 없음 → 추가
-                    await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-            except Exception as e:
-                logger.debug(f"gemini_images 컬럼 마이그레이션 스킵: {e}")
+            # gemini_images 마이그레이션은 publish_history CREATE TABLE 이후로 이동 (아래 참조)
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -229,6 +215,25 @@ async def init_db():
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
+
+            # gemini_images 컬럼: 기존 테이블에 없거나 NOT NULL이면 수정
+            try:
+                await cur.execute(
+                    "SELECT IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'publish_history' AND COLUMN_NAME = 'gemini_images'"
+                )
+                col_info = await cur.fetchone()
+                if col_info:
+                    # 컬럼 존재 → NULL 허용 + 기본값 보장
+                    if col_info.get("IS_NULLABLE") != "YES" or col_info.get("COLUMN_DEFAULT") is None:
+                        await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                        logger.info("gemini_images 컬럼을 NULL DEFAULT '[]'로 수정 완료")
+                else:
+                    # 컬럼 없음 → 추가
+                    await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                    logger.info("gemini_images 컬럼 추가 완료")
+            except Exception as e:
+                logger.warning(f"gemini_images 컬럼 마이그레이션 실패: {e}")
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS keyword_queue (
