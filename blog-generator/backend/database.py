@@ -642,22 +642,37 @@ async def update_batch(batch_id: int, data: dict):
 
 async def create_publish_history(data: dict) -> dict:
     pool = await _get_pool()
+    params = (
+        data["batch_id"], data.get("document_number", 1),
+        data.get("account_id"), data.get("category_id"),
+        data.get("title", ""), data.get("content", ""),
+        json.dumps(data.get("keywords", []), ensure_ascii=False),
+        data.get("scheduled_time", ""),
+        data.get("document_format", "tutorial"),
+        json.dumps(data.get("gemini_images", []), ensure_ascii=False),
+    )
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                """INSERT INTO publish_history
-                   (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (
-                    data["batch_id"], data.get("document_number", 1),
-                    data.get("account_id"), data.get("category_id"),
-                    data.get("title", ""), data.get("content", ""),
-                    json.dumps(data.get("keywords", []), ensure_ascii=False),
-                    data.get("scheduled_time", ""),
-                    data.get("document_format", "tutorial"),
-                    json.dumps(data.get("gemini_images", []), ensure_ascii=False),
-                ),
-            )
+            try:
+                await cur.execute(
+                    """INSERT INTO publish_history
+                       (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    params,
+                )
+            except Exception as e:
+                if getattr(e, 'args', (None,))[0] == 1364 and 'gemini_images' in str(e):
+                    # gemini_images 컬럼이 NOT NULL without default → 자동 수정 후 재시도
+                    logger.warning("gemini_images 컬럼 스키마 자동 수정 중...")
+                    await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                    await cur.execute(
+                        """INSERT INTO publish_history
+                           (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        params,
+                    )
+                else:
+                    raise
             await cur.execute("SELECT * FROM publish_history WHERE id = %s", (cur.lastrowid,))
             return await cur.fetchone()
 

@@ -74,6 +74,7 @@ def _generate_via_rest_api(api_key: str, model_name: str, prompt: str) -> bytes:
         "parameters": {
             "sampleCount": 1,
             "aspectRatio": "16:9",
+            "safetyFilterLevel": "block_low_and_above",
         },
     }
 
@@ -112,6 +113,7 @@ def _generate_via_sdk(api_key: str, model_name: str, prompt: str) -> bytes:
         config=types.GenerateImagesConfig(
             number_of_images=1,
             aspect_ratio="16:9",
+            safety_filter_level="block_low_and_above",
         ),
     )
 
