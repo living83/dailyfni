@@ -10,6 +10,7 @@ import random
 import hashlib
 import logging
 import base64
+import json
 from pathlib import Path
 
 logger = logging.getLogger("gemini_image")
@@ -62,9 +63,70 @@ Requirements:
     return prompt
 
 
+def _generate_via_rest_api(api_key: str, model_name: str, prompt: str) -> bytes:
+    """SDK를 우회하여 REST API로 직접 이미지 생성 (safetySetting 호환 문제 해결)"""
+    import httpx
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:predict"
+
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": "16:9",
+            "safetyFilterLevel": "block_low_and_above",
+        },
+    }
+
+    response = httpx.post(
+        url,
+        params={"key": api_key},
+        json=payload,
+        timeout=60.0,
+    )
+
+    if response.status_code != 200:
+        raise ValueError(f"{response.status_code} {response.json().get('error', {}).get('message', response.text)}")
+
+    data = response.json()
+    predictions = data.get("predictions", [])
+    if not predictions:
+        raise ValueError("Gemini API가 이미지를 생성하지 못했습니다.")
+
+    image_b64 = predictions[0].get("bytesBase64Encoded", "")
+    if not image_b64:
+        raise ValueError("응답에 이미지 데이터가 없습니다.")
+
+    return base64.b64decode(image_b64)
+
+
+def _generate_via_sdk(api_key: str, model_name: str, prompt: str) -> bytes:
+    """google-genai SDK를 사용하여 이미지 생성"""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+
+    response = client.models.generate_images(
+        model=model_name,
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio="16:9",
+            safety_filter_level="BLOCK_LOW_AND_ABOVE",
+        ),
+    )
+
+    if not response.generated_images:
+        raise ValueError("Gemini API가 이미지를 생성하지 못했습니다.")
+
+    return response.generated_images[0].image.image_bytes
+
+
 def generate_gemini_image(keyword: str, content: str = "", image_index: int = 0) -> str:
     """
     Gemini API를 사용하여 키워드/본문 관련 이미지를 생성합니다.
+    REST API 직접 호출을 우선 시도하고, 실패 시 SDK로 폴백합니다.
 
     Args:
         keyword: 블로그 키워드
@@ -79,60 +141,45 @@ def generate_gemini_image(keyword: str, content: str = "", image_index: int = 0)
 
     api_key = _get_api_key()
     prompt = _build_image_prompt(keyword, content, image_index)
+    model_name = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-fast-generate-001")
 
+    # REST API 우선 → SDK 폴백
+    image_data = None
     try:
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(api_key=api_key)
-
-        # 모델 우선순위: imagen-4.0-fast (저렴/빠름) → imagen-4.0 (고품질)
-        model_name = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-fast-generate-001")
-
-        # safety_filter_level: imagen-4.0 모델은 block_low_and_above만 지원
-        # SDK 버전에 따라 기본값이 다를 수 있으므로 명시적으로 지정
-        response = client.models.generate_images(
-            model=model_name,
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="16:9",
-                safety_filter_level="BLOCK_LOW_AND_ABOVE",
-            ),
-        )
-
-        if not response.generated_images:
-            raise ValueError("Gemini API가 이미지를 생성하지 못했습니다.")
-
-        image_data = response.generated_images[0].image.image_bytes
-
-        # 파일 저장
-        safe_name = hashlib.md5(keyword.encode()).hexdigest()[:12]
-        filename = f"gemini_{safe_name}_v{image_index}.png"
-        filepath = IMAGE_DIR / filename
-        filepath.write_bytes(image_data)
-
-        # 이미지 리사이즈 (960x540)
-        try:
-            from PIL import Image
-            img = Image.open(filepath)
-            if img.size != (960, 540):
-                img = img.resize((960, 540), Image.LANCZOS)
-                img.save(str(filepath), "PNG", quality=95)
-        except Exception as e:
-            logger.warning(f"이미지 리사이즈 실패 (원본 사용): {e}")
-
-        logger.info(f"Gemini 이미지 생성 완료: {filepath}")
-        return str(filepath)
-
-    except ImportError:
-        raise ImportError(
-            "google-genai 패키지가 설치되지 않았습니다. "
-            "'pip install google-genai' 를 실행하세요."
-        )
+        image_data = _generate_via_rest_api(api_key, model_name, prompt)
+        logger.info("REST API로 이미지 생성 성공")
     except Exception as e:
-        logger.error(f"Gemini 이미지 생성 실패: {e}")
-        raise
+        logger.warning(f"REST API 실패, SDK 폴백 시도: {e}")
+        try:
+            image_data = _generate_via_sdk(api_key, model_name, prompt)
+            logger.info("SDK로 이미지 생성 성공")
+        except ImportError:
+            raise ImportError(
+                "google-genai 패키지가 설치되지 않았습니다. "
+                "'pip install google-genai' 를 실행하세요."
+            )
+        except Exception as e2:
+            logger.error(f"Gemini 이미지 생성 실패 (REST + SDK 모두): {e2}")
+            raise
+
+    # 파일 저장
+    safe_name = hashlib.md5(keyword.encode()).hexdigest()[:12]
+    filename = f"gemini_{safe_name}_v{image_index}.png"
+    filepath = IMAGE_DIR / filename
+    filepath.write_bytes(image_data)
+
+    # 이미지 리사이즈 (960x540)
+    try:
+        from PIL import Image
+        img = Image.open(filepath)
+        if img.size != (960, 540):
+            img = img.resize((960, 540), Image.LANCZOS)
+            img.save(str(filepath), "PNG", quality=95)
+    except Exception as e:
+        logger.warning(f"이미지 리사이즈 실패 (원본 사용): {e}")
+
+    logger.info(f"Gemini 이미지 생성 완료: {filepath}")
+    return str(filepath)
 
 
 def generate_gemini_images(keyword: str, content: str = "", max_count: int = 3) -> list:
