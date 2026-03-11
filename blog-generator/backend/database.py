@@ -222,7 +222,7 @@ async def init_db():
                     error_message TEXT,
                     naver_post_url VARCHAR(1000) DEFAULT '',
                     document_format VARCHAR(50) DEFAULT 'tutorial',
-                    gemini_images TEXT NULL,
+                    gemini_images TEXT NULL DEFAULT '[]',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (batch_id) REFERENCES publish_batches(id) ON DELETE CASCADE,
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
