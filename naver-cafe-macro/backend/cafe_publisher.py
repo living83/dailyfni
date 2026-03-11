@@ -1771,6 +1771,7 @@ def write_post(
 
         # ── 발행 확인 ──
         current_url = driver.current_url
+        logger.info(f"[발행확인] 등록 버튼 클릭 후 URL: {current_url}")
 
         def _is_published_url(url):
             """발행된 글 URL인지 확인 (write 페이지 제외)"""
@@ -1788,25 +1789,42 @@ def write_post(
             logger.info(f"글 발행 성공: {current_url}")
             return current_url
 
-        # 아직 write 페이지면 발행 실패
-        if "articles/write" in current_url:
-            logger.error(f"발행 실패 — 여전히 글쓰기 페이지: {current_url}")
-            return None
+        # 아직 write 페이지면 → 페이지 전환 대기 (프록시 등 느린 네트워크 대비)
+        if "articles/write" in current_url or "ArticleWrite" in current_url:
+            logger.info("[발행확인] 아직 글쓰기 페이지 — 추가 대기 (최대 15초)")
+            for i in range(5):
+                random_delay(2, 3)
+                current_url = driver.current_url
+                logger.info(f"[발행확인] {(i+1)*3}초 대기 후 URL: {current_url}")
+                if _is_published_url(current_url):
+                    logger.info(f"글 발행 성공 (추가 대기 후): {current_url}")
+                    return current_url
+                if "articles/write" not in current_url and "ArticleWrite" not in current_url:
+                    break  # write 페이지를 벗어남 → 아래에서 재확인
 
         # 확인 다이얼로그 처리
         try:
             confirm_btn = driver.find_element(
                 By.XPATH, "//button[contains(text(),'등록') or contains(text(),'확인')]"
             )
+            logger.info(f"[발행확인] 확인 다이얼로그 버튼 발견 — 클릭")
             confirm_btn.click()
             random_delay(3, 5)
             current_url = driver.current_url
+            logger.info(f"[발행확인] 확인 버튼 클릭 후 URL: {current_url}")
             if _is_published_url(current_url):
                 return current_url
         except NoSuchElementException:
             pass
 
+        # 최종: 현재 URL이 발행 URL인지 한번 더 확인
+        current_url = driver.current_url
+        if _is_published_url(current_url):
+            logger.info(f"글 발행 성공 (최종 확인): {current_url}")
+            return current_url
+
         logger.warning(f"발행 후 URL 확인 실패: {current_url}")
+        _save_debug_screenshot(driver, "publish_url_check_failed")
         return None
 
     except TimeoutException as e:
