@@ -1069,13 +1069,15 @@ async def get_ready_batches() -> list:
         async with conn.cursor() as cur:
             await cur.execute(
                 """SELECT pb.*,
-                          a.account_name,
-                          ph.keywords AS ph_keywords
+                          (SELECT a.account_name
+                           FROM publish_history ph2
+                           JOIN accounts a ON ph2.account_id = a.id
+                           WHERE ph2.batch_id = pb.id LIMIT 1) AS account_name,
+                          (SELECT ph3.keywords
+                           FROM publish_history ph3
+                           WHERE ph3.batch_id = pb.id LIMIT 1) AS ph_keywords
                    FROM publish_batches pb
-                   LEFT JOIN publish_history ph ON ph.batch_id = pb.id
-                   LEFT JOIN accounts a ON ph.account_id = a.id
                    WHERE pb.status = 'articles_ready'
-                   GROUP BY pb.id
                    ORDER BY pb.created_at ASC"""
             )
             rows = list(await cur.fetchall())
