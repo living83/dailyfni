@@ -637,8 +637,8 @@ async def create_publish_history(data: dict) -> dict:
         async with conn.cursor() as cur:
             await cur.execute(
                 """INSERT INTO publish_history
-                   (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                   (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     data["batch_id"], data.get("document_number", 1),
                     data.get("account_id"), data.get("category_id"),
@@ -646,6 +646,7 @@ async def create_publish_history(data: dict) -> dict:
                     json.dumps(data.get("keywords", []), ensure_ascii=False),
                     data.get("scheduled_time", ""),
                     data.get("document_format", "tutorial"),
+                    json.dumps(data.get("gemini_images", []), ensure_ascii=False),
                 ),
             )
             await cur.execute("SELECT * FROM publish_history WHERE id = %s", (cur.lastrowid,))
