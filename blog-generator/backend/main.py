@@ -41,7 +41,7 @@ def _load_env_file(env_path):
 
 _load_env_file(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI, HTTPException, Query, Request, Body
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Request, Body
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, Response, JSONResponse
@@ -896,7 +896,6 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             "content": doc.get("content", ""),
             "keywords": doc.get("keywords", [keyword]),
             "document_format": doc.get("format", "tutorial"),
-            "gemini_images": doc.get("gemini_images", []),
         })
 
         # 계정 간 딜레이 (첫 번째 제외, 저품질 방지를 위해 충분한 간격)
@@ -926,18 +925,12 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
                 extra_images = gemini_image_map.get(i, [])
 
-            # 일반(general) 포스팅은 하단 링크 삽입하지 않음
-            pub_footer_link = "" if is_general else footer_link
-            pub_footer_link_text = "" if is_general else footer_link_text
-            if is_general:
-                logger.info("일반(general) 타입 → 하단 링크 삽입 건너뜀")
-
             pub_result = await run_publish_task(
                 account_id, naver_id, naver_pw,
                 doc.get("title", ""), doc.get("content", ""),
                 cat_name, tags,
                 main_image,
-                pub_footer_link, pub_footer_link_text,
+                footer_link, footer_link_text,
                 extra_image_paths=extra_images,
             )
 
@@ -1001,135 +994,17 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     )
 
 
-async def _retry_article_generation(batch_id: int, keyword: str, post_type: str):
-    """글 생성이 안 된 실패 배치에 대해 글 생성부터 다시 시도"""
-    from prompts import DOC_TUTORIAL_PROMPT, AD_FOOTER, GENERAL_FOOTER
-
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        await db.update_batch(batch_id, {"status": "all_failed"})
-        logger.error(f"배치 #{batch_id} 재시도 실패: ANTHROPIC_API_KEY 미설정")
-        return
-
-    try:
-        # 활성 계정 가져오기
-        accounts = await db.get_accounts()
-        active_accounts = [a for a in accounts if a.get("is_active")]
-        if not active_accounts:
-            await db.update_batch(batch_id, {"status": "all_failed"})
-            logger.error(f"배치 #{batch_id} 재시도 실패: 활성 계정 없음")
-            return
-
-        account = active_accounts[0]
-        ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
-        fmt = "tutorial"
-        prompt_template = DOC_TUTORIAL_PROMPT
-
-        product_info_section = ""
-
-        prompt = prompt_template.format(
-            keyword=keyword,
-            product_info_section=product_info_section,
-            ad_footer=ad_footer,
-        )
-        result = await asyncio.to_thread(_call_claude, api_key, prompt, 4096)
-
-        lines = result.strip().split("\n", 1)
-        title = lines[0].strip().lstrip("# ").strip()
-        body = lines[1].strip() if len(lines) > 1 else result
-
-        # 카테고리
-        categories = await db.get_categories(account["id"])
-        default_cat = next((c for c in categories if c.get("is_default")), None)
-        cat_id = default_cat["id"] if default_cat else None
-
-        # Gemini 이미지 (일반 포스팅)
-        gemini_paths = []
-        if post_type == "general" and os.getenv("GEMINI_API_KEY"):
-            try:
-                from gemini_image_generator import generate_gemini_images
-                gemini_paths = await asyncio.to_thread(
-                    generate_gemini_images, keyword, body, 3
-                )
-            except Exception as e:
-                logger.warning(f"Gemini 이미지 생성 실패: {e}")
-
-        # 키워드 대표이미지
-        keyword_image_paths = []
-        if post_type != "general":
-            try:
-                from image_generator import generate_keyword_image_variants
-                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-
-        # DB에 publish_history 저장 (gemini_images 포함)
-        history = await db.create_publish_history({
-            "batch_id": batch_id,
-            "document_number": 1,
-            "account_id": account["id"],
-            "category_id": cat_id,
-            "title": title,
-            "content": body,
-            "keywords": json.dumps([keyword]),
-            "document_format": fmt,
-            "gemini_images": gemini_paths,
-        })
-
-        if not history:
-            await db.update_batch(batch_id, {"status": "all_failed"})
-            logger.error(f"배치 #{batch_id} 재시도: publish_history 생성 실패")
-            return
-
-        await db.update_publish_history(history["id"], {"status": "generated"})
-
-        await db.update_batch(batch_id, {"status": "articles_ready"})
-        logger.info(f"배치 #{batch_id} 글 생성 재시도 성공: {title[:30]}...")
-
-        await db.create_notification(
-            "success",
-            f"글 재생성 완료: {keyword}",
-            f"계정: {account['account_name']}, 제목: {title[:30]}...",
-        )
-
-        # 글 생성 후 자동으로 발행 시작
-        documents = [{
-            "account_id": account["id"],
-            "category_id": cat_id,
-            "title": title,
-            "content": body,
-            "keywords": [keyword],
-            "format": fmt,
-        }]
-        logger.info(f"배치 #{batch_id} 글 생성 완료 → 자동 발행 시작")
-        await _run_publish_batch(batch_id, keyword, documents, api_key)
-
-    except Exception as e:
-        logger.error(f"배치 #{batch_id} 글 생성 재시도 실패: {e}", exc_info=True)
-        await db.update_batch(batch_id, {"status": "all_failed"})
-        await db.create_notification(
-            "error",
-            f"글 재생성 실패: {keyword}",
-            str(e)[:200],
-        )
-
-
 @app.post("/api/publish/immediate")
-async def publish_immediate(req: PublishRequest):
+async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTasks):
     """즉시 발행 시작 (백그라운드 비동기)"""
     if not req.documents:
         raise HTTPException(status_code=400, detail="발행할 문서가 없습니다.")
 
     batch = await db.create_batch(req.keyword)
-    # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
-    _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
-    _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
-    task = asyncio.create_task(_run_publish_batch(
-        batch["id"], req.keyword, req.documents, req.api_key,
+    background_tasks.add_task(
+        _run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key,
         req.footer_link or "", req.footer_link_text or "",
-    ))
-    _background_tasks.add(task)
-    task.add_done_callback(_on_task_done)
+    )
 
     return {"batch_id": batch["id"], "message": "발행이 시작되었습니다.", "status": "publishing"}
 
@@ -1179,50 +1054,29 @@ async def get_batch(batch_id: int):
 
 
 @app.post("/api/batches/{batch_id}/retry")
-async def retry_batch(batch_id: int):
-    """실패한 배치 재시도 — 발행 실패 문서가 있으면 발행만 재시도,
-    아예 글 생성 자체가 안 됐으면 글 생성부터 다시 시작"""
-    batch = await db.get_batch(batch_id)
-    if not batch:
-        raise HTTPException(status_code=404, detail="배치를 찾을 수 없습니다.")
-
+async def retry_batch(batch_id: int, background_tasks: BackgroundTasks):
+    """실패한 문서만 재시도"""
     histories = await db.get_batch_history(batch_id)
     failed = [h for h in histories if h["status"] == "failed"]
+    if not failed:
+        return {"message": "재시도할 문서가 없습니다."}
 
-    if failed:
-        # 발행 실패 문서가 있으면 발행만 재시도
-        documents = [
-            {
-                "account_id": h["account_id"],
-                "category_id": h["category_id"],
-                "title": h["title"],
-                "content": h["content"],
-                "keywords": json.loads(h["keywords"]) if isinstance(h["keywords"], str) else h["keywords"],
-                "format": h["document_format"],
-            }
-            for h in failed
-        ]
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
-        _publish_status[batch_id] = {"status": "publishing", "documents": [], "current": 0}
-        _publish_status_timestamps[batch_id] = datetime.now().timestamp()
-        task = asyncio.create_task(_run_publish_batch(batch_id, batch["keyword"], documents, api_key))
-        _background_tasks.add(task)
-        task.add_done_callback(_on_task_done)
-        return {"message": f"{len(failed)}개 문서 재시도 시작"}
+    batch = await db.get_batch(batch_id)
+    documents = [
+        {
+            "account_id": h["account_id"],
+            "category_id": h["category_id"],
+            "title": h["title"],
+            "content": h["content"],
+            "keywords": json.loads(h["keywords"]) if isinstance(h["keywords"], str) else h["keywords"],
+            "format": h["document_format"],
+        }
+        for h in failed
+    ]
 
-    # 글 생성 자체가 안 된 경우 (publish_history에 기록 없음) → 글 생성부터 재시도
-    if batch.get("status") in ("all_failed", "pending"):
-        keyword = batch["keyword"]
-        post_type = batch.get("post_type", "ad")
-        # 배치 상태를 pending으로 초기화
-        await db.update_batch(batch_id, {"status": "pending", "success_count": 0, "failed_count": 0})
-        task = asyncio.create_task(_retry_article_generation(batch_id, keyword, post_type))
-        _background_tasks.add(task)
-        task.add_done_callback(_on_task_done)
-        return {"message": f"글 생성부터 재시도합니다: {keyword}"}
-
-    return {"message": "재시도할 문서가 없습니다."}
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    background_tasks.add_task(_run_publish_batch, batch_id, batch["keyword"], documents, api_key)
+    return {"message": f"{len(failed)}개 문서 재시도 시작"}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1310,18 +1164,14 @@ async def delete_all_history():
 
 
 @app.post("/api/history/{history_id}/republish")
-async def republish(history_id: int):
+async def republish(history_id: int, background_tasks: BackgroundTasks):
     """재발행"""
     histories = await db.get_publish_history({"limit": 1000})
     history = next((h for h in histories if h["id"] == history_id), None)
     if not history:
         raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
 
-    # 원본 배치의 post_type 유지 (일반/광고 구분)
-    original_batch = await db.get_batch(history["batch_id"]) if history.get("batch_id") else None
-    post_type = original_batch.get("post_type", "ad") if original_batch else "ad"
-
-    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}", post_type=post_type)
+    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}")
     documents = [{
         "account_id": history["account_id"],
         "category_id": history["category_id"],
@@ -1331,12 +1181,7 @@ async def republish(history_id: int):
         "format": history["document_format"],
     }]
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
-    # 폴링 race condition 방지: 태스크 시작 전에 상태 미리 등록
-    _publish_status[batch["id"]] = {"status": "publishing", "documents": [], "current": 0}
-    _publish_status_timestamps[batch["id"]] = datetime.now().timestamp()
-    task = asyncio.create_task(_run_publish_batch(batch["id"], history.get("title", ""), documents, api_key))
-    _background_tasks.add(task)
-    task.add_done_callback(_on_task_done)
+    background_tasks.add_task(_run_publish_batch, batch["id"], history.get("title", ""), documents, api_key)
     return {"batch_id": batch["id"], "message": "재발행이 시작되었습니다."}
 
 
@@ -1525,7 +1370,7 @@ _engagement_status = {}
 
 
 @app.post("/api/engagement/run")
-async def run_engagement_now(request: Request):
+async def run_engagement_now(request: Request, background_tasks: BackgroundTasks):
     """수동으로 참여(공감/댓글) 실행"""
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
@@ -1575,11 +1420,10 @@ async def run_engagement_now(request: Request):
         "total_comments": 0,
     }
 
-    task = asyncio.create_task(_run_engagement_all_accounts(
+    background_tasks.add_task(
+        _run_engagement_all_accounts,
         run_id, active_accounts, api_key, max_posts, do_like, do_comment,
-    ))
-    _background_tasks.add(task)
-    task.add_done_callback(_on_task_done)
+    )
     return {"run_id": run_id, "message": f"{len(active_accounts)}개 계정으로 참여가 시작되었습니다."}
 
 

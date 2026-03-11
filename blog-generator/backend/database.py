@@ -132,7 +132,11 @@ async def init_db():
             await cur.execute("SET @saved_sql_mode = @@SESSION.sql_mode")
             await cur.execute("SET SESSION sql_mode = ''")
 
-            # gemini_images 마이그레이션은 publish_history CREATE TABLE 이후로 이동 (아래 참조)
+            # 기존 테이블의 TEXT 컬럼 DEFAULT 값 수정
+            try:
+                await cur.execute("ALTER TABLE publish_history ALTER COLUMN gemini_images DROP DEFAULT")
+            except Exception:
+                pass  # 테이블이 아직 없으면 무시
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -208,37 +212,13 @@ async def init_db():
                     error_message TEXT,
                     naver_post_url VARCHAR(1000) DEFAULT '',
                     document_format VARCHAR(50) DEFAULT 'tutorial',
-                    gemini_images TEXT NULL DEFAULT '[]',
+                    gemini_images TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (batch_id) REFERENCES publish_batches(id) ON DELETE CASCADE,
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
-
-            # gemini_images 컬럼: 기존 테이블에 없거나 NOT NULL이면 수정
-            try:
-                await cur.execute(
-                    "SELECT IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.COLUMNS "
-                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'publish_history' AND COLUMN_NAME = 'gemini_images'"
-                )
-                col_info = await cur.fetchone()
-                if col_info:
-                    # 컬럼 존재 → 항상 NULL 허용 + 기본값 '[]' 보장
-                    needs_fix = (
-                        col_info.get("IS_NULLABLE") != "YES"
-                        or col_info.get("COLUMN_DEFAULT") is None
-                        or col_info.get("COLUMN_DEFAULT") == ""
-                    )
-                    if needs_fix:
-                        await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-                        logger.info("gemini_images 컬럼을 NULL DEFAULT '[]'로 수정 완료")
-                else:
-                    # 컬럼 없음 → 추가
-                    await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-                    logger.info("gemini_images 컬럼 추가 완료")
-            except Exception as e:
-                logger.warning(f"gemini_images 컬럼 마이그레이션 실패: {e}")
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS keyword_queue (
@@ -396,6 +376,12 @@ async def init_db():
                     await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
                 except Exception:
                     pass  # 이미 존재
+
+            # publish_history에 gemini_images 컬럼 추가 (기존 DB 마이그레이션)
+            try:
+                await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT")
+            except Exception:
+                pass  # 이미 존재
 
             # sql_mode 복원
             await cur.execute("SET SESSION sql_mode = @saved_sql_mode")
@@ -647,43 +633,21 @@ async def update_batch(batch_id: int, data: dict):
 
 async def create_publish_history(data: dict) -> dict:
     pool = await _get_pool()
-    insert_sql = """INSERT INTO publish_history
-                    (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-    params = (
-        data["batch_id"], data.get("document_number", 1),
-        data.get("account_id"), data.get("category_id"),
-        data.get("title", ""), data.get("content", ""),
-        json.dumps(data.get("keywords", []), ensure_ascii=False),
-        data.get("scheduled_time", ""),
-        data.get("document_format", "tutorial"),
-        json.dumps(data.get("gemini_images", []), ensure_ascii=False),
-    )
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            try:
-                await cur.execute(insert_sql, params)
-            except Exception as e:
-                if getattr(e, 'args', (None,))[0] == 1364:
-                    # 컬럼이 NOT NULL without default → 스키마 자동 수정 후 새 커넥션으로 재시도
-                    logger.warning(f"publish_history 컬럼 스키마 자동 수정 중: {e}")
-                    try:
-                        await conn.rollback()
-                    except Exception:
-                        pass
-                    try:
-                        await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-                        await conn.commit()
-                    except Exception as alter_err:
-                        logger.warning(f"ALTER TABLE 실패: {alter_err}")
-                    # 새 커넥션으로 재시도 (커넥션 상태 문제 방지)
-                    async with pool.acquire() as conn2:
-                        async with conn2.cursor() as cur2:
-                            await cur2.execute(insert_sql, params)
-                            await cur2.execute("SELECT * FROM publish_history WHERE id = %s", (cur2.lastrowid,))
-                            return await cur2.fetchone()
-                else:
-                    raise
+            await cur.execute(
+                """INSERT INTO publish_history
+                   (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    data["batch_id"], data.get("document_number", 1),
+                    data.get("account_id"), data.get("category_id"),
+                    data.get("title", ""), data.get("content", ""),
+                    json.dumps(data.get("keywords", []), ensure_ascii=False),
+                    data.get("scheduled_time", ""),
+                    data.get("document_format", "tutorial"),
+                ),
+            )
             await cur.execute("SELECT * FROM publish_history WHERE id = %s", (cur.lastrowid,))
             return await cur.fetchone()
 
@@ -806,23 +770,16 @@ async def get_keywords(status: str = None) -> list:
             return list(await cur.fetchall())
 
 
-async def get_next_keyword(preferred_type: str = "", account_id: int | None = None) -> dict | None:
+async def get_next_keyword(preferred_type: str = "") -> dict | None:
     """키워드 큐에서 다음 키워드를 가져온다.
     preferred_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다.
-    지정하지 않으면 ad 우선으로 가져온다.
-
-    account_id가 주어지면 교차 발행을 지원한다:
-    - 먼저 status='pending' 키워드를 시도
-    - 없으면 general 키워드 중 status='used'이지만 해당 계정이 아직 사용하지 않고
-      마지막 사용으로부터 1일이 지난 키워드를 재사용
-    """
+    지정하지 않으면 ad 우선으로 가져온다."""
     now = datetime.now().isoformat()
-    one_day_ago = (datetime.now() - timedelta(days=1)).isoformat()
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            # 1단계: status='pending' 키워드 조회 (기존 로직)
             if preferred_type in ("ad", "general"):
+                # 해당 타입 키워드만 가져오기 (다른 타입 혼용 방지)
                 await cur.execute(
                     """SELECT * FROM keyword_queue
                        WHERE status = 'pending'
@@ -842,34 +799,7 @@ async def get_next_keyword(preferred_type: str = "", account_id: int | None = No
                        LIMIT 1""",
                     (now,),
                 )
-            result = await cur.fetchone()
-            if result:
-                return result
-
-            # 2단계: general 키워드 교차 발행 재사용
-            # account_id가 있고, general 타입일 때만 시도
-            if account_id and preferred_type in ("general", ""):
-                type_filter = "AND kq.priority = 'general'" if preferred_type == "" else ""
-                await cur.execute(
-                    f"""SELECT kq.* FROM keyword_queue kq
-                       WHERE kq.status = 'used'
-                       AND kq.priority = 'general'
-                       {type_filter}
-                       AND kq.last_used_at != ''
-                       AND kq.last_used_at <= %s
-                       AND kq.id NOT IN (
-                           SELECT kq2.id FROM keyword_queue kq2
-                           INNER JOIN keyword_stats ks
-                               ON ks.keyword = kq2.keyword AND ks.account_id = %s
-                           WHERE kq2.status = 'used' AND kq2.priority = 'general'
-                       )
-                       ORDER BY kq.used_count ASC, kq.created_at ASC
-                       LIMIT 1""",
-                    (one_day_ago, account_id),
-                )
-                return await cur.fetchone()
-
-            return None
+            return await cur.fetchone()
 
 
 async def update_keyword(kw_id: int, data: dict):
@@ -1063,37 +993,14 @@ async def update_scheduler_config(data: dict):
 # ─── 중복 키워드 체크 ──────────────────────────────────
 
 async def get_ready_batches() -> list:
-    """발행 대기 중인 배치 조회 (status='articles_ready') — 계정명·키워드 포함"""
+    """발행 대기 중인 배치 조회 (status='articles_ready')"""
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                """SELECT pb.*,
-                          (SELECT a.account_name
-                           FROM publish_history ph2
-                           JOIN accounts a ON ph2.account_id = a.id
-                           WHERE ph2.batch_id = pb.id LIMIT 1) AS account_name,
-                          (SELECT ph3.keywords
-                           FROM publish_history ph3
-                           WHERE ph3.batch_id = pb.id LIMIT 1) AS ph_keywords
-                   FROM publish_batches pb
-                   WHERE pb.status = 'articles_ready'
-                   ORDER BY pb.created_at ASC"""
+                "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
             )
-            rows = list(await cur.fetchall())
-            import json as _json
-            for row in rows:
-                # keyword가 비어있으면 publish_history.keywords에서 복구
-                if not row.get("keyword") and row.get("ph_keywords"):
-                    try:
-                        kw_list = row["ph_keywords"]
-                        if isinstance(kw_list, str):
-                            kw_list = _json.loads(kw_list)
-                        if isinstance(kw_list, list) and kw_list:
-                            row["keyword"] = kw_list[0]
-                    except Exception:
-                        pass
-            return rows
+            return list(await cur.fetchall())
 
 
 async def get_generated_articles(batch_id: int) -> list:
