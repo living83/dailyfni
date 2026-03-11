@@ -647,6 +647,9 @@ async def update_batch(batch_id: int, data: dict):
 
 async def create_publish_history(data: dict) -> dict:
     pool = await _get_pool()
+    insert_sql = """INSERT INTO publish_history
+                    (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
     params = (
         data["batch_id"], data.get("document_number", 1),
         data.get("account_id"), data.get("category_id"),
@@ -659,28 +662,26 @@ async def create_publish_history(data: dict) -> dict:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                await cur.execute(
-                    """INSERT INTO publish_history
-                       (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    params,
-                )
+                await cur.execute(insert_sql, params)
             except Exception as e:
                 if getattr(e, 'args', (None,))[0] == 1364:
-                    # 컬럼이 NOT NULL without default → 롤백 후 자동 수정 재시도
+                    # 컬럼이 NOT NULL without default → 스키마 자동 수정 후 새 커넥션으로 재시도
                     logger.warning(f"publish_history 컬럼 스키마 자동 수정 중: {e}")
                     try:
                         await conn.rollback()
                     except Exception:
                         pass
-                    await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-                    await conn.commit()
-                    await cur.execute(
-                        """INSERT INTO publish_history
-                           (batch_id, document_number, account_id, category_id, title, content, keywords, scheduled_time, document_format, gemini_images)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        params,
-                    )
+                    try:
+                        await cur.execute("ALTER TABLE publish_history MODIFY COLUMN gemini_images TEXT NULL DEFAULT '[]'")
+                        await conn.commit()
+                    except Exception as alter_err:
+                        logger.warning(f"ALTER TABLE 실패: {alter_err}")
+                    # 새 커넥션으로 재시도 (커넥션 상태 문제 방지)
+                    async with pool.acquire() as conn2:
+                        async with conn2.cursor() as cur2:
+                            await cur2.execute(insert_sql, params)
+                            await cur2.execute("SELECT * FROM publish_history WHERE id = %s", (cur2.lastrowid,))
+                            return await cur2.fetchone()
                 else:
                     raise
             await cur.execute("SELECT * FROM publish_history WHERE id = %s", (cur.lastrowid,))
