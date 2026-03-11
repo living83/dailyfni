@@ -896,6 +896,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             "content": doc.get("content", ""),
             "keywords": doc.get("keywords", [keyword]),
             "document_format": doc.get("format", "tutorial"),
+            "gemini_images": doc.get("gemini_images", []),
         })
 
         # 계정 간 딜레이 (첫 번째 제외, 저품질 방지를 위해 충분한 간격)
@@ -1062,7 +1063,7 @@ async def _retry_article_generation(batch_id: int, keyword: str, post_type: str)
             except Exception as e:
                 logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
-        # DB에 publish_history 저장
+        # DB에 publish_history 저장 (gemini_images 포함)
         history = await db.create_publish_history({
             "batch_id": batch_id,
             "document_number": 1,
@@ -1072,6 +1073,7 @@ async def _retry_article_generation(batch_id: int, keyword: str, post_type: str)
             "content": body,
             "keywords": json.dumps([keyword]),
             "document_format": fmt,
+            "gemini_images": gemini_paths,
         })
 
         if not history:
@@ -1080,10 +1082,6 @@ async def _retry_article_generation(batch_id: int, keyword: str, post_type: str)
             return
 
         await db.update_publish_history(history["id"], {"status": "generated"})
-        if gemini_paths:
-            await db.update_publish_history(history["id"], {
-                "gemini_images": json.dumps(gemini_paths),
-            })
 
         await db.update_batch(batch_id, {"status": "articles_ready"})
         logger.info(f"배치 #{batch_id} 글 생성 재시도 성공: {title[:30]}...")
