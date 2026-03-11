@@ -162,8 +162,8 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
         # 계정별로 1개씩 글 생성 (각 계정에 랜덤 문서 포맷 배정)
         for task_idx, (account, post_type) in enumerate(today_tasks):
-            # 키워드 가져오기 (타입 우선)
-            kw = await get_next_keyword(post_type)
+            # 키워드 가져오기 (타입 우선, 교차 발행을 위해 account_id 전달)
+            kw = await get_next_keyword(post_type, account_id=account["id"])
             if not kw:
                 logger.warning(f"계정 {account['account_name']}: '{post_type}' 키워드 없음, 건너뜀")
                 skipped_no_keyword.append((account['account_name'], post_type))
@@ -171,7 +171,11 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
             keyword = kw["keyword"]
             product_info = kw.get("product_info", "")
-            logger.info(f"글 생성: 계정={account['account_name']}, 키워드={keyword}, 타입={post_type}")
+            is_reuse = kw["status"] == "used"  # 교차 발행 재사용 키워드 여부
+            if is_reuse:
+                logger.info(f"글 생성(교차재사용): 계정={account['account_name']}, 키워드={keyword}, 타입={post_type}")
+            else:
+                logger.info(f"글 생성: 계정={account['account_name']}, 키워드={keyword}, 타입={post_type}")
 
             # 배치 생성 (키워드 상태는 배치 성공 후 업데이트)
             batch = None
@@ -184,12 +188,19 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
 
                 # 배치 생성 성공 후에만 키워드 상태 업데이트
                 now = datetime.now()
-                await update_keyword(kw["id"], {
-                    "status": "used",
-                    "last_used_at": now.isoformat(),
-                    "next_available_at": (now + timedelta(days=30)).isoformat(),
-                    "used_count": kw["used_count"] + 1,
-                })
+                if is_reuse:
+                    # 교차 발행 재사용: last_used_at만 갱신, status는 이미 'used'
+                    await update_keyword(kw["id"], {
+                        "last_used_at": now.isoformat(),
+                        "used_count": kw["used_count"] + 1,
+                    })
+                else:
+                    await update_keyword(kw["id"], {
+                        "status": "used",
+                        "last_used_at": now.isoformat(),
+                        "next_available_at": (now + timedelta(days=30)).isoformat(),
+                        "used_count": kw["used_count"] + 1,
+                    })
                 ad_footer = AD_FOOTER if post_type == "ad" else GENERAL_FOOTER
 
                 # 문서 포맷 순환 배정

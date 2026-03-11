@@ -771,16 +771,23 @@ async def get_keywords(status: str = None) -> list:
             return list(await cur.fetchall())
 
 
-async def get_next_keyword(preferred_type: str = "") -> dict | None:
+async def get_next_keyword(preferred_type: str = "", account_id: int | None = None) -> dict | None:
     """키워드 큐에서 다음 키워드를 가져온다.
     preferred_type이 'ad' 또는 'general'이면 해당 타입 키워드만 가져온다.
-    지정하지 않으면 ad 우선으로 가져온다."""
+    지정하지 않으면 ad 우선으로 가져온다.
+
+    account_id가 주어지면 교차 발행을 지원한다:
+    - 먼저 status='pending' 키워드를 시도
+    - 없으면 general 키워드 중 status='used'이지만 해당 계정이 아직 사용하지 않고
+      마지막 사용으로부터 1일이 지난 키워드를 재사용
+    """
     now = datetime.now().isoformat()
+    one_day_ago = (datetime.now() - timedelta(days=1)).isoformat()
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
+            # 1단계: status='pending' 키워드 조회 (기존 로직)
             if preferred_type in ("ad", "general"):
-                # 해당 타입 키워드만 가져오기 (다른 타입 혼용 방지)
                 await cur.execute(
                     """SELECT * FROM keyword_queue
                        WHERE status = 'pending'
@@ -800,7 +807,34 @@ async def get_next_keyword(preferred_type: str = "") -> dict | None:
                        LIMIT 1""",
                     (now,),
                 )
-            return await cur.fetchone()
+            result = await cur.fetchone()
+            if result:
+                return result
+
+            # 2단계: general 키워드 교차 발행 재사용
+            # account_id가 있고, general 타입일 때만 시도
+            if account_id and preferred_type in ("general", ""):
+                type_filter = "AND kq.priority = 'general'" if preferred_type == "" else ""
+                await cur.execute(
+                    f"""SELECT kq.* FROM keyword_queue kq
+                       WHERE kq.status = 'used'
+                       AND kq.priority = 'general'
+                       {type_filter}
+                       AND kq.last_used_at != ''
+                       AND kq.last_used_at <= %s
+                       AND kq.id NOT IN (
+                           SELECT kq2.id FROM keyword_queue kq2
+                           INNER JOIN keyword_stats ks
+                               ON ks.keyword = kq2.keyword AND ks.account_id = %s
+                           WHERE kq2.status = 'used' AND kq2.priority = 'general'
+                       )
+                       ORDER BY kq.used_count ASC, kq.created_at ASC
+                       LIMIT 1""",
+                    (one_day_ago, account_id),
+                )
+                return await cur.fetchone()
+
+            return None
 
 
 async def update_keyword(kw_id: int, data: dict):
