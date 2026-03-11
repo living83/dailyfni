@@ -145,8 +145,8 @@ async def init_db():
                 else:
                     # 테이블은 있지만 컬럼 없음 → 추가
                     await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-            except Exception:
-                pass  # 테이블 자체가 없으면 무시 (아래 CREATE TABLE에서 생성)
+            except Exception as e:
+                logger.debug(f"gemini_images 컬럼 마이그레이션 스킵: {e}")
 
             await cur.execute("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -222,7 +222,7 @@ async def init_db():
                     error_message TEXT,
                     naver_post_url VARCHAR(1000) DEFAULT '',
                     document_format VARCHAR(50) DEFAULT 'tutorial',
-                    gemini_images TEXT NULL DEFAULT ('[]'),
+                    gemini_images TEXT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (batch_id) REFERENCES publish_batches(id) ON DELETE CASCADE,
                     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
@@ -386,12 +386,6 @@ async def init_db():
                     await cur.execute(f"ALTER TABLE scheduler_config ADD COLUMN {col} {col_def}")
                 except Exception:
                     pass  # 이미 존재
-
-            # publish_history에 gemini_images 컬럼 추가 (기존 DB 마이그레이션)
-            try:
-                await cur.execute("ALTER TABLE publish_history ADD COLUMN gemini_images TEXT NULL DEFAULT '[]'")
-            except Exception:
-                pass  # 이미 존재
 
             # sql_mode 복원
             await cur.execute("SET SESSION sql_mode = @saved_sql_mode")

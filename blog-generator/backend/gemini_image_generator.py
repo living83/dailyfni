@@ -89,15 +89,14 @@ def generate_gemini_image(keyword: str, content: str = "", image_index: int = 0)
         # 모델 우선순위: imagen-4.0-fast (저렴/빠름) → imagen-4.0 (고품질)
         model_name = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-fast-generate-001")
 
-        # safety_filter_level: 문자열 "block_low_and_above" 직접 사용
-        # SDK enum (SafetyFilterLevel.BLOCK_LOW_AND_ABOVE)은 일부 버전에서 잘못된 값으로 직렬화됨
+        # safety_filter_level: imagen-4.0에서는 block_low_and_above만 지원되며 기본값이므로 생략
+        # 명시적으로 지정 시 SDK 버전에 따라 직렬화 오류 발생 가능
         response = client.models.generate_images(
             model=model_name,
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
                 aspect_ratio="16:9",
-                safety_filter_level="block_low_and_above",
             ),
         )
 
