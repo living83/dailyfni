@@ -995,14 +995,19 @@ async def update_scheduler_config(data: dict):
 
 # ─── 중복 키워드 체크 ──────────────────────────────────
 
-async def get_ready_batches() -> list:
-    """발행 대기 중인 배치 조회 (status='articles_ready')"""
+async def get_ready_batches(include_publishing: bool = False) -> list:
+    """발행 대기 중인 배치 조회 (status='articles_ready', 옵션으로 'publishing' 포함)"""
     pool = await _get_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
-            )
+            if include_publishing:
+                await cur.execute(
+                    "SELECT * FROM publish_batches WHERE status IN ('articles_ready', 'publishing') ORDER BY created_at ASC"
+                )
+            else:
+                await cur.execute(
+                    "SELECT * FROM publish_batches WHERE status = 'articles_ready' ORDER BY created_at ASC"
+                )
             return list(await cur.fetchall())
 
 

@@ -313,11 +313,16 @@ async def daily_publish_job(manual: bool = False):
         if not config.get("is_active"):
             return
 
-    # 발행 대기 중인 배치 가져오기
-    batches = await get_ready_batches()
+    # 발행 대기 중인 배치 가져오기 (publishing 상태도 포함 - API에서 미리 변경한 경우)
+    batches = await get_ready_batches(include_publishing=True)
     if not batches:
         logger.info("발행할 사전 생성 글이 없습니다.")
         return
+
+    # articles_ready 상태인 배치만 publishing으로 변경 (스케줄러 직접 호출 시)
+    for b in batches:
+        if b.get("status") == "articles_ready":
+            await update_batch(b["id"], {"status": "publishing"})
 
     logger.info(f"발행 시작: {len(batches)}개 배치 대기 중")
 

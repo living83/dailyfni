@@ -504,6 +504,10 @@ async def publish_ready_articles():
     if not batches:
         raise HTTPException(status_code=404, detail="발행할 사전 생성 글이 없습니다.")
 
+    # 즉시 status를 변경하여 중복 요청 방지
+    for b in batches:
+        await db.update_batch(b["id"], {"status": "publishing"})
+
     from scheduler import daily_publish_job
     task = asyncio.create_task(daily_publish_job(manual=True))
     _background_tasks.add(task)

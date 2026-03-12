@@ -904,9 +904,11 @@ async function triggerBatchGeneration() {
 }
 
 async function triggerPublishNow() {
+  // 모든 즉시발행 버튼 비활성화 (중복 클릭 방지)
   const btn = document.getElementById('btnPublishReady');
-  btn.disabled = true;
-  btn.textContent = '발행 시작 중...';
+  const allPublishBtns = document.querySelectorAll('[onclick*="triggerPublishNow"]');
+  allPublishBtns.forEach(b => { b.disabled = true; });
+  if (btn) btn.textContent = '발행 시작 중...';
   try {
     const result = await api('/api/articles/publish-now', { method: 'POST' });
     showToast(result.message, 'success');
@@ -914,8 +916,8 @@ async function triggerPublishNow() {
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '대기 글 즉시 발행';
+    allPublishBtns.forEach(b => { b.disabled = false; });
+    if (btn) btn.textContent = '대기 글 즉시 발행';
   }
 }
 
