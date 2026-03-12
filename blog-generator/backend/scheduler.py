@@ -138,6 +138,14 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
             logger.info("오늘 발행할 계정이 없습니다 (모든 계정 휴식)")
             return
 
+        # 일반(general) 포스팅은 1개만 생성 (키워드 난발 방지)
+        general_tasks = [(a, t) for a, t in today_tasks if t == "general"]
+        ad_tasks = [(a, t) for a, t in today_tasks if t == "ad"]
+        if len(general_tasks) > 1:
+            logger.info(f"일반 포스팅 {len(general_tasks)}개 → 1개로 제한 (키워드 난발 방지)")
+            general_tasks = general_tasks[:1]
+        today_tasks = general_tasks + ad_tasks
+
         logger.info(f"오늘 발행 계정: {len(today_tasks)}개 — " +
                     ", ".join(f"{a['account_name']}({t})" for a, t in today_tasks))
 
