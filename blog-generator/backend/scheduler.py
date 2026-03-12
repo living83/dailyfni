@@ -441,18 +441,19 @@ async def daily_publish_job(manual: bool = False):
                 except Exception as e:
                     logger.warning(f"Gemini 이미지 로드 실패: {e}")
 
-                # 대표이미지 결정: 일반 포스팅은 Gemini 이미지, 광고는 키워드 이미지
-                if post_type == "general" and extra_image_paths:
-                    # Gemini 첫 번째 이미지를 대표이미지로, 나머지를 본문 이미지로
+                # 대표이미지 결정: 일반 포스팅은 MCP(1순위) > Gemini(2순위), 광고는 키워드 이미지
+                if post_type == "general" and keyword_image_paths:
+                    # 1순위: MCP(Gemini API) 대표이미지
+                    main_image = keyword_image_paths[i % len(keyword_image_paths)]
+                    # extra_image_paths(Gemini 본문 이미지)는 그대로 유지
+                    logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
+                elif post_type == "general" and extra_image_paths:
+                    # 2순위: Gemini 본문 이미지 중 첫 번째를 대표이미지로 폴백
                     main_image = extra_image_paths[0]
                     extra_image_paths = extra_image_paths[1:]
-                    logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
-                elif post_type == "general" and keyword_image_paths:
-                    # 일반글: Gemini 이미지 없으면 MCP 대표이미지 사용
-                    main_image = keyword_image_paths[i % len(keyword_image_paths)]
-                    logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
+                    logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 폴백 사용")
                 elif post_type == "general":
-                    # 일반글: MCP/Gemini 모두 없으면 대표이미지 없이 발행
+                    # MCP/Gemini 모두 없으면 대표이미지 없이 발행
                     main_image = ""
                     logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
                 else:

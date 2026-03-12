@@ -920,19 +920,20 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             naver_pw = decrypt(account["naver_password"])
             tags = doc.get("keywords", [keyword])
 
-            # 대표이미지 결정: 일반 포스팅은 Gemini 이미지, 광고는 키워드 이미지
+            # 대표이미지 결정: 일반 포스팅은 MCP(1순위) > Gemini(2순위), 광고는 키워드 이미지
             gemini_images_for_doc = gemini_image_map.get(i, [])
-            if is_general and gemini_images_for_doc:
+            if is_general and keyword_image_paths:
+                # 1순위: MCP(Gemini API) 대표이미지
+                main_image = keyword_image_paths[i % len(keyword_image_paths)]
+                extra_images = gemini_images_for_doc
+                logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
+            elif is_general and gemini_images_for_doc:
+                # 2순위: Gemini 본문 이미지 중 첫 번째를 대표이미지로
                 main_image = gemini_images_for_doc[0]
                 extra_images = gemini_images_for_doc[1:]
-                logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
-            elif is_general and keyword_image_paths:
-                # 일반글: Gemini 이미지 없으면 MCP 대표이미지 사용
-                main_image = keyword_image_paths[i % len(keyword_image_paths)]
-                extra_images = []
-                logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
+                logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 폴백 사용")
             elif is_general:
-                # 일반글: MCP/Gemini 모두 없으면 대표이미지 없이 발행
+                # MCP/Gemini 모두 없으면 대표이미지 없이 발행
                 main_image = ""
                 extra_images = []
                 logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
