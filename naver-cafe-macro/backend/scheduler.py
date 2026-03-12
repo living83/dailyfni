@@ -479,14 +479,24 @@ async def execute_batch_job():
     max_accounts = global_config.get("max_accounts_per_run", 30)
 
     # 4. 카페별 발행 작업 빌드 — (account, cafe_config, cafe_group_id) 튜플 목록
+    #    계정당 카페당 daily_post_limit까지 반복 태스크 생성
     tasks = []
     for cafe in active_cafes:
         cafe_cfg = _get_cafe_config(cafe, global_config)
+        daily_limit = cafe_cfg.get("daily_post_limit", 3)
         eligible = _get_eligible_accounts(global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
         random.shuffle(eligible)
-        # 카페당 max_accounts_per_run 적용
-        for acc in eligible[:max_accounts]:
-            tasks.append((acc, cafe_cfg, cafe["id"], cafe.get("name", cafe["cafe_id"])))
+        cafe_task_count = 0
+        for acc in eligible:
+            if cafe_task_count >= max_accounts:
+                break
+            today_count = db.get_today_post_count(acc["id"], cafe_group_id=cafe["id"])
+            remaining = max(0, daily_limit - today_count) if daily_limit > 0 else 1
+            for _ in range(remaining):
+                if cafe_task_count >= max_accounts:
+                    break
+                tasks.append((acc, cafe_cfg, cafe["id"], cafe.get("name", cafe["cafe_id"])))
+                cafe_task_count += 1
 
     if not tasks:
         logger.info("발행 가능한 계정-카페 조합 없음")
@@ -514,6 +524,14 @@ async def execute_batch_job():
             break
 
         turn_start = datetime.now()
+
+        # 발행 직전 일일 한도 재확인 (배치 중 누적 반영)
+        daily_limit = cafe_cfg.get("daily_post_limit", 3)
+        if daily_limit > 0:
+            current_count = db.get_today_post_count(account["id"], cafe_group_id=cafe_gid)
+            if current_count >= daily_limit:
+                logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
+                continue
 
         await _notify_progress("batch_progress", {
             "message": f"[{i+1}/{total}] {account['username']} → {cafe_name}",
