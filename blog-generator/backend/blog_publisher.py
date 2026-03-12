@@ -411,7 +411,10 @@ async def _test_login_impl(account_id: int, naver_id: str, naver_password: str, 
 
 async def test_login(account_id: int, naver_id: str, naver_password: str) -> dict:
     # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
-    proxy = await _get_proxy_for_account(account_id) if account_id else None
+    # 결과가 None이면 빈 dict 센티널로 변환 → create_stealth_context에서 DB 재조회 방지
+    proxy = await _get_proxy_for_account(account_id) if account_id else {}
+    if not proxy:
+        proxy = {}
 
     if sys.platform == "win32":
         return await asyncio.to_thread(
@@ -469,7 +472,10 @@ async def run_publish_task(
 ) -> dict:
     """단일 문서 발행 실행 (Windows ProactorEventLoop 호환)"""
     # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
-    proxy = await _get_proxy_for_account(account_id) if account_id else None
+    # 결과가 None이면 빈 dict 센티널로 변환 → create_stealth_context에서 DB 재조회 방지
+    proxy = await _get_proxy_for_account(account_id) if account_id else {}
+    if not proxy:
+        proxy = {}
 
     if sys.platform == "win32":
         return await asyncio.to_thread(

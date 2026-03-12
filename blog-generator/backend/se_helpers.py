@@ -435,8 +435,11 @@ async def create_stealth_context(playwright_instance, account_id: int = None, pr
     ]
 
     # 프록시 설정: 외부에서 주입된 proxy 우선, 없으면 account_id로 조회
+    # proxy={} 는 "이미 조회했지만 프록시 없음" 센티널 → DB 재조회 방지
     if proxy is None and account_id:
         proxy = await _get_proxy_for_account(account_id)
+    if not proxy:
+        proxy = None
 
     browser = None
     for channel in ["chrome", "msedge", None]:
