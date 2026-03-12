@@ -280,8 +280,9 @@ async def init_db():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """)
 
-            # 기존 테이블에 footer_link 컬럼 추가 (없을 때만)
+            # 기존 테이블에 누락 컬럼 추가 (없을 때만)
             for col, col_def in [
+                ("days_of_week", "VARCHAR(100) DEFAULT '[1,2,3,4,5]'"),
                 ("footer_link", "VARCHAR(500) DEFAULT ''"),
                 ("footer_link_text", "VARCHAR(200) DEFAULT ''"),
             ]:
@@ -959,7 +960,8 @@ async def get_scheduler_config() -> dict:
             row = await cur.fetchone()
             if row:
                 d = dict(row)
-                d["days_of_week"] = json.loads(d["days_of_week"])
+                raw_dow = d.get("days_of_week")
+                d["days_of_week"] = json.loads(raw_dow) if raw_dow else [1, 2, 3, 4, 5]
                 if d.get("engagement_account_ids"):
                     try:
                         d["engagement_account_ids"] = json.loads(d["engagement_account_ids"])
