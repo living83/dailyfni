@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Serif+KR:wght@600;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 960px; height: 540px; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+
+  .cover {
+    width: 960px; height: 540px;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    padding: 50px 70px;
+  }
+
+  /* 배경 테마 */
+  .cover.theme-cream { background: linear-gradient(160deg, #F5F0E8 0%, #EDE4D3 100%); }
+  .cover.theme-mint { background: linear-gradient(160deg, #E8F5F0 0%, #D3EDE4 100%); }
+  .cover.theme-lavender { background: linear-gradient(160deg, #F0E8F5 0%, #E0D3ED 100%); }
+  .cover.theme-sky { background: linear-gradient(160deg, #E8F0F5 0%, #D3E4ED 100%); }
+  .cover.theme-peach { background: linear-gradient(160deg, #F5EDE8 0%, #EDE0D3 100%); }
+  .cover.theme-sage { background: linear-gradient(160deg, #ECF0E8 0%, #DCE5D3 100%); }
+
+  /* 배경 도형 */
+  .bg-shape {
+    position: absolute;
+    pointer-events: none;
+    opacity: 0.06;
+  }
+  .bg-shape.circle {
+    width: 350px; height: 350px;
+    border-radius: 50%;
+    top: -60px; right: -40px;
+  }
+  .bg-shape.rect {
+    width: 200px; height: 300px;
+    bottom: -40px; left: 60px;
+    transform: rotate(15deg);
+    border-radius: 20px;
+  }
+
+  /* 매거진 번호 / 카테고리 */
+  .topline {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .topline .divider {
+    flex: 1;
+    height: 1px;
+    opacity: 0.3;
+  }
+  .topline .label {
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+
+  /* 메인 제목 - 세리프체 */
+  .title {
+    font-family: 'Noto Serif KR', serif;
+    font-size: 50px; font-weight: 900;
+    line-height: 1.4;
+    max-width: 720px;
+    word-break: keep-all;
+    margin-top: auto;
+    position: relative;
+  }
+
+  /* 제목 좌측 악센트 바 */
+  .title-accent {
+    width: 5px; height: 60px;
+    border-radius: 3px;
+    margin-bottom: 20px;
+  }
+
+  /* 서브 제목 */
+  .subtitle {
+    font-size: 18px; font-weight: 400;
+    margin-top: 16px;
+    max-width: 600px;
+    line-height: 1.6;
+    opacity: 0.65;
+  }
+
+  /* 하단 영역 */
+  .bottom {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brand-area {
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 3px;
+    opacity: 0.35;
+  }
+  .date-area {
+    font-size: 12px; font-weight: 500;
+    opacity: 0.35;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = __DATA__;
+
+const root = document.getElementById('root');
+const theme = DATA.theme || 'cream';
+const accentColors = {
+  cream: '#8B6914', mint: '#2D8B6A', lavender: '#6A3D8B',
+  sky: '#2D6A8B', peach: '#8B5A2D', sage: '#4A6A2D'
+};
+const darkTextColors = {
+  cream: '#2C1810', mint: '#102820', lavender: '#201028',
+  sky: '#101828', peach: '#281810', sage: '#182010'
+};
+const accent = DATA.accentColor || accentColors[theme] || '#8B6914';
+const textColor = DATA.textColor || darkTextColors[theme] || '#2C1810';
+
+const today = new Date();
+const dateStr = DATA.date || `${today.getFullYear()}.${String(today.getMonth()+1).padStart(2,'0')}.${String(today.getDate()).padStart(2,'0')}`;
+
+root.innerHTML = `
+  <div class="cover theme-${theme}">
+    <div class="bg-shape circle" style="background:${accent}"></div>
+    <div class="bg-shape rect" style="background:${accent}"></div>
+    <div class="topline">
+      <span class="label" style="color:${textColor}">${DATA.category || 'DAILY FNI'}</span>
+      <div class="divider" style="background:${textColor}"></div>
+    </div>
+    <div class="title-accent" style="background:${accent}"></div>
+    <div class="title" style="color:${textColor}">${DATA.title || '제목을 입력하세요'}</div>
+    ${DATA.subtitle ? `<div class="subtitle" style="color:${textColor}">${DATA.subtitle}</div>` : ''}
+    <div class="bottom">
+      <div class="brand-area" style="color:${textColor}">DAILY FNI</div>
+      <div class="date-area" style="color:${textColor}">${dateStr}</div>
+    </div>
+  </div>
+`;
+</script>
+</body>
+</html>

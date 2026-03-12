@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 960px; height: 540px; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+
+  .cover {
+    width: 960px; height: 540px;
+    position: relative; overflow: hidden;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 배경 - 좌우 분할 */
+  .cover.theme-mono { background: #FAFAFA; }
+  .cover.theme-dark { background: #1A1A1A; }
+  .cover.theme-navy { background: #0F1923; }
+  .cover.theme-charcoal { background: #2C2C34; }
+  .cover.theme-ivory { background: #F5F1EB; }
+  .cover.theme-stone { background: #E8E4DE; }
+
+  /* 좌측 컬러 블록 */
+  .color-block {
+    position: absolute;
+    left: 0; top: 0;
+    width: 380px; height: 540px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .color-block .inner-pattern {
+    position: absolute;
+    width: 100%; height: 100%;
+    opacity: 0.1;
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 20px,
+        rgba(255,255,255,0.1) 20px,
+        rgba(255,255,255,0.1) 21px
+      );
+  }
+  .color-block .big-letter {
+    font-size: 240px;
+    font-weight: 900;
+    opacity: 0.12;
+    color: #fff;
+    user-select: none;
+    line-height: 1;
+  }
+
+  /* 우측 콘텐츠 영역 */
+  .content {
+    margin-left: 420px;
+    padding-right: 60px;
+    max-width: 500px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .category {
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .title {
+    font-size: 40px; font-weight: 900;
+    line-height: 1.4;
+    word-break: keep-all;
+  }
+
+  .divider {
+    width: 40px; height: 3px;
+    margin: 20px 0;
+    border-radius: 2px;
+  }
+
+  .subtitle {
+    font-size: 16px; font-weight: 400;
+    line-height: 1.6;
+    opacity: 0.6;
+  }
+
+  .brand {
+    position: absolute;
+    bottom: 28px; right: 40px;
+    font-size: 12px; font-weight: 500;
+    letter-spacing: 3px;
+    opacity: 0.3;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = __DATA__;
+
+const root = document.getElementById('root');
+const theme = DATA.theme || 'mono';
+
+const themeConfig = {
+  mono:     { block: '#222222', text: '#1A1A1A', accent: '#222222', sub: '#666' },
+  dark:     { block: '#2979FF', text: '#FFFFFF', accent: '#2979FF', sub: '#999' },
+  navy:     { block: '#1565C0', text: '#FFFFFF', accent: '#4FC3F7', sub: '#8899AA' },
+  charcoal: { block: '#FF6B35', text: '#FFFFFF', accent: '#FF6B35', sub: '#999' },
+  ivory:    { block: '#5D4037', text: '#2C1810', accent: '#5D4037', sub: '#8B7355' },
+  stone:    { block: '#37474F', text: '#263238', accent: '#37474F', sub: '#78909C' },
+};
+const cfg = themeConfig[theme] || themeConfig.mono;
+const blockColor = DATA.blockColor || cfg.block;
+const textColor = DATA.textColor || cfg.text;
+const accent = DATA.accentColor || cfg.accent;
+const subColor = cfg.sub;
+
+// 첫 글자 추출
+const firstChar = (DATA.title || '?')[0];
+
+root.innerHTML = `
+  <div class="cover theme-${theme}">
+    <div class="color-block" style="background:${blockColor}">
+      <div class="inner-pattern"></div>
+      <div class="big-letter">${firstChar}</div>
+    </div>
+    <div class="content">
+      ${DATA.category ? `<div class="category" style="color:${accent}">${DATA.category}</div>` : ''}
+      <div class="title" style="color:${textColor}">${DATA.title || '제목을 입력하세요'}</div>
+      <div class="divider" style="background:${accent}"></div>
+      ${DATA.subtitle ? `<div class="subtitle" style="color:${subColor}">${DATA.subtitle}</div>` : ''}
+    </div>
+    <div class="brand" style="color:${textColor}">DAILY FNI</div>
+  </div>
+`;
+</script>
+</body>
+</html>

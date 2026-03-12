@@ -55,6 +55,7 @@ import database as db
 from crypto import encrypt, decrypt
 from image_generator import generate_keyword_image, generate_keyword_image_variants, generate_ad_banner, generate_ad_banner_variants, generate_ad_banner_all_templates
 from gemini_image_generator import generate_gemini_images
+from mcp_image_generator import generate_general_cover_variants
 
 # ─── 로깅 설정 ──────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
@@ -793,7 +794,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
     is_general = (batch_info.get("post_type") == "general") if batch_info else False
 
-    # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
+    # 키워드 대표이미지 생성
     keyword_image_paths = []
     if not is_general:
         try:
@@ -802,7 +803,12 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
     else:
-        logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
+        # 일반(general) 포스팅: MCP(UI-Friend) 서버로 고품질 대표이미지 생성
+        try:
+            keyword_image_paths = await asyncio.to_thread(generate_general_cover_variants, keyword, 3)
+            logger.info(f"일반 포스팅 MCP 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+        except Exception as e:
+            logger.warning(f"일반 포스팅 MCP 대표이미지 생성 실패 (계속 진행): {e}")
 
     # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
     gemini_image_map = {}  # {document_index: [image_paths]}

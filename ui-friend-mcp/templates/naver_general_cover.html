@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 960px; height: 540px; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+
+  .cover {
+    width: 960px; height: 540px;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+
+  /* 배경 테마 */
+  .cover.theme-warm { background: linear-gradient(145deg, #2D1B3D 0%, #4A2040 40%, #1F1030 100%); }
+  .cover.theme-ocean { background: linear-gradient(145deg, #0A2540 0%, #0D3B66 40%, #0A1F33 100%); }
+  .cover.theme-forest { background: linear-gradient(145deg, #1A2F1A 0%, #2D5A27 40%, #142414 100%); }
+  .cover.theme-sunset { background: linear-gradient(145deg, #3D1F0A 0%, #5C2E12 40%, #2A1508 100%); }
+  .cover.theme-slate { background: linear-gradient(145deg, #1E2A3A 0%, #2C3E50 40%, #1A242F 100%); }
+  .cover.theme-berry { background: linear-gradient(145deg, #2A1025 0%, #4A1942 40%, #1E0C1A 100%); }
+
+  /* 배경 블러 원 장식 */
+  .bg-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.15;
+    pointer-events: none;
+  }
+  .bg-orb.o1 { width: 400px; height: 400px; top: -100px; right: -80px; }
+  .bg-orb.o2 { width: 300px; height: 300px; bottom: -60px; left: -40px; }
+  .bg-orb.o3 { width: 200px; height: 200px; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.08; }
+
+  /* 그리드 패턴 */
+  .grid-pattern {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  /* 상단 카테고리 라벨 */
+  .category {
+    font-size: 14px; font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    opacity: 0.7;
+  }
+
+  /* 메인 제목 */
+  .title {
+    font-size: 52px; font-weight: 900;
+    line-height: 1.35;
+    text-align: center;
+    max-width: 780px;
+    word-break: keep-all;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* 제목 밑줄 장식 */
+  .title-underline {
+    width: 80px; height: 4px;
+    border-radius: 2px;
+    margin-top: 24px;
+  }
+
+  /* 서브 제목 */
+  .subtitle {
+    font-size: 20px; font-weight: 400;
+    margin-top: 18px;
+    text-align: center;
+    max-width: 650px;
+    opacity: 0.75;
+    line-height: 1.5;
+  }
+
+  /* 하단 브랜드 */
+  .brand {
+    position: absolute; bottom: 28px;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 4px;
+    opacity: 0.4;
+  }
+
+  /* 모서리 장식 */
+  .corner { position: absolute; width: 30px; height: 30px; opacity: 0.2; }
+  .corner.tl { top: 24px; left: 24px; border-top: 2px solid; border-left: 2px solid; }
+  .corner.tr { top: 24px; right: 24px; border-top: 2px solid; border-right: 2px solid; }
+  .corner.bl { bottom: 24px; left: 24px; border-bottom: 2px solid; border-left: 2px solid; }
+  .corner.br { bottom: 24px; right: 24px; border-bottom: 2px solid; border-right: 2px solid; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = __DATA__;
+
+const root = document.getElementById('root');
+const theme = DATA.theme || 'ocean';
+const accentColors = {
+  warm: '#E8A0BF', ocean: '#4CC9F0', forest: '#95D5B2',
+  sunset: '#F4A261', slate: '#7EC8E3', berry: '#DDA0DD'
+};
+const accent = DATA.accentColor || accentColors[theme] || '#4CC9F0';
+const textColor = DATA.textColor || '#FFFFFF';
+
+root.innerHTML = `
+  <div class="cover theme-${theme}">
+    <div class="bg-orb o1" style="background:${accent}"></div>
+    <div class="bg-orb o2" style="background:${accent}"></div>
+    <div class="bg-orb o3" style="background:${accent}"></div>
+    <div class="grid-pattern"></div>
+    <div class="corner tl" style="border-color:${accent}"></div>
+    <div class="corner tr" style="border-color:${accent}"></div>
+    <div class="corner bl" style="border-color:${accent}"></div>
+    <div class="corner br" style="border-color:${accent}"></div>
+    ${DATA.category ? `<div class="category" style="color:${accent}">${DATA.category}</div>` : ''}
+    <div class="title" style="color:${textColor}">${DATA.title || '제목을 입력하세요'}</div>
+    <div class="title-underline" style="background:${accent}"></div>
+    ${DATA.subtitle ? `<div class="subtitle" style="color:${textColor}">${DATA.subtitle}</div>` : ''}
+    <div class="brand" style="color:${accent}">DAILY FNI</div>
+  </div>
+`;
+</script>
+</body>
+</html>

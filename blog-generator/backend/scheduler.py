@@ -194,13 +194,20 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-                # 키워드 대표이미지
+                # 키워드 대표이미지: 일반 포스팅은 MCP, 광고는 Pillow
                 keyword_image_paths = []
-                try:
-                    from image_generator import generate_keyword_image_variants
-                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                except Exception as e:
-                    logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+                if post_type == "general":
+                    try:
+                        from mcp_image_generator import generate_general_cover_variants
+                        keyword_image_paths = generate_general_cover_variants(keyword, count=3)
+                    except Exception as e:
+                        logger.warning(f"MCP 대표이미지 생성 실패, Pillow 폴백: {e}")
+                if not keyword_image_paths:
+                    try:
+                        from image_generator import generate_keyword_image_variants
+                        keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                    except Exception as e:
+                        logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
                 # 카테고리
                 categories = await get_categories(account["id"])
@@ -327,18 +334,25 @@ async def daily_publish_job(manual: bool = False):
         keyword = batch["keyword"]
         logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
 
-        # 키워드 대표이미지 생성: 광고(ad)만 생성, 일반(general)은 Gemini 이미지 사용
+        # 키워드 대표이미지 생성
         post_type_for_batch = batch.get("post_type", "ad")
         keyword_image_paths = []
-        if post_type_for_batch != "general":
+        if post_type_for_batch == "general":
+            # 일반 포스팅: MCP(UI-Friend) 서버로 고품질 대표이미지 생성
+            try:
+                from mcp_image_generator import generate_general_cover_variants
+                keyword_image_paths = generate_general_cover_variants(keyword, count=3)
+                logger.info(f"일반 포스팅 MCP 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+            except Exception as e:
+                logger.warning(f"MCP 대표이미지 생성 실패, Pillow 폴백: {e}")
+        if not keyword_image_paths:
+            # 광고 포스팅 또는 MCP 실패 시 Pillow 폴백
             try:
                 from image_generator import generate_keyword_image_variants
                 keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
                 logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
             except Exception as e:
                 logger.warning(f"키워드 대표이미지 생성 실패: {e}")
-        else:
-            logger.info("일반(general) 타입 → 키워드 대표이미지 생성 건너뜀 (Gemini 이미지 사용)")
 
         # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
         from database import get_account, get_categories
