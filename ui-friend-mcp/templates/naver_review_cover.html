@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 960px; height: 540px; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+
+  .cover {
+    width: 960px; height: 540px;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+  }
+
+  .cover.theme-navy { background: linear-gradient(180deg, #0D1B2A 0%, #152238 60%, #0D1B2A 100%); }
+  .cover.theme-dark { background: linear-gradient(180deg, #1A1A2E 0%, #16213E 60%, #1A1A2E 100%); }
+
+  /* 하단 반투명 그라데이션 오버레이 */
+  .cover::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0;
+    width: 100%; height: 40%;
+    background: linear-gradient(transparent, rgba(0,0,0,0.3));
+    pointer-events: none;
+  }
+
+  .accent-bar { position: absolute; left: 0; width: 100%; height: 4px; }
+  .accent-bar.top { top: 0; }
+  .accent-bar.bottom { bottom: 0; }
+
+  /* 배지 */
+  .badge {
+    padding: 8px 22px;
+    border-radius: 5px;
+    font-size: 16px; font-weight: 700;
+    letter-spacing: 2px;
+    z-index: 5;
+  }
+
+  /* 별점 */
+  .stars {
+    font-size: 36px;
+    letter-spacing: 6px;
+    z-index: 5;
+  }
+
+  /* 제목 */
+  .title {
+    font-size: 46px; font-weight: 900;
+    text-align: center;
+    line-height: 1.35;
+    max-width: 780px;
+    word-break: keep-all;
+    z-index: 5;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.5);
+  }
+
+  /* 서브 */
+  .subtitle {
+    font-size: 21px; font-weight: 400;
+    text-align: center;
+    max-width: 650px;
+    opacity: 0.8;
+    z-index: 5;
+  }
+
+  .brand {
+    position: absolute; bottom: 22px; right: 40px;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 3px;
+    opacity: 0.5;
+    z-index: 5;
+  }
+
+  /* 장식 라인 */
+  .deco-line {
+    width: 80px; height: 3px;
+    border-radius: 2px;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = __DATA__;
+
+const root = document.getElementById('root');
+const theme = DATA.theme || 'navy';
+const accentName = DATA.accent || 'gold';
+const accentColors = {
+  gold: '#FFD700', neon: '#39FF14', cyan: '#00E5FF', amber: '#FFAB00'
+};
+const accent = accentColors[accentName] || accentColors.gold;
+
+const starCount = DATA.stars || 5;
+const stars = '★'.repeat(Math.min(starCount, 5));
+
+root.innerHTML = `
+  <div class="cover theme-${theme}">
+    <div class="accent-bar top" style="background:${accent}"></div>
+    <div class="accent-bar bottom" style="background:${accent}"></div>
+
+    ${DATA.badge ? `<div class="badge" style="background:${accent};color:#0D1B2A">${DATA.badge}</div>` : ''}
+    <div class="stars" style="color:${accent}">${stars}</div>
+    <div class="deco-line" style="background:${accent};opacity:0.4"></div>
+    <div class="title" style="color:${accent}">${DATA.title || '솔직 리뷰'}</div>
+    <div class="subtitle" style="color:#FFFFFF">${DATA.subtitle || ''}</div>
+
+    <div class="brand" style="color:${accent}">DAILY FNI</div>
+  </div>
+`;
+</script>
+</body>
+</html>

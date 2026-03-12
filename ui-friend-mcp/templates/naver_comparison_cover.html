@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 960px; height: 540px; overflow: hidden; font-family: 'Noto Sans KR', sans-serif; }
+
+  .cover {
+    width: 960px; height: 540px;
+    position: relative; overflow: hidden;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #0D1B2A 0%, #1B2838 50%, #0D1B2A 100%);
+  }
+
+  /* 중앙 세로 분할선 */
+  .divider {
+    position: absolute;
+    left: 50%; top: 80px; bottom: 80px;
+    width: 2px;
+    transform: translateX(-50%);
+    opacity: 0.3;
+  }
+
+  /* VS 원형 배지 */
+  .vs-badge {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 900;
+    z-index: 10;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+  }
+
+  .accent-bar { position: absolute; left: 0; width: 100%; height: 5px; }
+  .accent-bar.top { top: 0; }
+  .accent-bar.bottom { bottom: 0; }
+
+  .title {
+    font-size: 44px; font-weight: 900;
+    text-align: center;
+    line-height: 1.3;
+    max-width: 780px;
+    word-break: keep-all;
+    margin-bottom: 16px;
+    z-index: 5;
+  }
+
+  .subtitle {
+    font-size: 20px; font-weight: 400;
+    text-align: center;
+    max-width: 600px;
+    opacity: 0.8;
+    z-index: 5;
+  }
+
+  /* 좌우 장식 카드 */
+  .side-card {
+    position: absolute;
+    width: 100px; height: 100px;
+    border-radius: 12px;
+    border: 2px solid;
+    opacity: 0.15;
+    top: 50%; transform: translateY(-50%);
+  }
+  .side-card.left { left: 40px; }
+  .side-card.right { right: 40px; }
+
+  .brand {
+    position: absolute; bottom: 20px;
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 3px;
+    opacity: 0.5;
+  }
+
+  .frame {
+    position: absolute;
+    top: 25px; left: 25px; right: 25px; bottom: 25px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const DATA = __DATA__;
+
+const root = document.getElementById('root');
+const accentName = DATA.accent || 'cyan';
+const accentColors = {
+  gold: '#FFD700', neon: '#39FF14', cyan: '#00E5FF', amber: '#FFAB00'
+};
+const accent = accentColors[accentName] || accentColors.cyan;
+
+root.innerHTML = `
+  <div class="cover">
+    <div class="accent-bar top" style="background:linear-gradient(90deg,transparent,${accent},transparent)"></div>
+    <div class="accent-bar bottom" style="background:linear-gradient(90deg,transparent,${accent},transparent)"></div>
+    <div class="frame"></div>
+    <div class="divider" style="background:${accent}"></div>
+    <div class="vs-badge" style="background:${accent};color:#0D1B2A">${DATA.badge || 'VS'}</div>
+    <div class="side-card left" style="border-color:${accent}"></div>
+    <div class="side-card right" style="border-color:${accent}"></div>
+    <div class="title" style="color:${accent}">${DATA.title || '비교 분석'}</div>
+    <div class="subtitle" style="color:#FFFFFF">${DATA.subtitle || ''}</div>
+    <div class="brand" style="color:${accent}">DAILY FNI</div>
+  </div>
+`;
+</script>
+</body>
+</html>

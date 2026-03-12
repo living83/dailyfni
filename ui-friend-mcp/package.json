@@ -1,0 +1,15 @@
+{
+  "name": "ui-friend-mcp",
+  "version": "1.0.0",
+  "description": "MCP 서버 - Puppeteer 기반 HTML/React 템플릿 스크린샷 생성",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "puppeteer": "^23.0.0",
+    "express": "^4.21.0"
+  }
+}
