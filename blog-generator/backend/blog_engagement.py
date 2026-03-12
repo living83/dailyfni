@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 from se_helpers import (
     create_stealth_context,
+    _get_proxy_for_account,
     login,
     random_delay,
     try_selectors,
@@ -2375,6 +2376,7 @@ async def _run_engagement_impl(
     max_posts: int = 10,
     do_like: bool = True,
     do_comment: bool = True,
+    proxy: dict = None,
 ) -> dict:
     """단일 계정으로 블로그 참여 실행"""
     from playwright.async_api import async_playwright
@@ -2389,7 +2391,7 @@ async def _run_engagement_impl(
     }
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p, account_id=account_id)
+        browser, context = await create_stealth_context(p, account_id=account_id, proxy=proxy)
         page = await context.new_page()
 
         try:
@@ -2457,13 +2459,18 @@ async def run_engagement(
     do_comment: bool = True,
 ) -> dict:
     """참여 실행 (Windows ProactorEventLoop 호환)"""
+    # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
+    proxy = await _get_proxy_for_account(account_id) if account_id else None
+
     if sys.platform == "win32":
         return await asyncio.to_thread(
             _run_in_proactor_loop, _run_engagement_impl,
             account_id, naver_id, naver_password,
             api_key, max_posts, do_like, do_comment,
+            proxy,
         )
     return await _run_engagement_impl(
         account_id, naver_id, naver_password,
         api_key, max_posts, do_like, do_comment,
+        proxy,
     )

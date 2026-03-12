@@ -416,9 +416,9 @@ async def login(page, account_id: int, naver_id: str, naver_password: str) -> bo
 # 스텔스 브라우저
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def create_stealth_context(playwright_instance, account_id: int = None):
+async def create_stealth_context(playwright_instance, account_id: int = None, proxy: dict = None):
     """네이버 봇 감지를 우회하기 위한 스텔스 브라우저 컨텍스트 생성.
-    account_id가 주어지면 해당 계정의 프록시를 자동 적용."""
+    proxy가 주어지면 그대로 사용, 없으면 account_id로 자동 조회."""
     launch_args = [
         "--disable-blink-features=AutomationControlled",
         "--no-sandbox",
@@ -434,8 +434,9 @@ async def create_stealth_context(playwright_instance, account_id: int = None):
         "--disable-third-party-cookie-phaseout",
     ]
 
-    # 프록시 설정 (DB 우선, .env 폴백)
-    proxy = (await _get_proxy_for_account(account_id)) if account_id else None
+    # 프록시 설정: 외부에서 주입된 proxy 우선, 없으면 account_id로 조회
+    if proxy is None and account_id:
+        proxy = await _get_proxy_for_account(account_id)
 
     browser = None
     for channel in ["chrome", "msedge", None]:

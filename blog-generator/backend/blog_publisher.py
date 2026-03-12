@@ -11,6 +11,7 @@ import logging
 
 from se_helpers import (
     _run_in_proactor_loop,
+    _get_proxy_for_account,
     random_delay,
     try_selectors,
     capture_debug,
@@ -392,11 +393,11 @@ async def publish_to_blog(
 # 진입점 (Windows 호환)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def _test_login_impl(account_id: int, naver_id: str, naver_password: str) -> dict:
+async def _test_login_impl(account_id: int, naver_id: str, naver_password: str, proxy: dict = None) -> dict:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p, account_id=account_id)
+        browser, context = await create_stealth_context(p, account_id=account_id, proxy=proxy)
         page = await context.new_page()
 
         try:
@@ -409,11 +410,14 @@ async def _test_login_impl(account_id: int, naver_id: str, naver_password: str) 
 
 
 async def test_login(account_id: int, naver_id: str, naver_password: str) -> dict:
+    # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
+    proxy = await _get_proxy_for_account(account_id) if account_id else None
+
     if sys.platform == "win32":
         return await asyncio.to_thread(
-            _run_in_proactor_loop, _test_login_impl, account_id, naver_id, naver_password
+            _run_in_proactor_loop, _test_login_impl, account_id, naver_id, naver_password, proxy
         )
-    return await _test_login_impl(account_id, naver_id, naver_password)
+    return await _test_login_impl(account_id, naver_id, naver_password, proxy)
 
 
 async def _run_publish_task_impl(
@@ -428,11 +432,12 @@ async def _run_publish_task_impl(
     footer_link: str = "",
     footer_link_text: str = "",
     extra_image_paths: list = None,
+    proxy: dict = None,
 ) -> dict:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
-        browser, context = await create_stealth_context(p, account_id=account_id)
+        browser, context = await create_stealth_context(p, account_id=account_id, proxy=proxy)
         page = await context.new_page()
 
         try:
@@ -463,15 +468,20 @@ async def run_publish_task(
     extra_image_paths: list = None,
 ) -> dict:
     """단일 문서 발행 실행 (Windows ProactorEventLoop 호환)"""
+    # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
+    proxy = await _get_proxy_for_account(account_id) if account_id else None
+
     if sys.platform == "win32":
         return await asyncio.to_thread(
             _run_in_proactor_loop, _run_publish_task_impl,
             account_id, naver_id, naver_password,
             title, content, category_name, tags, image_path,
             footer_link, footer_link_text, extra_image_paths,
+            proxy,
         )
     return await _run_publish_task_impl(
         account_id, naver_id, naver_password,
         title, content, category_name, tags, image_path,
         footer_link, footer_link_text, extra_image_paths,
+        proxy,
     )
