@@ -926,11 +926,16 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
                 main_image = gemini_images_for_doc[0]
                 extra_images = gemini_images_for_doc[1:]
                 logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+            elif is_general and keyword_image_paths:
+                # 일반글: Gemini 이미지 없으면 MCP 대표이미지 사용
+                main_image = keyword_image_paths[i % len(keyword_image_paths)]
+                extra_images = []
+                logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
             elif is_general:
-                # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                # 일반글: MCP/Gemini 모두 없으면 대표이미지 없이 발행
                 main_image = ""
                 extra_images = []
-                logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
+                logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
             else:
                 main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
                 extra_images = gemini_image_map.get(i, [])

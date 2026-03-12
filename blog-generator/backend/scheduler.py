@@ -447,10 +447,14 @@ async def daily_publish_job(manual: bool = False):
                     main_image = extra_image_paths[0]
                     extra_image_paths = extra_image_paths[1:]
                     logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 사용")
+                elif post_type == "general" and keyword_image_paths:
+                    # 일반글: Gemini 이미지 없으면 MCP 대표이미지 사용
+                    main_image = keyword_image_paths[i % len(keyword_image_paths)]
+                    logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
                 elif post_type == "general":
-                    # 일반글은 Gemini 이미지가 없으면 대표이미지 없이 발행
+                    # 일반글: MCP/Gemini 모두 없으면 대표이미지 없이 발행
                     main_image = ""
-                    logger.info(f"일반(general) 타입 → Gemini 이미지 없음, 대표이미지 없이 발행")
+                    logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
                 else:
                     main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
 
