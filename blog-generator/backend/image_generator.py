@@ -241,18 +241,6 @@ def generate_keyword_image(keyword: str, variant: int = 0, width: int = 960, hei
         y = start_y + i * line_height
         draw.text((x, y), line, fill=text_color, font=font)
 
-    # 하단 서브텍스트
-    sub_font = _find_font(18)
-    sub_text = "DAILY FNI BLOG"
-    sub_bbox = draw.textbbox((0, 0), sub_text, font=sub_font)
-    sub_width = sub_bbox[2] - sub_bbox[0]
-    draw.text(
-        ((width - sub_width) // 2, height - margin - 30),
-        sub_text,
-        fill=accent_color,
-        font=sub_font,
-    )
-
     # 파일 저장 (variant별로 다른 파일명)
     safe_name = hashlib.md5(keyword.encode()).hexdigest()[:12]
     suffix = f"_v{variant}" if variant > 0 else ""
@@ -434,15 +422,10 @@ def _render_product_highlight(draw, img, width, height, title, subtitle, badge_t
             draw.text((x, y_cursor + i * 38), line, fill=subtitle_color, font=sub_font)
         y_cursor += len(sub_lines) * 38 + 20
 
-    # 하단 구분선 + 브랜드
+    # 하단 구분선
     line_y = height - 60
     line_margin = 100
     draw.line([(line_margin, line_y), (width - line_margin, line_y)], fill=accent_color, width=1)
-    brand_font = _find_ad_font("gothic", 16)
-    brand_text = "DAILY FNI"
-    brand_bbox = draw.textbbox((0, 0), brand_text, font=brand_font)
-    brand_w = brand_bbox[2] - brand_bbox[0]
-    draw.text(((width - brand_w) // 2, line_y + 12), brand_text, fill=accent_color, font=brand_font)
 
 
 def _render_ranking_style(draw, img, width, height, title, subtitle, badge_text, title_color, subtitle_color, accent_color, accent_dim, badge_bg, badge_text_color, bg_color, variant, **kw):
@@ -504,9 +487,7 @@ def _render_ranking_style(draw, img, width, height, title, subtitle, badge_text,
     # 하단 악센트 바
     draw.rectangle([(0, height - 10), (width, height)], fill=accent_color)
 
-    # 우하단 브랜드
-    brand_font = _find_ad_font("gothic", 14)
-    draw.text((width - 120, height - 35), "DAILY FNI", fill=accent_color, font=brand_font)
+    # 하단 악센트 바만 유지
 
 
 def _render_comparison(draw, img, width, height, title, subtitle, badge_text, title_color, subtitle_color, accent_color, accent_dim, badge_bg, badge_text_color, bg_color, variant, **kw):
@@ -630,8 +611,6 @@ def _render_review_summary(draw, img, width, height, title, subtitle, badge_text
 
     # 하단 악센트
     draw.rectangle([(0, height - 5), (width, height)], fill=accent_color)
-    brand_font = _find_ad_font("gothic", 14)
-    draw.text((width - 120, height - 30), "DAILY FNI", fill=accent_color, font=brand_font)
 
 
 def _render_info_card(draw, img, width, height, title, subtitle, badge_text, title_color, subtitle_color, accent_color, accent_dim, badge_bg, badge_text_color, bg_color, variant, **kw):
@@ -706,12 +685,6 @@ def _render_info_card(draw, img, width, height, title, subtitle, badge_text, tit
             sw = bbox[2] - bbox[0]
             draw.text(((width - sw) // 2, y_cursor + i * 34), line, fill=subtitle_color, font=sub_font)
 
-    # 하단 브랜드
-    brand_font = _find_ad_font("gothic", 14)
-    brand_text = "DAILY FNI"
-    brand_bbox = draw.textbbox((0, 0), brand_text, font=brand_font)
-    brand_w = brand_bbox[2] - brand_bbox[0]
-    draw.text(((width - brand_w) // 2, height - margin - 25), brand_text, fill=accent_color, font=brand_font)
 
 
 # 템플릿 렌더러 매핑
