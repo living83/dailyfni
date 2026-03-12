@@ -1474,54 +1474,114 @@ async def se_input_tags(page, editor, tags: list):
 
 async def _uncheck_kakao_channel(page, editor):
     """발행 다이얼로그에서 카카오채널 링크 체크박스를 해제합니다."""
+    await random_delay(0.5, 1)
+
     for target in ([editor, page] if editor != page else [page]):
         try:
             unchecked = await target.evaluate('''() => {
-                // 체크박스 직접 탐색
-                const checkboxes = document.querySelectorAll(
-                    'input[type="checkbox"], [role="checkbox"], [class*="check"]'
+                const results = [];
+
+                // 1) SE ONE 발행 팝업 내 모든 체크 가능 요소 탐색
+                const allClickables = document.querySelectorAll(
+                    'input[type="checkbox"], [role="checkbox"], [role="switch"], '
+                    + '[class*="check"], [class*="toggle"], [class*="switch"], '
+                    + 'label, span[class*="btn"], div[class*="btn"]'
                 );
-                for (const cb of checkboxes) {
-                    const parent = cb.closest('[class*="kakao"], [class*="channel"], [class*="sns"], [class*="share"]')
-                        || cb.parentElement;
-                    const text = (parent?.textContent || "").trim();
-                    if (text.includes("카카오") || text.includes("채널") || text.includes("kakao")) {
-                        if (cb.checked || cb.getAttribute("aria-checked") === "true"
-                            || cb.classList.contains("on") || cb.classList.contains("is_active")) {
-                            cb.click();
-                            return "checkbox_clicked";
+
+                for (const el of allClickables) {
+                    // 요소 자체 또는 부모 3단계까지 텍스트 확인
+                    let container = el;
+                    let text = "";
+                    for (let i = 0; i < 4; i++) {
+                        if (!container) break;
+                        text = (container.textContent || "").trim();
+                        if (text.includes("카카오") || text.includes("채널") ||
+                            text.toLowerCase().includes("kakao") || text.toLowerCase().includes("channel")) {
+                            break;
                         }
-                        return "already_unchecked";
+                        container = container.parentElement;
+                    }
+
+                    if (!(text.includes("카카오") || text.includes("채널") ||
+                          text.toLowerCase().includes("kakao") || text.toLowerCase().includes("channel"))) {
+                        continue;
+                    }
+
+                    // 체크 상태 확인: input checkbox, aria, class 기반
+                    const isInput = el.tagName === "INPUT" && el.type === "checkbox";
+                    const isChecked = (isInput && el.checked)
+                        || el.getAttribute("aria-checked") === "true"
+                        || el.classList.contains("on")
+                        || el.classList.contains("is_active")
+                        || el.classList.contains("is_checked")
+                        || el.classList.contains("active")
+                        || el.classList.contains("checked")
+                        || el.classList.contains("se-checkbox-checked")
+                        || el.closest('[class*="check"]')?.classList.contains("on")
+                        || el.closest('[class*="check"]')?.classList.contains("is_active");
+
+                    if (isChecked) {
+                        el.click();
+                        results.push("clicked:" + el.tagName + "." + el.className.substring(0, 50));
+                    } else {
+                        // 체크 상태를 확인할 수 없으면 근처 체크박스 찾아서 클릭
+                        const nearby = el.closest('div, label, li')?.querySelector(
+                            'input[type="checkbox"]:checked, [aria-checked="true"], '
+                            + '[class*="check"].on, [class*="check"].is_active, [class*="check"].active'
+                        );
+                        if (nearby) {
+                            nearby.click();
+                            results.push("nearby_clicked:" + nearby.tagName + "." + nearby.className.substring(0, 50));
+                        } else {
+                            results.push("found_unchecked:" + el.tagName);
+                        }
                     }
                 }
-                // 라벨/텍스트 기반 탐색
-                const labels = document.querySelectorAll(
-                    '[class*="publish"] label, [class*="publish"] span, '
-                    + '[class*="layer"] label, [class*="layer"] span, '
-                    + '[class*="popup"] label, [class*="popup"] span'
-                );
-                for (const label of labels) {
-                    const text = (label.textContent || "").trim();
-                    if (text.includes("카카오") || text.includes("채널")) {
-                        const cb = label.closest('label, div')?.querySelector(
-                            'input[type="checkbox"], [role="checkbox"], [class*="check"]'
-                        ) || label.previousElementSibling || label.nextElementSibling;
-                        if (cb && (cb.checked || cb.getAttribute("aria-checked") === "true"
-                            || cb.classList.contains("on") || cb.classList.contains("is_active"))) {
-                            cb.click();
-                            return "label_clicked";
+
+                // 2) 클래스명 기반 직접 탐색 (SE ONE 고유 패턴)
+                if (results.length === 0) {
+                    const seChecks = document.querySelectorAll(
+                        '[class*="kakao"], [class*="kakaochannel"], [class*="sns_share"], '
+                        + '[class*="channel_link"], [class*="publish_check"], [class*="option_check"]'
+                    );
+                    for (const el of seChecks) {
+                        if (el.classList.contains("on") || el.classList.contains("is_active")
+                            || el.classList.contains("active") || el.classList.contains("checked")
+                            || el.getAttribute("aria-checked") === "true") {
+                            el.click();
+                            results.push("se_class_clicked:" + el.className.substring(0, 50));
                         }
-                        return "label_already_unchecked";
                     }
                 }
-                return null;
+
+                return results.length > 0 ? results.join(", ") : null;
             }''')
             if unchecked:
                 logger.info(f"카카오채널 링크 해제: {unchecked}")
                 await random_delay(0.3, 0.5)
                 return
         except Exception as e:
-            logger.debug(f"카카오채널 체크 해제 시도 실패: {e}")
+            logger.warning(f"카카오채널 체크 해제 시도 실패: {e}")
+
+    # Playwright 셀렉터 기반 폴백
+    for target in ([editor, page] if editor != page else [page]):
+        try:
+            kakao_el = await try_selectors(target, [
+                'text=카카오채널',
+                'text=카카오 채널',
+                ':has-text("카카오채널")',
+                ':has-text("카카오 채널")',
+                '[class*="kakao"]',
+                '[class*="channel_link"]',
+            ], timeout=2000, description="카카오채널 옵션")
+            if kakao_el:
+                await kakao_el.click()
+                logger.info("카카오채널 Playwright 셀렉터 클릭 해제")
+                await random_delay(0.3, 0.5)
+                return
+        except Exception as e:
+            logger.debug(f"카카오채널 Playwright 폴백 실패: {e}")
+
     logger.info("카카오채널 링크 체크박스 미발견 (없거나 이미 해제됨)")
 
 
@@ -1583,7 +1643,8 @@ async def se_click_publish(page, editor) -> bool:
 
         await random_delay(2, 3)
 
-        # 카카오채널 링크 해제
+        # 카카오채널 링크 해제 (발행 다이얼로그 표시 후)
+        await capture_debug(page, "before_kakao_uncheck")
         await _uncheck_kakao_channel(page, editor)
 
         # 발행 확인 다이얼로그
