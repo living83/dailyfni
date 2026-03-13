@@ -151,18 +151,6 @@ def generate_keyword_image(keyword: str, variant: int = 0, width: int = 960, hei
         y = start_y + i * line_height
         draw.text((x, y), line, fill=text_color, font=font)
 
-    # 하단 서브텍스트
-    sub_font = _find_font(18)
-    sub_text = "DAILY FNI BLOG"
-    sub_bbox = draw.textbbox((0, 0), sub_text, font=sub_font)
-    sub_width = sub_bbox[2] - sub_bbox[0]
-    draw.text(
-        ((width - sub_width) // 2, height - margin - 30),
-        sub_text,
-        fill=accent_color,
-        font=sub_font,
-    )
-
     # 파일 저장 (variant별로 다른 파일명)
     safe_name = hashlib.md5(keyword.encode()).hexdigest()[:12]
     suffix = f"_v{variant}" if variant > 0 else ""

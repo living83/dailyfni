@@ -132,14 +132,14 @@ root.innerHTML = `
     <div class="bg-shape circle" style="background:${accent}"></div>
     <div class="bg-shape rect" style="background:${accent}"></div>
     <div class="topline">
-      <span class="label" style="color:${textColor}">${DATA.category || 'DAILY FNI'}</span>
+      <span class="label" style="color:${textColor}">${DATA.category || ''}</span>
       <div class="divider" style="background:${textColor}"></div>
     </div>
     <div class="title-accent" style="background:${accent}"></div>
     <div class="title" style="color:${textColor}">${DATA.title || '제목을 입력하세요'}</div>
     ${DATA.subtitle ? `<div class="subtitle" style="color:${textColor}">${DATA.subtitle}</div>` : ''}
     <div class="bottom">
-      <div class="brand-area" style="color:${textColor}">DAILY FNI</div>
+      <div class="brand-area" style="color:${textColor}"></div>
       <div class="date-area" style="color:${textColor}">${dateStr}</div>
     </div>
   </div>
