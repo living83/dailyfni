@@ -313,6 +313,7 @@ class PublishRequest(BaseModel):
     documents: List[dict]  # [{title, content, format, account_id, category_id, keywords}]
     footer_link: Optional[str] = None  # 블로그 하단에 삽입할 링크 URL
     footer_link_text: Optional[str] = None  # 링크 표시 텍스트 (없으면 URL 그대로)
+    post_type: Optional[str] = "ad"  # ad 또는 general
 
     @validator("api_key")
     def check_api_key(cls, v):
@@ -999,7 +1000,7 @@ async def publish_immediate(req: PublishRequest, background_tasks: BackgroundTas
     if not req.documents:
         raise HTTPException(status_code=400, detail="발행할 문서가 없습니다.")
 
-    batch = await db.create_batch(req.keyword)
+    batch = await db.create_batch(req.keyword, post_type=req.post_type or "ad")
     background_tasks.add_task(
         _run_publish_batch, batch["id"], req.keyword, req.documents, req.api_key,
         req.footer_link or "", req.footer_link_text or "",
