@@ -148,7 +148,8 @@ def init_db():
             base_start_minute INTEGER DEFAULT 0,
             daily_shift_minutes INTEGER DEFAULT 30,
             daily_post_limit INTEGER DEFAULT 3,
-            daily_comment_limit INTEGER DEFAULT 10
+            daily_comment_limit INTEGER DEFAULT 10,
+            footer_link TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat'
         );
     """)
 
@@ -163,9 +164,12 @@ def init_db():
         ("schedule_config", "daily_comment_limit", "10"),
         ("cafe_boards", "cafe_group_id", "NULL"),
         ("accounts", "proxy_address", "TEXT_NULL"),
+        ("schedule_config", "footer_link", "TEXT_DEFAULT"),
     ]:
         try:
-            if default == "TEXT_NULL":
+            if default == "TEXT_DEFAULT":
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat'")
+            elif default == "TEXT_NULL":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
             elif default == "NULL":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER")
@@ -734,7 +738,7 @@ def update_schedule_config(**kwargs):
         "comment_enabled", "comments_per_post", "comment_delay_min", "comment_delay_max",
         "comment_order", "exclude_author", "cross_publish", "account_interval_hours",
         "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes",
-        "daily_post_limit", "daily_comment_limit"
+        "daily_post_limit", "daily_comment_limit", "footer_link"
     ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:

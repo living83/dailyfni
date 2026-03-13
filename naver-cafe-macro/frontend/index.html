@@ -1178,6 +1178,16 @@ function ScheduleTab({ schedule, events, reload }) {
           </div>
         </div>
 
+        <div className="settings-row" style={{ marginTop: 14 }}>
+          <div className="input-group" style={{ flex: 1 }}>
+            <label>하단 링크 (OGLink 카드)</label>
+            <input type="text" value={schedule.footer_link ?? ''}
+              placeholder="http://pf.kakao.com/_XEUIX/chat"
+              onChange={e => updateConfig('footer_link', e.target.value)} />
+            <small style={{ color: '#4a5a7a', fontSize: 11 }}>모든 글 하단에 OGLink 카드로 삽입됩니다. 비워두면 삽입 안 함.</small>
+          </div>
+        </div>
+
         {/* 오늘의 시작 시간 & 예상 소요 표시 */}
         <div style={{ marginTop: 14, padding: '12px 16px', background: '#0a1020', borderRadius: 8, border: '1px solid #1a2540' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

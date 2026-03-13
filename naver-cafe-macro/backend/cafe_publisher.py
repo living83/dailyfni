@@ -957,6 +957,232 @@ def _restore_editor_focus(driver):
         logger.warning(f"에디터 포커스 복원 오류: {e}")
 
 
+# ─── 하단 링크 (OGLink 카드) 삽입 ─────────────────────────
+
+def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
+    """SE ONE 에디터에 하단 링크를 OGLink 카드로 삽입.
+
+    블로그 프로젝트의 se_insert_footer_link와 동일한 방식:
+    툴바 '링크' 버튼 → URL 입력 → 돋보기(검색) → 확인
+    """
+    if not footer_link:
+        return
+
+    _log(f"[footer_link] OGLink 삽입 시작: {footer_link}")
+
+    try:
+        # ── 1단계: 에디터 본문 끝에 빈 줄 추가 (분리 효과) ──
+        ActionChains(driver).send_keys(Keys.ENTER).send_keys(Keys.ENTER).perform()
+        random_delay(0.3, 0.5)
+
+        # ── 2단계: 툴바 '링크' 버튼 클릭 ──
+        link_btn_selectors = [
+            'button[data-name="oglink"]',
+            'button[data-name="link"]',
+            'button[data-name="hyperlink"]',
+            '.se-toolbar button[data-name="oglink"]',
+            '.se-toolbar button[data-name="link"]',
+        ]
+        link_btn = None
+        for sel in link_btn_selectors:
+            try:
+                link_btn = driver.find_element(By.CSS_SELECTOR, sel)
+                _log(f"[footer_link] 툴바 링크 버튼 발견: {sel}")
+                break
+            except NoSuchElementException:
+                continue
+
+        # JS 폴백: 툴바 버튼 중 '링크' 관련 버튼 탐색
+        if not link_btn:
+            try:
+                link_btn = driver.execute_script("""
+                    var btns = document.querySelectorAll(
+                        '.se-toolbar button, [class*="toolbar"] button'
+                    );
+                    for (var i = 0; i < btns.length; i++) {
+                        var name = (btns[i].dataset.name || '').toLowerCase();
+                        var label = (btns[i].getAttribute('aria-label') || '').toLowerCase();
+                        if (name.includes('oglink') || name.includes('link')
+                            || label.includes('링크') || label.includes('link')) {
+                            return btns[i];
+                        }
+                    }
+                    return null;
+                """)
+                if link_btn:
+                    _log("[footer_link] 툴바 링크 버튼 JS 폴백 발견")
+            except Exception:
+                pass
+
+        if not link_btn:
+            _log("[footer_link] 툴바 '링크' 버튼 미발견 → 링크 삽입 불가", "WARNING")
+            return
+
+        link_btn.click()
+        _log("[footer_link] 툴바 '링크' 버튼 클릭")
+        random_delay(1.5, 2.5)
+
+        # ── 3단계: 링크 다이얼로그 URL 입력 ──
+        link_input_selectors = [
+            'input[placeholder*="URL"]',
+            'input[placeholder*="url"]',
+            'input[placeholder*="링크"]',
+            'input[placeholder*="주소"]',
+            '.se-popup-link input',
+            '.se-popup input[type="text"]',
+            'input[type="url"]',
+        ]
+        link_input = None
+        for sel in link_input_selectors:
+            try:
+                link_input = driver.find_element(By.CSS_SELECTOR, sel)
+                _log(f"[footer_link] URL 입력 필드 발견: {sel}")
+                break
+            except NoSuchElementException:
+                continue
+
+        # JS 폴백: 팝업 내 input 탐색
+        if not link_input:
+            try:
+                link_input = driver.execute_script("""
+                    var popup = document.querySelector(
+                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                    );
+                    if (popup) {
+                        var inp = popup.querySelector('input');
+                        if (inp) return inp;
+                    }
+                    var inputs = document.querySelectorAll('input[type="text"], input[type="url"], input:not([type])');
+                    for (var i = 0; i < inputs.length; i++) {
+                        var rect = inputs[i].getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) return inputs[i];
+                    }
+                    return null;
+                """)
+                if link_input:
+                    _log("[footer_link] URL 입력 JS 폴백 발견")
+            except Exception:
+                pass
+
+        if not link_input:
+            _log("[footer_link] URL 입력 필드 미발견", "WARNING")
+            try:
+                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            except Exception:
+                pass
+            return
+
+        link_input.click()
+        link_input.clear()
+        random_delay(0.2, 0.3)
+        link_input.send_keys(footer_link)
+        _log(f"[footer_link] URL 입력 완료: {footer_link}")
+        random_delay(0.5, 1)
+
+        # ── 4단계: 돋보기(검색) 버튼 클릭 → OG 미리보기 로드 ──
+        search_btn = None
+        search_selectors = [
+            '.se-popup-link button[class*="search"]',
+            '.se-popup-link button[class*="query"]',
+            '.se-popup button[class*="search"]',
+            'button.se-link-preview-btn',
+        ]
+        for sel in search_selectors:
+            try:
+                search_btn = driver.find_element(By.CSS_SELECTOR, sel)
+                break
+            except NoSuchElementException:
+                continue
+
+        # JS 폴백: 팝업 내 돋보기/아이콘 버튼 탐색
+        if not search_btn:
+            try:
+                search_btn = driver.execute_script("""
+                    var popup = document.querySelector(
+                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                    );
+                    if (!popup) return null;
+                    var btns = popup.querySelectorAll('button');
+                    for (var i = 0; i < btns.length; i++) {
+                        var text = (btns[i].textContent || '').trim();
+                        if (!text.includes('확인') && !text.includes('취소')
+                            && btns[i].querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
+                            return btns[i];
+                        }
+                    }
+                    for (var i = 0; i < btns.length; i++) {
+                        var text = (btns[i].textContent || '').trim();
+                        if (!text.includes('확인') && !text.includes('취소') && text.length < 3) {
+                            return btns[i];
+                        }
+                    }
+                    return null;
+                """)
+            except Exception:
+                pass
+
+        if search_btn:
+            search_btn.click()
+            _log("[footer_link] 돋보기 버튼 클릭 → OG 미리보기 대기")
+            random_delay(3, 5)
+
+            # OG 미리보기 로드 대기
+            try:
+                WebDriverWait(driver, 10).until(
+                    lambda d: d.find_element(By.CSS_SELECTOR,
+                        '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
+                        '.se-popup-link [class*="og"], .se-popup [class*="card"], '
+                        '.se-popup-link img, .se-popup img'
+                    )
+                )
+                _log("[footer_link] OG 미리보기 로드 완료")
+            except (TimeoutException, NoSuchElementException):
+                _log("[footer_link] OG 미리보기 로드 타임아웃 (계속 진행)", "WARNING")
+            random_delay(1, 2)
+        else:
+            # 돋보기 없으면 Enter로 대체
+            _log("[footer_link] 돋보기 버튼 미발견, Enter로 대체", "WARNING")
+            link_input.send_keys(Keys.ENTER)
+            random_delay(3, 5)
+
+        # ── 5단계: 확인 버튼 클릭 ──
+        confirm_btn = None
+        try:
+            confirm_btn = driver.execute_script("""
+                var popup = document.querySelector(
+                    '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                );
+                if (!popup) return null;
+                var btns = popup.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var text = (btns[i].textContent || '').trim();
+                    if (text === '확인' || text.includes('확인')) return btns[i];
+                }
+                return null;
+            """)
+        except Exception:
+            pass
+
+        if confirm_btn:
+            try:
+                confirm_btn.click()
+            except Exception:
+                driver.execute_script("arguments[0].click();", confirm_btn)
+            random_delay(1, 2)
+            _log(f"[footer_link] OGLink 삽입 완료: {footer_link}")
+        else:
+            _log("[footer_link] 확인 버튼 미발견, Enter로 대체", "WARNING")
+            ActionChains(driver).send_keys(Keys.ENTER).perform()
+            random_delay(1, 2)
+
+    except Exception as e:
+        _log(f"[footer_link] 링크 삽입 실패: {e}", "WARNING")
+        try:
+            ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+        except Exception:
+            pass
+
+
 # ─── CTA 테이블 삽입 ─────────────────────────────────────
 
 def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
@@ -1612,7 +1838,8 @@ def write_post(
     image_path: Optional[str] = None,
     structured_content: Optional[dict] = None,
     menu_id: Optional[str] = None,
-    board_name: str = ""
+    board_name: str = "",
+    footer_link: str = ""
 ) -> Optional[str]:
     """
     SE ONE 에디터에서 글 작성 후 발행
@@ -1624,6 +1851,7 @@ def write_post(
         content: 단순 텍스트 본문 (폴백용)
         image_path: 이미지 파일 경로
         structured_content: content_generator에서 생성한 구조화된 콘텐츠
+        footer_link: 글 하단에 OGLink 카드로 삽입할 URL
 
     Returns: 발행된 글 URL 또는 None
     """
@@ -1676,6 +1904,11 @@ def write_post(
         else:
             # ── 폴백: 단순 텍스트 입력 ──
             _write_plain_body(driver, active_body, content, image_path)
+
+        # ── 하단 링크 삽입 (OGLink 카드) ──
+        if footer_link:
+            _restore_editor_focus(driver)
+            _insert_footer_link(driver, footer_link)
 
         # ── 등록 전 팝업 재확인 ──
         _dismiss_popups(driver)
@@ -2050,7 +2283,8 @@ def publish_to_cafe(
     headless: bool = True,
     on_progress=None,
     structured_content: Optional[dict] = None,
-    board_name: str = ""
+    board_name: str = "",
+    footer_link: str = ""
 ) -> dict:
     """
     전체 카페 글 발행 프로세스
@@ -2058,6 +2292,7 @@ def publish_to_cafe(
     Args:
         structured_content: content_generator.generate_content() 결과.
             있으면 SE ONE 서식 적용, 없으면 content를 plain text로 입력.
+        footer_link: 글 하단에 OGLink 카드로 삽입할 URL
 
     Returns: {"success": bool, "url": str|None, "error": str|None, "cookies": str|None}
     """
@@ -2169,7 +2404,8 @@ def publish_to_cafe(
             driver, title, content, image_path,
             structured_content=structured_content,
             menu_id=menu_id,
-            board_name=board_name
+            board_name=board_name,
+            footer_link=footer_link
         )
 
         if published_url:
