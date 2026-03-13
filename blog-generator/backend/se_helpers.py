@@ -1693,8 +1693,12 @@ async def se_click_publish(page, editor) -> bool:
 
         await random_delay(2, 3)
 
-        # 카카오채널 링크 해제 (발행 다이얼로그 표시 후)
+        # 카카오채널 링크 해제 (발행 다이얼로그 완전 로딩 대기 후 2회 시도)
+        await random_delay(1, 2)
         await capture_debug(page, "before_kakao_uncheck")
+        await _uncheck_kakao_channel(page, editor)
+        # 한 번 더 시도 (다이얼로그 렌더링 지연으로 첫 시도가 실패할 수 있음)
+        await random_delay(0.5, 1)
         await _uncheck_kakao_channel(page, editor)
 
         # 발행 확인 다이얼로그

@@ -914,24 +914,36 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             naver_pw = decrypt(account["naver_password"])
             tags = doc.get("keywords", [keyword])
 
-            # 대표이미지 결정: 키워드 이미지(1순위) > Gemini(2순위)
+            # 대표이미지 결정: 일반(general)은 키워드 이미지 스킵, Gemini만 사용
             gemini_images_for_doc = gemini_image_map.get(i, [])
-            if keyword_image_paths:
+            if is_general:
+                # 일반글: 키워드 대문이미지(로고) 사용하지 않음, Gemini 이미지만
+                if gemini_images_for_doc:
+                    main_image = gemini_images_for_doc[0]
+                    extra_images = gemini_images_for_doc[1:]
+                else:
+                    main_image = ""
+                    extra_images = []
+                logger.info("일반(general) 타입 → 키워드 대문이미지 스킵")
+            elif keyword_image_paths:
                 main_image = keyword_image_paths[i % len(keyword_image_paths)]
                 extra_images = gemini_images_for_doc
-            elif is_general and gemini_images_for_doc:
-                main_image = gemini_images_for_doc[0]
-                extra_images = gemini_images_for_doc[1:]
             else:
                 main_image = ""
                 extra_images = gemini_images_for_doc
+
+            # 일반(general) 포스팅: 하단 링크 삽입 건너뜀
+            actual_footer_link = "" if is_general else footer_link
+            actual_footer_link_text = "" if is_general else footer_link_text
+            if is_general:
+                logger.info("일반(general) 타입 → 하단 링크 삽입 건너뜀")
 
             pub_result = await run_publish_task(
                 account_id, naver_id, naver_pw,
                 doc.get("title", ""), doc.get("content", ""),
                 cat_name, tags,
                 main_image,
-                footer_link, footer_link_text,
+                actual_footer_link, actual_footer_link_text,
                 extra_image_paths=extra_images,
             )
 
@@ -1165,17 +1177,23 @@ async def delete_all_history():
 
 
 @app.post("/api/history/{history_id}/republish")
-async def republish(history_id: int, background_tasks: BackgroundTasks):
-    """재발행"""
+async def republish(history_id: int, request: Request, background_tasks: BackgroundTasks):
+    """재발행 (post_type 지정 가능: ad/general, 기본값 general)"""
     histories = await db.get_publish_history({"limit": 1000})
     history = next((h for h in histories if h["id"] == history_id), None)
     if not history:
         raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
 
-    # 원래 배치의 post_type 유지
-    original_batch = await db.get_batch(history.get("batch_id")) if history.get("batch_id") else None
-    original_post_type = original_batch.get("post_type", "ad") if original_batch else "ad"
-    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}", post_type=original_post_type)
+    # post_type: 요청 body에서 지정 가능 (기본값: general)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    post_type = body.get("post_type", "general")
+    if post_type not in ("ad", "general"):
+        post_type = "general"
+
+    batch = await db.create_batch(f"재발행: {history.get('title', '')[:20]}", post_type=post_type)
     documents = [{
         "account_id": history["account_id"],
         "category_id": history["category_id"],
@@ -1186,7 +1204,7 @@ async def republish(history_id: int, background_tasks: BackgroundTasks):
     }]
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     background_tasks.add_task(_run_publish_batch, batch["id"], history.get("title", ""), documents, api_key)
-    return {"batch_id": batch["id"], "message": "재발행이 시작되었습니다."}
+    return {"batch_id": batch["id"], "message": f"재발행이 시작되었습니다. (타입: {post_type})"}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

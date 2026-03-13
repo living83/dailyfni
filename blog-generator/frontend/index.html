@@ -1353,14 +1353,25 @@ async function loadHistory() {
       <td style="font-size:11px">${h.keywords || ''}</td>
       <td><span class="tag ${h.status === 'success' ? 'tag-green' : h.status === 'failed' ? 'tag-red' : 'tag-yellow'}">${h.status}</span></td>
       <td>${h.naver_post_url ? `<a href="${h.naver_post_url}" target="_blank" style="font-size:11px;color:#0984e3">보기</a>` : '-'}</td>
-      <td><button class="btn btn-sm btn-secondary" onclick="republish(${h.id})">재발행</button></td>
+      <td>
+        <select id="retype_${h.id}" style="font-size:11px;padding:2px;margin-right:4px">
+          <option value="general">일반글</option>
+          <option value="ad">광고</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="republish(${h.id})">재발행</button>
+      </td>
     </tr>`).join('');
   } catch (e) { showToast(e.message, 'error'); }
 }
 
 async function republish(id) {
   try {
-    const result = await api(`/api/history/${id}/republish`, { method: 'POST' });
+    const postType = document.getElementById(`retype_${id}`)?.value || 'general';
+    const result = await api(`/api/history/${id}/republish`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({post_type: postType}),
+    });
     showToast(result.message);
     switchTab('publish');
     pollPublishStatus(result.batch_id);
