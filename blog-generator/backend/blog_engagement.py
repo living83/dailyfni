@@ -16,6 +16,7 @@ from datetime import datetime
 from se_helpers import (
     create_stealth_context,
     _get_proxy_for_account,
+    _PROXY_CHECKED_NO_PROXY,
     login,
     random_delay,
     try_selectors,
@@ -2460,10 +2461,10 @@ async def run_engagement(
 ) -> dict:
     """참여 실행 (Windows ProactorEventLoop 호환)"""
     # 메인 루프에서 프록시 미리 조회 (ProactorEventLoop에서 DB 접근 불가 문제 해결)
-    # 결과가 None이면 빈 dict 센티널로 변환 → create_stealth_context에서 DB 재조회 방지
-    proxy = await _get_proxy_for_account(account_id) if account_id else {}
+    # 결과가 None이면 센티널로 변환 → create_stealth_context에서 DB 재조회 방지
+    proxy = await _get_proxy_for_account(account_id) if account_id else None
     if not proxy:
-        proxy = {}
+        proxy = _PROXY_CHECKED_NO_PROXY
 
     if sys.platform == "win32":
         return await asyncio.to_thread(

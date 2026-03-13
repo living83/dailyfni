@@ -25,15 +25,24 @@ COOKIE_DIR.mkdir(parents=True, exist_ok=True)
 # 프록시 설정
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# "이미 조회했지만 프록시 없음" 센티널 ({} 대신 명시적 상수 사용)
+_PROXY_CHECKED_NO_PROXY = {"__checked__": True}
+
 async def _get_proxy_for_account(account_id: int) -> dict | None:
     """계정 ID에 매핑된 프록시 설정을 반환. DB 우선, .env 폴백. 없으면 None."""
     # 1) DB에서 암호화된 프록시 조회
+    #    이벤트 루프 불일치 시 DB 접근 건너뜀 (ProactorEventLoop 호환)
     try:
-        from database import get_account_proxy
-        db_proxy = await get_account_proxy(account_id)
-        if db_proxy:
-            logger.info(f"프록시 설정(DB): 계정 {account_id} → {db_proxy['server']}")
-            return db_proxy
+        from database import _pool as db_pool
+        current_loop = asyncio.get_running_loop()
+        if db_pool is not None and hasattr(db_pool, '_loop') and db_pool._loop is not current_loop:
+            logger.debug(f"DB 풀 루프 불일치 → DB 프록시 조회 건너뜀 (계정 {account_id})")
+        else:
+            from database import get_account_proxy
+            db_proxy = await get_account_proxy(account_id)
+            if db_proxy:
+                logger.info(f"프록시 설정(DB): 계정 {account_id} → {db_proxy['server']}")
+                return db_proxy
     except Exception as e:
         logger.warning(f"DB 프록시 조회 실패 (계정 {account_id}): {e}")
 
@@ -435,8 +444,12 @@ async def create_stealth_context(playwright_instance, account_id: int = None, pr
     ]
 
     # 프록시 설정: 외부에서 주입된 proxy 우선, 없으면 account_id로 조회
-    # proxy={} 는 "이미 조회했지만 프록시 없음" 센티널 → DB 재조회 방지
-    if proxy is None and account_id:
+    # _PROXY_CHECKED_NO_PROXY 또는 {} 센티널 → DB 재조회 방지
+    if proxy is not None:
+        # 센티널이면 프록시 없음으로 처리
+        if proxy.get("__checked__") or proxy == {}:
+            proxy = None
+    elif account_id:
         proxy = await _get_proxy_for_account(account_id)
     if not proxy:
         proxy = None
