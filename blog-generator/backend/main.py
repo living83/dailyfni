@@ -55,7 +55,6 @@ import database as db
 from crypto import encrypt, decrypt
 from image_generator import generate_keyword_image, generate_keyword_image_variants, generate_ad_banner, generate_ad_banner_variants, generate_ad_banner_all_templates
 from gemini_image_generator import generate_gemini_images
-from mcp_image_generator import generate_general_cover_variants
 
 # ─── 로깅 설정 ──────────────────────────────────────────
 LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "logs"
@@ -800,19 +799,11 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
 
     # 키워드 대표이미지 생성
     keyword_image_paths = []
-    if not is_general:
-        try:
-            keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
-            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-        except Exception as e:
-            logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
-    else:
-        # 일반(general) 포스팅: MCP(UI-Friend) 서버로 고품질 대표이미지 생성
-        try:
-            keyword_image_paths = await asyncio.to_thread(generate_general_cover_variants, keyword, 3)
-            logger.info(f"일반 포스팅 MCP 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-        except Exception as e:
-            logger.warning(f"일반 포스팅 MCP 대표이미지 생성 실패 (계속 진행): {e}")
+    try:
+        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
+        logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+    except Exception as e:
+        logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
     # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
     gemini_image_map = {}  # {document_index: [image_paths]}
@@ -920,26 +911,17 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
             naver_pw = decrypt(account["naver_password"])
             tags = doc.get("keywords", [keyword])
 
-            # 대표이미지 결정: 일반 포스팅은 MCP(1순위) > Gemini(2순위), 광고는 키워드 이미지
+            # 대표이미지 결정: 키워드 이미지(1순위) > Gemini(2순위)
             gemini_images_for_doc = gemini_image_map.get(i, [])
-            if is_general and keyword_image_paths:
-                # 1순위: MCP(Gemini API) 대표이미지
+            if keyword_image_paths:
                 main_image = keyword_image_paths[i % len(keyword_image_paths)]
                 extra_images = gemini_images_for_doc
-                logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
             elif is_general and gemini_images_for_doc:
-                # 2순위: Gemini 본문 이미지 중 첫 번째를 대표이미지로
                 main_image = gemini_images_for_doc[0]
                 extra_images = gemini_images_for_doc[1:]
-                logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 폴백 사용")
-            elif is_general:
-                # MCP/Gemini 모두 없으면 대표이미지 없이 발행
-                main_image = ""
-                extra_images = []
-                logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
             else:
-                main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
-                extra_images = gemini_image_map.get(i, [])
+                main_image = ""
+                extra_images = gemini_images_for_doc
 
             pub_result = await run_publish_task(
                 account_id, naver_id, naver_pw,

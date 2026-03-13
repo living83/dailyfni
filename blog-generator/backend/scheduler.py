@@ -202,20 +202,13 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-                # 키워드 대표이미지: 일반 포스팅은 MCP, 광고는 Pillow
+                # 키워드 대표이미지 생성
                 keyword_image_paths = []
-                if post_type == "general":
-                    try:
-                        from mcp_image_generator import generate_general_cover_variants
-                        keyword_image_paths = generate_general_cover_variants(keyword, count=3)
-                    except Exception as e:
-                        logger.warning(f"MCP 대표이미지 생성 실패, Pillow 폴백: {e}")
-                if not keyword_image_paths:
-                    try:
-                        from image_generator import generate_keyword_image_variants
-                        keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                    except Exception as e:
-                        logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+                try:
+                    from image_generator import generate_keyword_image_variants
+                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                except Exception as e:
+                    logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
                 # 카테고리
                 categories = await get_categories(account["id"])
@@ -350,22 +343,12 @@ async def daily_publish_job(manual: bool = False):
         # 키워드 대표이미지 생성
         post_type_for_batch = batch.get("post_type", "ad")
         keyword_image_paths = []
-        if post_type_for_batch == "general":
-            # 일반 포스팅: MCP(UI-Friend) 서버로 고품질 대표이미지 생성
-            try:
-                from mcp_image_generator import generate_general_cover_variants
-                keyword_image_paths = generate_general_cover_variants(keyword, count=3)
-                logger.info(f"일반 포스팅 MCP 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-            except Exception as e:
-                logger.warning(f"MCP 대표이미지 생성 실패, Pillow 폴백: {e}")
-        if not keyword_image_paths:
-            # 광고 포스팅 또는 MCP 실패 시 Pillow 폴백
-            try:
-                from image_generator import generate_keyword_image_variants
-                keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
-                logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
-            except Exception as e:
-                logger.warning(f"키워드 대표이미지 생성 실패: {e}")
+        try:
+            from image_generator import generate_keyword_image_variants
+            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+            logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
+        except Exception as e:
+            logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
         # 계정은 이미 단계별 생성 시 배정됨 — 교차 정렬만 수행
         from database import get_account, get_categories
@@ -449,23 +432,14 @@ async def daily_publish_job(manual: bool = False):
                 except Exception as e:
                     logger.warning(f"Gemini 이미지 로드 실패: {e}")
 
-                # 대표이미지 결정: 일반 포스팅은 MCP(1순위) > Gemini(2순위), 광고는 키워드 이미지
-                if post_type == "general" and keyword_image_paths:
-                    # 1순위: MCP(Gemini API) 대표이미지
+                # 대표이미지 결정: 키워드 이미지(1순위) > Gemini(2순위)
+                if keyword_image_paths:
                     main_image = keyword_image_paths[i % len(keyword_image_paths)]
-                    # extra_image_paths(Gemini 본문 이미지)는 그대로 유지
-                    logger.info(f"일반(general) 타입 → MCP 대표이미지 사용: {main_image}")
-                elif post_type == "general" and extra_image_paths:
-                    # 2순위: Gemini 본문 이미지 중 첫 번째를 대표이미지로 폴백
+                elif post_type_for_batch == "general" and extra_image_paths:
                     main_image = extra_image_paths[0]
                     extra_image_paths = extra_image_paths[1:]
-                    logger.info(f"일반(general) 타입 → Gemini 이미지를 대표이미지로 폴백 사용")
-                elif post_type == "general":
-                    # MCP/Gemini 모두 없으면 대표이미지 없이 발행
-                    main_image = ""
-                    logger.info(f"일반(general) 타입 → 이미지 없음, 대표이미지 없이 발행")
                 else:
-                    main_image = keyword_image_paths[i % len(keyword_image_paths)] if keyword_image_paths else ""
+                    main_image = ""
 
                 pub_result = await run_publish_task(
                     account_id, naver_id, naver_pw,
