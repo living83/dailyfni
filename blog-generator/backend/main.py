@@ -797,22 +797,23 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
     is_general = (batch_info.get("post_type") == "general") if batch_info else False
 
-    # 키워드 대표이미지 생성
+    # 키워드 대표이미지 생성 (일반 포스팅: 1개, 광고: 3개)
     keyword_image_paths = []
+    image_count = 1 if is_general else 3
     try:
-        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, 3)
+        keyword_image_paths = await asyncio.to_thread(generate_keyword_image_variants, keyword, image_count)
         logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
     except Exception as e:
         logger.warning(f"키워드 대표이미지 생성 실패 (계속 진행): {e}")
 
-    # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 최대 3장 랜덤)
+    # 일반(general) 포스팅: Gemini API로 본문 관련 이미지 생성 (문서별 1장)
     gemini_image_map = {}  # {document_index: [image_paths]}
     if is_general and os.getenv("GEMINI_API_KEY"):
         for i, doc in enumerate(documents):
             try:
                 content = doc.get("content", "")
                 gemini_paths = await asyncio.to_thread(
-                    generate_gemini_images, keyword, content, 3
+                    generate_gemini_images, keyword, content, 1
                 )
                 gemini_image_map[i] = gemini_paths
                 logger.info(f"Gemini 이미지 {len(gemini_paths)}장 생성 (문서 {i+1})")

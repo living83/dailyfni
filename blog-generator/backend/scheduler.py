@@ -202,11 +202,12 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 if product_info.strip() and post_type == "ad":
                     product_info_section = f"\n상품소개:\n{product_info.strip()}\n"
 
-                # 키워드 대표이미지 생성
+                # 키워드 대표이미지 생성 (일반 포스팅: 1개, 광고: 3개)
                 keyword_image_paths = []
+                image_count = 1 if post_type == "general" else 3
                 try:
                     from image_generator import generate_keyword_image_variants
-                    keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+                    keyword_image_paths = generate_keyword_image_variants(keyword, count=image_count)
                 except Exception as e:
                     logger.warning(f"키워드 대표이미지 생성 실패: {e}")
 
@@ -227,13 +228,13 @@ async def article_generation_job(manual: bool = False, forced_type: str = ""):
                 title = lines[0].strip().lstrip("# ").strip()
                 body = lines[1].strip() if len(lines) > 1 else result
 
-                # 일반 포스팅: Gemini 이미지
+                # 일반 포스팅: Gemini 이미지 (1장)
                 gemini_paths = []
                 if post_type == "general" and os.getenv("GEMINI_API_KEY"):
                     try:
                         from gemini_image_generator import generate_gemini_images
                         gemini_paths = await asyncio.to_thread(
-                            generate_gemini_images, keyword, body, 3
+                            generate_gemini_images, keyword, body, 1
                         )
                     except Exception as e:
                         logger.warning(f"Gemini 이미지 생성 실패: {e}")
@@ -340,12 +341,13 @@ async def daily_publish_job(manual: bool = False):
         keyword = batch["keyword"]
         logger.info(f"배치 #{batch['id']} 발행 시작: 키워드={keyword}, 글 {len(articles)}개")
 
-        # 키워드 대표이미지 생성
+        # 키워드 대표이미지 생성 (일반 포스팅: 1개, 광고: 3개)
         post_type_for_batch = batch.get("post_type", "ad")
+        image_count = 1 if post_type_for_batch == "general" else 3
         keyword_image_paths = []
         try:
             from image_generator import generate_keyword_image_variants
-            keyword_image_paths = generate_keyword_image_variants(keyword, count=3)
+            keyword_image_paths = generate_keyword_image_variants(keyword, count=image_count)
             logger.info(f"키워드 대표이미지 {len(keyword_image_paths)}개 생성 완료")
         except Exception as e:
             logger.warning(f"키워드 대표이미지 생성 실패: {e}")
