@@ -797,6 +797,7 @@ async def _run_publish_batch(batch_id: int, keyword: str, documents: list, api_k
     # post_type 확인
     batch_info = await db.get_batch(batch_id) if hasattr(db, 'get_batch') else None
     is_general = (batch_info.get("post_type") == "general") if batch_info else False
+    logger.info(f"배치 #{batch_id} post_type={batch_info.get('post_type') if batch_info else 'N/A'}, is_general={is_general}")
 
     # 키워드 대표이미지 생성 (일반 포스팅: 1개, 광고: 3개)
     keyword_image_paths = []
