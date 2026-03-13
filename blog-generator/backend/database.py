@@ -60,6 +60,17 @@ _pool: aiomysql.Pool = None
 async def _get_pool() -> aiomysql.Pool:
     """커넥션 풀 반환 (싱글톤, 연결 실패 시 재시도)"""
     global _pool
+    # 풀이 다른 이벤트 루프에서 생성된 경우 재생성 (BackgroundTasks/스케줄러 호환)
+    if _pool is not None and not _pool.closed:
+        try:
+            current_loop = asyncio.get_running_loop()
+            if hasattr(_pool, '_loop') and _pool._loop is not current_loop:
+                logger.info("이벤트 루프 변경 감지 → DB 풀 재생성")
+                _pool.close()
+                await _pool.wait_closed()
+                _pool = None
+        except RuntimeError:
+            pass
     if _pool is None or _pool.closed:
         # 기본 연결 설정
         pool_kwargs = dict(
@@ -94,7 +105,7 @@ async def _get_pool() -> aiomysql.Pool:
             auth_label = auth_extra.get("auth_plugin", "default")
             for attempt in range(3):
                 try:
-                    _pool = await aiomysql.create_pool(**kwargs)
+                    _pool = await aiomysql.create_pool(loop=asyncio.get_running_loop(), **kwargs)
                     if auth_extra:
                         logger.info(f"MySQL 연결 성공 (auth_plugin={auth_label})")
                     return _pool
