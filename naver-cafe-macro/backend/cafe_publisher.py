@@ -954,16 +954,16 @@ def _click_toolbar_button(driver, selectors: list) -> bool:
 # ─── 에디터 포커스 복원 ───────────────────────────────────
 
 def _restore_editor_focus(driver):
-    """CTA/스티커/이미지 삽입 후 에디터 본문에 포커스 복원"""
+    """CTA/스티커/이미지 삽입 후 에디터 본문에 포커스 복원 (마지막 paragraph로)"""
     try:
-        # SE ONE 에디터 본문의 contenteditable 영역 클릭
+        # SE ONE 에디터 본문의 contenteditable 영역 클릭 — 마지막 요소 사용
         restored = driver.execute_script("""
-            // 1차: se-component-content 내부의 text-paragraph
-            var p = document.querySelector('.se-component-content .se-text-paragraph');
-            if (p) { p.click(); return 'se-text-paragraph'; }
-            // 2차: contenteditable 영역
-            var ce = document.querySelector('.se-component-content [contenteditable="true"]');
-            if (ce) { ce.click(); return 'contenteditable'; }
+            // 1차: se-component-content 내부의 마지막 text-paragraph
+            var ps = document.querySelectorAll('.se-component-content .se-text-paragraph');
+            if (ps.length > 0) { var last = ps[ps.length - 1]; last.click(); return 'se-text-paragraph(last/' + ps.length + ')'; }
+            // 2차: 마지막 contenteditable 영역
+            var ces = document.querySelectorAll('.se-component-content [contenteditable="true"]');
+            if (ces.length > 0) { var last = ces[ces.length - 1]; last.click(); return 'contenteditable(last)'; }
             // 3차: 에디터 본문 영역
             var body = document.querySelector('.se-content, .se-section-text');
             if (body) { body.click(); return 'se-content'; }
@@ -974,9 +974,13 @@ def _restore_editor_focus(driver):
             # 포커스 복원 후 커서를 본문 끝으로 이동
             driver.execute_script("""
                 var sel = window.getSelection();
-                if (sel.rangeCount > 0) {
-                    var range = sel.getRangeAt(0);
+                var focusNode = sel.focusNode || sel.anchorNode;
+                if (focusNode) {
+                    var range = document.createRange();
+                    range.selectNodeContents(focusNode);
                     range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
                 }
             """)
             logger.info(f"에디터 포커스 복원: {restored}")
@@ -991,8 +995,8 @@ def _restore_editor_focus(driver):
 def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
     """SE ONE 에디터에 하단 링크를 OGLink 카드로 삽입.
 
-    블로그 프로젝트의 se_insert_footer_link와 동일한 방식:
-    툴바 '링크' 버튼 → URL 입력 → 돋보기(검색) → 확인
+    1차: 툴바 'oglink' 버튼 → URL 입력 → 돋보기(검색) → 확인
+    2차 (폴백): 에디터 본문에 URL 직접 입력 → SE ONE 자동 OGLink 변환
     """
     if not footer_link:
         return
@@ -1000,28 +1004,29 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
     _log(f"[footer_link] OGLink 삽입 시작: {footer_link}")
 
     try:
+        # ── 0단계: 커서를 에디터 본문 맨 끝으로 이동 ──
+        ActionChains(driver).key_down(Keys.CONTROL).send_keys(Keys.END).key_up(Keys.CONTROL).perform()
+        random_delay(0.3, 0.5)
+
         # ── 1단계: 에디터 본문 끝에 빈 줄 추가 (분리 효과) ──
         ActionChains(driver).send_keys(Keys.ENTER).send_keys(Keys.ENTER).perform()
         random_delay(0.3, 0.5)
 
-        # ── 2단계: 툴바 '링크' 버튼 클릭 ──
-        link_btn_selectors = [
+        # ── 2단계: 툴바 'oglink' 버튼 클릭 (hyperlink 아닌 OGLink만) ──
+        oglink_btn_selectors = [
             'button[data-name="oglink"]',
-            'button[data-name="link"]',
-            'button[data-name="hyperlink"]',
             '.se-toolbar button[data-name="oglink"]',
-            '.se-toolbar button[data-name="link"]',
         ]
         link_btn = None
-        for sel in link_btn_selectors:
+        for sel in oglink_btn_selectors:
             try:
                 link_btn = driver.find_element(By.CSS_SELECTOR, sel)
-                _log(f"[footer_link] 툴바 링크 버튼 발견: {sel}")
+                _log(f"[footer_link] OGLink 버튼 발견: {sel}")
                 break
             except NoSuchElementException:
                 continue
 
-        # JS 폴백: 툴바 버튼 중 '링크' 관련 버튼 탐색
+        # JS 폴백: 툴바 버튼 중 oglink만 탐색 (hyperlink 제외)
         if not link_btn:
             try:
                 link_btn = driver.execute_script("""
@@ -1030,179 +1035,58 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
                     );
                     for (var i = 0; i < btns.length; i++) {
                         var name = (btns[i].dataset.name || '').toLowerCase();
-                        var label = (btns[i].getAttribute('aria-label') || '').toLowerCase();
-                        if (name.includes('oglink') || name.includes('link')
-                            || label.includes('링크') || label.includes('link')) {
+                        if (name === 'oglink') return btns[i];
+                    }
+                    // aria-label로도 탐색
+                    for (var i = 0; i < btns.length; i++) {
+                        var label = (btns[i].getAttribute('aria-label') || '');
+                        if (label.includes('링크') && !label.includes('하이퍼')) {
                             return btns[i];
                         }
                     }
                     return null;
                 """)
                 if link_btn:
-                    _log("[footer_link] 툴바 링크 버튼 JS 폴백 발견")
+                    _log("[footer_link] OGLink 버튼 JS 폴백 발견")
             except Exception:
                 pass
 
-        if not link_btn:
-            _log("[footer_link] 툴바 '링크' 버튼 미발견 → 링크 삽입 불가", "WARNING")
-            return
+        # ── OGLink 버튼 발견 시: 팝업 방식 ──
+        if link_btn:
+            link_btn.click()
+            _log("[footer_link] OGLink 버튼 클릭")
+            random_delay(1.5, 2.5)
 
-        link_btn.click()
-        _log("[footer_link] 툴바 '링크' 버튼 클릭")
-        random_delay(1.5, 2.5)
+            # ── 3단계: 링크 다이얼로그 URL 입력 ──
+            link_input = _find_link_popup_input(driver)
 
-        # ── 3단계: 링크 다이얼로그 URL 입력 ──
-        link_input_selectors = [
-            'input[placeholder*="URL"]',
-            'input[placeholder*="url"]',
-            'input[placeholder*="링크"]',
-            'input[placeholder*="주소"]',
-            '.se-popup-link input',
-            '.se-popup input[type="text"]',
-            'input[type="url"]',
-        ]
-        link_input = None
-        for sel in link_input_selectors:
-            try:
-                link_input = driver.find_element(By.CSS_SELECTOR, sel)
-                _log(f"[footer_link] URL 입력 필드 발견: {sel}")
-                break
-            except NoSuchElementException:
-                continue
+            if not link_input:
+                _log("[footer_link] URL 입력 필드 미발견 → ESC 후 폴백", "WARNING")
+                try:
+                    ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                except Exception:
+                    pass
+                random_delay(0.5, 1)
+                _insert_footer_link_fallback(driver, footer_link)
+                return
 
-        # JS 폴백: 팝업 내 input 탐색
-        if not link_input:
-            try:
-                link_input = driver.execute_script("""
-                    var popup = document.querySelector(
-                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
-                    );
-                    if (popup) {
-                        var inp = popup.querySelector('input');
-                        if (inp) return inp;
-                    }
-                    var inputs = document.querySelectorAll('input[type="text"], input[type="url"], input:not([type])');
-                    for (var i = 0; i < inputs.length; i++) {
-                        var rect = inputs[i].getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0) return inputs[i];
-                    }
-                    return null;
-                """)
-                if link_input:
-                    _log("[footer_link] URL 입력 JS 폴백 발견")
-            except Exception:
-                pass
+            link_input.click()
+            link_input.clear()
+            random_delay(0.2, 0.3)
+            link_input.send_keys(footer_link)
+            _log(f"[footer_link] URL 입력 완료: {footer_link}")
+            random_delay(0.5, 1)
 
-        if not link_input:
-            _log("[footer_link] URL 입력 필드 미발견", "WARNING")
-            try:
-                ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-            except Exception:
-                pass
-            return
+            # ── 4단계: 돋보기(검색) 버튼 클릭 → OG 미리보기 로드 ──
+            _click_search_and_wait(driver, link_input)
 
-        link_input.click()
-        link_input.clear()
-        random_delay(0.2, 0.3)
-        link_input.send_keys(footer_link)
-        _log(f"[footer_link] URL 입력 완료: {footer_link}")
-        random_delay(0.5, 1)
-
-        # ── 4단계: 돋보기(검색) 버튼 클릭 → OG 미리보기 로드 ──
-        search_btn = None
-        search_selectors = [
-            '.se-popup-link button[class*="search"]',
-            '.se-popup-link button[class*="query"]',
-            '.se-popup button[class*="search"]',
-            'button.se-link-preview-btn',
-        ]
-        for sel in search_selectors:
-            try:
-                search_btn = driver.find_element(By.CSS_SELECTOR, sel)
-                break
-            except NoSuchElementException:
-                continue
-
-        # JS 폴백: 팝업 내 돋보기/아이콘 버튼 탐색
-        if not search_btn:
-            try:
-                search_btn = driver.execute_script("""
-                    var popup = document.querySelector(
-                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
-                    );
-                    if (!popup) return null;
-                    var btns = popup.querySelectorAll('button');
-                    for (var i = 0; i < btns.length; i++) {
-                        var text = (btns[i].textContent || '').trim();
-                        if (!text.includes('확인') && !text.includes('취소')
-                            && btns[i].querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
-                            return btns[i];
-                        }
-                    }
-                    for (var i = 0; i < btns.length; i++) {
-                        var text = (btns[i].textContent || '').trim();
-                        if (!text.includes('확인') && !text.includes('취소') && text.length < 3) {
-                            return btns[i];
-                        }
-                    }
-                    return null;
-                """)
-            except Exception:
-                pass
-
-        if search_btn:
-            search_btn.click()
-            _log("[footer_link] 돋보기 버튼 클릭 → OG 미리보기 대기")
-            random_delay(3, 5)
-
-            # OG 미리보기 로드 대기
-            try:
-                WebDriverWait(driver, 10).until(
-                    lambda d: d.find_element(By.CSS_SELECTOR,
-                        '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
-                        '.se-popup-link [class*="og"], .se-popup [class*="card"], '
-                        '.se-popup-link img, .se-popup img'
-                    )
-                )
-                _log("[footer_link] OG 미리보기 로드 완료")
-            except (TimeoutException, NoSuchElementException):
-                _log("[footer_link] OG 미리보기 로드 타임아웃 (계속 진행)", "WARNING")
-            random_delay(1, 2)
-        else:
-            # 돋보기 없으면 Enter로 대체
-            _log("[footer_link] 돋보기 버튼 미발견, Enter로 대체", "WARNING")
-            link_input.send_keys(Keys.ENTER)
-            random_delay(3, 5)
-
-        # ── 5단계: 확인 버튼 클릭 ──
-        confirm_btn = None
-        try:
-            confirm_btn = driver.execute_script("""
-                var popup = document.querySelector(
-                    '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
-                );
-                if (!popup) return null;
-                var btns = popup.querySelectorAll('button');
-                for (var i = 0; i < btns.length; i++) {
-                    var text = (btns[i].textContent || '').trim();
-                    if (text === '확인' || text.includes('확인')) return btns[i];
-                }
-                return null;
-            """)
-        except Exception:
-            pass
-
-        if confirm_btn:
-            try:
-                confirm_btn.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", confirm_btn)
-            random_delay(1, 2)
+            # ── 5단계: 확인 버튼 클릭 ──
+            _click_confirm_button(driver)
             _log(f"[footer_link] OGLink 삽입 완료: {footer_link}")
         else:
-            _log("[footer_link] 확인 버튼 미발견, Enter로 대체", "WARNING")
-            ActionChains(driver).send_keys(Keys.ENTER).perform()
-            random_delay(1, 2)
+            # ── OGLink 버튼 미발견 → 폴백: URL 직접 입력 ──
+            _log("[footer_link] OGLink 버튼 미발견 → URL 직접 입력 폴백", "WARNING")
+            _insert_footer_link_fallback(driver, footer_link)
 
     except Exception as e:
         _log(f"[footer_link] 링크 삽입 실패: {e}", "WARNING")
@@ -1210,6 +1094,183 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
             ActionChains(driver).send_keys(Keys.ESCAPE).perform()
         except Exception:
             pass
+
+
+def _find_link_popup_input(driver):
+    """OGLink 팝업에서 URL 입력 필드 탐색"""
+    link_input_selectors = [
+        'input[placeholder*="URL"]',
+        'input[placeholder*="url"]',
+        'input[placeholder*="링크"]',
+        'input[placeholder*="주소"]',
+        '.se-popup-link input',
+        '.se-popup input[type="text"]',
+        'input[type="url"]',
+    ]
+    for sel in link_input_selectors:
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, sel)
+            _log(f"[footer_link] URL 입력 필드 발견: {sel}")
+            return el
+        except NoSuchElementException:
+            continue
+
+    # JS 폴백: 팝업 내 input 탐색
+    try:
+        el = driver.execute_script("""
+            var popup = document.querySelector(
+                '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+            );
+            if (popup) {
+                var inp = popup.querySelector('input');
+                if (inp) return inp;
+            }
+            var inputs = document.querySelectorAll('input[type="text"], input[type="url"], input:not([type])');
+            for (var i = 0; i < inputs.length; i++) {
+                var rect = inputs[i].getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) return inputs[i];
+            }
+            return null;
+        """)
+        if el:
+            _log("[footer_link] URL 입력 JS 폴백 발견")
+            return el
+    except Exception:
+        pass
+    return None
+
+
+def _click_search_and_wait(driver, link_input):
+    """OGLink 팝업에서 돋보기 버튼 클릭 + OG 미리보기 대기"""
+    search_btn = None
+    search_selectors = [
+        '.se-popup-link button[class*="search"]',
+        '.se-popup-link button[class*="query"]',
+        '.se-popup button[class*="search"]',
+        'button.se-link-preview-btn',
+    ]
+    for sel in search_selectors:
+        try:
+            search_btn = driver.find_element(By.CSS_SELECTOR, sel)
+            break
+        except NoSuchElementException:
+            continue
+
+    if not search_btn:
+        try:
+            search_btn = driver.execute_script("""
+                var popup = document.querySelector(
+                    '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                );
+                if (!popup) return null;
+                var btns = popup.querySelectorAll('button');
+                for (var i = 0; i < btns.length; i++) {
+                    var text = (btns[i].textContent || '').trim();
+                    if (!text.includes('확인') && !text.includes('취소')
+                        && btns[i].querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
+                        return btns[i];
+                    }
+                }
+                for (var i = 0; i < btns.length; i++) {
+                    var text = (btns[i].textContent || '').trim();
+                    if (!text.includes('확인') && !text.includes('취소') && text.length < 3) {
+                        return btns[i];
+                    }
+                }
+                return null;
+            """)
+        except Exception:
+            pass
+
+    if search_btn:
+        search_btn.click()
+        _log("[footer_link] 돋보기 버튼 클릭 → OG 미리보기 대기")
+        random_delay(3, 5)
+
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: d.find_element(By.CSS_SELECTOR,
+                    '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
+                    '.se-popup-link [class*="og"], .se-popup [class*="card"], '
+                    '.se-popup-link img, .se-popup img'
+                )
+            )
+            _log("[footer_link] OG 미리보기 로드 완료")
+        except (TimeoutException, NoSuchElementException):
+            _log("[footer_link] OG 미리보기 로드 타임아웃 (계속 진행)", "WARNING")
+        random_delay(1, 2)
+    else:
+        _log("[footer_link] 돋보기 버튼 미발견, Enter로 대체", "WARNING")
+        link_input.send_keys(Keys.ENTER)
+        random_delay(3, 5)
+
+
+def _click_confirm_button(driver):
+    """OGLink 팝업에서 확인 버튼 클릭"""
+    confirm_btn = None
+    try:
+        confirm_btn = driver.execute_script("""
+            var popup = document.querySelector(
+                '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+            );
+            if (!popup) return null;
+            var btns = popup.querySelectorAll('button');
+            for (var i = 0; i < btns.length; i++) {
+                var text = (btns[i].textContent || '').trim();
+                if (text === '확인' || text.includes('확인')) return btns[i];
+            }
+            return null;
+        """)
+    except Exception:
+        pass
+
+    if confirm_btn:
+        try:
+            confirm_btn.click()
+        except Exception:
+            driver.execute_script("arguments[0].click();", confirm_btn)
+        random_delay(1, 2)
+    else:
+        _log("[footer_link] 확인 버튼 미발견, Enter로 대체", "WARNING")
+        ActionChains(driver).send_keys(Keys.ENTER).perform()
+        random_delay(1, 2)
+
+
+def _insert_footer_link_fallback(driver, footer_link: str):
+    """OGLink 버튼 미발견 시 폴백: URL을 에디터 본문에 직접 입력.
+
+    SE ONE 에디터는 본문에 URL을 입력하고 Enter를 치면
+    자동으로 OGLink 카드로 변환해주는 기능이 있음.
+    """
+    _log(f"[footer_link] 폴백: URL 직접 입력 방식 시도: {footer_link}")
+    try:
+        # 커서가 본문 끝에 있는지 다시 확인
+        ActionChains(driver).key_down(Keys.CONTROL).send_keys(Keys.END).key_up(Keys.CONTROL).perform()
+        random_delay(0.3, 0.5)
+        ActionChains(driver).send_keys(Keys.ENTER).perform()
+        random_delay(0.3, 0.5)
+
+        # URL 직접 타이핑
+        fast_type(driver, footer_link)
+        random_delay(0.5, 1)
+
+        # Enter로 OGLink 자동 변환 트리거
+        ActionChains(driver).send_keys(Keys.ENTER).perform()
+        random_delay(3, 5)
+
+        # OGLink 카드가 생성되었는지 확인
+        og_created = driver.execute_script("""
+            var ogCards = document.querySelectorAll(
+                '.se-oglink, [class*="oglink"], [class*="og_link"], [data-name="oglink"]'
+            );
+            return ogCards.length;
+        """)
+        if og_created and og_created > 0:
+            _log(f"[footer_link] 폴백 성공: OGLink 카드 {og_created}개 발견")
+        else:
+            _log("[footer_link] 폴백: OGLink 자동 변환 미확인 (URL은 텍스트로 삽입됨)", "WARNING")
+    except Exception as e:
+        _log(f"[footer_link] 폴백 실패: {e}", "WARNING")
 
 
 # ─── CTA 테이블 삽입 ─────────────────────────────────────

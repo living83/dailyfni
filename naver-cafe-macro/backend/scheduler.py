@@ -486,7 +486,7 @@ async def execute_batch_job():
         cafe_cfg = _get_cafe_config(cafe, global_config)
         daily_limit = cafe_cfg.get("daily_post_limit", 3)
         eligible = _get_eligible_accounts(global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
-        random.shuffle(eligible)
+        # 계정 순차 발행 (DB 등록 순서대로)
         cafe_task_count = 0
         for acc in eligible:
             if cafe_task_count >= max_accounts:
@@ -775,7 +775,7 @@ async def run_once_now():
             _slog(f"적격 없음 → 활성 계정 폴백: {len(eligible)}개")
 
         if eligible:
-            account = random.choice(eligible)
+            account = eligible[0]  # 순차 발행: DB 등록 순서대로 (랜덤 X)
             _slog(f"선택 계정: {account['username']} (id={account['id']})")
             await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
             await _publish_single(account, config, skip_comment=True)
