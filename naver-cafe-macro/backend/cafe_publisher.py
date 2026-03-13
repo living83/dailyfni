@@ -602,6 +602,32 @@ def get_login_cookies(driver: webdriver.Chrome) -> str:
     return json.dumps(cookies, ensure_ascii=False)
 
 
+def _ensure_cafe_session(driver: webdriver.Chrome) -> bool:
+    """
+    cafe.naver.com 도메인에 세션을 확립한다.
+    nid.naver.com 로그인 후 cafe.naver.com에 바로 접근하면 세션이 동기화되지
+    않을 수 있으므로, 명시적으로 카페 메인을 방문하여 세션을 생성한다.
+    """
+    try:
+        _log("[cafe_session] cafe.naver.com 세션 확립 시도...")
+        driver.get("https://cafe.naver.com")
+        random_delay(2, 3)
+
+        current_url = driver.current_url
+        _log(f"[cafe_session] 카페 메인 URL: {current_url}")
+
+        # 로그인 페이지로 리다이렉트되면 세션 미확립
+        if "nidlogin" in current_url or "nid.naver.com" in current_url:
+            _log("[cafe_session] 카페 접근 시 로그인 리다이렉트 발생 — 세션 미확립", "WARNING")
+            return False
+
+        _log("[cafe_session] cafe.naver.com 세션 확립 완료")
+        return True
+    except Exception as e:
+        _log(f"[cafe_session] 세션 확립 중 오류: {e}", "WARNING")
+        return False
+
+
 # ─── 카페 글쓰기 ──────────────────────────────────────────
 
 def _extract_cafe_id(cafe_url: str) -> str:
@@ -680,9 +706,9 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
             if numeric_id and str(numeric_id).isdigit():
                 return _cache_and_return(str(numeric_id), "Naver API")
             else:
-                logger.warning(f"Naver API 응답에서 숫자 ID 없음: {numeric_id}")
+                logger.warning(f"[방법0] Naver API 응답에서 숫자 ID 없음: {numeric_id} (현재 페이지: {driver.current_url})")
         except Exception as e:
-            logger.warning(f"Naver API 조회 실패: {e}")
+            logger.warning(f"[방법0] Naver API 조회 실패: {e} (현재 페이지: {driver.current_url})")
 
         # 카페 메인 페이지 방문
         driver.get(f"https://cafe.naver.com/{cafe_alias}")
@@ -697,12 +723,20 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
             logger.warning("페이지 로드 타임아웃")
         random_delay(2, 3)
 
-        logger.info(f"현재 URL: {driver.current_url}")
+        current_url = driver.current_url
+        logger.info(f"현재 URL: {current_url}")
+
+        # 로그인 페이지로 리다이렉트 감지 — 세션 미확립 상태
+        if "nidlogin" in current_url or "nid.naver.com" in current_url:
+            logger.error(f"카페 방문 시 로그인 페이지로 리다이렉트됨 — cafe.naver.com 세션 미확립: {current_url}")
+            return ""
 
         # 방법 1: URL에서 /cafes/숫자ID 추출
-        match = re.search(r'/cafes/(\d+)', driver.current_url)
+        match = re.search(r'/cafes/(\d+)', current_url)
         if match:
             return _cache_and_return(match.group(1), "URL 리다이렉트")
+        else:
+            logger.warning(f"[방법1] URL에서 /cafes/숫자ID 미발견: {current_url}")
 
         # 방법 2: 페이지 소스에서 추출
         page_source = driver.page_source
@@ -719,6 +753,8 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
             match = re.search(pattern, page_source, re.IGNORECASE)
             if match:
                 return _cache_and_return(match.group(1), f"소스 패턴 {pattern}")
+
+        logger.warning(f"[방법2] 페이지 소스에서 카페 ID 패턴 미발견 (소스 길이: {len(page_source)})")
 
         # 방법 3: JavaScript로 다양한 방법 시도
         try:
@@ -749,8 +785,10 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
             """)
             if numeric_id:
                 return _cache_and_return(str(numeric_id), "JS DOM")
+            else:
+                logger.warning("[방법3] JS DOM에서 카페 ID 미발견")
         except Exception as e:
-            logger.warning(f"JS DOM 추출 실패: {e}")
+            logger.warning(f"[방법3] JS DOM 추출 실패: {e}")
 
         # 방법 4: 동기 XHR로 Naver 내부 API 호출 (브라우저 쿠키 자동 포함)
         try:
@@ -787,8 +825,10 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
             """, cafe_alias)
             if numeric_id:
                 return _cache_and_return(str(numeric_id), "XHR API")
+            else:
+                logger.warning("[방법4] XHR API에서 카페 ID 미발견")
         except Exception as e:
-            logger.warning(f"XHR API 추출 실패: {e}")
+            logger.warning(f"[방법4] XHR API 추출 실패: {e}")
 
         logger.error(f"========== 숫자 카페 ID 추출 실패: {cafe_alias} ==========")
         logger.error(f"최종 URL: {driver.current_url}")
@@ -2071,6 +2111,11 @@ def publish_to_cafe(
         # 쿠키 저장
         result["cookies"] = get_login_cookies(driver)
 
+        # 1.5. cafe.naver.com 세션 확립 (로그인 후 카페 도메인 세션 동기화)
+        if on_progress:
+            on_progress("navigate", "카페 세션 확립 중...")
+        _ensure_cafe_session(driver)
+
         # 2. 카페 글쓰기 페이지 이동
         if on_progress:
             on_progress("navigate", f"카페 이동 중... ({cafe_url})")
@@ -2087,8 +2132,10 @@ def publish_to_cafe(
                 driver, account["username"], account["password_enc"]
             )
             if re_logged_in:
-                _log("재로그인 성공 — 글쓰기 페이지 재시도")
+                _log("재로그인 성공 — 카페 세션 확립 후 재시도")
                 result["cookies"] = get_login_cookies(driver)
+                # 재로그인 후에도 cafe.naver.com 세션 확립 필수
+                _ensure_cafe_session(driver)
                 if on_progress:
                     on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
                 if not navigate_to_write_page(driver, cafe_url, menu_id):

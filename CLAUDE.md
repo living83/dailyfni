@@ -47,6 +47,17 @@
   3. `main.py` startup: uvicorn reload 후 로거 핸들러 재설정 보장
 - **교훈**: CSS 모듈 해시 클래스에 의존하지 말 것, JS value 할당 시 반드시 input 이벤트 발행
 
+### 카페 세션 미동기화 (2026-03-13)
+- **증상**: ID/PW 로그인 성공 후 바로 "세션 만료, 재로그인 중..." → 재로그인 후에도 글쓰기 페이지 이동 실패
+- **원인**: `nid.naver.com` 로그인 후 `cafe.naver.com` 도메인에 세션이 즉시 동기화되지 않음
+  - `_resolve_numeric_cafe_id`가 `cafe.naver.com/{alias}`를 방문하면 세션 미확립으로 실패
+  - 숫자 ID 변환 실패를 "세션 만료"로 오진 → 재로그인해도 같은 문제 반복
+- **수정**:
+  1. `_ensure_cafe_session()` 추가: 로그인 후 `cafe.naver.com` 메인을 명시적으로 방문하여 세션 확립
+  2. `publish_to_cafe`: 로그인 직후 + 재로그인 직후 모두 `_ensure_cafe_session()` 호출
+  3. `_resolve_numeric_cafe_id`: 카페 방문 시 로그인 리다이렉트 조기 감지 + 방법별 실패 로그 강화
+- **교훈**: nid.naver.com 로그인 ≠ cafe.naver.com 세션. 카페 조작 전 반드시 카페 도메인 세션 확립 필요
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.
