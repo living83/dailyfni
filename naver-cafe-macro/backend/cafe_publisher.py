@@ -23,6 +23,8 @@ import random
 import logging
 import tempfile
 import traceback
+import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Optional
 
@@ -677,7 +679,29 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         return numeric_id
 
     try:
-        # 방법 0 (최우선): Naver API로 숫자 ID 직접 조회 (페이지 이동 불필요)
+        # 방법 -1 (최최우선): Python HTTP 요청으로 숫자 ID 조회 (브라우저 무관, CORS 무관)
+        for api_url in [
+            f"https://apis.naver.com/cafe-web/cafe2/CafeGateInfo.json?cafeUrl={cafe_alias}",
+            f"https://apis.naver.com/cafe-web/cafe-mobile/CafeMobileInfo.json?cafeUrl={cafe_alias}",
+        ]:
+            try:
+                req = urllib.request.Request(api_url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://cafe.naver.com/",
+                })
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    cafe_id_val = (
+                        data.get("message", {}).get("result", {}).get("cafeId")
+                        or data.get("message", {}).get("result", {}).get("cafe", {}).get("id")
+                    )
+                    if cafe_id_val and str(cafe_id_val).isdigit():
+                        return _cache_and_return(str(cafe_id_val), f"Python HTTP ({api_url.split('/')[-1].split('?')[0]})")
+                    logger.warning(f"[방법-1] API 응답에 cafeId 없음: {api_url} → {data.get('message', {}).get('result', {})}")
+            except (urllib.error.URLError, json.JSONDecodeError, Exception) as e:
+                logger.warning(f"[방법-1] Python HTTP 실패: {api_url} → {e}")
+
+        # 방법 0: 브라우저 XHR로 Naver API 직접 조회
         try:
             numeric_id = driver.execute_script("""
                 var alias = arguments[0];
@@ -704,7 +728,7 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
                 return null;
             """, cafe_alias)
             if numeric_id and str(numeric_id).isdigit():
-                return _cache_and_return(str(numeric_id), "Naver API")
+                return _cache_and_return(str(numeric_id), "Naver API (XHR)")
             else:
                 logger.warning(f"[방법0] Naver API 응답에서 숫자 ID 없음: {numeric_id} (현재 페이지: {driver.current_url})")
         except Exception as e:
