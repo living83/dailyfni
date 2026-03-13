@@ -30,24 +30,57 @@ _PROXY_CHECKED_NO_PROXY = {"__checked__": True}
 
 async def _get_proxy_for_account(account_id: int) -> dict | None:
     """계정 ID에 매핑된 프록시 설정을 반환. DB 우선, .env 폴백. 없으면 None."""
-    # 1) DB에서 암호화된 프록시 조회
-    #    이벤트 루프 불일치 시 DB 접근 건너뜀 (ProactorEventLoop 호환)
+    # 1) DB에서 프록시 조회 (풀 대신 일회성 연결 → 이벤트 루프 불일치 방지)
     try:
-        from database import _pool as db_pool
-        current_loop = asyncio.get_running_loop()
-        if db_pool is not None and hasattr(db_pool, '_loop') and db_pool._loop is not current_loop:
-            logger.debug(f"DB 풀 루프 불일치 → DB 프록시 조회 건너뜀 (계정 {account_id})")
-        else:
-            from database import get_account_proxy
-            db_proxy = await get_account_proxy(account_id)
-            if db_proxy:
-                logger.info(f"프록시 설정(DB): 계정 {account_id} → {db_proxy['server']}")
-                return db_proxy
+        db_proxy = await _query_proxy_direct(account_id)
+        if db_proxy:
+            logger.info(f"프록시 설정(DB): 계정 {account_id} → {db_proxy['server']}")
+            return db_proxy
     except Exception as e:
         logger.warning(f"DB 프록시 조회 실패 (계정 {account_id}): {e}")
 
     # 2) .env 환경변수 폴백
     return _get_proxy_from_env(account_id)
+
+
+async def _query_proxy_direct(account_id: int) -> dict | None:
+    """풀을 우회하여 일회성 DB 연결로 프록시 조회 (이벤트 루프 안전)"""
+    import aiomysql
+    from database import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DB
+    conn = None
+    try:
+        conn = await aiomysql.connect(
+            host=MYSQL_HOST, port=MYSQL_PORT, user=MYSQL_USER,
+            password=MYSQL_PASSWORD, db=MYSQL_DB,
+            charset="utf8mb4", cursorclass=aiomysql.DictCursor,
+            connect_timeout=5,
+        )
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT proxy_server, proxy_username, proxy_password "
+                "FROM accounts WHERE id = %s",
+                (account_id,),
+            )
+            row = await cur.fetchone()
+            if not row or not row.get("proxy_server"):
+                return None
+            from crypto import decrypt
+            try:
+                server = decrypt(row["proxy_server"])
+            except Exception:
+                server = row["proxy_server"]
+            try:
+                username = decrypt(row["proxy_username"]) if row.get("proxy_username") else ""
+            except Exception:
+                username = row.get("proxy_username", "")
+            try:
+                password = decrypt(row["proxy_password"]) if row.get("proxy_password") else ""
+            except Exception:
+                password = row.get("proxy_password", "")
+            return {"server": server, "username": username, "password": password}
+    finally:
+        if conn:
+            conn.close()
 
 
 def _get_proxy_from_env(account_id: int) -> dict | None:
