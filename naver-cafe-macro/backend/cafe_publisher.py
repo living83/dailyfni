@@ -28,6 +28,7 @@ import urllib.error
 from pathlib import Path
 from typing import Optional
 
+import undetected_chromedriver as uc
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -245,28 +246,25 @@ chrome.webRequest.onAuthRequired.addListener(
     return str(ext_path)
 
 
-def create_driver(headless: bool = True, account_id: int = None, proxy_address: str = None) -> webdriver.Chrome:
-    """Chrome WebDriver 생성 (세션마다 랜덤 User-Agent, 계정별 독립 프로파일, 프록시 지원)"""
+def create_driver(headless: bool = True, account_id: int = None, proxy_address: str = None) -> uc.Chrome:
+    """Chrome WebDriver 생성 (undetected-chromedriver 기반, 봇 탐지 우회)
+
+    undetected-chromedriver는:
+    - ChromeDriver 바이너리 시그니처($cdc_ 등)를 자동 패치
+    - navigator.webdriver 자동 마스킹
+    - 자동화 탐지 플래그 자동 제거
+    """
     ua = random.choice(_USER_AGENTS)
     logger.debug(f"User-Agent: {ua}")
 
     proxy = _parse_proxy_url(proxy_address) if proxy_address else None
     has_proxy_auth = proxy and proxy["username"] and proxy["password"]
 
-    options = Options()
-    # 인증 프록시 + headless는 확장 프로그램 비호환 → headless 비활성화하고 window 숨김
-    if headless and not has_proxy_auth:
-        options.add_argument("--headless=new")
-    elif headless and has_proxy_auth:
-        # MV3 확장은 headless에서 동작하지 않음 → 창 숨김으로 대체
-        options.add_argument("--window-position=-9999,-9999")
+    options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
     options.add_argument(f"--user-agent={ua}")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
 
     # 프록시 설정
     if proxy and proxy["host"]:
@@ -275,6 +273,11 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
             ext_path = _create_proxy_auth_extension(proxy)
             options.add_extension(ext_path)
             logger.info(f"인증 프록시 확장 적용: {proxy['host']}:{proxy['port']} (user={proxy['username']})")
+            # 확장 프로그램은 headless와 호환 불가 → headless 강제 비활성화
+            if headless:
+                headless = False
+                options.add_argument("--window-position=-9999,-9999")
+                _log("인증 프록시 사용: headless 대신 창 숨김 모드")
         else:
             # 인증 없는 프록시: --proxy-server 플래그
             proxy_server = f"{proxy['scheme']}://{proxy['host']}"
@@ -284,23 +287,25 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
             logger.info(f"프록시 적용: {proxy_server}")
 
     # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
+    user_data_dir = None
     if account_id is not None:
         profile_dir = _PROFILE_BASE / f"account_{account_id}"
         profile_dir.mkdir(parents=True, exist_ok=True)
-        options.add_argument(f"--user-data-dir={profile_dir}")
+        user_data_dir = str(profile_dir)
         logger.debug(f"Chrome 프로파일: {profile_dir}")
 
-    driver = webdriver.Chrome(options=options)
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
+    driver = uc.Chrome(
+        options=options,
+        headless=headless,
+        user_data_dir=user_data_dir,
+        use_subprocess=True,  # Windows 호환성 향상
     )
 
     # Chrome/ChromeDriver 버전 로그
     caps = driver.capabilities
     chrome_ver = caps.get("browserVersion", "?")
     driver_ver = caps.get("chrome", {}).get("chromedriverVersion", "?")
-    _log(f"Chrome={chrome_ver}, ChromeDriver={driver_ver}, headless={headless}")
+    _log(f"[UC] Chrome={chrome_ver}, ChromeDriver={driver_ver}, headless={headless}")
 
     return driver
 
