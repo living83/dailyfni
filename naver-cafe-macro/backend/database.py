@@ -149,7 +149,8 @@ def init_db():
             daily_shift_minutes INTEGER DEFAULT 30,
             daily_post_limit INTEGER DEFAULT 3,
             daily_comment_limit INTEGER DEFAULT 10,
-            footer_link TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat'
+            footer_link TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat',
+            footer_link_text TEXT DEFAULT '카카오톡 상담하기'
         );
     """)
 
@@ -165,10 +166,13 @@ def init_db():
         ("cafe_boards", "cafe_group_id", "NULL"),
         ("accounts", "proxy_address", "TEXT_NULL"),
         ("schedule_config", "footer_link", "TEXT_DEFAULT"),
+        ("schedule_config", "footer_link_text", "TEXT_DEFAULT_LINK_TEXT"),
     ]:
         try:
             if default == "TEXT_DEFAULT":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat'")
+            elif default == "TEXT_DEFAULT_LINK_TEXT":
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT '카카오톡 상담하기'")
             elif default == "TEXT_NULL":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
             elif default == "NULL":
@@ -738,7 +742,7 @@ def update_schedule_config(**kwargs):
         "comment_enabled", "comments_per_post", "comment_delay_min", "comment_delay_max",
         "comment_order", "exclude_author", "cross_publish", "account_interval_hours",
         "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes",
-        "daily_post_limit", "daily_comment_limit", "footer_link"
+        "daily_post_limit", "daily_comment_limit", "footer_link", "footer_link_text"
     ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:

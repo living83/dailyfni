@@ -145,6 +145,7 @@ class ScheduleConfigUpdate(BaseModel):
     daily_post_limit: Optional[int] = None
     daily_comment_limit: Optional[int] = None
     footer_link: Optional[str] = None
+    footer_link_text: Optional[str] = None
 
 
 # ─── Accounts API ──────────────────────────────────────────

@@ -992,16 +992,17 @@ def _restore_editor_focus(driver):
 
 # ─── 하단 링크 (OGLink 카드) 삽입 ─────────────────────────
 
-def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
-    """SE ONE 에디터에 하단 링크를 OGLink 카드로 삽입.
+def _insert_footer_link(driver: webdriver.Chrome, footer_link: str, footer_link_text: str = ""):
+    """SE ONE 에디터에 하단 링크를 삽입.
 
     1차: 툴바 'oglink' 버튼 → URL 입력 → 돋보기(검색) → 확인
-    2차 (폴백): 에디터 본문에 URL 직접 입력 → SE ONE 자동 OGLink 변환
+    2차 (폴백): 하이퍼링크 텍스트로 삽입 (OGLink 실패 시에도 클릭 가능)
     """
     if not footer_link:
         return
 
-    _log(f"[footer_link] OGLink 삽입 시작: {footer_link}")
+    link_text = footer_link_text or "카카오톡 상담하기"
+    _log(f"[footer_link] 링크 삽입 시작: {footer_link} (텍스트: {link_text})")
 
     try:
         # ── 0단계: 커서를 에디터 본문 맨 끝으로 이동 ──
@@ -1052,6 +1053,7 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
                 pass
 
         # ── OGLink 버튼 발견 시: 팝업 방식 ──
+        oglink_success = False
         if link_btn:
             link_btn.click()
             _log("[footer_link] OGLink 버튼 클릭")
@@ -1061,32 +1063,43 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
             link_input = _find_link_popup_input(driver)
 
             if not link_input:
-                _log("[footer_link] URL 입력 필드 미발견 → ESC 후 폴백", "WARNING")
+                _log("[footer_link] URL 입력 필드 미발견 → ESC 후 하이퍼링크 폴백", "WARNING")
                 try:
                     ActionChains(driver).send_keys(Keys.ESCAPE).perform()
                 except Exception:
                     pass
                 random_delay(0.5, 1)
-                _insert_footer_link_fallback(driver, footer_link)
-                return
+            else:
+                link_input.click()
+                link_input.clear()
+                random_delay(0.2, 0.3)
+                link_input.send_keys(footer_link)
+                _log(f"[footer_link] URL 입력 완료: {footer_link}")
+                random_delay(0.5, 1)
 
-            link_input.click()
-            link_input.clear()
-            random_delay(0.2, 0.3)
-            link_input.send_keys(footer_link)
-            _log(f"[footer_link] URL 입력 완료: {footer_link}")
-            random_delay(0.5, 1)
+                # ── 4단계: 돋보기(검색) 버튼 클릭 → OG 미리보기 로드 ──
+                _click_search_and_wait(driver, link_input)
 
-            # ── 4단계: 돋보기(검색) 버튼 클릭 → OG 미리보기 로드 ──
-            _click_search_and_wait(driver, link_input)
+                # ── 5단계: 확인 버튼 클릭 후 OGLink 카드 생성 확인 ──
+                _click_confirm_button(driver)
+                random_delay(1, 2)
 
-            # ── 5단계: 확인 버튼 클릭 ──
-            _click_confirm_button(driver)
-            _log(f"[footer_link] OGLink 삽입 완료: {footer_link}")
-        else:
-            # ── OGLink 버튼 미발견 → 폴백: URL 직접 입력 ──
-            _log("[footer_link] OGLink 버튼 미발견 → URL 직접 입력 폴백", "WARNING")
-            _insert_footer_link_fallback(driver, footer_link)
+                # OGLink 카드가 실제로 생성되었는지 확인
+                og_count = driver.execute_script("""
+                    return document.querySelectorAll(
+                        '.se-oglink, [class*="oglink"], [data-name="oglink"][class*="component"]'
+                    ).length;
+                """)
+                if og_count and og_count > 0:
+                    oglink_success = True
+                    _log(f"[footer_link] OGLink 삽입 성공: {footer_link}")
+                else:
+                    _log("[footer_link] OGLink 카드 미생성 (OG 메타데이터 fetch 실패 추정) → 하이퍼링크 폴백", "WARNING")
+
+        if not oglink_success:
+            # ── OGLink 실패/미발견 → 하이퍼링크 텍스트 삽입 ──
+            _log("[footer_link] 하이퍼링크 텍스트 방식으로 삽입 시도", "WARNING")
+            _insert_footer_link_as_hyperlink(driver, footer_link, link_text)
 
     except Exception as e:
         _log(f"[footer_link] 링크 삽입 실패: {e}", "WARNING")
@@ -1094,6 +1107,11 @@ def _insert_footer_link(driver: webdriver.Chrome, footer_link: str):
             ActionChains(driver).send_keys(Keys.ESCAPE).perform()
         except Exception:
             pass
+        # 최후 폴백: 하이퍼링크 시도
+        try:
+            _insert_footer_link_as_hyperlink(driver, footer_link, link_text)
+        except Exception as e2:
+            _log(f"[footer_link] 하이퍼링크 폴백도 실패: {e2}", "WARNING")
 
 
 def _find_link_popup_input(driver):
@@ -1236,41 +1254,140 @@ def _click_confirm_button(driver):
         random_delay(1, 2)
 
 
-def _insert_footer_link_fallback(driver, footer_link: str):
-    """OGLink 버튼 미발견 시 폴백: URL을 에디터 본문에 직접 입력.
+def _insert_footer_link_as_hyperlink(driver, footer_link: str, link_text: str = "카카오톡 상담하기"):
+    """하이퍼링크 방식으로 텍스트에 URL을 걸어 삽입.
 
-    SE ONE 에디터는 본문에 URL을 입력하고 Enter를 치면
-    자동으로 OGLink 카드로 변환해주는 기능이 있음.
+    OGLink가 실패하는 경우(카카오 등 OG 메타데이터 차단 사이트)에도
+    클릭 가능한 링크를 삽입할 수 있음.
+
+    방식: 텍스트 입력 → 전체 선택 → 하이퍼링크 버튼 → URL 입력 → 확인
     """
-    _log(f"[footer_link] 폴백: URL 직접 입력 방식 시도: {footer_link}")
+    _log(f"[footer_link] 하이퍼링크 삽입 시도: {link_text} → {footer_link}")
     try:
-        # 커서가 본문 끝에 있는지 다시 확인
+        # 커서를 본문 끝으로
         ActionChains(driver).key_down(Keys.CONTROL).send_keys(Keys.END).key_up(Keys.CONTROL).perform()
         random_delay(0.3, 0.5)
         ActionChains(driver).send_keys(Keys.ENTER).perform()
         random_delay(0.3, 0.5)
 
-        # URL 직접 타이핑
-        fast_type(driver, footer_link)
-        random_delay(0.5, 1)
+        # 링크 텍스트 입력
+        fast_type(driver, link_text)
+        random_delay(0.3, 0.5)
 
-        # Enter로 OGLink 자동 변환 트리거
-        ActionChains(driver).send_keys(Keys.ENTER).perform()
-        random_delay(3, 5)
+        # 방금 입력한 텍스트만 선택 (Shift+Home)
+        ActionChains(driver).key_down(Keys.SHIFT).send_keys(Keys.HOME).key_up(Keys.SHIFT).perform()
+        random_delay(0.3, 0.5)
 
-        # OGLink 카드가 생성되었는지 확인
-        og_created = driver.execute_script("""
-            var ogCards = document.querySelectorAll(
-                '.se-oglink, [class*="oglink"], [class*="og_link"], [data-name="oglink"]'
-            );
-            return ogCards.length;
-        """)
-        if og_created and og_created > 0:
-            _log(f"[footer_link] 폴백 성공: OGLink 카드 {og_created}개 발견")
+        # 하이퍼링크 버튼 찾기 (Ctrl+K 단축키 또는 toolbar 버튼)
+        hyperlink_opened = False
+
+        # 방법 1: Ctrl+K 단축키 (SE ONE 에디터 표준)
+        try:
+            ActionChains(driver).key_down(Keys.CONTROL).send_keys('k').key_up(Keys.CONTROL).perform()
+            random_delay(1, 1.5)
+            # 팝업이 열렸는지 확인
+            popup_input = _find_hyperlink_popup_input(driver)
+            if popup_input:
+                hyperlink_opened = True
+                _log("[footer_link] Ctrl+K로 하이퍼링크 팝업 열림")
+        except Exception:
+            pass
+
+        # 방법 2: 툴바 hyperlink 버튼 클릭
+        if not hyperlink_opened:
+            try:
+                hl_btn = driver.execute_script("""
+                    var btns = document.querySelectorAll(
+                        '.se-toolbar button, [class*="toolbar"] button'
+                    );
+                    for (var i = 0; i < btns.length; i++) {
+                        var name = (btns[i].dataset.name || '').toLowerCase();
+                        if (name === 'hyperlink' || name === 'link') return btns[i];
+                    }
+                    for (var i = 0; i < btns.length; i++) {
+                        var label = (btns[i].getAttribute('aria-label') || '');
+                        if (label.includes('하이퍼') || label.includes('hyperlink')) {
+                            return btns[i];
+                        }
+                    }
+                    return null;
+                """)
+                if hl_btn:
+                    hl_btn.click()
+                    _log("[footer_link] 하이퍼링크 버튼 클릭")
+                    random_delay(1, 1.5)
+                    popup_input = _find_hyperlink_popup_input(driver)
+                    if popup_input:
+                        hyperlink_opened = True
+            except Exception:
+                pass
+
+        if hyperlink_opened and popup_input:
+            # URL 입력
+            popup_input.click()
+            popup_input.clear()
+            random_delay(0.2, 0.3)
+            popup_input.send_keys(footer_link)
+            _log(f"[footer_link] 하이퍼링크 URL 입력: {footer_link}")
+            random_delay(0.5, 1)
+
+            # 확인 버튼 클릭
+            _click_confirm_button(driver)
+            _log(f"[footer_link] 하이퍼링크 삽입 완료: '{link_text}' → {footer_link}")
         else:
-            _log("[footer_link] 폴백: OGLink 자동 변환 미확인 (URL은 텍스트로 삽입됨)", "WARNING")
+            # 최후 폴백: URL을 텍스트로라도 남김
+            _log("[footer_link] 하이퍼링크 팝업 실패 → URL 텍스트로 삽입", "WARNING")
+            # 선택 해제
+            ActionChains(driver).send_keys(Keys.END).perform()
+            random_delay(0.2, 0.3)
+            ActionChains(driver).send_keys(Keys.ENTER).perform()
+            fast_type(driver, footer_link)
+            random_delay(0.3, 0.5)
+
     except Exception as e:
-        _log(f"[footer_link] 폴백 실패: {e}", "WARNING")
+        _log(f"[footer_link] 하이퍼링크 삽입 실패: {e}", "WARNING")
+
+
+def _find_hyperlink_popup_input(driver):
+    """하이퍼링크 팝업에서 URL 입력 필드 탐색"""
+    selectors = [
+        '.se-popup-hyperlink input[type="text"]',
+        '.se-popup-hyperlink input',
+        '.se-popup input[placeholder*="URL"]',
+        '.se-popup input[placeholder*="url"]',
+        '.se-popup input[placeholder*="링크"]',
+        '.se-popup input[placeholder*="주소"]',
+        '.se-popup input[placeholder*="http"]',
+    ]
+    for sel in selectors:
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, sel)
+            if el.is_displayed():
+                _log(f"[footer_link] 하이퍼링크 입력 필드 발견: {sel}")
+                return el
+        except NoSuchElementException:
+            continue
+
+    # JS 폴백
+    try:
+        el = driver.execute_script("""
+            var popups = document.querySelectorAll(
+                '.se-popup-hyperlink, .se-popup, [class*="hyperlink"], [class*="link_popup"]'
+            );
+            for (var p = 0; p < popups.length; p++) {
+                var popup = popups[p];
+                if (popup.offsetWidth === 0) continue;
+                var inp = popup.querySelector('input[type="text"], input[type="url"], input:not([type])');
+                if (inp && inp.offsetWidth > 0) return inp;
+            }
+            return null;
+        """)
+        if el:
+            _log("[footer_link] 하이퍼링크 입력 JS 폴백 발견")
+            return el
+    except Exception:
+        pass
+    return None
 
 
 # ─── CTA 테이블 삽입 ─────────────────────────────────────
@@ -1929,7 +2046,8 @@ def write_post(
     structured_content: Optional[dict] = None,
     menu_id: Optional[str] = None,
     board_name: str = "",
-    footer_link: str = ""
+    footer_link: str = "",
+    footer_link_text: str = ""
 ) -> Optional[str]:
     """
     SE ONE 에디터에서 글 작성 후 발행
@@ -1995,10 +2113,10 @@ def write_post(
             # ── 폴백: 단순 텍스트 입력 ──
             _write_plain_body(driver, active_body, content, image_path)
 
-        # ── 하단 링크 삽입 (OGLink 카드) ──
+        # ── 하단 링크 삽입 (OGLink 카드 → 실패 시 하이퍼링크) ──
         if footer_link:
             _restore_editor_focus(driver)
-            _insert_footer_link(driver, footer_link)
+            _insert_footer_link(driver, footer_link, footer_link_text)
 
         # ── 등록 전 팝업 재확인 ──
         _dismiss_popups(driver)
@@ -2374,7 +2492,8 @@ def publish_to_cafe(
     on_progress=None,
     structured_content: Optional[dict] = None,
     board_name: str = "",
-    footer_link: str = ""
+    footer_link: str = "",
+    footer_link_text: str = ""
 ) -> dict:
     """
     전체 카페 글 발행 프로세스
@@ -2382,7 +2501,8 @@ def publish_to_cafe(
     Args:
         structured_content: content_generator.generate_content() 결과.
             있으면 SE ONE 서식 적용, 없으면 content를 plain text로 입력.
-        footer_link: 글 하단에 OGLink 카드로 삽입할 URL
+        footer_link: 글 하단에 삽입할 URL (OGLink → 하이퍼링크 폴백)
+        footer_link_text: 하이퍼링크 표시 텍스트 (기본: '카카오톡 상담하기')
 
     Returns: {"success": bool, "url": str|None, "error": str|None, "cookies": str|None}
     """
@@ -2495,7 +2615,8 @@ def publish_to_cafe(
             structured_content=structured_content,
             menu_id=menu_id,
             board_name=board_name,
-            footer_link=footer_link
+            footer_link=footer_link,
+            footer_link_text=footer_link_text
         )
 
         if published_url:

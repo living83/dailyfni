@@ -1180,11 +1180,18 @@ function ScheduleTab({ schedule, events, reload }) {
 
         <div className="settings-row" style={{ marginTop: 14 }}>
           <div className="input-group" style={{ flex: 1 }}>
-            <label>하단 링크 (OGLink 카드)</label>
+            <label>하단 링크 URL</label>
             <input type="text" value={schedule.footer_link ?? ''}
               placeholder="http://pf.kakao.com/_XEUIX/chat"
               onChange={e => updateConfig('footer_link', e.target.value)} />
-            <small style={{ color: '#4a5a7a', fontSize: 11 }}>모든 글 하단에 OGLink 카드로 삽입됩니다. 비워두면 삽입 안 함.</small>
+            <small style={{ color: '#4a5a7a', fontSize: 11 }}>모든 글 하단에 삽입됩니다. 비워두면 삽입 안 함.</small>
+          </div>
+          <div className="input-group" style={{ flex: 1 }}>
+            <label>링크 표시 텍스트</label>
+            <input type="text" value={schedule.footer_link_text ?? ''}
+              placeholder="카카오톡 상담하기"
+              onChange={e => updateConfig('footer_link_text', e.target.value)} />
+            <small style={{ color: '#4a5a7a', fontSize: 11 }}>OGLink 실패 시 이 텍스트에 링크를 겁니다.</small>
           </div>
         </div>
 

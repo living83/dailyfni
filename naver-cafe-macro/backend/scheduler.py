@@ -387,7 +387,8 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
         headless=True,
         on_progress=on_publish_progress,
         structured_content=structured,
-        footer_link=config.get("footer_link", "")
+        footer_link=config.get("footer_link", ""),
+        footer_link_text=config.get("footer_link_text", "")
     )
 
     # 7. 결과 처리
