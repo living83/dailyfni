@@ -5,6 +5,7 @@ telegram_notifier.py - 텔레그램 알림 모듈
 
 import asyncio
 import logging
+import ssl
 import urllib.request
 import urllib.parse
 import json
@@ -67,8 +68,13 @@ def _send_sync(bot_token: str, chat_id: str, text: str) -> dict:
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
 
+    # SSL 인증서 검증 우회 (회사 프록시/방화벽 환경 대응)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return {"ok": True, "result": body}
     except Exception as e:
