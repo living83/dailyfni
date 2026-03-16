@@ -127,6 +127,16 @@ def init_db():
             FOREIGN KEY (comment_template_id) REFERENCES comment_templates(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS telegram_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            bot_token TEXT DEFAULT '',
+            chat_id TEXT DEFAULT '',
+            enabled INTEGER DEFAULT 0,
+            notify_success INTEGER DEFAULT 1,
+            notify_failure INTEGER DEFAULT 1,
+            notify_batch_summary INTEGER DEFAULT 1
+        );
+
         CREATE TABLE IF NOT EXISTS schedule_config (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             days TEXT DEFAULT '1,1,1,1,1,0,0',
@@ -189,6 +199,11 @@ def init_db():
     # 기본 스케줄 설정 삽입
     cursor.execute("""
         INSERT OR IGNORE INTO schedule_config (id) VALUES (1)
+    """)
+
+    # 기본 텔레그램 설정 삽입
+    cursor.execute("""
+        INSERT OR IGNORE INTO telegram_config (id) VALUES (1)
     """)
 
     conn.commit()

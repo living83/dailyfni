@@ -25,6 +25,7 @@ import database as db
 from cafe_publisher import publish_to_cafe, post_comment
 from content_generator import generate_content, content_to_plain_text
 from crypto import decrypt_password
+import telegram_notifier as tg
 
 logger = logging.getLogger("scheduler")
 logger.setLevel(logging.DEBUG)
@@ -408,6 +409,14 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
             "url": result["url"]
         })
 
+        # 텔레그램 알림
+        await tg.notify_publish_success(
+            account=account["username"],
+            board=board["board_name"],
+            keyword=keyword["text"],
+            url=result["url"]
+        )
+
         # 댓글 자동 작성 (카페별 설정 사용)
         if not skip_comment and config.get("comment_enabled"):
             await execute_comment_job(
@@ -424,6 +433,14 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
             "message": f"발행 실패: {result.get('error')}",
             "publish_id": publish_id
         })
+
+        # 텔레그램 알림
+        await tg.notify_publish_failure(
+            account=account["username"],
+            board=board["board_name"],
+            keyword=keyword["text"],
+            error=result.get("error", "알 수 없는 오류")
+        )
 
     logger.info(f"발행 완료: {account['username']} → {board['cafe_url']}/{board['board_name']} "
                 f"결과={'성공' if result['success'] else '실패'}")
@@ -576,6 +593,9 @@ async def execute_batch_job():
         "fail": fail_count,
         "total": total
     })
+
+    # 텔레그램 배치 요약 알림
+    await tg.notify_batch_complete(success_count, fail_count, total)
 
 
 def _interleave_tasks(tasks: list) -> list:

@@ -406,7 +406,7 @@ function App() {
     return () => es.close();
   }, [loadData]);
 
-  const TABS = ['계정 & 카페', '키워드 큐', '댓글 설정', '스케줄', '히스토리'];
+  const TABS = ['계정 & 카페', '키워드 큐', '댓글 설정', '스케줄', '알림', '히스토리'];
 
   return (
     <div>
@@ -425,7 +425,8 @@ function App() {
         {tab === 1 && <KeywordTab keywords={keywords} boards={boards} cafes={cafes} templates={templates} reload={loadData} />}
         {tab === 2 && <CommentTab templates={templates} schedule={schedule} reload={loadData} />}
         {tab === 3 && <ScheduleTab schedule={schedule} events={events} reload={loadData} />}
-        {tab === 4 && <HistoryTab history={history} stats={stats} reload={loadData} />}
+        {tab === 4 && <TelegramTab />}
+        {tab === 5 && <HistoryTab history={history} stats={stats} reload={loadData} />}
       </div>
     </div>
   );
@@ -1270,7 +1271,162 @@ function ScheduleTab({ schedule, events, reload }) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   탭 4: 히스토리 & 통계
+   탭 4: 텔레그램 알림
+   ═══════════════════════════════════════════════════════════ */
+function TelegramTab() {
+  const [config, setConfig] = useState({});
+  const [botToken, setBotToken] = useState('');
+  const [chatId, setChatId] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/telegram`);
+      const data = await res.json();
+      setConfig(data);
+      setChatId(data.chat_id || '');
+    } catch (e) {
+      console.error('텔레그램 설정 로드 실패:', e);
+    }
+  }, []);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+
+  const updateToggle = async (key, value) => {
+    await fetch(`${API}/api/telegram`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value })
+    });
+    loadConfig();
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    const updates = { chat_id: chatId };
+    if (botToken.trim()) updates.bot_token = botToken.trim();
+    await fetch(`${API}/api/telegram`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    setBotToken('');
+    await loadConfig();
+    setSaving(false);
+  };
+
+  const sendTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`${API}/api/telegram/test`, { method: 'POST' });
+      if (res.ok) {
+        setTestResult({ ok: true, message: '테스트 메시지 전송 성공!' });
+      } else {
+        const err = await res.json();
+        setTestResult({ ok: false, message: err.detail || '전송 실패' });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, message: '네트워크 오류' });
+    }
+    setTesting(false);
+  };
+
+  return (
+    <div>
+      {/* 설정 안내 */}
+      <div className="card">
+        <div className="card-title">텔레그램 알림 설정</div>
+        <div style={{ fontSize: 12, color: '#6b7b9e', marginBottom: 16, lineHeight: 1.8 }}>
+          텔레그램 봇을 통해 발행 성공/실패 알림을 받을 수 있습니다.<br/>
+          1. <a href="https://t.me/BotFather" target="_blank" style={{ color: '#38bd94' }}>@BotFather</a>에서 봇을 생성하고 토큰을 받으세요.<br/>
+          2. 생성한 봇에게 메시지를 보낸 후, 아래에 토큰과 Chat ID를 입력하세요.<br/>
+          3. Chat ID는 <a href="https://t.me/userinfobot" target="_blank" style={{ color: '#38bd94' }}>@userinfobot</a>에게 메시지를 보내면 확인할 수 있습니다.
+        </div>
+
+        {/* 활성화 토글 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '12px 16px', background: '#0a1020', borderRadius: 8, border: '1px solid #1a2540' }}>
+          <div className={`toggle ${config.enabled ? 'on' : ''}`}
+            onClick={() => updateToggle('enabled', config.enabled ? 0 : 1)} />
+          <span style={{ fontSize: 14, fontWeight: 600, color: config.enabled ? '#38bd94' : '#6b7b9e' }}>
+            {config.enabled ? '알림 활성화됨' : '알림 비활성화'}
+          </span>
+        </div>
+
+        {/* 봇 토큰 & Chat ID */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="input-group">
+            <label>Bot Token</label>
+            <input type="text" value={botToken}
+              placeholder={config.bot_token_masked || '봇 토큰을 입력하세요'}
+              onChange={e => setBotToken(e.target.value)} />
+            {config.bot_token_masked && (
+              <small style={{ color: '#4a5a7a', fontSize: 11 }}>현재: {config.bot_token_masked}</small>
+            )}
+          </div>
+          <div className="input-group">
+            <label>Chat ID</label>
+            <input type="text" value={chatId}
+              placeholder="숫자 Chat ID"
+              onChange={e => setChatId(e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary btn-sm" onClick={saveSettings} disabled={saving}>
+            {saving ? '저장 중...' : '저장'}
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={sendTest}
+            disabled={testing || !config.enabled}>
+            {testing ? '전송 중...' : '테스트 메시지 보내기'}
+          </button>
+        </div>
+
+        {testResult && (
+          <div style={{
+            marginTop: 12, padding: '10px 14px', borderRadius: 8,
+            background: testResult.ok ? 'rgba(56,189,148,0.1)' : 'rgba(231,76,60,0.1)',
+            border: `1px solid ${testResult.ok ? 'rgba(56,189,148,0.3)' : 'rgba(231,76,60,0.3)'}`,
+            color: testResult.ok ? '#38bd94' : '#e74c3c',
+            fontSize: 13
+          }}>
+            {testResult.message}
+          </div>
+        )}
+      </div>
+
+      {/* 알림 종류 설정 */}
+      <div className="card">
+        <div className="card-title">알림 종류</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className={`toggle ${config.notify_success ? 'on' : ''}`}
+              onClick={() => updateToggle('notify_success', config.notify_success ? 0 : 1)} />
+            <span style={{ fontSize: 13, color: '#c8d6e5' }}>발행 성공 알림</span>
+            <span style={{ fontSize: 11, color: '#4a5a7a' }}>- 글 발행 성공 시 URL과 함께 알림</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className={`toggle ${config.notify_failure ? 'on' : ''}`}
+              onClick={() => updateToggle('notify_failure', config.notify_failure ? 0 : 1)} />
+            <span style={{ fontSize: 13, color: '#c8d6e5' }}>발행 실패 알림</span>
+            <span style={{ fontSize: 11, color: '#4a5a7a' }}>- 글 발행 실패 시 오류 내용과 함께 알림</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className={`toggle ${config.notify_batch_summary ? 'on' : ''}`}
+              onClick={() => updateToggle('notify_batch_summary', config.notify_batch_summary ? 0 : 1)} />
+            <span style={{ fontSize: 13, color: '#c8d6e5' }}>배치 완료 요약</span>
+            <span style={{ fontSize: 11, color: '#4a5a7a' }}>- 배치 발행 종료 후 성공/실패 건수 요약</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 5: 히스토리 & 통계
    ═══════════════════════════════════════════════════════════ */
 function HistoryTab({ history, stats, reload }) {
   const [filter, setFilter] = useState('all');

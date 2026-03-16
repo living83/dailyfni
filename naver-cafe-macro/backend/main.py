@@ -19,6 +19,7 @@ from pydantic import BaseModel
 import database as db
 from crypto import encrypt_password, decrypt_password
 import scheduler as sched
+import telegram_notifier as tg
 
 # ─── 로깅 ─────────────────────────────────────────────────
 
@@ -122,6 +123,15 @@ class KeywordBoardMapping(BaseModel):
 
 class KeywordCommentMapping(BaseModel):
     template_ids: list[int]
+
+class TelegramConfigUpdate(BaseModel):
+    bot_token: Optional[str] = None
+    chat_id: Optional[str] = None
+    enabled: Optional[int] = None
+    notify_success: Optional[int] = None
+    notify_failure: Optional[int] = None
+    notify_batch_summary: Optional[int] = None
+
 
 class ScheduleConfigUpdate(BaseModel):
     days: Optional[str] = None
@@ -452,6 +462,37 @@ async def get_stats():
         "success_comments": success_comments,
         "failed_comments": failed_comments,
     }
+
+
+# ─── Telegram API ─────────────────────────────────────────
+
+@app.get("/api/telegram")
+async def get_telegram_config():
+    config = tg.get_telegram_config()
+    # 봇 토큰 마스킹 (앞 5자만 표시)
+    token = config.get("bot_token", "")
+    if token and len(token) > 5:
+        config["bot_token_masked"] = token[:5] + "••••••••"
+    else:
+        config["bot_token_masked"] = ""
+    config.pop("bot_token", None)
+    return config
+
+
+@app.put("/api/telegram")
+async def update_telegram_config(req: TelegramConfigUpdate):
+    updates = {k: v for k, v in req.dict().items() if v is not None}
+    if updates:
+        tg.update_telegram_config(**updates)
+    return {"message": "텔레그램 설정 업데이트됨"}
+
+
+@app.post("/api/telegram/test")
+async def test_telegram():
+    result = await tg.send_test_message()
+    if result.get("ok"):
+        return {"message": "테스트 메시지 전송 성공"}
+    raise HTTPException(400, f"전송 실패: {result.get('error')}")
 
 
 # ─── Health ────────────────────────────────────────────────
