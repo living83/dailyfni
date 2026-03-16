@@ -1159,7 +1159,11 @@ def _find_link_popup_input(driver):
 
 
 def _click_search_and_wait(driver, link_input):
-    """OGLink 팝업에서 돋보기 버튼 클릭 + OG 미리보기 대기"""
+    """OGLink 팝업에서 돋보기 버튼 클릭 + OG 미리보기 대기.
+
+    플로우: 돋보기 클릭 → 프리뷰 카드 로드 대기 → 확인 버튼 활성화 대기
+    (카카오채널 등 OG 메타데이터가 있는 URL은 프리뷰 카드가 나타남)
+    """
     search_btn = None
     search_selectors = [
         '.se-popup-link button[class*="search"]',
@@ -1182,11 +1186,29 @@ def _click_search_and_wait(driver, link_input):
                 );
                 if (!popup) return null;
                 var btns = popup.querySelectorAll('button');
+                // 돋보기 아이콘이 있는 버튼 (확인/취소 제외)
                 for (var i = 0; i < btns.length; i++) {
                     var text = (btns[i].textContent || '').trim();
                     if (!text.includes('확인') && !text.includes('취소')
                         && btns[i].querySelector('svg, [class*="ico"], [class*="icon"], [class*="search"]')) {
                         return btns[i];
+                    }
+                }
+                // input 옆에 있는 버튼 (텍스트 없는 작은 버튼 = 돋보기)
+                var input = popup.querySelector('input');
+                if (input) {
+                    var sibling = input.nextElementSibling;
+                    while (sibling) {
+                        if (sibling.tagName === 'BUTTON') return sibling;
+                        var btn = sibling.querySelector && sibling.querySelector('button');
+                        if (btn) return btn;
+                        sibling = sibling.nextElementSibling;
+                    }
+                    // input의 부모에서 버튼 탐색
+                    var parent = input.parentElement;
+                    if (parent) {
+                        var sibBtn = parent.querySelector('button');
+                        if (sibBtn) return sibBtn;
                     }
                 }
                 for (var i = 0; i < btns.length; i++) {
@@ -1202,21 +1224,61 @@ def _click_search_and_wait(driver, link_input):
 
     if search_btn:
         search_btn.click()
-        _log("[footer_link] 돋보기 버튼 클릭 → OG 미리보기 대기")
-        random_delay(3, 5)
+        _log("[footer_link] 돋보기 버튼 클릭 → OG 프리뷰 카드 대기")
+        random_delay(2, 3)
 
+        # 프리뷰 카드 로드 대기 (이미지 + 설명 텍스트가 나타나면 로드 완료)
         try:
-            WebDriverWait(driver, 10).until(
-                lambda d: d.find_element(By.CSS_SELECTOR,
-                    '.se-popup-link [class*="preview"], .se-popup [class*="preview"], '
-                    '.se-popup-link [class*="og"], .se-popup [class*="card"], '
-                    '.se-popup-link img, .se-popup img'
-                )
+            WebDriverWait(driver, 15).until(
+                lambda d: d.execute_script("""
+                    var popup = document.querySelector(
+                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                    );
+                    if (!popup) return false;
+                    // 프리뷰 카드 내 이미지 or 메타 정보 영역 확인
+                    var hasPreview = popup.querySelector(
+                        'img[src*="http"], [class*="preview"], [class*="og"], '
+                        + '[class*="card"], [class*="thumb"], [class*="meta"], '
+                        + '[class*="link_card"], [class*="rich"]'
+                    );
+                    if (hasPreview) return true;
+                    // 팝업 내 이미지가 있으면 프리뷰 로드된 것
+                    var imgs = popup.querySelectorAll('img');
+                    for (var i = 0; i < imgs.length; i++) {
+                        if (imgs[i].src && imgs[i].src.startsWith('http') && imgs[i].naturalWidth > 0) {
+                            return true;
+                        }
+                    }
+                    return false;
+                """)
             )
-            _log("[footer_link] OG 미리보기 로드 완료")
+            _log("[footer_link] OG 프리뷰 카드 로드 완료")
         except (TimeoutException, NoSuchElementException):
-            _log("[footer_link] OG 미리보기 로드 타임아웃 (계속 진행)", "WARNING")
-        random_delay(1, 2)
+            _log("[footer_link] OG 프리뷰 카드 로드 타임아웃 (계속 진행)", "WARNING")
+
+        # 확인 버튼 활성화 대기 (프리뷰 로드 후 확인 버튼이 활성화됨)
+        try:
+            WebDriverWait(driver, 5).until(
+                lambda d: d.execute_script("""
+                    var popup = document.querySelector(
+                        '.se-popup-link, .se-popup, [class*="link_layer"], [class*="popup"]'
+                    );
+                    if (!popup) return false;
+                    var btns = popup.querySelectorAll('button');
+                    for (var i = 0; i < btns.length; i++) {
+                        var text = (btns[i].textContent || '').trim();
+                        if (text.includes('확인')) {
+                            // disabled 속성이 없고, opacity가 낮지 않으면 활성화된 것
+                            return !btns[i].disabled;
+                        }
+                    }
+                    return false;
+                """)
+            )
+            _log("[footer_link] 확인 버튼 활성화 확인")
+        except (TimeoutException, NoSuchElementException):
+            _log("[footer_link] 확인 버튼 활성화 대기 타임아웃 (계속 진행)", "WARNING")
+        random_delay(0.5, 1)
     else:
         _log("[footer_link] 돋보기 버튼 미발견, Enter로 대체", "WARNING")
         link_input.send_keys(Keys.ENTER)
