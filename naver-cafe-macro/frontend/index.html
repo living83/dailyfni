@@ -1280,10 +1280,12 @@ function TelegramTab() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState(null);
 
   const loadConfig = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/telegram`);
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
       const data = await res.json();
       setConfig(data);
       setChatId(data.chat_id || '');
@@ -1295,25 +1297,37 @@ function TelegramTab() {
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
   const updateToggle = async (key, value) => {
-    await fetch(`${API}/api/telegram`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: value })
-    });
-    loadConfig();
+    try {
+      const res = await fetch(`${API}/api/telegram`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value })
+      });
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      await loadConfig();
+    } catch (e) {
+      setSaveResult({ ok: false, message: '설정 변경 실패: ' + e.message });
+    }
   };
 
   const saveSettings = async () => {
     setSaving(true);
-    const updates = { chat_id: chatId };
-    if (botToken.trim()) updates.bot_token = botToken.trim();
-    await fetch(`${API}/api/telegram`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    });
-    setBotToken('');
-    await loadConfig();
+    setSaveResult(null);
+    try {
+      const updates = { chat_id: chatId };
+      if (botToken.trim()) updates.bot_token = botToken.trim();
+      const res = await fetch(`${API}/api/telegram`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      setBotToken('');
+      await loadConfig();
+      setSaveResult({ ok: true, message: '저장되었습니다.' });
+    } catch (e) {
+      setSaveResult({ ok: false, message: '저장 실패: ' + e.message });
+    }
     setSaving(false);
   };
 
@@ -1358,16 +1372,16 @@ function TelegramTab() {
         {/* 봇 토큰 & Chat ID */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="input-group">
-            <label>Bot Token</label>
+            <label>Bot Token {config.bot_token_masked && <span style={{ color: '#38bd94', fontSize: 11, fontWeight: 400 }}>(저장됨)</span>}</label>
             <input type="text" value={botToken}
-              placeholder={config.bot_token_masked || '봇 토큰을 입력하세요'}
+              placeholder={config.bot_token_masked ? `저장됨: ${config.bot_token_masked}` : '봇 토큰을 입력하세요'}
               onChange={e => setBotToken(e.target.value)} />
             {config.bot_token_masked && (
-              <small style={{ color: '#4a5a7a', fontSize: 11 }}>현재: {config.bot_token_masked}</small>
+              <small style={{ color: '#38bd94', fontSize: 11 }}>현재 저장된 토큰: {config.bot_token_masked}</small>
             )}
           </div>
           <div className="input-group">
-            <label>Chat ID</label>
+            <label>Chat ID {config.chat_id && <span style={{ color: '#38bd94', fontSize: 11, fontWeight: 400 }}>(저장됨)</span>}</label>
             <input type="text" value={chatId}
               placeholder="숫자 Chat ID"
               onChange={e => setChatId(e.target.value)} />
@@ -1383,6 +1397,18 @@ function TelegramTab() {
             {testing ? '전송 중...' : '테스트 메시지 보내기'}
           </button>
         </div>
+
+        {saveResult && (
+          <div style={{
+            marginTop: 12, padding: '10px 14px', borderRadius: 8,
+            background: saveResult.ok ? 'rgba(56,189,148,0.1)' : 'rgba(231,76,60,0.1)',
+            border: `1px solid ${saveResult.ok ? 'rgba(56,189,148,0.3)' : 'rgba(231,76,60,0.3)'}`,
+            color: saveResult.ok ? '#38bd94' : '#e74c3c',
+            fontSize: 13
+          }}>
+            {saveResult.message}
+          </div>
+        )}
 
         {testResult && (
           <div style={{
