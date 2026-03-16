@@ -89,8 +89,16 @@ async def send_message(text: str) -> dict:
 
 
 async def send_test_message() -> dict:
-    """테스트 메시지 전송"""
-    return await send_message("DailyFNI 카페 매크로 텔레그램 알림 테스트 메시지입니다.")
+    """테스트 메시지 전송 (enabled 여부 무관하게 전송)"""
+    config = get_telegram_config()
+    bot_token = config.get("bot_token", "").strip()
+    chat_id = config.get("chat_id", "").strip()
+    if not bot_token or not chat_id:
+        return {"ok": False, "error": "봇 토큰 또는 채팅 ID 미설정"}
+    return await asyncio.to_thread(
+        _send_sync, bot_token, chat_id,
+        "✅ DailyFNI 카페 매크로 텔레그램 알림 테스트 메시지입니다."
+    )
 
 
 async def notify_publish_success(account: str, board: str, keyword: str, url: str):
