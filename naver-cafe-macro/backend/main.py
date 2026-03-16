@@ -231,7 +231,7 @@ async def create_cafe(req: CafeCreate):
 
 @app.put("/api/cafes/{cafe_id}")
 async def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
-    updates = {k: v for k, v in req.dict().items() if v is not None}
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if updates:
         db.update_cafe_settings(cafe_id, **updates)
     return {"message": "카페 설정 업데이트됨"}
@@ -367,7 +367,7 @@ async def get_schedule():
 
 @app.put("/api/schedule")
 async def update_schedule(req: ScheduleConfigUpdate):
-    updates = {k: v for k, v in req.dict().items() if v is not None}
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if updates:
         db.update_schedule_config(**updates)
         await sched.reload_scheduler()
@@ -468,23 +468,31 @@ async def get_stats():
 
 @app.get("/api/telegram")
 async def get_telegram_config():
-    config = tg.get_telegram_config()
-    # 봇 토큰 마스킹 (앞 5자만 표시)
-    token = config.get("bot_token", "")
-    if token and len(token) > 5:
-        config["bot_token_masked"] = token[:5] + "••••••••"
-    else:
-        config["bot_token_masked"] = ""
-    config.pop("bot_token", None)
-    return config
+    try:
+        config = tg.get_telegram_config()
+        # 봇 토큰 마스킹 (앞 5자만 표시)
+        token = config.get("bot_token", "")
+        if token and len(token) > 5:
+            config["bot_token_masked"] = token[:5] + "••••••••"
+        else:
+            config["bot_token_masked"] = ""
+        config.pop("bot_token", None)
+        return config
+    except Exception as e:
+        logger.error(f"텔레그램 설정 조회 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"텔레그램 설정 조회 실패: {e}")
 
 
 @app.put("/api/telegram")
 async def update_telegram_config(req: TelegramConfigUpdate):
-    updates = {k: v for k, v in req.dict().items() if v is not None}
-    if updates:
-        tg.update_telegram_config(**updates)
-    return {"message": "텔레그램 설정 업데이트됨"}
+    try:
+        updates = {k: v for k, v in req.model_dump().items() if v is not None}
+        if updates:
+            tg.update_telegram_config(**updates)
+        return {"message": "텔레그램 설정 업데이트됨"}
+    except Exception as e:
+        logger.error(f"텔레그램 설정 저장 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"텔레그램 설정 저장 실패: {e}")
 
 
 @app.post("/api/telegram/test")

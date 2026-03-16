@@ -40,13 +40,18 @@ def update_telegram_config(**kwargs):
     if not updates:
         return
     conn = db.get_connection()
-    # upsert
-    conn.execute("INSERT OR IGNORE INTO telegram_config (id) VALUES (1)")
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    conn.execute(f"UPDATE telegram_config SET {set_clause} WHERE id = 1",
-                 list(updates.values()))
-    conn.commit()
-    conn.close()
+    try:
+        # upsert
+        conn.execute("INSERT OR IGNORE INTO telegram_config (id) VALUES (1)")
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(f"UPDATE telegram_config SET {set_clause} WHERE id = 1",
+                     list(updates.values()))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"텔레그램 설정 DB 저장 실패: {e}", exc_info=True)
+        raise
+    finally:
+        conn.close()
 
 
 def _send_sync(bot_token: str, chat_id: str, text: str) -> dict:
