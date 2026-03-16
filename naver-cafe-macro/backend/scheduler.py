@@ -341,7 +341,8 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
         return
 
     # 4. 글 제목/내용 생성
-    structured = generate_content(keyword["text"])
+    footer_link = config.get("footer_link", "")
+    structured = generate_content(keyword["text"], cta_link=footer_link)
     title, content = content_to_plain_text(structured)
 
     # 5. DB에 발행 기록 생성

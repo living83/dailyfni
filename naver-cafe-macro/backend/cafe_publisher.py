@@ -1393,9 +1393,9 @@ def _find_hyperlink_popup_input(driver):
 # ─── CTA 테이블 삽입 ─────────────────────────────────────
 
 def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
-    """CTA 삽입 — 테이블 없이 일반 텍스트로 CTA 작성
+    """CTA 삽입 — 구분선 + CTA 텍스트(하이퍼링크) + 구분선 형태로 강조.
 
-    구분선 + CTA 텍스트 + 구분선 형태로 강조.
+    cta_link가 있으면 CTA 텍스트에 하이퍼링크를 걸어 클릭 가능하게 만든다.
     ActionChains로 실제 키보드 이벤트 전송 (에디터 모델 반영).
     """
     try:
@@ -1407,19 +1407,93 @@ def _insert_cta_table(driver, cta_text: str, cta_link: str = ""):
         # CTA 텍스트
         cta_display = f'▶ {cta_text} ◀'
         actions.send_keys(cta_display)
-        actions.send_keys(Keys.ENTER)
-        # 하단 구분선
-        actions.send_keys('━━━━━━━━━━━━━━━━━━━━')
-        actions.send_keys(Keys.ENTER)
         actions.perform()
         random_delay(0.3, 0.5)
 
-        logger.info(f"CTA 텍스트 삽입 완료: {cta_text}")
+        # CTA 텍스트에 하이퍼링크 적용
+        if cta_link:
+            _apply_hyperlink_to_cta(driver, cta_display, cta_link)
+
+        actions2 = ActionChains(driver)
+        actions2.send_keys(Keys.END)  # 선택 해제, 커서 끝으로
+        actions2.send_keys(Keys.ENTER)
+        # 하단 구분선
+        actions2.send_keys('━━━━━━━━━━━━━━━━━━━━')
+        actions2.send_keys(Keys.ENTER)
+        actions2.perform()
+        random_delay(0.3, 0.5)
+
+        logger.info(f"CTA 텍스트 삽입 완료: {cta_text} (링크: {cta_link or '없음'})")
 
     except Exception as e:
         logger.warning(f"CTA 삽입 실패: {e}")
         try:
             fast_type(driver, f'\n━━━━━━━━━━━━━━━━━━━━\n▶ {cta_text} ◀\n━━━━━━━━━━━━━━━━━━━━\n')
+        except Exception:
+            pass
+
+
+def _apply_hyperlink_to_cta(driver, cta_display: str, cta_link: str):
+    """CTA 텍스트에 하이퍼링크를 적용 (Shift+Home으로 선택 → Ctrl+K → URL 입력)"""
+    try:
+        # 방금 입력한 CTA 텍스트 전체 선택 (Shift+Home)
+        ActionChains(driver).key_down(Keys.SHIFT).send_keys(Keys.HOME).key_up(Keys.SHIFT).perform()
+        random_delay(0.3, 0.5)
+
+        # Ctrl+K로 하이퍼링크 팝업 열기
+        hyperlink_opened = False
+
+        # 방법 1: Ctrl+K 단축키
+        try:
+            ActionChains(driver).key_down(Keys.CONTROL).send_keys('k').key_up(Keys.CONTROL).perform()
+            random_delay(1, 1.5)
+            popup_input = _find_hyperlink_popup_input(driver)
+            if popup_input:
+                hyperlink_opened = True
+                _log("[CTA] Ctrl+K로 하이퍼링크 팝업 열림")
+        except Exception:
+            pass
+
+        # 방법 2: 툴바 hyperlink 버튼
+        if not hyperlink_opened:
+            try:
+                hl_btn = driver.execute_script("""
+                    var btns = document.querySelectorAll(
+                        '.se-toolbar button, [class*="toolbar"] button'
+                    );
+                    for (var i = 0; i < btns.length; i++) {
+                        var name = (btns[i].dataset.name || '').toLowerCase();
+                        if (name === 'hyperlink' || name === 'link') return btns[i];
+                    }
+                    return null;
+                """)
+                if hl_btn:
+                    hl_btn.click()
+                    random_delay(1, 1.5)
+                    popup_input = _find_hyperlink_popup_input(driver)
+                    if popup_input:
+                        hyperlink_opened = True
+                        _log("[CTA] 툴바 버튼으로 하이퍼링크 팝업 열림")
+            except Exception:
+                pass
+
+        if hyperlink_opened and popup_input:
+            popup_input.click()
+            popup_input.clear()
+            random_delay(0.2, 0.3)
+            popup_input.send_keys(cta_link)
+            random_delay(0.5, 1)
+            _click_confirm_button(driver)
+            _log(f"[CTA] 하이퍼링크 적용 완료: {cta_link}")
+        else:
+            _log("[CTA] 하이퍼링크 팝업 열기 실패 — 링크 없이 텍스트만 유지", "WARNING")
+            # 선택 해제
+            ActionChains(driver).send_keys(Keys.END).perform()
+
+    except Exception as e:
+        _log(f"[CTA] 하이퍼링크 적용 실패: {e}", "WARNING")
+        try:
+            ActionChains(driver).send_keys(Keys.END).perform()
         except Exception:
             pass
 
