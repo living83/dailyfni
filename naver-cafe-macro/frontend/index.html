@@ -364,7 +364,7 @@ function App() {
   // 초기 데이터 로드
   const loadData = useCallback(async () => {
     try {
-      const [accRes, cafeRes, boardRes, kwRes, tplRes, schedRes, histRes, statRes] = await Promise.all([
+      const results = await Promise.allSettled([
         fetch(`${API}/api/accounts`).then(r => r.json()),
         fetch(`${API}/api/cafes`).then(r => r.json()),
         fetch(`${API}/api/boards`).then(r => r.json()),
@@ -374,14 +374,18 @@ function App() {
         fetch(`${API}/api/history`).then(r => r.json()),
         fetch(`${API}/api/stats`).then(r => r.json()),
       ]);
-      setAccounts(accRes);
-      setCafes(cafeRes);
-      setBoards(boardRes);
-      setKeywords(kwRes);
-      setTemplates(tplRes);
-      setSchedule(schedRes);
-      setHistory(histRes);
-      setStats(statRes);
+      const get = (i) => results[i].status === 'fulfilled' ? results[i].value : null;
+      if (get(0)) setAccounts(get(0));
+      if (get(1)) setCafes(get(1));
+      if (get(2)) setBoards(get(2));
+      if (get(3)) setKeywords(get(3));
+      if (get(4)) setTemplates(get(4));
+      if (get(5)) setSchedule(get(5));
+      if (get(6)) setHistory(get(6));
+      if (get(7)) setStats(get(7));
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') console.error(`API ${i} 로드 실패:`, r.reason);
+      });
     } catch (e) {
       console.error('데이터 로드 실패:', e);
     }
@@ -647,7 +651,8 @@ function AccountCafeTab({ accounts, cafes, reload }) {
 
               {/* 카페 확장 패널 */}
               {isExpanded && (
-                <div style={{ padding: 16, background: '#0a1020', borderTop: '1px solid #1a2540' }}>
+                <div style={{ padding: 16, background: '#0a1020', borderTop: '1px solid #1a2540' }}
+                  onClick={e => e.stopPropagation()}>
                   {/* 게시판 목록 + 추가 */}
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e', marginBottom: 8 }}>게시판</div>
@@ -686,17 +691,29 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                           return (
                             <div
                               key={acc.id}
-                              onClick={async () => {
-                                const current = cafe.account_ids || [];
-                                const newIds = selected
-                                  ? current.filter(id => id !== acc.id)
-                                  : [...current, acc.id];
-                                await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
-                                  method: 'PUT',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ account_ids: newIds })
-                                });
-                                reload();
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const current = cafe.account_ids || [];
+                                  const newIds = selected
+                                    ? current.filter(id => id !== acc.id)
+                                    : [...current, acc.id];
+                                  const res = await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ account_ids: newIds })
+                                  });
+                                  if (!res.ok) {
+                                    const errText = await res.text();
+                                    console.error('계정 매핑 실패:', res.status, errText);
+                                    alert('계정 선택 실패: ' + errText);
+                                    return;
+                                  }
+                                  await reload();
+                                } catch (err) {
+                                  console.error('계정 매핑 에러:', err);
+                                  alert('계정 선택 에러: ' + err.message);
+                                }
                               }}
                               style={{
                                 padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
