@@ -118,6 +118,9 @@ class KeywordCreate(BaseModel):
 class CommentTemplateCreate(BaseModel):
     text: str
 
+class CafeAccountMapping(BaseModel):
+    account_ids: list[int]
+
 class KeywordBoardMapping(BaseModel):
     board_ids: list[int]
 
@@ -241,6 +244,17 @@ async def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
 async def delete_cafe(cafe_id: int):
     db.delete_cafe(cafe_id)
     return {"message": "카페 삭제됨"}
+
+
+@app.get("/api/cafes/{cafe_id}/accounts")
+async def get_cafe_accounts(cafe_id: int):
+    return db.get_cafe_accounts(cafe_id)
+
+
+@app.put("/api/cafes/{cafe_id}/accounts")
+async def set_cafe_accounts(cafe_id: int, req: CafeAccountMapping):
+    db.set_cafe_accounts(cafe_id, req.account_ids)
+    return {"message": "카페 계정 매핑 업데이트됨"}
 
 
 # ─── Cafe Boards API ──────────────────────────────────────

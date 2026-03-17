@@ -109,6 +109,15 @@ def init_db():
             FOREIGN KEY (account_id) REFERENCES accounts(id)
         );
 
+        CREATE TABLE IF NOT EXISTS cafe_account_mapping (
+            cafe_group_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+            PRIMARY KEY (cafe_group_id, account_id),
+            FOREIGN KEY (cafe_group_id) REFERENCES cafes(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS keyword_board_mapping (
             keyword_id INTEGER NOT NULL,
             board_id INTEGER NOT NULL,
@@ -283,6 +292,7 @@ def toggle_account(account_id: int):
 def delete_account(account_id: int):
     conn = get_connection()
     # 외래 키 참조 해제 후 계정 삭제
+    conn.execute("DELETE FROM cafe_account_mapping WHERE account_id = ?", (account_id,))
     conn.execute("DELETE FROM comment_history WHERE account_id = ?", (account_id,))
     conn.execute("UPDATE publish_history SET account_id = NULL WHERE account_id = ?", (account_id,))
     conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
@@ -348,7 +358,7 @@ def add_cafe(cafe_id: str, name: str = "") -> int:
 
 
 def get_cafes():
-    """모든 카페 + 소속 게시판 목록 반환"""
+    """모든 카페 + 소속 게시판 + 지정 계정 ID 목록 반환"""
     conn = get_connection()
     cafes = [dict(r) for r in conn.execute("SELECT * FROM cafes ORDER BY id").fetchall()]
     for cafe in cafes:
@@ -357,6 +367,11 @@ def get_cafes():
             (cafe["id"],)
         ).fetchall()
         cafe["boards"] = [dict(b) for b in boards]
+        assigned = conn.execute(
+            "SELECT account_id FROM cafe_account_mapping WHERE cafe_group_id = ?",
+            (cafe["id"],)
+        ).fetchall()
+        cafe["account_ids"] = [r["account_id"] for r in assigned]
     conn.close()
     return cafes
 
@@ -391,6 +406,32 @@ def delete_cafe(cafe_id: int):
     conn = get_connection()
     # 소속 게시판도 삭제 (ON DELETE CASCADE)
     conn.execute("DELETE FROM cafes WHERE id = ?", (cafe_id,))
+    conn.commit()
+    conn.close()
+
+
+# ─── Cafe-Account Mapping ────────────────────────────────
+
+def get_cafe_accounts(cafe_group_id: int) -> list[int]:
+    """카페에 지정된 계정 ID 목록 반환"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT account_id FROM cafe_account_mapping WHERE cafe_group_id = ?",
+        (cafe_group_id,)
+    ).fetchall()
+    conn.close()
+    return [r["account_id"] for r in rows]
+
+
+def set_cafe_accounts(cafe_group_id: int, account_ids: list[int]):
+    """카페-계정 매핑 설정 (기존 매핑 교체)"""
+    conn = get_connection()
+    conn.execute("DELETE FROM cafe_account_mapping WHERE cafe_group_id = ?", (cafe_group_id,))
+    for aid in account_ids:
+        conn.execute(
+            "INSERT INTO cafe_account_mapping (cafe_group_id, account_id) VALUES (?, ?)",
+            (cafe_group_id, aid)
+        )
     conn.commit()
     conn.close()
 

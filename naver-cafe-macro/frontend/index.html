@@ -626,6 +626,9 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                   </div>
                   <div style={{ fontSize: 11, color: '#4a5a7a', marginTop: 2, marginLeft: 20 }}>
                     카페 ID: {cafe.cafe_id} | 게시판 {boards.length}개
+                    {(cafe.account_ids || []).length > 0
+                      ? ` | 계정 ${cafe.account_ids.length}개 지정`
+                      : ' | 전체 계정'}
                     {!cafe.active && <span className="badge badge-danger" style={{ marginLeft: 6 }}>비활성</span>}
                   </div>
                 </div>
@@ -663,6 +666,39 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                         </div>
                       </div>
                     ))}
+                  </div>
+
+                  {/* 계정 지정 */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e', marginBottom: 8 }}>
+                      발행 계정 지정 <span style={{ fontWeight: 400, color: '#3a4a6a' }}>(미선택 시 전체 계정)</span>
+                    </div>
+                    {accounts.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#3a4a6a', textAlign: 'center', padding: 10 }}>등록된 계정이 없습니다</div>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {accounts.map(acc => {
+                        const assigned = (cafe.account_ids || []).includes(acc.id);
+                        return (
+                          <button key={acc.id}
+                            className={`chip ${assigned ? 'active' : ''}`}
+                            onClick={async () => {
+                              const current = cafe.account_ids || [];
+                              const newIds = assigned
+                                ? current.filter(id => id !== acc.id)
+                                : [...current, acc.id];
+                              await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ account_ids: newIds })
+                              });
+                              reload();
+                            }}>
+                            {acc.username}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* 카페별 설정 토글 */}

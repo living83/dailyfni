@@ -82,12 +82,20 @@ async def _notify_progress(event: str, data: dict):
 def _get_eligible_accounts(config: dict, cafe_group_id: int = None, cafe_config: dict = None) -> list:
     """
     발행 가능한 계정 목록 반환
+    - 카페에 지정된 계정만 (지정 없으면 전체)
     - 활성 상태인 계정
     - 최소 대기 시간(account_interval_hours) 경과한 계정
     - 카페별 일일 게시 한도(daily_post_limit) 미달 계정
     """
     accounts = db.get_accounts()
     active_accounts = [a for a in accounts if a["active"]]
+
+    # 카페에 지정된 계정이 있으면 해당 계정만 사용
+    if cafe_group_id is not None:
+        assigned_ids = db.get_cafe_accounts(cafe_group_id)
+        if assigned_ids:
+            active_accounts = [a for a in active_accounts if a["id"] in assigned_ids]
+            logger.debug(f"카페 {cafe_group_id}: 지정 계정 {len(assigned_ids)}개 중 활성 {len(active_accounts)}개")
 
     interval_hours = config.get("account_interval_hours", 3)
     # 카페별 설정 우선, 없으면 글로벌
@@ -247,8 +255,14 @@ def _select_comment_accounts(
     daily_comment_limit: int = 10,
     cafe_group_id: int = None
 ) -> list:
-    """댓글 작성할 계정 선택 (카페별 일일 댓글 한도 초과 계정 제외)"""
+    """댓글 작성할 계정 선택 (카페 지정 계정 + 일일 댓글 한도 초과 계정 제외)"""
     pool = [a for a in all_accounts if a["active"]]
+
+    # 카페에 지정된 계정이 있으면 해당 계정만 사용
+    if cafe_group_id is not None:
+        assigned_ids = db.get_cafe_accounts(cafe_group_id)
+        if assigned_ids:
+            pool = [a for a in pool if a["id"] in assigned_ids]
     if exclude_author:
         pool = [a for a in pool if a["id"] != author_id]
 
