@@ -876,15 +876,21 @@ def _resolve_numeric_cafe_id(driver: webdriver.Chrome, cafe_alias: str) -> str:
         return ""
 
 
-def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> bool:
-    """카페 글쓰기 페이지로 이동"""
+def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str) -> str:
+    """카페 글쓰기 페이지로 이동
+
+    Returns:
+        "ok" — 성공
+        "session_expired" — 세션 만료 (로그인 페이지로 리다이렉트됨, 재로그인 필요)
+        "failed" — 기타 실패 (재로그인 불필요)
+    """
     try:
         cafe_alias = _extract_cafe_id(cafe_url)
         cafe_id = _resolve_numeric_cafe_id(driver, cafe_alias)
 
         if not cafe_id.isdigit():
             _log(f"카페 숫자 ID 변환 실패! alias={cafe_alias}, 반환값={cafe_id}", "ERROR")
-            return False
+            return "failed"
 
         if menu_id:
             write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_id}/articles/write?boardType=L&menuId={menu_id}"
@@ -908,17 +914,17 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
 
         if "articles/write" in current_url or "ArticleWrite" in current_url:
             _log(f"글쓰기 페이지 이동 성공")
-        elif "nid.naver.com" in current_url:
+        elif "nid.naver.com" in current_url or "nidlogin" in current_url:
             # 로그인 페이지로 리다이렉트됨 — 쿠키/세션 만료
             _log(f"로그인 페이지로 리다이렉트됨 — 세션 만료: {current_url}", "ERROR")
-            return False
+            return "session_expired"
         elif "cafe.naver.com" not in current_url:
             # 네이버 메인이나 다른 페이지로 리다이렉트됨
             _log(f"글쓰기 페이지에서 이탈! 현재 URL: {current_url}", "ERROR")
             # 캐시 무효화
             if cafe_alias in _cafe_id_cache:
                 del _cafe_id_cache[cafe_alias]
-            return False
+            return "failed"
         else:
             logger.warning(f"예상과 다른 URL로 이동됨: {current_url}")
 
@@ -929,11 +935,11 @@ def navigate_to_write_page(driver: webdriver.Chrome, cafe_url: str, menu_id: str
             pass
 
         logger.info(f"글쓰기 페이지 이동 완료: cafe={cafe_id}, menuId={menu_id}")
-        return True
+        return "ok"
 
     except Exception as e:
         logger.error(f"글쓰기 페이지 이동 실패: {e}")
-        return False
+        return "failed"
 
 
 # ─── SE ONE 에디터 서식 헬퍼 ──────────────────────────────
@@ -2701,43 +2707,51 @@ def publish_to_cafe(
         if on_progress:
             on_progress("navigate", f"카페 이동 중... ({cafe_url})")
 
-        if not navigate_to_write_page(driver, cafe_url, menu_id):
-            # 세션 만료일 수 있으므로 ID/PW 재로그인 후 재시도
-            _log("글쓰기 페이지 이동 실패 — 현재 URL 확인 중...")
-            _log(f"현재 URL: {driver.current_url}")
+        nav_result = navigate_to_write_page(driver, cafe_url, menu_id)
+
+        if nav_result != "ok":
+            _log(f"글쓰기 페이지 이동 실패 (사유: {nav_result}) — 현재 URL: {driver.current_url}")
             _save_debug_screenshot(driver, "navigate_failed")
-            if on_progress:
-                on_progress("login", "세션 만료, 재로그인 중...")
-            _log("ID/PW 재로그인 시도...")
-            re_logged_in = login_with_credentials(
-                driver, account["username"], account["password_enc"]
-            )
-            if re_logged_in:
-                _log("재로그인 성공 — 카페 세션 확립 후 재시도")
-                result["cookies"] = get_login_cookies(driver)
-                # 재로그인 후에도 cafe.naver.com 세션 확립 필수
-                _ensure_cafe_session(driver)
+
+            if nav_result == "session_expired":
+                # 세션 만료인 경우에만 재로그인 시도
                 if on_progress:
-                    on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
-                if not navigate_to_write_page(driver, cafe_url, menu_id):
-                    _save_debug_screenshot(driver, "navigate_failed_after_relogin")
-                    result["error"] = "글쓰기 페이지 이동 실패 (재로그인 후에도)"
+                    on_progress("login", "세션 만료, 재로그인 중...")
+                _log("ID/PW 재로그인 시도...")
+                re_logged_in = login_with_credentials(
+                    driver, account["username"], account["password_enc"]
+                )
+                if re_logged_in:
+                    _log("재로그인 성공 — 카페 세션 확립 후 재시도")
+                    result["cookies"] = get_login_cookies(driver)
+                    _ensure_cafe_session(driver)
+                    if on_progress:
+                        on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
+                    nav_retry = navigate_to_write_page(driver, cafe_url, menu_id)
+                    if nav_retry != "ok":
+                        _save_debug_screenshot(driver, "navigate_failed_after_relogin")
+                        result["error"] = f"글쓰기 페이지 이동 실패 (재로그인 후에도, 사유: {nav_retry})"
+                        return result
+                else:
+                    current_url = driver.current_url
+                    _log(f"재로그인 실패! URL: {current_url}")
+                    _save_debug_screenshot(driver, "relogin_failed")
+                    if "captcha" in current_url:
+                        result["error"] = "재로그인 실패: 캡챠 발생 (수동 로그인 필요)"
+                    elif "2step" in current_url or "deviceConfirm" in current_url:
+                        result["error"] = "재로그인 실패: 2단계 인증 필요"
+                    elif "protect" in current_url:
+                        result["error"] = "재로그인 실패: 보호 모드 (이상 로그인 감지)"
+                    elif "nidlogin" in current_url:
+                        result["error"] = "재로그인 실패: ID/PW 불일치 또는 입력 미감지"
+                    else:
+                        result["error"] = f"재로그인 실패: 알 수 없는 URL ({current_url[:80]})"
+                    if on_progress:
+                        on_progress("error", result["error"])
                     return result
             else:
-                current_url = driver.current_url
-                _log(f"재로그인 실패! URL: {current_url}")
-                _save_debug_screenshot(driver, "relogin_failed")
-                # 실패 원인을 에러 메시지에 포함
-                if "captcha" in current_url:
-                    result["error"] = "재로그인 실패: 캡챠 발생 (수동 로그인 필요)"
-                elif "2step" in current_url or "deviceConfirm" in current_url:
-                    result["error"] = "재로그인 실패: 2단계 인증 필요"
-                elif "protect" in current_url:
-                    result["error"] = "재로그인 실패: 보호 모드 (이상 로그인 감지)"
-                elif "nidlogin" in current_url:
-                    result["error"] = "재로그인 실패: ID/PW 불일치 또는 입력 미감지"
-                else:
-                    result["error"] = f"재로그인 실패: 알 수 없는 URL ({current_url[:80]})"
+                # 세션 만료가 아닌 기타 실패 — 재로그인 없이 즉시 에러 반환
+                result["error"] = f"글쓰기 페이지 이동 실패: {nav_result}"
                 if on_progress:
                     on_progress("error", result["error"])
                 return result
