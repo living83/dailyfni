@@ -6,7 +6,7 @@ APScheduler 기반 자동 발행 관리
 1. 매일 1회 배치: base_start_hour:minute 에 시작, 일별 daily_shift_minutes 만큼 지연
 2. 카페별 독립 설정: 각 카페의 interval, 일일 한도, 댓글 설정 사용
 3. 교차 발행: 카페 간 교차하여 같은 카페 연속 발행 금지
-4. 계정 간 간격: 같은 계정 최소 account_interval_hours 시간 대기
+4. 계정 간 간격: 같은 계정 같은 카페에 최소 account_interval_hours 시간 대기 (카페별 독립)
 5. 랜덤 딜레이: 각 발행 전 랜덤 오프셋 추가
 """
 
@@ -111,8 +111,10 @@ def _get_eligible_accounts(config: dict, cafe_group_id: int = None, cafe_config:
                 logger.debug(f"[{acc['username']}] 카페 {cafe_group_id} 일일 게시 한도 도달 ({today_count}/{daily_post_limit})")
                 continue
 
-        if acc["last_published_at"]:
-            last_pub = datetime.fromisoformat(acc["last_published_at"])
+        # 카페별 마지막 발행 시간 체크 (카페가 다르면 인터벌 독립)
+        last_pub_str = db.get_account_last_published_at(acc["id"], cafe_group_id=cafe_group_id)
+        if last_pub_str:
+            last_pub = datetime.fromisoformat(last_pub_str)
             # 최소 interval_hours 시간 경과 필요, ±30분 랜덤
             jitter_minutes = random.randint(-30, 30)
             min_wait = timedelta(hours=interval_hours, minutes=jitter_minutes)

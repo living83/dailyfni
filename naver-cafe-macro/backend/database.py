@@ -768,6 +768,26 @@ def get_today_post_count(account_id: int, cafe_group_id: int = None) -> int:
     return row["cnt"] if row else 0
 
 
+def get_account_last_published_at(account_id: int, cafe_group_id: int = None) -> str | None:
+    """계정의 마지막 발행 시간 반환 (카페별 필터 가능)"""
+    conn = get_connection()
+    if cafe_group_id is not None:
+        row = conn.execute(
+            """SELECT MAX(ph.created_at) as last_pub FROM publish_history ph
+               JOIN cafe_boards cb ON ph.board_id = cb.id
+               WHERE ph.account_id = ? AND ph.status = '성공'
+               AND cb.cafe_group_id = ?""",
+            (account_id, cafe_group_id)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT MAX(created_at) as last_pub FROM publish_history WHERE account_id = ? AND status = '성공'",
+            (account_id,)
+        ).fetchone()
+    conn.close()
+    return row["last_pub"] if row and row["last_pub"] else None
+
+
 def get_today_comment_count(account_id: int, cafe_group_id: int = None) -> int:
     """오늘 해당 계정의 댓글 횟수 반환 (카페별 필터 가능)"""
     conn = get_connection()

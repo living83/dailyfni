@@ -1161,7 +1161,7 @@ function ScheduleTab({ schedule, events, reload }) {
               onChange={e => updateConfig('interval_max', Math.max(1, parseInt(e.target.value) || 15))} />
           </div>
           <div className="input-group">
-            <label>계정 재사용 최소 간격 (시간)</label>
+            <label>계정 재사용 최소 간격 (시간, 카페별)</label>
             <input type="number" min={1} max={48} value={schedule.account_interval_hours || 3}
               onChange={e => updateConfig('account_interval_hours', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
