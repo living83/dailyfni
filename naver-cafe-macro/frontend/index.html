@@ -627,8 +627,11 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                     {(() => {
                       const ids = cafe.account_ids || [];
                       if (ids.length > 0) {
-                        const acc = accounts.find(a => a.id === ids[0]);
-                        return ` | 로그인: ${acc ? acc.username : ids[0]}`;
+                        const names = ids.map(id => {
+                          const acc = accounts.find(a => a.id === id);
+                          return acc ? acc.username : id;
+                        });
+                        return ` | 로그인: ${names.join(', ')}`;
                       }
                       return '';
                     })()}
@@ -671,28 +674,43 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                     ))}
                   </div>
 
-                  {/* 로그인 계정 선택 */}
+                  {/* 로그인 계정 선택 (멀티셀렉트) */}
                   <div style={{ borderTop: '1px solid #1a2540', paddingTop: 12 }}>
                     <div className="input-group">
-                      <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e' }}>로그인 계정</label>
-                      <select
-                        value={(cafe.account_ids || [])[0] || ''}
-                        onChange={async (e) => {
-                          const val = e.target.value;
-                          const newIds = val ? [parseInt(val)] : [];
-                          await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ account_ids: newIds })
-                          });
-                          reload();
-                        }}
-                        style={{ marginTop: 4 }}>
-                        <option value="">선택 안 함 (전체 계정)</option>
-                        {accounts.map(acc => (
-                          <option key={acc.id} value={acc.id}>{acc.username}</option>
-                        ))}
-                      </select>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e' }}>
+                        로그인 계정 <span style={{ fontWeight: 400, color: '#3a4a6a' }}>(미선택 시 전체 계정)</span>
+                      </label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                        {accounts.map(acc => {
+                          const selected = (cafe.account_ids || []).includes(acc.id);
+                          return (
+                            <div
+                              key={acc.id}
+                              onClick={async () => {
+                                const current = cafe.account_ids || [];
+                                const newIds = selected
+                                  ? current.filter(id => id !== acc.id)
+                                  : [...current, acc.id];
+                                await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ account_ids: newIds })
+                                });
+                                reload();
+                              }}
+                              style={{
+                                padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                                fontSize: 12, fontWeight: 500, transition: 'all 0.15s',
+                                background: selected ? 'rgba(56, 189, 148, 0.15)' : '#111a2e',
+                                border: selected ? '1px solid rgba(56, 189, 148, 0.5)' : '1px solid #1a2540',
+                                color: selected ? '#38bd94' : '#5a6a80'
+                              }}
+                            >
+                              {selected ? '\u2713 ' : ''}{acc.username}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
