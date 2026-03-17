@@ -2714,43 +2714,24 @@ def publish_to_cafe(
             _save_debug_screenshot(driver, "navigate_failed")
 
             if nav_result == "session_expired":
-                # 세션 만료인 경우에만 재로그인 시도
+                # 세션 만료 — 재로그인 대신 카페 세션만 재확립 후 한 번 더 시도
+                # (재로그인 시 캡챠/이미지 퍼즐이 발생하므로 재로그인하지 않음)
+                _log("세션 만료 감지 — 카페 세션 재확립 후 재시도 (재로그인 안 함)")
                 if on_progress:
-                    on_progress("login", "세션 만료, 재로그인 중...")
-                _log("ID/PW 재로그인 시도...")
-                re_logged_in = login_with_credentials(
-                    driver, account["username"], account["password_enc"]
-                )
-                if re_logged_in:
-                    _log("재로그인 성공 — 카페 세션 확립 후 재시도")
-                    result["cookies"] = get_login_cookies(driver)
-                    _ensure_cafe_session(driver)
-                    if on_progress:
-                        on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
-                    nav_retry = navigate_to_write_page(driver, cafe_url, menu_id)
-                    if nav_retry != "ok":
-                        _save_debug_screenshot(driver, "navigate_failed_after_relogin")
-                        result["error"] = f"글쓰기 페이지 이동 실패 (재로그인 후에도, 사유: {nav_retry})"
-                        return result
-                else:
-                    current_url = driver.current_url
-                    _log(f"재로그인 실패! URL: {current_url}")
-                    _save_debug_screenshot(driver, "relogin_failed")
-                    if "captcha" in current_url:
-                        result["error"] = "재로그인 실패: 캡챠 발생 (수동 로그인 필요)"
-                    elif "2step" in current_url or "deviceConfirm" in current_url:
-                        result["error"] = "재로그인 실패: 2단계 인증 필요"
-                    elif "protect" in current_url:
-                        result["error"] = "재로그인 실패: 보호 모드 (이상 로그인 감지)"
-                    elif "nidlogin" in current_url:
-                        result["error"] = "재로그인 실패: ID/PW 불일치 또는 입력 미감지"
-                    else:
-                        result["error"] = f"재로그인 실패: 알 수 없는 URL ({current_url[:80]})"
+                    on_progress("navigate", "세션 재확립 중... (재로그인 없이)")
+                _ensure_cafe_session(driver)
+                random_delay(1, 2)
+                if on_progress:
+                    on_progress("navigate", f"카페 재이동 중... ({cafe_url})")
+                nav_retry = navigate_to_write_page(driver, cafe_url, menu_id)
+                if nav_retry != "ok":
+                    _save_debug_screenshot(driver, "navigate_failed_after_session_retry")
+                    result["error"] = f"글쓰기 페이지 이동 실패 (세션 재확립 후에도, 사유: {nav_retry}). 수동 로그인 후 다시 시도해주세요."
                     if on_progress:
                         on_progress("error", result["error"])
                     return result
             else:
-                # 세션 만료가 아닌 기타 실패 — 재로그인 없이 즉시 에러 반환
+                # 세션 만료가 아닌 기타 실패 — 즉시 에러 반환
                 result["error"] = f"글쓰기 페이지 이동 실패: {nav_result}"
                 if on_progress:
                     on_progress("error", result["error"])
