@@ -448,6 +448,13 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         if not password_enc:
             _log("비밀번호가 설정되지 않았습니다.", "ERROR")
             return False
+
+        # ★ 로그인 페이지 접근 전에 먼저 로그인 상태 확인
+        # (이미 로그인된 상태에서 nid.naver.com/nidlogin.login 방문 시 캡차/2차인증 발생)
+        if _is_logged_in(driver):
+            _log(f"[credentials] 이미 로그인 상태 — nidlogin 페이지 방문 건너뜀, 바로 진행")
+            return True
+
         try:
             password = decrypt_password(password_enc)
             _log(f"[credentials] 비밀번호 복호화 성공 (길이={len(password)})")
@@ -463,20 +470,6 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         if "nid.naver.com" not in current_url:
             _log(f"[credentials] 로그인 페이지에서 리다이렉트됨 — 이미 로그인 상태로 판단: {current_url}")
             return True
-
-        # 로그인 페이지가 떴더라도 NID 쿠키가 이미 있으면 재로그인 불필요
-        # (재로그인 시도 시 캡차/이미지 퍼즐이 발생할 수 있음)
-        has_nid = driver.execute_script(
-            "return document.cookie.indexOf('NID_AUT') !== -1 "
-            "|| document.cookie.indexOf('NID_SES') !== -1;"
-        )
-        if has_nid:
-            _log("[credentials] 로그인 페이지이지만 NID 쿠키 존재 — 이미 로그인 상태, 재로그인 건너뜀")
-            # naver.com으로 이동하여 실제 로그인 상태 확인
-            if _is_logged_in(driver):
-                _log("[credentials] naver.com에서 로그인 확인 완료 — 재로그인 불필요")
-                return True
-            _log("[credentials] NID 쿠키는 있으나 naver.com 로그인 확인 실패 — 재로그인 진행")
 
         # 디버그: 페이지 로드 직후 스크린샷 + 페이지 정보 로깅
         _save_debug_screenshot(driver, "login_page_loaded")
