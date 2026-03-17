@@ -266,6 +266,11 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
     options.add_argument("--window-size=1920,1080")
     options.add_argument(f"--user-agent={ua}")
 
+    # 클립보드 권한 자동 허용 (네이버 에디터 링크 삽입 시 권한 팝업 방지)
+    options.add_experimental_option("prefs", {
+        "profile.default_content_setting_values.clipboard": 1,
+    })
+
     # 프록시 설정
     if proxy and proxy["host"]:
         if has_proxy_auth:
