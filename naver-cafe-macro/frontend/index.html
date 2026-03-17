@@ -441,7 +441,6 @@ function AccountCafeTab({ accounts, cafes, reload }) {
   const [newCafeId, setNewCafeId] = useState('');
   const [newCafeName, setNewCafeName] = useState('');
   const [expandedCafe, setExpandedCafe] = useState(null);
-  const [showSettings, setShowSettings] = useState({});
   const [boardForms, setBoardForms] = useState({});
 
   const addAccount = async () => {
@@ -601,7 +600,6 @@ function AccountCafeTab({ accounts, cafes, reload }) {
 
         {cafes.map(cafe => {
           const isExpanded = expandedCafe === cafe.id;
-          const isSettingsOpen = showSettings[cafe.id];
           const form = getBoardForm(cafe.id);
           const boards = cafe.boards || [];
 
@@ -626,9 +624,14 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                   </div>
                   <div style={{ fontSize: 11, color: '#4a5a7a', marginTop: 2, marginLeft: 20 }}>
                     카페 ID: {cafe.cafe_id} | 게시판 {boards.length}개
-                    {(cafe.account_ids || []).length > 0
-                      ? ` | 계정 ${cafe.account_ids.length}개 지정`
-                      : ' | 전체 계정'}
+                    {(() => {
+                      const ids = cafe.account_ids || [];
+                      if (ids.length > 0) {
+                        const acc = accounts.find(a => a.id === ids[0]);
+                        return ` | 로그인: ${acc ? acc.username : ids[0]}`;
+                      }
+                      return '';
+                    })()}
                     {!cafe.active && <span className="badge badge-danger" style={{ marginLeft: 6 }}>비활성</span>}
                   </div>
                 </div>
@@ -668,105 +671,29 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                     ))}
                   </div>
 
-                  {/* 계정 지정 */}
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e', marginBottom: 8 }}>
-                      발행 계정 지정 <span style={{ fontWeight: 400, color: '#3a4a6a' }}>(미선택 시 전체 계정)</span>
+                  {/* 로그인 계정 선택 */}
+                  <div style={{ borderTop: '1px solid #1a2540', paddingTop: 12 }}>
+                    <div className="input-group">
+                      <label style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e' }}>로그인 계정</label>
+                      <select
+                        value={(cafe.account_ids || [])[0] || ''}
+                        onChange={async (e) => {
+                          const val = e.target.value;
+                          const newIds = val ? [parseInt(val)] : [];
+                          await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ account_ids: newIds })
+                          });
+                          reload();
+                        }}
+                        style={{ marginTop: 4 }}>
+                        <option value="">선택 안 함 (전체 계정)</option>
+                        {accounts.map(acc => (
+                          <option key={acc.id} value={acc.id}>{acc.username}</option>
+                        ))}
+                      </select>
                     </div>
-                    {accounts.length === 0 && (
-                      <div style={{ fontSize: 12, color: '#3a4a6a', textAlign: 'center', padding: 10 }}>등록된 계정이 없습니다</div>
-                    )}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {accounts.map(acc => {
-                        const assigned = (cafe.account_ids || []).includes(acc.id);
-                        return (
-                          <button key={acc.id}
-                            className={`chip ${assigned ? 'active' : ''}`}
-                            onClick={async () => {
-                              const current = cafe.account_ids || [];
-                              const newIds = assigned
-                                ? current.filter(id => id !== acc.id)
-                                : [...current, acc.id];
-                              await fetch(`${API}/api/cafes/${cafe.id}/accounts`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ account_ids: newIds })
-                              });
-                              reload();
-                            }}>
-                            {acc.username}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 카페별 설정 토글 */}
-                  <div>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      cursor: 'pointer', padding: '8px 0', borderTop: '1px solid #1a2540'
-                    }} onClick={() => setShowSettings(prev => ({ ...prev, [cafe.id]: !prev[cafe.id] }))}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#6b7b9e' }}>카페별 발행 설정</span>
-                      <span style={{
-                        fontSize: 12, color: '#4a5a7a', transition: 'transform 0.2s',
-                        transform: isSettingsOpen ? 'rotate(90deg)' : 'rotate(0deg)'
-                      }}>&#9656;</span>
-                    </div>
-
-                    {isSettingsOpen && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
-                        <div className="input-group">
-                          <label>계정 간 간격 최소 (분)</label>
-                          <input type="number" min={1} max={60} value={cafe.interval_min ?? 3}
-                            onChange={e => updateCafe(cafe.id, 'interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
-                        </div>
-                        <div className="input-group">
-                          <label>계정 간 간격 최대 (분)</label>
-                          <input type="number" min={1} max={60} value={cafe.interval_max ?? 15}
-                            onChange={e => updateCafe(cafe.id, 'interval_max', Math.max(1, parseInt(e.target.value) || 15))} />
-                        </div>
-                        <div className="input-group">
-                          <label>일일 게시 한도 (계정당)</label>
-                          <input type="number" min={0} max={50} value={cafe.daily_post_limit ?? 3}
-                            onChange={e => updateCafe(cafe.id, 'daily_post_limit', Math.max(0, parseInt(e.target.value) || 0))} />
-                        </div>
-                        <div className="input-group">
-                          <label>일일 댓글 한도 (계정당)</label>
-                          <input type="number" min={0} max={100} value={cafe.daily_comment_limit ?? 10}
-                            onChange={e => updateCafe(cafe.id, 'daily_comment_limit', Math.max(0, parseInt(e.target.value) || 0))} />
-                        </div>
-                        <div className="input-group">
-                          <label>게시글당 댓글 수</label>
-                          <input type="number" min={0} max={50} value={cafe.comments_per_post ?? 6}
-                            onChange={e => updateCafe(cafe.id, 'comments_per_post', Math.max(0, parseInt(e.target.value) || 0))} />
-                        </div>
-                        <div className="input-group">
-                          <label>댓글 배정 방식</label>
-                          <select value={cafe.comment_order || 'random'}
-                            onChange={e => updateCafe(cafe.id, 'comment_order', e.target.value)}>
-                            <option value="random">랜덤</option>
-                            <option value="round">라운드로빈</option>
-                            <option value="least">최소 사용</option>
-                          </select>
-                        </div>
-                        <div className="input-group">
-                          <label>댓글 간 최소 딜레이 (초)</label>
-                          <input type="number" min={10} max={600} value={cafe.comment_delay_min ?? 60}
-                            onChange={e => updateCafe(cafe.id, 'comment_delay_min', Math.max(10, parseInt(e.target.value) || 60))} />
-                        </div>
-                        <div className="input-group">
-                          <label>댓글 간 최대 딜레이 (초)</label>
-                          <input type="number" min={10} max={600} value={cafe.comment_delay_max ?? 300}
-                            onChange={e => updateCafe(cafe.id, 'comment_delay_max', Math.max(10, parseInt(e.target.value) || 300))} />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div className={`toggle ${cafe.exclude_author ? 'on' : ''}`}
-                            onClick={() => updateCafe(cafe.id, 'exclude_author', cafe.exclude_author ? 0 : 1)} />
-                          <span style={{ fontSize: 13, color: '#6b7b9e' }}>글 작성자 계정은 댓글에서 제외</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
