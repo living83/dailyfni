@@ -58,6 +58,15 @@
   3. `_resolve_numeric_cafe_id`: 카페 방문 시 로그인 리다이렉트 조기 감지 + 방법별 실패 로그 강화
 - **교훈**: nid.naver.com 로그인 ≠ cafe.naver.com 세션. 카페 조작 전 반드시 카페 도메인 세션 확립 필요
 
+### 이미 로그인 상태에서 재로그인 → 캡차 발생 (2026-03-17)
+- **증상**: 프로파일/쿠키 로그인 실패 판정 → `login_with_credentials` 호출 → 이미 로그인된 상태에서 로그인 재시도 → 캡차(이미지 인증) 발생
+- **원인**: `login_with_credentials`가 `nid.naver.com/nidlogin.login` 접근 시 리다이렉트되면 "로그인 실패"로 처리. 이미 로그인 상태임에도 False 반환 → 전체 로그인 실패
+- **원인 2**: 로그인 페이지가 열려도 NID 쿠키가 이미 존재하면 재로그인 불필요하나, 무조건 ID/PW 입력 → 네이버가 반복 로그인 감지하여 캡차 표시
+- **수정**:
+  1. `login_with_credentials`: 로그인 페이지 접근 후 리다이렉트 감지 시 이미 로그인 상태로 판단 (True 반환)
+  2. `login_with_credentials`: NID 쿠키 존재 시 `_is_logged_in()` 재확인 후, 로그인 상태면 재로그인 건너뜀
+- **교훈**: 이미 로그인된 상태에서 `nid.naver.com/nidlogin.login` 재접근하면 캡차 발생. 로그인 전 반드시 기존 세션 확인 필수
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.
