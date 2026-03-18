@@ -21,7 +21,6 @@ import sys
 import time
 import random
 import logging
-import tempfile
 import traceback
 import urllib.request
 import urllib.error
@@ -151,102 +150,7 @@ def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0
 _PROFILE_BASE = Path(__file__).resolve().parent.parent / "data" / "chrome_profiles"
 
 
-def _parse_proxy_url(proxy_address: str) -> dict:
-    """프록시 URL 파싱 → {scheme, host, port, username, password}
-
-    지원 형식:
-      http://user:pass@host:port
-      host:port:user:pass
-      host:port
-    """
-    result = {"scheme": "http", "host": "", "port": "", "username": "", "password": ""}
-    if not proxy_address:
-        return result
-
-    addr = proxy_address.strip()
-
-    # http://user:pass@host:port 형식
-    if "://" in addr:
-        from urllib.parse import urlparse
-        parsed = urlparse(addr)
-        result["scheme"] = parsed.scheme or "http"
-        result["host"] = parsed.hostname or ""
-        result["port"] = str(parsed.port) if parsed.port else ""
-        result["username"] = parsed.username or ""
-        result["password"] = parsed.password or ""
-    elif "@" in addr:
-        # user:pass@host:port
-        cred_part, server_part = addr.rsplit("@", 1)
-        parts = server_part.split(":")
-        result["host"] = parts[0]
-        result["port"] = parts[1] if len(parts) > 1 else ""
-        cred_parts = cred_part.split(":", 1)
-        result["username"] = cred_parts[0]
-        result["password"] = cred_parts[1] if len(cred_parts) > 1 else ""
-    else:
-        # host:port 또는 host:port:user:pass
-        parts = addr.split(":")
-        result["host"] = parts[0]
-        result["port"] = parts[1] if len(parts) > 1 else ""
-        if len(parts) >= 4:
-            result["username"] = parts[2]
-            result["password"] = parts[3]
-
-    return result
-
-
-def _create_proxy_auth_extension(proxy: dict) -> str:
-    """인증이 필요한 프록시를 위한 Chrome 확장 프로그램 생성 (Manifest V3) → zip 파일 경로 반환"""
-    import zipfile
-
-    manifest = """{
-        "version": "1.0.0",
-        "manifest_version": 3,
-        "name": "Proxy Auth",
-        "permissions": ["proxy", "webRequest", "webRequestAuthProvider"],
-        "host_permissions": ["<all_urls>"],
-        "background": {"service_worker": "background.js"},
-        "minimum_chrome_version": "108.0.0"
-    }"""
-
-    background = """chrome.proxy.settings.set({
-    value: {
-        mode: "fixed_servers",
-        rules: {
-            singleProxy: {
-                scheme: "%s",
-                host: "%s",
-                port: parseInt(%s)
-            },
-            bypassList: ["localhost"]
-        }
-    },
-    scope: "regular"
-});
-chrome.webRequest.onAuthRequired.addListener(
-    (details, callback) => {
-        callback({
-            authCredentials: {
-                username: "%s",
-                password: "%s"
-            }
-        });
-    },
-    {urls: ["<all_urls>"]},
-    ["asyncBlocking"]
-);""" % (proxy["scheme"], proxy["host"], proxy["port"], proxy["username"], proxy["password"])
-
-    ext_dir = Path(tempfile.mkdtemp(prefix="proxy_ext_"))
-    ext_path = ext_dir / "proxy_auth.zip"
-
-    with zipfile.ZipFile(str(ext_path), "w") as zf:
-        zf.writestr("manifest.json", manifest)
-        zf.writestr("background.js", background)
-
-    return str(ext_path)
-
-
-def create_driver(headless: bool = True, account_id: int = None, proxy_address: str = None) -> uc.Chrome:
+def create_driver(headless: bool = True, account_id: int = None) -> uc.Chrome:
     """Chrome WebDriver 생성 (undetected-chromedriver 기반, 봇 탐지 우회)
 
     undetected-chromedriver는:
@@ -256,9 +160,6 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
     """
     ua = random.choice(_USER_AGENTS)
     logger.debug(f"User-Agent: {ua}")
-
-    proxy = _parse_proxy_url(proxy_address) if proxy_address else None
-    has_proxy_auth = proxy and proxy["username"] and proxy["password"]
 
     options = uc.ChromeOptions()
     options.add_argument("--no-sandbox")
@@ -270,26 +171,6 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
     options.add_experimental_option("prefs", {
         "profile.default_content_setting_values.clipboard": 1,
     })
-
-    # 프록시 설정
-    if proxy and proxy["host"]:
-        if has_proxy_auth:
-            # 인증 프록시: Chrome 확장으로 처리
-            ext_path = _create_proxy_auth_extension(proxy)
-            options.add_extension(ext_path)
-            logger.info(f"인증 프록시 확장 적용: {proxy['host']}:{proxy['port']} (user={proxy['username']})")
-            # 확장 프로그램은 headless와 호환 불가 → headless 강제 비활성화
-            if headless:
-                headless = False
-                options.add_argument("--window-position=-9999,-9999")
-                _log("인증 프록시 사용: headless 대신 창 숨김 모드")
-        else:
-            # 인증 없는 프록시: --proxy-server 플래그
-            proxy_server = f"{proxy['scheme']}://{proxy['host']}"
-            if proxy["port"]:
-                proxy_server += f":{proxy['port']}"
-            options.add_argument(f"--proxy-server={proxy_server}")
-            logger.info(f"프록시 적용: {proxy_server}")
 
     # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
     user_data_dir = None
@@ -2718,10 +2599,7 @@ def publish_to_cafe(
     try:
         if on_progress:
             on_progress("driver", "브라우저 시작 중...")
-        # 프록시: DB에서 복호화하여 가져오기
-        from database import get_account_proxy
-        proxy_addr = get_account_proxy(account["id"]) if account.get("id") else account.get("proxy_address")
-        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
+        driver = create_driver(headless=headless, account_id=account.get("id"))
 
         # 1. 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         _log(f"[발행] 계정={account.get('username')}, 카페={cafe_url}, 게시판={menu_id}")
@@ -2875,10 +2753,7 @@ def post_comment(
     result = {"success": False, "error": None, "cookies": None}
 
     try:
-        # 프록시: DB에서 복호화하여 가져오기
-        from database import get_account_proxy
-        proxy_addr = get_account_proxy(account["id"]) if account.get("id") else account.get("proxy_address")
-        driver = create_driver(headless=headless, account_id=account.get("id"), proxy_address=proxy_addr)
+        driver = create_driver(headless=headless, account_id=account.get("id"))
 
         # 로그인 (프로파일 세션 → DB 쿠키 → ID/PW 순)
         logged_in = check_profile_login(driver)

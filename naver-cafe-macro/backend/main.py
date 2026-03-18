@@ -86,9 +86,6 @@ class AccountCreate(BaseModel):
     username: str
     password: str
 
-class AccountProxyUpdate(BaseModel):
-    proxy_address: Optional[str] = None
-
 class CafeBoardCreate(BaseModel):
     cafe_url: str
     board_name: str
@@ -169,11 +166,7 @@ async def list_accounts():
     for acc in accounts:
         # 비밀번호 마스킹
         acc["password_enc"] = "••••••••"
-        # 프록시: 암호화된 값 → 마스킹 표시 (유무만 알려줌)
-        if acc.get("proxy_address"):
-            acc["proxy_address"] = "••••••••"
-        else:
-            acc["proxy_address"] = None
+        acc.pop("proxy_address", None)
     return accounts
 
 
@@ -196,11 +189,6 @@ async def toggle_account(account_id: int):
     db.toggle_account(account_id)
     return {"message": "계정 상태 변경됨"}
 
-
-@app.put("/api/accounts/{account_id}/proxy")
-async def update_account_proxy(account_id: int, req: AccountProxyUpdate):
-    db.update_account_proxy(account_id, (req.proxy_address or "").strip() or None)
-    return {"message": "프록시 설정 업데이트됨"}
 
 
 @app.delete("/api/accounts/{account_id}")
