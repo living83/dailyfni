@@ -1,17 +1,23 @@
 # 프로젝트 메모
 
 ## 실행 방법
-- **둘 다 동시 실행**: 루트의 `run.bat` 실행 → Blog(8000) + Cafe(8001) 동시 시작
+- **백그라운드 실행 (권장)**: 루트의 `run-background.bat` 실행 → 창을 닫아도 서버 유지
+- **콘솔 실행**: 루트의 `run.bat` 실행 → Blog(8000) + Cafe(8001) 동시 시작 (창 닫으면 종료)
 - **개별 실행**: `blog-generator/run.bat` 또는 `naver-cafe-macro/run.bat`
-- `python backend/main.py` 직접 실행 X → 반드시 `run.bat` 사용
-- `run.bat`이 venv 생성, 패키지 설치, 서버 실행을 자동 처리
+- `python backend/main.py` 직접 실행 X → 반드시 `run.bat` 또는 `run-background.bat` 사용
+- `run.bat` / `run-background.bat`이 venv 생성, 패키지 설치, 서버 실행을 자동 처리
+
+## 서버 관리
+- **상태 확인**: `status.bat` → 각 서버 실행 여부 + PID 표시
+- **서버 중지**: `stop.bat` → 포트 기반으로 서버 프로세스 종료
+- **로그 확인**: `logs\blog.log`, `logs\cafe.log` (백그라운드 실행 시)
 
 ## 서버 포트
 - Blog Generator: http://localhost:8000
 - Cafe Macro: http://localhost:8001
 
 ## 안내 시 주의
-- 사용자에게 실행 안내할 때: `git pull` 후 루트 `run.bat` 실행
+- 사용자에게 실행 안내할 때: `git pull` 후 루트 `run-background.bat` 실행 (창 닫아도 서버 유지)
 
 ## 프로젝트 구조
 
