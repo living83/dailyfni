@@ -345,6 +345,17 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
         await _notify_progress("info", {"message": f"키워드 '{keyword['text']}'에 매핑된 게시판이 없습니다"})
         return
 
+    # 2-1. 계정-카페 매핑 검증: 선택된 게시판의 카페에 계정이 등록되어 있는지 확인
+    board_cafe_id = board.get("cafe_group_id")
+    if board_cafe_id is not None:
+        assigned_ids = db.get_cafe_accounts(board_cafe_id)
+        if assigned_ids and account["id"] not in assigned_ids:
+            _slog(f"[{account['username']}] 카페 {board_cafe_id}에 등록되지 않은 계정 — 발행 건너뜀", "WARNING")
+            await _notify_progress("error", {
+                "message": f"{account['username']}은(는) 해당 카페에 등록되지 않았습니다"
+            })
+            return
+
     # 3. 랜덤 딜레이
     delay_min = config.get("random_delay_min", 10)
     delay_max = config.get("random_delay_max", 120)
@@ -796,7 +807,7 @@ def is_running() -> bool:
 
 
 async def run_once_now():
-    """즉시 1회 발행 (테스트/수동 실행용) - 1개 계정으로 1건만 발행"""
+    """즉시 1회 발행 (테스트/수동 실행용) - 카페-계정 매핑을 존중하여 1건 발행"""
     global _is_running
     was_running = _is_running
     _is_running = True
@@ -804,19 +815,34 @@ async def run_once_now():
     try:
         _slog("=== 수동 1회 발행 시작 ===")
         config = db.get_schedule_config()
-        eligible = _get_eligible_accounts(config)
-        _slog(f"적격 계정: {len(eligible)}개")
 
-        if not eligible:
+        # 활성 카페 목록에서 카페-계정 매핑을 존중하여 첫 번째 적격 조합 선택
+        cafes = db.get_cafes()
+        active_cafes = [c for c in cafes if c.get("active", 1)]
+
+        account = None
+        selected_cafe_id = None
+        for cafe in active_cafes:
+            cafe_cfg = _get_cafe_config(cafe, config)
+            eligible = _get_eligible_accounts(config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
+            if eligible:
+                account = eligible[0]
+                selected_cafe_id = cafe["id"]
+                _slog(f"선택: 계정 {account['username']} → 카페 {cafe.get('name', cafe['cafe_id'])}")
+                break
+
+        # 폴백: 매핑 없는 카페가 있을 수 있으므로 전체 활성 계정 시도
+        if not account:
             accounts = db.get_accounts()
-            eligible = [a for a in accounts if a["active"]]
-            _slog(f"적격 없음 → 활성 계정 폴백: {len(eligible)}개")
+            fallback = [a for a in accounts if a["active"]]
+            if fallback:
+                account = fallback[0]
+                _slog(f"카페 매핑 적격 없음 → 활성 계정 폴백: {account['username']}")
 
-        if eligible:
-            account = eligible[0]  # 순차 발행: DB 등록 순서대로 (랜덤 X)
+        if account:
             _slog(f"선택 계정: {account['username']} (id={account['id']})")
             await _notify_progress("info", {"message": f"수동 1회 발행: {account['username']}"})
-            await _publish_single(account, config, skip_comment=True)
+            await _publish_single(account, config, cafe_group_id=selected_cafe_id, skip_comment=True)
         else:
             _slog("활성 계정 없음 — 1회 발행 불가", "WARNING")
             await _notify_progress("error", {"message": "활성 계정이 없습니다"})
