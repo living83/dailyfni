@@ -83,6 +83,16 @@
   5. `login_with_credentials`: nidlogin 페이지 로드 후 캡차 요소(`#captchaimg`, `img[src*='captcha']` 등) 감지 시 ID/PW 입력 중단
 - **교훈**: NID 쿠키 체크는 페이지 이동이 필요 없으므로 항상 첫 번째로 수행. CSS 셀렉터 기반 로그인 판별은 네이버 프론트 업데이트에 취약하므로 쿠키 체크를 우선
 
+### 만료 쿠키로 로그인 오판 → 카페 세션 실패 (2026-03-18)
+- **증상**: 로그인이 완료되지 않았는데 카페 글쓰기 페이지로 이동, 네이버 로그인 페이지가 표시됨
+- **원인 1**: `_is_logged_in` → `_has_nid_cookies` True 시 **www.naver.com 방문 없이** 바로 `return True`. 브라우저 프로파일에 만료/무효 NID 쿠키가 남아있으면 로그인된 것으로 오판
+- **원인 2**: `publish_to_cafe`에서 `_ensure_cafe_session()` 반환값을 **무시**. 카페 세션 실패(로그인 리다이렉트)해도 그대로 글쓰기 페이지로 진행
+- **수정**:
+  1. `_is_logged_in`: NID 쿠키 없으면 즉시 False (빠른 판정), 쿠키 있으면 **반드시 www.naver.com 방문하여 실제 검증**
+  2. `publish_to_cafe`: `_ensure_cafe_session()` 반환값 체크 → 실패 시 ID/PW 재로그인 → 재확립 → 그래도 실패면 에러 반환
+  3. `login_with_credentials`: `_has_nid_cookies`만으로 True 반환하지 않고, `_is_logged_in` (실제 검증 포함)만 사용
+- **교훈**: NID 쿠키 존재 ≠ 유효한 로그인 세션. 쿠키는 "미로그인 빠른 판정"에만 사용하고, 로그인 확인은 반드시 페이지 방문으로 검증. `_ensure_cafe_session` 반환값은 반드시 체크할 것
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.

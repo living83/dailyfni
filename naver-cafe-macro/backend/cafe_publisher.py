@@ -340,10 +340,13 @@ def _is_logged_in(driver: webdriver.Chrome) -> bool:
     """
     try:
         # 방법 0: 페이지 이동 전 쿠키부터 확인 (빠른 경로)
-        if _has_nid_cookies(driver):
-            _log("로그인 확인 (NID 쿠키 빠른 체크 — 페이지 이동 생략)")
-            return True
+        # ★ 쿠키 없으면 확실히 미로그인 → www.naver.com 방문 생략
+        if not _has_nid_cookies(driver):
+            _log("NID 쿠키 없음 — 미로그인 (빠른 판정)")
+            return False
 
+        # ★ 쿠키가 있어도 만료/무효일 수 있으므로 www.naver.com에서 실제 검증
+        _log("NID 쿠키 존재 — www.naver.com에서 실제 로그인 상태 검증...")
         driver.get("https://www.naver.com")
         random_delay(2, 3)
 
@@ -472,11 +475,7 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
 
         # ★ 로그인 페이지 접근 전에 먼저 로그인 상태 확인
         # (이미 로그인된 상태에서 nid.naver.com/nidlogin.login 방문 시 캡차/2차인증 발생)
-        # 1차: 쿠키만으로 빠른 체크 (페이지 이동 없음)
-        if _has_nid_cookies(driver):
-            _log(f"[credentials] NID 쿠키 존재 — 이미 로그인 상태, nidlogin 방문 건너뜀")
-            return True
-        # 2차: 전체 로그인 상태 확인 (www.naver.com 방문)
+        # _is_logged_in 내부에서 쿠키 + www.naver.com 실제 검증을 수행
         if _is_logged_in(driver):
             _log(f"[credentials] 이미 로그인 상태 — nidlogin 페이지 방문 건너뜀, 바로 진행")
             return True
@@ -2766,7 +2765,31 @@ def publish_to_cafe(
         # 1.5. cafe.naver.com 세션 확립 (로그인 후 카페 도메인 세션 동기화)
         if on_progress:
             on_progress("navigate", "카페 세션 확립 중...")
-        _ensure_cafe_session(driver)
+        cafe_session_ok = _ensure_cafe_session(driver)
+
+        if not cafe_session_ok:
+            # 카페 세션 실패 = 실제로는 로그인 안 된 상태 (만료된 쿠키/프로파일)
+            _log("[발행] 카페 세션 미확립 — 기존 로그인 무효, ID/PW 재로그인 시도", "WARNING")
+            if on_progress:
+                on_progress("login", "세션 무효 — ID/PW 재로그인 시도...")
+            logged_in = login_with_credentials(
+                driver, account["username"], account["password_enc"]
+            )
+            if not logged_in:
+                _save_debug_screenshot(driver, "relogin_after_session_fail")
+                result["error"] = "카페 세션 확립 실패 후 재로그인도 실패"
+                if on_progress:
+                    on_progress("error", result["error"])
+                return result
+            result["cookies"] = get_login_cookies(driver)
+            # 재로그인 후 카페 세션 재확립
+            cafe_session_ok = _ensure_cafe_session(driver)
+            if not cafe_session_ok:
+                _save_debug_screenshot(driver, "cafe_session_fail_after_relogin")
+                result["error"] = "재로그인 후에도 카페 세션 확립 실패"
+                if on_progress:
+                    on_progress("error", result["error"])
+                return result
 
         # 2. 카페 글쓰기 페이지 이동
         if on_progress:
