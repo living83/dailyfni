@@ -73,6 +73,16 @@
   2. `login_with_credentials`: NID 쿠키 존재 시 `_is_logged_in()` 재확인 후, 로그인 상태면 재로그인 건너뜀
 - **교훈**: 이미 로그인된 상태에서 `nid.naver.com/nidlogin.login` 재접근하면 캡차 발생. 로그인 전 반드시 기존 세션 확인 필수
 
+### 캡차 방지 강화 (2026-03-18)
+- **증상**: 기존 `_is_logged_in` 체크가 www.naver.com 셀렉터 변경으로 실패 → 로그인된 상태를 미로그인으로 오판 → nidlogin 방문 → 캡차
+- **수정**:
+  1. `_has_nid_cookies()` 추가: **페이지 이동 없이** 브라우저 쿠키(`NID_AUT`, `NID_SES`)만 확인하는 빠른 체크
+  2. `_is_logged_in`: 방법 0으로 `_has_nid_cookies` 우선 실행 — 쿠키 있으면 www.naver.com 방문 생략
+  3. `_is_logged_in`: 로그인 버튼 셀렉터에 `is_displayed()` 체크 추가 — 숨겨진 요소 오탐 방지
+  4. `login_with_credentials`: nidlogin 방문 전 `_has_nid_cookies` → `_is_logged_in` 2단계 체크
+  5. `login_with_credentials`: nidlogin 페이지 로드 후 캡차 요소(`#captchaimg`, `img[src*='captcha']` 등) 감지 시 ID/PW 입력 중단
+- **교훈**: NID 쿠키 체크는 페이지 이동이 필요 없으므로 항상 첫 번째로 수행. CSS 셀렉터 기반 로그인 판별은 네이버 프론트 업데이트에 취약하므로 쿠키 체크를 우선
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.

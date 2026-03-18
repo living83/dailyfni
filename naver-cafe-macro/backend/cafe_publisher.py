@@ -317,6 +317,21 @@ def create_driver(headless: bool = True, account_id: int = None, proxy_address: 
 
 # ─── 로그인 ────────────────────────────────────────────────
 
+def _has_nid_cookies(driver: webdriver.Chrome) -> bool:
+    """페이지 이동 없이 브라우저 쿠키만으로 NID 로그인 상태 확인 (빠른 체크)"""
+    try:
+        cookies = driver.get_cookies()
+        nid_names = {"NID_AUT", "NID_SES"}
+        found = {c["name"] for c in cookies if c["name"] in nid_names}
+        if found:
+            _log(f"NID 쿠키 존재 (빠른 체크): {found}")
+            return True
+        return False
+    except Exception as e:
+        _log(f"NID 쿠키 확인 실패: {e}", "WARNING")
+        return False
+
+
 def _is_logged_in(driver: webdriver.Chrome) -> bool:
     """현재 브라우저가 네이버에 로그인되어 있는지 확인
 
@@ -324,6 +339,11 @@ def _is_logged_in(driver: webdriver.Chrome) -> bool:
     여러 방법으로 로그인 상태를 판별한다.
     """
     try:
+        # 방법 0: 페이지 이동 전 쿠키부터 확인 (빠른 경로)
+        if _has_nid_cookies(driver):
+            _log("로그인 확인 (NID 쿠키 빠른 체크 — 페이지 이동 생략)")
+            return True
+
         driver.get("https://www.naver.com")
         random_delay(2, 3)
 
@@ -331,13 +351,14 @@ def _is_logged_in(driver: webdriver.Chrome) -> bool:
         login_selectors = [
             "a[class*='link_login']",           # MyView-module__link_login___XXXX
             "a[href*='nidlogin']",              # 로그인 링크
-            ".MyView-module__link_login___HpHMW",  # 기존 셀렉터 (폴백)
         ]
         for sel in login_selectors:
             try:
-                driver.find_element(By.CSS_SELECTOR, sel)
-                _log(f"미로그인 감지 (셀렉터: {sel})")
-                return False  # 로그인 버튼이 보이면 미로그인
+                el = driver.find_element(By.CSS_SELECTOR, sel)
+                # 실제로 보이는 요소인지 확인 (숨겨진 요소 오탐 방지)
+                if el.is_displayed():
+                    _log(f"미로그인 감지 (셀렉터: {sel})")
+                    return False  # 로그인 버튼이 보이면 미로그인
             except NoSuchElementException:
                 continue
 
@@ -357,7 +378,7 @@ def _is_logged_in(driver: webdriver.Chrome) -> bool:
             except NoSuchElementException:
                 continue
 
-        # 방법 3: JavaScript로 쿠키 기반 확인
+        # 방법 3: JavaScript로 쿠키 기반 확인 (www.naver.com 도메인에서)
         has_nid = driver.execute_script(
             "return document.cookie.indexOf('NID_AUT') !== -1 "
             "|| document.cookie.indexOf('NID_SES') !== -1;"
@@ -451,6 +472,11 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
 
         # ★ 로그인 페이지 접근 전에 먼저 로그인 상태 확인
         # (이미 로그인된 상태에서 nid.naver.com/nidlogin.login 방문 시 캡차/2차인증 발생)
+        # 1차: 쿠키만으로 빠른 체크 (페이지 이동 없음)
+        if _has_nid_cookies(driver):
+            _log(f"[credentials] NID 쿠키 존재 — 이미 로그인 상태, nidlogin 방문 건너뜀")
+            return True
+        # 2차: 전체 로그인 상태 확인 (www.naver.com 방문)
         if _is_logged_in(driver):
             _log(f"[credentials] 이미 로그인 상태 — nidlogin 페이지 방문 건너뜀, 바로 진행")
             return True
@@ -470,6 +496,34 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
         if "nid.naver.com" not in current_url:
             _log(f"[credentials] 로그인 페이지에서 리다이렉트됨 — 이미 로그인 상태로 판단: {current_url}")
             return True
+
+        # ★ 캡차 감지: 로그인 페이지에 캡차가 이미 표시되면 입력하지 않고 즉시 중단
+        if "captcha" in current_url:
+            _log("[credentials] 캡차 페이지 감지 — ID/PW 입력 중단. 수동 해결 필요", "ERROR")
+            _save_debug_screenshot(driver, "captcha_detected_before_login")
+            return False
+
+        # 캡차 이미지/iframe 요소 감지
+        try:
+            captcha_selectors = [
+                "#captchaimg",                       # 캡차 이미지
+                "img[src*='captcha']",               # 캡차 관련 이미지
+                "iframe[src*='captcha']",            # 캡차 iframe
+                "#captcha",                          # 캡차 컨테이너
+                "input[name*='captcha']",            # 캡차 입력 필드
+                ".captcha_area",                     # 캡차 영역
+            ]
+            for sel in captcha_selectors:
+                try:
+                    el = driver.find_element(By.CSS_SELECTOR, sel)
+                    if el.is_displayed():
+                        _log(f"[credentials] 캡차 요소 감지 ({sel}) — ID/PW 입력 중단", "ERROR")
+                        _save_debug_screenshot(driver, "captcha_element_detected")
+                        return False
+                except NoSuchElementException:
+                    continue
+        except Exception:
+            pass
 
         # 디버그: 페이지 로드 직후 스크린샷 + 페이지 정보 로깅
         _save_debug_screenshot(driver, "login_page_loaded")
