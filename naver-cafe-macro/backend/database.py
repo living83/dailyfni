@@ -163,6 +163,7 @@ def init_db():
             cross_publish INTEGER DEFAULT 1,
             account_interval_hours INTEGER DEFAULT 3,
             max_accounts_per_run INTEGER DEFAULT 30,
+            max_parallel_accounts INTEGER DEFAULT 3,
             base_start_hour INTEGER DEFAULT 8,
             base_start_minute INTEGER DEFAULT 0,
             daily_shift_minutes INTEGER DEFAULT 30,
@@ -176,6 +177,7 @@ def init_db():
     # 기존 DB 마이그레이션: 새 컬럼 추가
     for tbl, col, default in [
         ("schedule_config", "max_accounts_per_run", "30"),
+        ("schedule_config", "max_parallel_accounts", "3"),
         ("schedule_config", "base_start_hour", "8"),
         ("schedule_config", "base_start_minute", "0"),
         ("schedule_config", "daily_shift_minutes", "30"),
@@ -793,7 +795,8 @@ def update_schedule_config(**kwargs):
         "random_delay_min", "random_delay_max",
         "comment_enabled", "comments_per_post", "comment_delay_min", "comment_delay_max",
         "comment_order", "exclude_author", "cross_publish", "account_interval_hours",
-        "max_accounts_per_run", "base_start_hour", "base_start_minute", "daily_shift_minutes",
+        "max_accounts_per_run", "max_parallel_accounts",
+        "base_start_hour", "base_start_minute", "daily_shift_minutes",
         "daily_post_limit", "daily_comment_limit", "footer_link", "footer_link_text"
     ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}

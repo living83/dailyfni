@@ -1063,10 +1063,13 @@ function ScheduleTab({ schedule, events, reload }) {
   };
 
   const maxAccounts = schedule.max_accounts_per_run || 30;
+  const maxParallel = schedule.max_parallel_accounts || 3;
   const intervalMin = schedule.interval_min || 3;
   const intervalMax = schedule.interval_max || 15;
-  const estMinLo = maxAccounts * intervalMin;
-  const estMinHi = maxAccounts * intervalMax;
+  // 병렬 실행 반영: 계정을 N개씩 동시 처리하므로 소요시간 = ceil(계정수/병렬수) × 간격
+  const parallelRounds = Math.ceil(maxAccounts / maxParallel);
+  const estMinLo = parallelRounds * intervalMin;
+  const estMinHi = parallelRounds * intervalMax;
   const estLoH = Math.floor(estMinLo / 60);
   const estLoM = estMinLo % 60;
   const estHiH = Math.floor(estMinHi / 60);
@@ -1128,6 +1131,11 @@ function ScheduleTab({ schedule, events, reload }) {
               onChange={e => updateConfig('max_accounts_per_run', Math.max(1, parseInt(e.target.value) || 1))} />
           </div>
           <div className="input-group">
+            <label>동시 실행 계정 수</label>
+            <input type="number" min={1} max={10} value={schedule.max_parallel_accounts ?? 3}
+              onChange={e => updateConfig('max_parallel_accounts', Math.min(10, Math.max(1, parseInt(e.target.value) || 1)))} />
+          </div>
+          <div className="input-group">
             <label>계정 간 간격 최소 (기본값, 분)</label>
             <input type="number" min={1} max={60} value={intervalMin}
               onChange={e => updateConfig('interval_min', Math.max(1, parseInt(e.target.value) || 1))} />
@@ -1184,7 +1192,7 @@ function ScheduleTab({ schedule, events, reload }) {
                 {estLoH > 0 ? `${estLoH}시간 ` : ''}{estLoM}분 ~ {estHiH > 0 ? `${estHiH}시간 ` : ''}{estHiM}분
               </div>
               <div style={{ fontSize: 11, color: '#3a4a6a' }}>
-                {maxAccounts}개 계정 x {intervalMin}~{intervalMax}분
+                {maxAccounts}개 계정 ÷ {maxParallel}병렬 × {intervalMin}~{intervalMax}분
               </div>
             </div>
           </div>

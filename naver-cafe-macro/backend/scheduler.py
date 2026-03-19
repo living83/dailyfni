@@ -555,58 +555,86 @@ async def execute_batch_job():
         "total_accounts": total
     })
 
-    # 5. 순차 발행
-    success_count = 0
-    fail_count = 0
+    # 5. 병렬 발행 (계정별 그룹화 → 동시 실행)
+    max_parallel = global_config.get("max_parallel_accounts", 3)
+    if max_parallel < 1:
+        max_parallel = 1
 
-    for i, (account, cafe_cfg, cafe_gid, cafe_name) in enumerate(tasks):
-        if not _is_running:
-            logger.info("스케줄러 중지됨 - 배치 중단")
-            break
+    # 계정별로 태스크 그룹화 (같은 계정의 카페 작업을 묶음)
+    from collections import OrderedDict
+    account_groups = OrderedDict()
+    for task in tasks:
+        acc_id = task[0]["id"]
+        if acc_id not in account_groups:
+            account_groups[acc_id] = []
+        account_groups[acc_id].append(task)
 
-        turn_start = datetime.now()
+    _slog(f"병렬 발행: {len(account_groups)}개 계정, 동시 {max_parallel}개, 총 {total}건")
 
-        # 발행 직전 일일 한도 재확인 (배치 중 누적 반영)
-        daily_limit = cafe_cfg.get("daily_post_limit", 3)
-        if daily_limit > 0:
-            current_count = db.get_today_post_count(account["id"], cafe_group_id=cafe_gid)
-            if current_count >= daily_limit:
-                logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
-                continue
+    # 공유 카운터 (thread-safe via asyncio single-thread)
+    _batch_counters = {"success": 0, "fail": 0, "done": 0}
+    semaphore = asyncio.Semaphore(max_parallel)
 
-        await _notify_progress("batch_progress", {
-            "message": f"[{i+1}/{total}] {account['username']} → {cafe_name}",
-            "current": i + 1,
-            "total": total,
-            "account": account["username"]
-        })
+    async def _run_account_tasks(acc_tasks: list):
+        """한 계정의 모든 카페 작업을 순차 실행 (계정 내부는 순차, 계정 간은 병렬)"""
+        async with semaphore:
+            for j, (account, cafe_cfg, cafe_gid, cafe_name) in enumerate(acc_tasks):
+                if not _is_running:
+                    break
 
-        try:
-            await _publish_single(account, cafe_cfg, cafe_group_id=cafe_gid)
-            success_count += 1
-        except Exception as e:
-            fail_count += 1
-            logger.error(f"[{account['username']}] 발행 중 예외: {e}")
-            await _notify_progress("error", {
-                "message": f"[{account['username']}] 발행 예외: {str(e)}"
-            })
+                turn_start = datetime.now()
 
-        # 다음 작업까지 카페별 랜덤 간격 대기
-        if i < total - 1 and _is_running:
-            interval_lo = cafe_cfg.get("interval_min", 3)
-            interval_hi = cafe_cfg.get("interval_max", 15)
-            if interval_hi < interval_lo:
-                interval_hi = interval_lo
-            interval = random.randint(interval_lo, interval_hi)
-            elapsed = (datetime.now() - turn_start).total_seconds()
-            remaining = interval * 60 - elapsed
-            if remaining > 0:
-                logger.info(f"다음까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})")
-                await _notify_progress("delay", {
-                    "message": f"다음까지 {remaining:.0f}초 대기 (랜덤 {interval}분, {i+2}/{total})",
-                    "seconds": remaining
+                # 일일 한도 재확인
+                daily_limit = cafe_cfg.get("daily_post_limit", 3)
+                if daily_limit > 0:
+                    current_count = db.get_today_post_count(account["id"], cafe_group_id=cafe_gid)
+                    if current_count >= daily_limit:
+                        logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
+                        continue
+
+                _batch_counters["done"] += 1
+                await _notify_progress("batch_progress", {
+                    "message": f"[{_batch_counters['done']}/{total}] {account['username']} → {cafe_name}",
+                    "current": _batch_counters["done"],
+                    "total": total,
+                    "account": account["username"]
                 })
-                await asyncio.sleep(remaining)
+
+                try:
+                    await _publish_single(account, cafe_cfg, cafe_group_id=cafe_gid)
+                    _batch_counters["success"] += 1
+                except Exception as e:
+                    _batch_counters["fail"] += 1
+                    logger.error(f"[{account['username']}] 발행 중 예외: {e}")
+                    await _notify_progress("error", {
+                        "message": f"[{account['username']}] 발행 예외: {str(e)}"
+                    })
+
+                # 같은 계정 내 다음 카페 작업까지 대기
+                if j < len(acc_tasks) - 1 and _is_running:
+                    interval_lo = cafe_cfg.get("interval_min", 3)
+                    interval_hi = cafe_cfg.get("interval_max", 15)
+                    if interval_hi < interval_lo:
+                        interval_hi = interval_lo
+                    interval = random.randint(interval_lo, interval_hi)
+                    elapsed = (datetime.now() - turn_start).total_seconds()
+                    remaining = interval * 60 - elapsed
+                    if remaining > 0:
+                        logger.info(f"[{account['username']}] 다음 카페까지 {remaining:.0f}초 대기 ({interval}분)")
+                        await _notify_progress("delay", {
+                            "message": f"[{account['username']}] 다음 카페까지 {remaining:.0f}초 대기 ({interval}분)",
+                            "seconds": remaining
+                        })
+                        await asyncio.sleep(remaining)
+
+    # 모든 계정 그룹을 동시 실행 (semaphore가 동시 실행 수 제한)
+    await asyncio.gather(
+        *[_run_account_tasks(acc_tasks) for acc_tasks in account_groups.values()],
+        return_exceptions=True
+    )
+
+    success_count = _batch_counters["success"]
+    fail_count = _batch_counters["fail"]
 
     logger.info(f"배치 발행 완료: 성공 {success_count}, 실패 {fail_count}")
     await _notify_progress("batch_complete", {
