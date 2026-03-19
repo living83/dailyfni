@@ -526,24 +526,18 @@ async def execute_batch_job():
     max_accounts = global_config.get("max_accounts_per_run", 30)
 
     # 4. 카페별 발행 작업 빌드 — (account, cafe_config, cafe_group_id) 튜플 목록
-    #    계정당 카페당 daily_post_limit까지 반복 태스크 생성
+    #    배치 1회당 계정당 카페당 1건만 발행 (daily_post_limit은 하루 전체 상한)
     tasks = []
     for cafe in active_cafes:
         cafe_cfg = _get_cafe_config(cafe, global_config)
-        daily_limit = cafe_cfg.get("daily_post_limit", 3)
         eligible = _get_eligible_accounts(global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
-        # 계정 순차 발행 (DB 등록 순서대로)
+        # 계정당 카페당 1건만 (eligible은 이미 일일 한도 미달 계정만 포함)
         cafe_task_count = 0
         for acc in eligible:
             if cafe_task_count >= max_accounts:
                 break
-            today_count = db.get_today_post_count(acc["id"], cafe_group_id=cafe["id"])
-            remaining = max(0, daily_limit - today_count) if daily_limit > 0 else 1
-            for _ in range(remaining):
-                if cafe_task_count >= max_accounts:
-                    break
-                tasks.append((acc, cafe_cfg, cafe["id"], cafe.get("name", cafe["cafe_id"])))
-                cafe_task_count += 1
+            tasks.append((acc, cafe_cfg, cafe["id"], cafe.get("name", cafe["cafe_id"])))
+            cafe_task_count += 1
 
     if not tasks:
         logger.info("발행 가능한 계정-카페 조합 없음")
