@@ -360,7 +360,6 @@ function App() {
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({});
   const [events, setEvents] = useState([]);
-  const [proxyModal, setProxyModal] = useState({ open: false, accountId: null, server: '', username: '', password: '', hasExisting: false, hasPassword: false });
 
   // 초기 데이터 로드
   const loadData = useCallback(async () => {
@@ -448,6 +447,7 @@ function AccountCafeTab({ accounts, cafes, reload }) {
   const [newCafeName, setNewCafeName] = useState('');
   const [expandedCafe, setExpandedCafe] = useState(null);
   const [boardForms, setBoardForms] = useState({});
+  const [proxyModal, setProxyModal] = useState({ open: false, accountId: null, server: '', username: '', password: '', hasExisting: false, hasPassword: false });
 
   const addAccount = async () => {
     if (!username || !password) return;
