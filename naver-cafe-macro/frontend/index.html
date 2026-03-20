@@ -360,7 +360,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({});
   const [events, setEvents] = useState([]);
-  const [proxyModal, setProxyModal] = useState({ open: false, accountId: null, server: '', username: '', password: '' });
+  const [proxyModal, setProxyModal] = useState({ open: false, accountId: null, server: '', username: '', password: '', hasExisting: false, hasPassword: false });
 
   // 초기 데이터 로드
   const loadData = useCallback(async () => {
@@ -473,18 +473,39 @@ function AccountCafeTab({ accounts, cafes, reload }) {
   };
 
   // ── 프록시 관리 ──
-  const openProxyModal = (accountId) => {
-    setProxyModal({ open: true, accountId, server: '', username: '', password: '' });
+  const openProxyModal = async (accountId) => {
+    // 기존 프록시 설정이 있으면 불러오기
+    try {
+      const res = await fetch(`${API}/api/accounts/${accountId}/proxy`);
+      const data = await res.json();
+      if (data.has_proxy) {
+        setProxyModal({ open: true, accountId, server: data.server || '', username: data.username || '', password: '', hasExisting: true, hasPassword: data.has_password });
+        return;
+      }
+    } catch (e) { /* ignore */ }
+    setProxyModal({ open: true, accountId, server: '', username: '', password: '', hasExisting: false, hasPassword: false });
   };
   const saveProxy = async () => {
     const { accountId, server, username, password } = proxyModal;
     if (!server.trim()) { alert('프록시 서버 주소를 입력하세요.'); return; }
-    await fetch(`${API}/api/accounts/${accountId}/proxy`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ server: server.trim(), username: username.trim(), password: password.trim() })
-    });
-    setProxyModal({ open: false, accountId: null, server: '', username: '', password: '' });
+    try {
+      const res = await fetch(`${API}/api/accounts/${accountId}/proxy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server: server.trim(), username: username.trim(), password: password.trim() })
+      });
+      if (res.ok) {
+        alert('프록시가 저장되었습니다.');
+      } else {
+        const d = await res.json();
+        alert(`프록시 저장 실패: ${d.detail || '오류 발생'}`);
+        return;
+      }
+    } catch (e) {
+      alert(`프록시 저장 오류: ${e.message}`);
+      return;
+    }
+    setProxyModal({ open: false, accountId: null, server: '', username: '', password: '', hasExisting: false, hasPassword: false });
     reload();
   };
   const removeProxy = async (accountId) => {
@@ -587,15 +608,16 @@ function AccountCafeTab({ accounts, cafes, reload }) {
               </div>
               <div className="sub">
                 {a.active ? <span className="badge badge-success">활성</span> : <span className="badge badge-danger">비활성</span>}
-                {' '}{a.has_proxy ? <span className="badge badge-info">프록시 설정됨</span> : <span className="badge badge-warning" style={{opacity:0.6}}>프록시 없음</span>}
+                {' '}{a.has_proxy ? <span className="badge badge-info" title={a.proxy_server_masked || ''}>프록시: {a.proxy_server_masked || '설정됨'}</span> : <span className="badge badge-warning" style={{opacity:0.6}}>프록시 없음</span>}
                 {' '}{a.last_published_at ? `마지막 발행: ${new Date(a.last_published_at).toLocaleString('ko')}` : '발행 이력 없음'}
               </div>
             </div>
             <div className="actions">
               {a.has_proxy ? (
                 <>
+                  <button className="btn btn-outline btn-sm" onClick={() => openProxyModal(a.id)} title="프록시 수정">수정</button>
                   <button className="btn btn-outline btn-sm" onClick={() => testProxy(a.id)} title="프록시 테스트">테스트</button>
-                  <button className="btn btn-outline btn-sm" onClick={() => removeProxy(a.id)} title="프록시 제거" style={{color:'#e74c3c',borderColor:'rgba(231,76,60,0.3)'}}>프록시 제거</button>
+                  <button className="btn btn-outline btn-sm" onClick={() => removeProxy(a.id)} title="프록시 제거" style={{color:'#e74c3c',borderColor:'rgba(231,76,60,0.3)'}}>제거</button>
                 </>
               ) : (
                 <button className="btn btn-outline btn-sm" onClick={() => openProxyModal(a.id)}>프록시 설정</button>
@@ -617,7 +639,7 @@ function AccountCafeTab({ accounts, cafes, reload }) {
             background:'#111c30', border:'1px solid #1e2d4a', borderRadius:12, padding:24,
             width:420, maxWidth:'90vw'
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize:16, fontWeight:700, color:'#c8d6e5', marginBottom:16 }}>프록시 설정</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#c8d6e5', marginBottom:16 }}>{proxyModal.hasExisting ? '프록시 수정' : '프록시 설정'}</div>
             <div className="input-group">
               <label>프록시 서버 (host:port 또는 http://host:port)</label>
               <input type="text" placeholder="예: 123.45.67.89:10001" value={proxyModal.server}
@@ -629,8 +651,8 @@ function AccountCafeTab({ accounts, cafes, reload }) {
                 onChange={e => setProxyModal({ ...proxyModal, username: e.target.value })} />
             </div>
             <div className="input-group">
-              <label>비밀번호 (선택)</label>
-              <input type="password" placeholder="프록시 인증 비밀번호" value={proxyModal.password}
+              <label>비밀번호 (선택){proxyModal.hasExisting && proxyModal.hasPassword ? ' — 변경하지 않으려면 비워두세요' : ''}</label>
+              <input type="password" placeholder={proxyModal.hasExisting && proxyModal.hasPassword ? '••••••••  (변경 시 입력)' : '프록시 인증 비밀번호'} value={proxyModal.password}
                 onChange={e => setProxyModal({ ...proxyModal, password: e.target.value })} />
             </div>
             <div style={{ display:'flex', gap:8, marginTop:16 }}>

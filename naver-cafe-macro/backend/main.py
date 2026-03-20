@@ -158,6 +158,32 @@ class ScheduleConfigUpdate(BaseModel):
     footer_link_text: Optional[str] = None
 
 
+def _mask_proxy_server(server: str) -> str:
+    """프록시 서버 주소를 부분 마스킹: 123.45.67.89:10001 → 123.45.***.***:10001"""
+    if not server:
+        return ""
+    # scheme 분리
+    scheme = ""
+    addr = server
+    if "://" in server:
+        scheme, addr = server.split("://", 1)
+        scheme += "://"
+    # host:port 분리
+    if ":" in addr:
+        parts = addr.rsplit(":", 1)
+        host, port = parts[0], ":" + parts[1]
+    else:
+        host, port = addr, ""
+    # IP 형태면 일부 마스킹 (첫 옥텟만 표시)
+    octets = host.split(".")
+    if len(octets) == 4:
+        masked = octets[0] + ".***.***." + octets[3]
+    else:
+        # 도메인이면 앞 4자만 표시
+        masked = host[:4] + "****" if len(host) > 4 else host
+    return scheme + masked + port
+
+
 # ─── Accounts API ──────────────────────────────────────────
 
 @app.get("/api/accounts")
@@ -166,9 +192,14 @@ async def list_accounts():
     for acc in accounts:
         # 비밀번호 마스킹
         acc["password_enc"] = "••••••••"
-        # 프록시 정보 마스킹
+        # 프록시 정보: 서버 주소는 부분 마스킹하여 표시
         acc["has_proxy"] = bool(acc.get("proxy_server"))
-        acc["proxy_server"] = "프록시 설정됨" if acc.get("proxy_server") else None
+        if acc.get("proxy_server"):
+            proxy = db.get_account_proxy(acc["id"])
+            acc["proxy_server_masked"] = _mask_proxy_server(proxy["server"]) if proxy else "프록시 설정됨"
+        else:
+            acc["proxy_server_masked"] = None
+        acc["proxy_server"] = None
         acc["proxy_username"] = "••••••••" if acc.get("proxy_username") else None
         acc["proxy_password"] = None
     return accounts
@@ -518,14 +549,32 @@ async def get_proxy_status():
     result = []
     for acc in accounts:
         has_proxy = bool(acc.get("proxy_server"))
+        proxy_display = None
+        if has_proxy:
+            proxy = db.get_account_proxy(acc["id"])
+            proxy_display = _mask_proxy_server(proxy["server"]) if proxy else "프록시 설정됨"
         result.append({
             "account_id": acc["id"],
             "account_name": acc["username"],
             "proxy_connected": has_proxy,
             "proxy_source": "db" if has_proxy else None,
-            "proxy_server": "프록시 설정됨" if has_proxy else None,
+            "proxy_server": proxy_display,
         })
     return result
+
+
+@app.get("/api/accounts/{account_id}/proxy")
+async def get_account_proxy(account_id: int):
+    """계정 프록시 정보 조회 (서버 주소 표시, 비밀번호 마스킹)"""
+    proxy = db.get_account_proxy(account_id)
+    if not proxy:
+        return {"has_proxy": False}
+    return {
+        "has_proxy": True,
+        "server": proxy["server"],
+        "username": proxy["username"] or "",
+        "has_password": bool(proxy["password"]),
+    }
 
 
 @app.put("/api/accounts/{account_id}/proxy")
@@ -536,6 +585,11 @@ async def set_account_proxy(account_id: int, req: dict):
         raise HTTPException(400, "프록시 서버 주소를 입력하세요.")
     username = req.get("username", "").strip()
     password = req.get("password", "").strip()
+    # 비밀번호가 빈 문자열이면 기존 비밀번호 유지
+    if not password:
+        existing = db.get_account_proxy(account_id)
+        if existing and existing.get("password"):
+            password = existing["password"]
     db.update_account_proxy(account_id, server, username, password)
     return {"message": "프록시가 설정되었습니다.", "account_id": account_id}
 
