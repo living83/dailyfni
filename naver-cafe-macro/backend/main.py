@@ -630,6 +630,69 @@ async def test_proxy_connection(account_id: int):
         return {"success": False, "account_id": account_id, "error": str(e)}
 
 
+# ─── Claude API 설정 ──────────────────────────────────────
+
+@app.get("/api/api-config")
+async def get_api_config():
+    """Claude API 설정 조회 (키 마스킹)"""
+    try:
+        conn = db.get_connection()
+        row = conn.execute("SELECT * FROM api_config WHERE id = 1").fetchone()
+        conn.close()
+        if not row:
+            return {"api_key_masked": "", "captcha_auto_solve": 1}
+        config = dict(row)
+        key = config.get("api_key", "")
+        if key and len(key) > 8:
+            config["api_key_masked"] = key[:8] + "••••••••" + key[-4:]
+        else:
+            config["api_key_masked"] = ""
+        config.pop("api_key", None)
+        return config
+    except Exception as e:
+        logger.error(f"API 설정 조회 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"API 설정 조회 실패: {e}")
+
+
+@app.put("/api/api-config")
+async def update_api_config(req: dict):
+    """Claude API 설정 업데이트"""
+    try:
+        conn = db.get_connection()
+        conn.execute("INSERT OR IGNORE INTO api_config (id) VALUES (1)")
+        updates = {}
+        if "api_key" in req and req["api_key"]:
+            updates["api_key"] = req["api_key"].strip()
+        if "captcha_auto_solve" in req:
+            updates["captcha_auto_solve"] = int(req["captcha_auto_solve"])
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            conn.execute(
+                f"UPDATE api_config SET {set_clause} WHERE id = 1",
+                list(updates.values())
+            )
+        conn.commit()
+        conn.close()
+        return {"message": "API 설정이 저장되었습니다."}
+    except Exception as e:
+        logger.error(f"API 설정 저장 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"API 설정 저장 실패: {e}")
+
+
+@app.delete("/api/api-config/key")
+async def delete_api_key():
+    """Claude API 키 삭제"""
+    try:
+        conn = db.get_connection()
+        conn.execute("UPDATE api_config SET api_key = '' WHERE id = 1")
+        conn.commit()
+        conn.close()
+        return {"message": "API 키가 삭제되었습니다."}
+    except Exception as e:
+        logger.error(f"API 키 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(500, f"API 키 삭제 실패: {e}")
+
+
 # ─── Health ────────────────────────────────────────────────
 
 @app.get("/api/health")

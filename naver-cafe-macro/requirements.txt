@@ -7,3 +7,4 @@ selenium==4.27.1
 setuptools>=69.0
 undetected-chromedriver>=3.5.5
 python-dotenv==1.0.1
+anthropic>=0.40.0

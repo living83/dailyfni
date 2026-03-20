@@ -172,6 +172,12 @@ def init_db():
             footer_link TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat',
             footer_link_text TEXT DEFAULT '카카오톡 상담하기'
         );
+
+        CREATE TABLE IF NOT EXISTS api_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            api_key TEXT DEFAULT '',
+            captcha_auto_solve INTEGER DEFAULT 1
+        );
     """)
 
     # ── accounts에 proxy 컬럼 추가 (없을 때만) ──
@@ -222,6 +228,11 @@ def init_db():
     # 기본 텔레그램 설정 삽입
     cursor.execute("""
         INSERT OR IGNORE INTO telegram_config (id) VALUES (1)
+    """)
+
+    # 기본 API 설정 삽입
+    cursor.execute("""
+        INSERT OR IGNORE INTO api_config (id) VALUES (1)
     """)
 
     conn.commit()

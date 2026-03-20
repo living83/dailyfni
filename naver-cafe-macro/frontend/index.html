@@ -411,7 +411,7 @@ function App() {
     return () => es.close();
   }, [loadData]);
 
-  const TABS = ['계정 & 카페', '키워드 큐', '댓글 설정', '스케줄', '알림', '히스토리'];
+  const TABS = ['계정 & 카페', '키워드 큐', '댓글 설정', '스케줄', '알림', 'API 설정', '히스토리'];
 
   return (
     <div>
@@ -431,7 +431,8 @@ function App() {
         {tab === 2 && <CommentTab templates={templates} schedule={schedule} reload={loadData} />}
         {tab === 3 && <ScheduleTab schedule={schedule} events={events} reload={loadData} />}
         {tab === 4 && <TelegramTab />}
-        {tab === 5 && <HistoryTab history={history} stats={stats} reload={loadData} />}
+        {tab === 5 && <ApiConfigTab />}
+        {tab === 6 && <HistoryTab history={history} stats={stats} reload={loadData} />}
       </div>
     </div>
   );
@@ -1535,7 +1536,153 @@ function TelegramTab() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   탭 5: 히스토리 & 통계
+   탭 5: API 설정 (캡차 자동 풀이)
+   ═══════════════════════════════════════════════════════════ */
+function ApiConfigTab() {
+  const [config, setConfig] = useState({});
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveResult, setSaveResult] = useState(null);
+
+  const loadConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/api-config`);
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      const data = await res.json();
+      setConfig(data);
+    } catch (e) {
+      console.error('API 설정 로드 실패:', e);
+    }
+  }, []);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+
+  const updateToggle = async (key, value) => {
+    try {
+      const res = await fetch(`${API}/api/api-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value })
+      });
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      await loadConfig();
+    } catch (e) {
+      setSaveResult({ ok: false, message: '설정 변경 실패: ' + e.message });
+    }
+  };
+
+  const saveApiKey = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    setSaveResult(null);
+    try {
+      const res = await fetch(`${API}/api/api-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey.trim() })
+      });
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      setApiKey('');
+      await loadConfig();
+      setSaveResult({ ok: true, message: 'API 키가 저장되었습니다.' });
+    } catch (e) {
+      setSaveResult({ ok: false, message: '저장 실패: ' + e.message });
+    }
+    setSaving(false);
+  };
+
+  const deleteApiKey = async () => {
+    if (!confirm('API 키를 삭제하시겠습니까?')) return;
+    try {
+      const res = await fetch(`${API}/api/api-config/key`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+      await loadConfig();
+      setSaveResult({ ok: true, message: 'API 키가 삭제되었습니다.' });
+    } catch (e) {
+      setSaveResult({ ok: false, message: '삭제 실패: ' + e.message });
+    }
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">Claude API 설정 (캡차 자동 풀이)</div>
+        <div style={{ fontSize: 12, color: '#6b7b9e', marginBottom: 16, lineHeight: 1.8 }}>
+          네이버 로그인 시 캡차(영수증 이미지 문제)가 발생하면 Claude Vision API로 자동 풀이합니다.<br/>
+          1. <a href="https://console.anthropic.com/" target="_blank" style={{ color: '#38bd94' }}>Anthropic Console</a>에서 API 키를 발급받으세요.<br/>
+          2. 아래에 API 키를 입력하면 캡차 발생 시 자동으로 풀이를 시도합니다.<br/>
+          3. API 호출당 약 $0.01 이하의 비용이 발생합니다.
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '12px 16px', background: '#0a1020', borderRadius: 8, border: '1px solid #1a2540' }}>
+          <div className={`toggle ${config.captcha_auto_solve ? 'on' : ''}`}
+            onClick={() => updateToggle('captcha_auto_solve', config.captcha_auto_solve ? 0 : 1)} />
+          <span style={{ fontSize: 14, fontWeight: 600, color: config.captcha_auto_solve ? '#38bd94' : '#6b7b9e' }}>
+            {config.captcha_auto_solve ? '캡차 자동 풀이 활성화' : '캡차 자동 풀이 비활성화'}
+          </span>
+        </div>
+
+        <div className="input-group">
+          <label>Claude API Key {config.api_key_masked && <span style={{ color: '#38bd94', fontSize: 11, fontWeight: 400 }}>(저장됨)</span>}</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="password" value={apiKey}
+              placeholder={config.api_key_masked ? `저장됨: ${config.api_key_masked}` : 'sk-ant-api03-...'}
+              onChange={e => setApiKey(e.target.value)}
+              style={{ flex: 1 }} />
+            {config.api_key_masked && (
+              <button className="btn btn-outline btn-sm" onClick={deleteApiKey}
+                style={{ color: '#e74c3c', borderColor: '#e74c3c', whiteSpace: 'nowrap' }}>
+                키 삭제
+              </button>
+            )}
+          </div>
+          {config.api_key_masked && (
+            <small style={{ color: '#38bd94', fontSize: 11 }}>현재 저장된 키: {config.api_key_masked}</small>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary btn-sm" onClick={saveApiKey} disabled={saving || !apiKey.trim()}>
+            {saving ? '저장 중...' : 'API 키 저장'}
+          </button>
+        </div>
+
+        {saveResult && (
+          <div style={{
+            marginTop: 12, padding: '10px 14px', borderRadius: 8,
+            background: saveResult.ok ? 'rgba(56,189,148,0.1)' : 'rgba(231,76,60,0.1)',
+            border: `1px solid ${saveResult.ok ? 'rgba(56,189,148,0.3)' : 'rgba(231,76,60,0.3)'}`,
+            color: saveResult.ok ? '#38bd94' : '#e74c3c',
+            fontSize: 13
+          }}>
+            {saveResult.message}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">캡차 자동 풀이 안내</div>
+        <div style={{ fontSize: 12, color: '#6b7b9e', lineHeight: 1.8 }}>
+          <div style={{ marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, color: '#c8d6e5' }}>동작 방식:</span><br/>
+            - 로그인 시 캡차(영수증 이미지 기반 문제)가 감지되면 자동 풀이를 시도합니다.<br/>
+            - 캡차 이미지를 캡처하고, 질문 텍스트를 추출하여 Claude Vision API로 분석합니다.<br/>
+            - 정답을 입력란에 자동 입력합니다.
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, color: '#c8d6e5' }}>제한 사항:</span><br/>
+            - 이미지 품질이 낮거나 글자가 뭉개진 경우 풀이 실패할 수 있습니다.<br/>
+            - 풀이 실패 시 수동 개입이 필요합니다.<br/>
+            - API 키가 설정되지 않으면 캡차 발생 시 기존처럼 실패 처리됩니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   탭 6: 히스토리 & 통계
    ═══════════════════════════════════════════════════════════ */
 function HistoryTab({ history, stats, reload }) {
   const [filter, setFilter] = useState('all');

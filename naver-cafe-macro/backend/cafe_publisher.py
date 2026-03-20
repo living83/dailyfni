@@ -460,33 +460,50 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             _log(f"[credentials] 로그인 페이지에서 리다이렉트됨 — 이미 로그인 상태로 판단: {current_url}")
             return True
 
-        # ★ 캡차 감지: 로그인 페이지에 캡차가 이미 표시되면 입력하지 않고 즉시 중단
-        if "captcha" in current_url:
-            _log("[credentials] 캡차 페이지 감지 — ID/PW 입력 중단. 수동 해결 필요", "ERROR")
-            _save_debug_screenshot(driver, "captcha_detected_before_login")
-            return False
-
-        # 캡차 이미지/iframe 요소 감지
+        # ★ 캡차 감지 + 자동 풀이 시도
         try:
-            captcha_selectors = [
-                "#captchaimg",                       # 캡차 이미지
-                "img[src*='captcha']",               # 캡차 관련 이미지
-                "iframe[src*='captcha']",            # 캡차 iframe
-                "#captcha",                          # 캡차 컨테이너
-                "input[name*='captcha']",            # 캡차 입력 필드
-                ".captcha_area",                     # 캡차 영역
-            ]
-            for sel in captcha_selectors:
-                try:
-                    el = driver.find_element(By.CSS_SELECTOR, sel)
-                    if el.is_displayed():
-                        _log(f"[credentials] 캡차 요소 감지 ({sel}) — ID/PW 입력 중단", "ERROR")
-                        _save_debug_screenshot(driver, "captcha_element_detected")
-                        return False
-                except NoSuchElementException:
-                    continue
-        except Exception:
-            pass
+            from captcha_solver import detect_and_solve_captcha
+            captcha_result = detect_and_solve_captcha(driver)
+            if captcha_result == "solved":
+                _log("[credentials] 캡차 자동 풀이 성공 — 로그인 계속 진행")
+                # 캡차 풀이 후 페이지가 바뀔 수 있으므로 잠시 대기
+                time.sleep(2)
+                current_url = driver.current_url
+                if "nid.naver.com" not in current_url:
+                    _log(f"[credentials] 캡차 풀이 후 리다이렉트됨 — 로그인 성공: {current_url}")
+                    return True
+            elif captcha_result == "no_api_key":
+                _log("[credentials] 캡차 감지됨 — API 키 미설정으로 자동 풀이 불가. 설정에서 Claude API 키를 입력하세요.", "ERROR")
+                _save_debug_screenshot(driver, "captcha_no_api_key")
+                return False
+            elif captcha_result == "failed":
+                _log("[credentials] 캡차 자동 풀이 실패 — 수동 해결 필요", "ERROR")
+                _save_debug_screenshot(driver, "captcha_solve_failed")
+                return False
+            # "no_captcha" → 캡차 없음, 정상 진행
+        except ImportError:
+            _log("[credentials] captcha_solver 모듈 미설치 — 기존 방식으로 캡차 감지")
+            # 폴백: 기존 캡차 감지 로직
+            if "captcha" in current_url:
+                _log("[credentials] 캡차 페이지 감지 — ID/PW 입력 중단. 수동 해결 필요", "ERROR")
+                _save_debug_screenshot(driver, "captcha_detected_before_login")
+                return False
+            try:
+                captcha_selectors = [
+                    "#captchaimg", "img[src*='captcha']", "iframe[src*='captcha']",
+                    "#captcha", "input[name*='captcha']", ".captcha_area",
+                ]
+                for sel in captcha_selectors:
+                    try:
+                        el = driver.find_element(By.CSS_SELECTOR, sel)
+                        if el.is_displayed():
+                            _log(f"[credentials] 캡차 요소 감지 ({sel}) — ID/PW 입력 중단", "ERROR")
+                            _save_debug_screenshot(driver, "captcha_element_detected")
+                            return False
+                    except NoSuchElementException:
+                        continue
+            except Exception:
+                pass
 
         # 디버그: 페이지 로드 직후 스크린샷 + 페이지 정보 로깅
         _save_debug_screenshot(driver, "login_page_loaded")
@@ -586,6 +603,24 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             if "nidlogin" not in current_url and "captcha" not in current_url:
                 logged_in = True
                 break
+
+            # ★ 로그인 후 캡차 발생 시 자동 풀이 시도
+            if "captcha" in current_url:
+                try:
+                    from captcha_solver import detect_and_solve_captcha
+                    captcha_result = detect_and_solve_captcha(driver)
+                    if captcha_result == "solved":
+                        _log(f"[credentials] 로그인 후 캡차 자동 풀이 성공 ({elapsed}초)")
+                        time.sleep(2)
+                        # 풀이 후 로그인 완료 여부 재확인
+                        post_url = driver.current_url
+                        if "nidlogin" not in post_url and "captcha" not in post_url:
+                            logged_in = True
+                            break
+                    elif captcha_result in ("no_api_key", "failed"):
+                        _log(f"[credentials] 로그인 후 캡차 자동 풀이 실패: {captcha_result}", "WARNING")
+                except ImportError:
+                    pass
 
             # 2FA 페이지 감지 시 로그 출력
             if "2step" in current_url or "deviceConfirm" in current_url or "protect" in current_url:
