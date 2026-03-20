@@ -213,66 +213,43 @@ def _has_nid_cookies(driver: webdriver.Chrome) -> bool:
         return False
 
 
-def _is_logged_in(driver: webdriver.Chrome) -> bool:
+def _is_logged_in(driver: webdriver.Chrome, check_url: str = "https://cafe.naver.com") -> bool:
     """현재 브라우저가 네이버에 로그인되어 있는지 확인
 
-    네이버 프론트엔드 업데이트로 CSS 해시가 변경될 수 있으므로
-    여러 방법으로 로그인 상태를 판별한다.
+    cafe-generator 참조 로직: 네이버 서비스에 실제 접속하여 로그인 리다이렉트
+    발생 여부로 판별. CSS 셀렉터(해시 변경에 취약)에 의존하지 않는다.
     """
     try:
-        # 방법 0: 페이지 이동 전 쿠키부터 확인 (빠른 경로)
-        # ★ 쿠키 없으면 확실히 미로그인 → www.naver.com 방문 생략
+        # 빠른 경로: 쿠키 없으면 확실히 미로그인 → 페이지 방문 생략
         if not _has_nid_cookies(driver):
             _log("NID 쿠키 없음 — 미로그인 (빠른 판정)")
             return False
 
-        # ★ 쿠키가 있어도 만료/무효일 수 있으므로 www.naver.com에서 실제 검증
-        _log("NID 쿠키 존재 — www.naver.com에서 실제 로그인 상태 검증...")
-        driver.get("https://www.naver.com")
+        # 쿠키가 있어도 만료/무효일 수 있으므로 실제 서비스 접속으로 검증
+        # ★ www.naver.com 대신 cafe.naver.com 사용 (CSS 셀렉터 불필요, 리다이렉트만 확인)
+        _log(f"NID 쿠키 존재 — {check_url} 접속으로 로그인 상태 검증...")
+        driver.get(check_url)
         random_delay(2, 3)
 
-        # 방법 1: 로그인 버튼 존재 여부 (해시 무관 패턴)
-        login_selectors = [
-            "a[class*='link_login']",           # MyView-module__link_login___XXXX
-            "a[href*='nidlogin']",              # 로그인 링크
-        ]
-        for sel in login_selectors:
-            try:
-                el = driver.find_element(By.CSS_SELECTOR, sel)
-                # 실제로 보이는 요소인지 확인 (숨겨진 요소 오탐 방지)
-                if el.is_displayed():
-                    _log(f"미로그인 감지 (셀렉터: {sel})")
-                    return False  # 로그인 버튼이 보이면 미로그인
-            except NoSuchElementException:
-                continue
+        current_url = driver.current_url
+        # 로그인 페이지로 리다이렉트되면 미로그인
+        if "nidlogin" in current_url or "nid.naver.com" in current_url:
+            _log(f"미로그인 감지 (로그인 페이지 리다이렉트): {current_url}")
+            return False
 
-        # 방법 2: 로그인 후에만 나타나는 요소 확인 (양성 확인)
-        logged_in_selectors = [
-            "a[class*='link_logout']",          # 로그아웃 버튼
-            "a[class*='btn_logout']",
-            "a[href*='nidlogin.logout']",       # 로그아웃 링크
-            ".MyView-module__name",             # 프로필 이름
-            "a[class*='link_name']",
-        ]
-        for sel in logged_in_selectors:
-            try:
-                driver.find_element(By.CSS_SELECTOR, sel)
-                _log(f"로그인 확인 (셀렉터: {sel})")
-                return True
-            except NoSuchElementException:
-                continue
+        # 로그인 버튼 존재 여부 확인 (보조 검증)
+        try:
+            login_btn = driver.find_element(
+                By.CSS_SELECTOR, 'a.btn_login, a[href*="nidlogin"], a[class*="link_login"]'
+            )
+            if login_btn.is_displayed():
+                _log("미로그인 감지 (로그인 버튼 발견)")
+                return False
+        except NoSuchElementException:
+            pass
 
-        # 방법 3: JavaScript로 쿠키 기반 확인 (www.naver.com 도메인에서)
-        has_nid = driver.execute_script(
-            "return document.cookie.indexOf('NID_AUT') !== -1 "
-            "|| document.cookie.indexOf('NID_SES') !== -1;"
-        )
-        if has_nid:
-            _log("로그인 확인 (NID 쿠키 존재)")
-            return True
-
-        _log("로그인 상태 판별 불가 — 미로그인으로 처리", "WARNING")
-        return False
+        _log(f"로그인 확인 완료 (URL: {current_url[:60]})")
+        return True
     except Exception as e:
         _log(f"로그인 상태 확인 중 오류: {e}", "ERROR")
         return False
@@ -306,26 +283,13 @@ def login_with_cookie(driver: webdriver.Chrome, cookie_data: str) -> bool:
             except Exception:
                 continue
 
-        # 로그인 확인: _is_logged_in 내부에서 naver.com 접속 + 대기 수행
+        # ★ _is_logged_in이 cafe.naver.com에 접속하여 검증하므로 2차 검증 불필요
         if not _is_logged_in(driver):
-            logger.warning("쿠키 로그인 실패: _is_logged_in() 판정 미로그인")
+            logger.warning("쿠키 로그인 실패: cafe.naver.com 접속 시 미로그인 판정")
             return False
 
-        # 2차 검증: 카페 서비스 세션 유효성 확인
-        try:
-            driver.get("https://cafe.naver.com")
-            random_delay(1, 2)
-            current_url = driver.current_url
-            if "nidlogin" in current_url or "nid.naver.com" in current_url:
-                logger.warning("쿠키 로그인 실패: 카페 접근 시 로그인 리다이렉트 발생")
-                return False
-            logger.info("쿠키 로그인 성공 (카페 세션 확인 완료)")
-            return True
-        except Exception as e2:
-            logger.warning(f"쿠키 로그인 2차 검증 중 오류: {e2}")
-            # 1차 통과했으므로 일단 성공으로 처리
-            logger.info("쿠키 로그인 성공 (1차 확인만)")
-            return True
+        logger.info("쿠키 로그인 성공 (카페 세션 확인 완료)")
+        return True
     except Exception as e:
         logger.warning(f"쿠키 로그인 실패: {e}")
         return False
@@ -354,12 +318,15 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
             _log("비밀번호가 설정되지 않았습니다.", "ERROR")
             return False
 
-        # ★ 로그인 페이지 접근 전에 먼저 로그인 상태 확인
-        # (이미 로그인된 상태에서 nid.naver.com/nidlogin.login 방문 시 캡차/2차인증 발생)
-        # _is_logged_in 내부에서 쿠키 + www.naver.com 실제 검증을 수행
-        if _is_logged_in(driver):
-            _log(f"[credentials] 이미 로그인 상태 — nidlogin 페이지 방문 건너뜀, 바로 진행")
-            return True
+        # ★ nidlogin 방문 전 쿠키 존재 여부만 빠르게 확인 (페이지 이동 없음)
+        # 이미 로그인된 상태에서 nidlogin 방문하면 캡차 발생하므로
+        # 쿠키가 있으면 _is_logged_in()으로 실제 검증 (cafe.naver.com 접속)
+        if _has_nid_cookies(driver):
+            _log("[credentials] NID 쿠키 존재 — 실제 로그인 상태 검증...")
+            if _is_logged_in(driver):
+                _log(f"[credentials] 이미 로그인 상태 — nidlogin 페이지 방문 건너뜀")
+                return True
+            _log("[credentials] NID 쿠키 있으나 세션 만료 — ID/PW 로그인 진행")
 
         try:
             password = decrypt_password(password_enc)

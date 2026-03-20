@@ -93,6 +93,16 @@
   3. `login_with_credentials`: `_has_nid_cookies`만으로 True 반환하지 않고, `_is_logged_in` (실제 검증 포함)만 사용
 - **교훈**: NID 쿠키 존재 ≠ 유효한 로그인 세션. 쿠키는 "미로그인 빠른 판정"에만 사용하고, 로그인 확인은 반드시 페이지 방문으로 검증. `_ensure_cafe_session` 반환값은 반드시 체크할 것
 
+### _is_logged_in CSS 셀렉터 의존 제거 (2026-03-20)
+- **증상**: `_is_logged_in`이 www.naver.com CSS 셀렉터(`link_login`, `link_logout` 등)로 로그인 판별 → 네이버 프론트 업데이트 시 셀렉터 매칭 실패 → "로그인 상태 판별 불가" → 미로그인으로 오판 → 불필요한 ID/PW 로그인 → 캡차 발생
+- **원인**: www.naver.com의 CSS 모듈 해시 클래스에 의존하는 로그인 판별 로직이 네이버 업데이트마다 깨짐
+- **참조**: `cafe-generator`(Playwright 기반)의 `check_login_status()`는 서비스 URL 접속 후 리다이렉트 여부만 확인 → CSS 셀렉터 무관하게 안정적 동작
+- **수정**:
+  1. `_is_logged_in`: www.naver.com + CSS 셀렉터 매칭 → **cafe.naver.com 접속 후 nidlogin 리다이렉트 여부**로 판별 (CSS 셀렉터 의존 제거)
+  2. `login_with_cookie`: `_is_logged_in`이 이미 cafe.naver.com 검증하므로 중복 2차 검증 제거
+  3. `login_with_credentials`: `_is_logged_in()` 사전 호출(www.naver.com 방문) → `_has_nid_cookies()` 빠른 체크 후 필요 시만 `_is_logged_in()` 호출
+- **교훈**: 로그인 판별은 CSS 셀렉터가 아닌 **서비스 리다이렉트 여부**로 확인할 것. www.naver.com 불필요한 방문을 줄여 봇 탐지 위험도 감소
+
 ## Development Rules
 
 1. 작업 중 실수가 발생하면 메모(TODO)를 업데이트하고 같은 실수를 반복하지 않는다.
