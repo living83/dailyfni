@@ -65,16 +65,30 @@ def _get_api_key() -> str | None:
 
 
 def _capture_captcha_image(driver) -> bytes | None:
-    """캡차 이미지 요소를 찾아 PNG 바이트로 캡처한다."""
-    # 캡차 이미지 셀렉터 (네이버 영수증 캡차)
+    """캡차 이미지 요소를 찾아 PNG 바이트로 캡처한다.
+
+    네이버 영수증 캡차는 로그인 폼 내에 큰 이미지로 표시된다.
+    다양한 셀렉터를 시도하고, 실패 시 전체 페이지 스크린샷을 사용한다.
+    """
+    # 캡차 이미지 셀렉터 (네이버 영수증 캡차 — 우선순위 순)
     image_selectors = [
         "#captchaimg",
         "img[src*='captcha']",
         "img[src*='ncaptcha']",
         ".captcha_area img",
         "#captcha img",
-        # 네이버 영수증 캡차: 큰 이미지 요소
+        # 네이버 영수증 캡차: 특정 컨테이너 내 이미지
+        ".img_captcha",
+        "div[class*='captcha'] img",
+        "span[class*='captcha'] img",
+        # 로그인 폼 내 큰 이미지 (영수증)
+        "#content img",
+        ".login_content img",
+        "form img",
+        # 네이버 영수증 캡차: 큰 이미지 요소 (폴백)
         "img[width]",
+        "img[src*='nid']",
+        "img[src*='receipt']",
     ]
 
     for sel in image_selectors:
@@ -83,18 +97,43 @@ def _capture_captcha_image(driver) -> bytes | None:
             for el in elements:
                 if not el.is_displayed():
                     continue
-                # 너무 작은 이미지는 스킵 (아이콘 등)
+                # 너무 작은 이미지는 스킵 (아이콘, 로고 등)
                 width = el.size.get("width", 0)
                 height = el.size.get("height", 0)
-                if width < 100 or height < 100:
+                if width < 150 or height < 100:
                     continue
                 png_bytes = el.screenshot_as_png
                 logger.info(f"캡차 이미지 캡처 성공: selector={sel}, size={width}x{height}")
                 return png_bytes
-        except Exception:
+        except Exception as e:
+            logger.debug(f"셀렉터 {sel} 캡처 실패: {e}")
             continue
 
-    # 폴백: 페이지 전체 스크린샷
+    # 폴백 2: JS로 큰 이미지 요소 직접 탐색
+    try:
+        large_images = driver.execute_script("""
+            var imgs = document.querySelectorAll('img');
+            var result = [];
+            for (var i = 0; i < imgs.length; i++) {
+                var rect = imgs[i].getBoundingClientRect();
+                if (rect.width >= 200 && rect.height >= 150 && imgs[i].offsetParent !== null) {
+                    result.push({index: i, width: rect.width, height: rect.height, src: imgs[i].src.substring(0, 100)});
+                }
+            }
+            return result;
+        """)
+        if large_images:
+            logger.info(f"JS로 큰 이미지 {len(large_images)}개 발견: {large_images}")
+            # 가장 큰 이미지 선택 (영수증일 가능성 높음)
+            largest = max(large_images, key=lambda x: x["width"] * x["height"])
+            img_el = driver.find_elements(By.TAG_NAME, "img")[largest["index"]]
+            png_bytes = img_el.screenshot_as_png
+            logger.info(f"JS 큰 이미지 캡처 성공: size={largest['width']}x{largest['height']}, src={largest['src']}")
+            return png_bytes
+    except Exception as e:
+        logger.warning(f"JS 이미지 탐색 실패: {e}")
+
+    # 폴백 3: 페이지 전체 스크린샷
     logger.warning("캡차 이미지 요소를 찾지 못함 — 전체 페이지 스크린샷 사용")
     try:
         return driver.get_screenshot_as_png()
@@ -104,14 +143,30 @@ def _capture_captcha_image(driver) -> bytes | None:
 
 
 def _extract_question_text(driver) -> str:
-    """캡차 질문 텍스트를 추출한다."""
-    # 질문 텍스트가 포함된 요소 탐색
+    """캡차 질문 텍스트를 추출한다.
+
+    네이버 영수증 캡차 질문 예시:
+    - "영수증의 가게 위치는 삼안길 [?] 입니다. (빈 칸을 채워주세요)"
+    - "영수증에 적힌 총 합은 무엇입니까?"
+    - "영수증에 적힌 제품명을 입력해주세요."
+    """
+    # 질문 텍스트가 포함된 요소 탐색 (우선순위 순)
     question_selectors = [
         ".captcha_question",
         "#captcha_question",
         "span[class*='question']",
         "p[class*='question']",
         "strong[style*='color']",  # 네이버 영수증 캡차: 빨간/강조색 질문
+        "strong[class*='color']",
+        # 네이버 캡차 질문: 빨간 텍스트로 표시
+        "em[style*='color']",
+        "b[style*='color']",
+        "p[style*='color']",
+        "span[style*='color']",
+        # 캡차 관련 컨테이너 내 텍스트
+        "div[class*='captcha'] p",
+        "div[class*='captcha'] span",
+        ".captcha_info",
     ]
 
     for sel in question_selectors:
@@ -128,11 +183,14 @@ def _extract_question_text(driver) -> str:
     # 폴백: body 텍스트에서 질문 패턴 찾기
     try:
         body_text = driver.find_element(By.TAG_NAME, "body").text
-        # "~무엇입니까?" 패턴 찾기
         patterns = [
-            r'[가-힣\s\d]+무엇입니까\?',
-            r'[가-힣\s\d]+입력해[가-힣]*',
-            r'[가-힣\s\d]+몇[가-힣]*\?',
+            # "~무엇입니까?" / "~입력해주세요" / "~몇~?" / "~채워주세요" / "~빈 칸~"
+            r'영수증[가-힣\s\d\[\]\?\.\,\(\)]+(?:입니다|주세요|입력해|무엇입니까)',
+            r'[가-힣\s\d\[\]\?]+빈\s*칸[가-힣\s\d\[\]\?\.\,\(\)]*채워주세요[.\)]*',
+            r'[가-힣\s\d\[\]\?]+무엇입니까\??',
+            r'[가-힣\s\d\[\]\?]+입력해[가-힣]*',
+            r'[가-힣\s\d\[\]\?]+채워주세요[가-힣\.\)]*',
+            r'[가-힣\s\d\[\]\?]+몇[가-힣]*\??',
         ]
         for pat in patterns:
             match = re.search(pat, body_text)
@@ -140,6 +198,29 @@ def _extract_question_text(driver) -> str:
                 question = match.group(0).strip()
                 logger.info(f"캡차 질문 (패턴 매칭): '{question}'")
                 return question
+    except Exception:
+        pass
+
+    # 폴백 2: JS로 빨간/강조 텍스트 추출
+    try:
+        colored_text = driver.execute_script("""
+            var elements = document.querySelectorAll('*');
+            for (var i = 0; i < elements.length; i++) {
+                var style = window.getComputedStyle(elements[i]);
+                var color = style.color;
+                var text = elements[i].textContent.trim();
+                // 빨간색 계열 텍스트 (영수증 캡차 질문)
+                if (color && (color.indexOf('255, 0') !== -1 || color.indexOf('red') !== -1 ||
+                    color.indexOf('239,') !== -1 || color.indexOf('200, 0') !== -1) &&
+                    text.length > 10 && text.length < 200) {
+                    return text;
+                }
+            }
+            return '';
+        """)
+        if colored_text:
+            logger.info(f"캡차 질문 (JS 색상 감지): '{colored_text}'")
+            return colored_text
     except Exception:
         pass
 
@@ -159,17 +240,27 @@ def _solve_with_claude(image_bytes: bytes, question_text: str, api_key: str) -> 
     # 이미지를 base64로 인코딩
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
+    # 영수증 캡차에 특화된 프롬프트
     prompt_text = (
-        "이 이미지는 네이버 로그인 캡차입니다. "
-        "영수증 이미지가 포함되어 있고, 이미지 아래에 질문이 있습니다.\n\n"
+        "이 이미지는 네이버 로그인 보안 인증용 영수증 이미지입니다.\n"
+        "영수증에는 가게 이름, 주소, 전화번호, 제품명, 가격, 개수, 총 합 등의 정보가 있습니다.\n\n"
     )
     if question_text:
         prompt_text += f"질문: {question_text}\n\n"
     else:
-        prompt_text += "이미지에 보이는 질문에 답해주세요.\n\n"
+        prompt_text += (
+            "이 영수증 이미지와 함께 표시된 질문에 답해주세요.\n"
+            "질문이 보이지 않으면, 영수증의 모든 정보를 읽어주세요.\n\n"
+        )
 
     prompt_text += (
-        "영수증 이미지를 주의 깊게 읽고, 질문에 대한 정답을 숫자나 텍스트로만 답해주세요. "
+        "영수증 이미지를 매우 주의 깊게 읽어주세요.\n"
+        "- 주소의 숫자(길 번호, 건물 번호)\n"
+        "- 전화번호\n"
+        "- 제품 가격, 개수, 총 합\n"
+        "- 가게 이름\n"
+        "이 중 질문에서 묻는 정보를 정확히 찾아 정답만 출력하세요.\n"
+        "[?] 또는 빈 칸에 들어갈 값을 답해주세요.\n"
         "정답만 출력하세요. 다른 설명은 필요 없습니다."
     )
 
@@ -201,21 +292,38 @@ def _solve_with_claude(image_bytes: bytes, question_text: str, api_key: str) -> 
         answer = response.content[0].text.strip()
         logger.info(f"Claude 캡차 분석 결과: '{answer}'")
 
-        # 숫자만 추출 (정답이 숫자인 경우)
+        # 정답 정제: Claude 응답에서 핵심 답만 추출
+        # 짧은 응답(10자 이하)은 그대로 사용
+        if len(answer) <= 10:
+            # 숫자만 포함된 경우 그대로 반환
+            clean = re.sub(r'[^\d가-힣a-zA-Z]', '', answer)
+            if clean:
+                logger.info(f"캡차 정답 (짧은 응답): '{clean}'")
+                return clean
+            return answer
+
+        # 긴 응답에서 핵심 답 추출
+        # "870" 또는 "삼안길 870" 같은 패턴
         numbers = re.findall(r'\d+', answer)
         if numbers:
-            # 가장 짧은 숫자 (보통 한 자리 또는 두 자리)
-            result = min(numbers, key=len) if any(len(n) <= 2 for n in numbers) else numbers[0]
-            # 한두 자리 숫자 우선
-            short_numbers = [n for n in numbers if len(n) <= 2]
-            if short_numbers:
-                result = short_numbers[0]
-            else:
-                result = numbers[0]
-            logger.info(f"캡차 정답 추출: '{result}' (원본: '{answer}')")
-            return result
+            # 응답이 숫자 하나만 포함하면 그것이 정답
+            if len(numbers) == 1:
+                logger.info(f"캡차 정답 추출: '{numbers[0]}' (원본: '{answer}')")
+                return numbers[0]
+            # 여러 숫자 중 질문과 관련된 것 선택
+            # 질문에 [?]가 포함된 경우, 질문 문맥에서 빠진 숫자를 찾아야 함
+            if question_text and "[?" in question_text:
+                # 질문에 이미 포함된 숫자 제외
+                q_numbers = set(re.findall(r'\d+', question_text))
+                new_numbers = [n for n in numbers if n not in q_numbers]
+                if new_numbers:
+                    logger.info(f"캡차 정답 추출 (질문 제외): '{new_numbers[0]}' (원본: '{answer}')")
+                    return new_numbers[0]
+            # 기본: 첫 번째 숫자 반환
+            logger.info(f"캡차 정답 추출 (첫 번째): '{numbers[0]}' (원본: '{answer}')")
+            return numbers[0]
 
-        # 숫자가 아닌 경우 원본 텍스트 반환
+        # 숫자가 아닌 경우 원본 텍스트 반환 (한글 답일 수 있음)
         return answer
 
     except Exception as e:
@@ -254,6 +362,16 @@ def solve_captcha(driver) -> bool:
 
     # 2. 질문 텍스트 추출
     question_text = _extract_question_text(driver)
+    if not question_text:
+        logger.warning("캡차 질문 텍스트를 추출하지 못함 — 전체 페이지 스크린샷으로 재시도")
+        # 질문을 못 찾으면 전체 페이지 스크린샷으로 교체 (질문이 이미지에 포함되도록)
+        try:
+            image_bytes = driver.get_screenshot_as_png()
+            debug_path2 = _SCREENSHOT_DIR / f"captcha_fullpage_{ts}.png"
+            debug_path2.write_bytes(image_bytes)
+            logger.info(f"전체 페이지 스크린샷 저장: {debug_path2}")
+        except Exception:
+            pass
 
     # 3. Claude API로 풀이
     answer = _solve_with_claude(image_bytes, question_text, api_key)
@@ -347,6 +465,8 @@ def detect_and_solve_captcha(driver) -> str:
             ".captcha_area",
             "input[name*='captcha']",
             "input[placeholder*='정답']",
+            # 네이버 영수증 캡차: 질문 텍스트에 "빈 칸" / "채워주세요" 포함
+            "input[placeholder*='입력해주세요']",
         ]
         for sel in captcha_indicators:
             try:
@@ -357,6 +477,19 @@ def detect_and_solve_captcha(driver) -> str:
                     break
             except NoSuchElementException:
                 continue
+
+    # 폴백: 페이지 텍스트에서 캡차 질문 패턴 탐색
+    if not has_captcha:
+        try:
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            captcha_keywords = ["영수증", "빈 칸을 채워주세요", "정답을 입력", "자동입력 방지"]
+            for kw in captcha_keywords:
+                if kw in body_text:
+                    has_captcha = True
+                    logger.info(f"캡차 텍스트 감지: '{kw}'")
+                    break
+        except Exception:
+            pass
 
     if not has_captcha:
         return "no_captcha"

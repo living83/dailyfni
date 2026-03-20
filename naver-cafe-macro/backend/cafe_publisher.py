@@ -426,6 +426,34 @@ def _find_login_element(driver, selectors: list, description: str, timeout: int 
     return None
 
 
+def _click_captcha_submit(driver: webdriver.Chrome) -> bool:
+    """캡차 풀이 후 제출/확인 버튼을 클릭한다."""
+    submit_selectors = [
+        "button[type='submit']",
+        "button#log\\.login",
+        ".btn_login",
+        "button[class*='login']",
+        "button[class*='submit']",
+        "input[type='submit']",
+        "button[class*='confirm']",
+        # 네이버 캡차 확인 버튼
+        "button[class*='btn']",
+    ]
+    for sel in submit_selectors:
+        try:
+            elements = driver.find_elements(By.CSS_SELECTOR, sel)
+            for el in elements:
+                if el.is_displayed() and el.is_enabled():
+                    text = el.text.strip() or el.get_attribute("value") or ""
+                    _log(f"[captcha_submit] 제출 버튼 클릭: selector={sel}, text='{text}'")
+                    el.click()
+                    return True
+        except Exception:
+            continue
+    _log("[captcha_submit] 제출 버튼을 찾지 못함", "WARNING")
+    return False
+
+
 def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc: str) -> bool:
     """ID/PW로 네이버 로그인 (2FA 대기 포함)"""
     try:
@@ -605,22 +633,25 @@ def login_with_credentials(driver: webdriver.Chrome, username: str, password_enc
                 break
 
             # ★ 로그인 후 캡차 발생 시 자동 풀이 시도
-            if "captcha" in current_url:
-                try:
-                    from captcha_solver import detect_and_solve_captcha
-                    captcha_result = detect_and_solve_captcha(driver)
-                    if captcha_result == "solved":
-                        _log(f"[credentials] 로그인 후 캡차 자동 풀이 성공 ({elapsed}초)")
-                        time.sleep(2)
-                        # 풀이 후 로그인 완료 여부 재확인
-                        post_url = driver.current_url
-                        if "nidlogin" not in post_url and "captcha" not in post_url:
-                            logged_in = True
-                            break
-                    elif captcha_result in ("no_api_key", "failed"):
-                        _log(f"[credentials] 로그인 후 캡차 자동 풀이 실패: {captcha_result}", "WARNING")
-                except ImportError:
-                    pass
+            # URL에 captcha가 포함된 경우 또는 nidlogin 페이지에 캡차가 표시된 경우 모두 처리
+            try:
+                from captcha_solver import detect_and_solve_captcha
+                captcha_result = detect_and_solve_captcha(driver)
+                if captcha_result == "solved":
+                    _log(f"[credentials] 로그인 후 캡차 자동 풀이 성공 ({elapsed}초)")
+                    # 캡차 풀이 후 제출 버튼 클릭
+                    _click_captcha_submit(driver)
+                    time.sleep(3)
+                    # 풀이 후 로그인 완료 여부 재확인
+                    post_url = driver.current_url
+                    if "nidlogin" not in post_url and "captcha" not in post_url:
+                        logged_in = True
+                        break
+                elif captcha_result in ("no_api_key", "failed"):
+                    _log(f"[credentials] 로그인 후 캡차 자동 풀이 실패: {captcha_result}", "WARNING")
+                # "no_captcha" → 캡차 없음, 계속 폴링
+            except ImportError:
+                pass
 
             # 2FA 페이지 감지 시 로그 출력
             if "2step" in current_url or "deviceConfirm" in current_url or "protect" in current_url:
