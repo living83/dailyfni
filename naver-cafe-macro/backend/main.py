@@ -166,7 +166,11 @@ async def list_accounts():
     for acc in accounts:
         # 비밀번호 마스킹
         acc["password_enc"] = "••••••••"
-        acc.pop("proxy_address", None)
+        # 프록시 정보 마스킹
+        acc["has_proxy"] = bool(acc.get("proxy_server"))
+        acc["proxy_server"] = "프록시 설정됨" if acc.get("proxy_server") else None
+        acc["proxy_username"] = "••••••••" if acc.get("proxy_username") else None
+        acc["proxy_password"] = None
     return accounts
 
 
@@ -503,6 +507,73 @@ async def test_telegram():
     if result.get("ok"):
         return {"message": "테스트 메시지 전송 성공"}
     raise HTTPException(400, f"전송 실패: {result.get('error')}")
+
+
+# ─── Proxy API ─────────────────────────────────────────────
+
+@app.get("/api/proxy/status")
+async def get_proxy_status():
+    """계정별 프록시 설정 상태 조회"""
+    accounts = db.get_accounts()
+    result = []
+    for acc in accounts:
+        has_proxy = bool(acc.get("proxy_server"))
+        result.append({
+            "account_id": acc["id"],
+            "account_name": acc["username"],
+            "proxy_connected": has_proxy,
+            "proxy_source": "db" if has_proxy else None,
+            "proxy_server": "프록시 설정됨" if has_proxy else None,
+        })
+    return result
+
+
+@app.put("/api/accounts/{account_id}/proxy")
+async def set_account_proxy(account_id: int, req: dict):
+    """계정 프록시 설정 (AES-256 암호화 저장)"""
+    server = req.get("server", "").strip()
+    if not server:
+        raise HTTPException(400, "프록시 서버 주소를 입력하세요.")
+    username = req.get("username", "").strip()
+    password = req.get("password", "").strip()
+    db.update_account_proxy(account_id, server, username, password)
+    return {"message": "프록시가 설정되었습니다.", "account_id": account_id}
+
+
+@app.delete("/api/accounts/{account_id}/proxy")
+async def remove_account_proxy(account_id: int):
+    """계정 프록시 제거"""
+    db.delete_account_proxy(account_id)
+    return {"message": "프록시가 제거되었습니다.", "account_id": account_id}
+
+
+@app.get("/api/proxy/test/{account_id}")
+async def test_proxy_connection(account_id: int):
+    """계정별 프록시 연결 테스트 (IP 확인)"""
+    proxy = db.get_account_proxy(account_id)
+    if not proxy:
+        return {"success": False, "account_id": account_id, "error": "프록시 설정 없음"}
+
+    try:
+        import time as _time
+        from cafe_publisher import create_driver
+        from selenium.webdriver.common.by import By as _By
+        driver = create_driver(headless=True, account_id=account_id)
+        try:
+            driver.get("https://api.ipify.org?format=json")
+            _time.sleep(3)
+            body = driver.find_element(_By.TAG_NAME, "body").text
+            ip_data = json.loads(body)
+            return {
+                "success": True,
+                "account_id": account_id,
+                "proxy_ip": ip_data.get("ip", ""),
+                "proxy_server": proxy["server"],
+            }
+        finally:
+            driver.quit()
+    except Exception as e:
+        return {"success": False, "account_id": account_id, "error": str(e)}
 
 
 # ─── Health ────────────────────────────────────────────────

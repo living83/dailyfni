@@ -174,6 +174,13 @@ def init_db():
         );
     """)
 
+    # ── accounts에 proxy 컬럼 추가 (없을 때만) ──
+    for proxy_col in ["proxy_server", "proxy_username", "proxy_password"]:
+        try:
+            cursor.execute(f"ALTER TABLE accounts ADD COLUMN {proxy_col} TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass  # 이미 존재
+
     # 기존 DB 마이그레이션: 새 컬럼 추가
     for tbl, col, default in [
         ("schedule_config", "max_accounts_per_run", "30"),
@@ -308,6 +315,58 @@ def update_account_cookie(account_id: int, cookie_data: str):
     conn.commit()
     conn.close()
 
+
+
+def update_account_proxy(account_id: int, server: str, username: str = "", password: str = ""):
+    """프록시 정보를 AES-256 암호화하여 저장"""
+    from crypto import encrypt_password
+    enc_server = encrypt_password(server) if server else None
+    enc_username = encrypt_password(username) if username else None
+    enc_password = encrypt_password(password) if password else None
+    conn = get_connection()
+    conn.execute(
+        "UPDATE accounts SET proxy_server = ?, proxy_username = ?, proxy_password = ? WHERE id = ?",
+        (enc_server, enc_username, enc_password, account_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_account_proxy(account_id: int):
+    """프록시 정보 제거"""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE accounts SET proxy_server = NULL, proxy_username = NULL, proxy_password = NULL WHERE id = ?",
+        (account_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_account_proxy(account_id: int) -> dict | None:
+    """복호화된 프록시 정보 반환. 없거나 복호화 실패 시 None."""
+    from crypto import decrypt_password
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT proxy_server, proxy_username, proxy_password FROM accounts WHERE id = ?",
+        (account_id,),
+    ).fetchone()
+    conn.close()
+    if not row or not row["proxy_server"]:
+        return None
+    try:
+        server = decrypt_password(row["proxy_server"])
+    except Exception:
+        server = row["proxy_server"]
+    try:
+        username = decrypt_password(row["proxy_username"]) if row["proxy_username"] else ""
+    except Exception:
+        username = row["proxy_username"] or ""
+    try:
+        password = decrypt_password(row["proxy_password"]) if row["proxy_password"] else ""
+    except Exception:
+        password = row["proxy_password"] or ""
+    return {"server": server, "username": username, "password": password}
 
 
 def update_account_last_published(account_id: int):

@@ -148,6 +148,96 @@ def human_type(element, text: str, min_delay: float = 0.03, max_delay: float = 0
 
 
 _PROFILE_BASE = Path(__file__).resolve().parent.parent / "data" / "chrome_profiles"
+_PROXY_EXT_DIR = Path(__file__).resolve().parent.parent / "data" / "proxy_extensions"
+
+
+def _parse_proxy_url(proxy_str: str) -> dict | None:
+    """프록시 문자열 파싱.
+    지원 형식:
+      - http://host:port
+      - http://user:pass@host:port
+      - host:port
+      - user:pass@host:port
+    """
+    if not proxy_str:
+        return None
+    s = proxy_str.strip()
+    scheme = "http"
+    if "://" in s:
+        scheme, s = s.split("://", 1)
+    username = password = ""
+    if "@" in s:
+        cred, s = s.rsplit("@", 1)
+        if ":" in cred:
+            username, password = cred.split(":", 1)
+        else:
+            username = cred
+    if ":" in s:
+        host, port_str = s.rsplit(":", 1)
+        try:
+            port = int(port_str)
+        except ValueError:
+            return None
+    else:
+        return None
+    return {"scheme": scheme, "host": host, "port": port,
+            "username": username, "password": password}
+
+
+def _create_proxy_auth_extension(proxy_info: dict) -> str:
+    """인증 프록시용 Chrome Manifest V3 확장 생성. 확장 디렉토리 경로 반환."""
+    import hashlib
+    host = proxy_info["host"]
+    port = proxy_info["port"]
+    username = proxy_info["username"]
+    password = proxy_info["password"]
+
+    ext_hash = hashlib.md5(f"{host}:{port}:{username}".encode()).hexdigest()[:10]
+    ext_dir = _PROXY_EXT_DIR / f"proxy_{ext_hash}"
+    ext_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "version": "1.0.0",
+        "manifest_version": 3,
+        "name": "Proxy Auth",
+        "permissions": ["webRequest", "webRequestAuthProvider"],
+        "host_permissions": ["<all_urls>"],
+        "background": {"service_worker": "background.js"},
+    }
+    (ext_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+    bg_js = f"""
+chrome.webRequest.onAuthRequired.addListener(
+    function(details, callbackFn) {{
+        callbackFn({{
+            authCredentials: {{
+                username: "{username}",
+                password: "{password}"
+            }}
+        }});
+    }},
+    {{urls: ["<all_urls>"]}},
+    ["asyncBlocking"]
+);
+"""
+    (ext_dir / "background.js").write_text(bg_js)
+    _log(f"프록시 인증 확장 생성: {ext_dir}")
+    return str(ext_dir)
+
+
+def _get_proxy_for_account(account_id: int) -> dict | None:
+    """계정 ID에 매핑된 프록시 설정을 DB에서 조회. 없으면 None."""
+    if account_id is None:
+        return None
+    try:
+        from database import get_account_proxy
+        proxy = get_account_proxy(account_id)
+        if proxy:
+            _log(f"프록시 설정(DB): 계정 {account_id} → {proxy['server']}")
+            return proxy
+    except Exception as e:
+        _log(f"DB 프록시 조회 실패 (계정 {account_id}): {e}", "WARNING")
+    return None
 
 
 def create_driver(headless: bool = True, account_id: int = None) -> uc.Chrome:
@@ -172,6 +262,31 @@ def create_driver(headless: bool = True, account_id: int = None) -> uc.Chrome:
         "profile.default_content_setting_values.clipboard": 1,
     })
 
+    # ── 프록시 설정 (DB에서 조회) ──
+    proxy_info = None
+    if account_id is not None:
+        db_proxy = _get_proxy_for_account(account_id)
+        if db_proxy and db_proxy.get("server"):
+            parsed = _parse_proxy_url(db_proxy["server"])
+            if parsed:
+                # DB에 username/password가 별도 저장된 경우 병합
+                if db_proxy.get("username") and not parsed["username"]:
+                    parsed["username"] = db_proxy["username"]
+                if db_proxy.get("password") and not parsed["password"]:
+                    parsed["password"] = db_proxy["password"]
+                proxy_info = parsed
+
+    if proxy_info:
+        proxy_url = f"{proxy_info['scheme']}://{proxy_info['host']}:{proxy_info['port']}"
+        options.add_argument(f"--proxy-server={proxy_url}")
+        _log(f"프록시 적용: {proxy_url} (계정 {account_id})")
+
+        # 인증 프록시: Chrome 확장으로 자동 인증
+        if proxy_info.get("username") and proxy_info.get("password"):
+            ext_dir = _create_proxy_auth_extension(proxy_info)
+            options.add_argument(f"--load-extension={ext_dir}")
+            _log(f"인증 프록시 확장 로드: {ext_dir}")
+
     # 계정별 독립 user-data-dir (쿠키/캐시/핑거프린트 분리)
     user_data_dir = None
     if account_id is not None:
@@ -191,7 +306,8 @@ def create_driver(headless: bool = True, account_id: int = None) -> uc.Chrome:
     caps = driver.capabilities
     chrome_ver = caps.get("browserVersion", "?")
     driver_ver = caps.get("chrome", {}).get("chromedriverVersion", "?")
-    _log(f"[UC] Chrome={chrome_ver}, ChromeDriver={driver_ver}, headless={headless}")
+    proxy_label = f", proxy={proxy_info['host']}:{proxy_info['port']}" if proxy_info else ""
+    _log(f"[UC] Chrome={chrome_ver}, ChromeDriver={driver_ver}, headless={headless}{proxy_label}")
 
     return driver
 
