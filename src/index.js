@@ -11,11 +11,14 @@ const imageRoutes = require('./routes/imageRoutes');
 const reviewerRoutes = require('./routes/reviewerRoutes');
 const publisherRoutes = require('./routes/publisherRoutes');
 
+const path = require('path');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- 미들웨어 ---
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- 라우트 ---
 app.get('/api/health', (req, res) => {
