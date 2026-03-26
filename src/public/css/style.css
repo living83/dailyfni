@@ -168,7 +168,7 @@ body {
 }
 
 /* === Content === */
-.content { padding: 20px; flex: 1; }
+.content { padding: 14px 16px; flex: 1; }
 
 /* === 대시보드 카드 === */
 .stat-cards {
@@ -194,12 +194,12 @@ body {
 /* === 테이블 공통 === */
 .panel {
   background: #fff;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid #e2e8f0;
-  margin-bottom: 20px;
+  margin-bottom: 10px;
 }
 .panel-header {
-  padding: 14px 18px;
+  padding: 8px 12px;
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
@@ -338,11 +338,11 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 /* === 타임라인 === */
-.timeline { padding: 14px 18px; }
+.timeline { padding: 4px 0; }
 .timeline-item {
   position: relative;
-  padding-left: 20px;
-  padding-bottom: 16px;
+  padding-left: 18px;
+  padding-bottom: 10px;
   border-left: 2px solid #e2e8f0;
 }
 .timeline-item:last-child { border-left-color: transparent; padding-bottom: 0; }
@@ -382,20 +382,29 @@ tbody tr:last-child td { border-bottom: none; }
 .info-table th {
   background: #f8fafc;
   text-align: left;
-  padding: 10px 14px;
+  padding: 6px 10px;
   font-size: 12px;
   font-weight: 600;
   color: #475569;
-  border-bottom: 1px solid #e2e8f0;
-  width: 140px;
+  border: 1px solid #e2e8f0;
+  width: 100px;
   white-space: nowrap;
 }
 .info-table td {
-  padding: 10px 14px;
+  padding: 4px 8px;
   font-size: 12px;
   color: #1e293b;
-  border-bottom: 1px solid #e2e8f0;
+  border: 1px solid #e2e8f0;
 }
+.info-table input, .info-table select, .info-table textarea {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  font-size: 12px;
+  outline: none;
+}
+.info-table input:focus, .info-table select:focus { border-color: #3b82f6; }
 
 /* === 대출 접수 좌우 레이아웃 === */
 .loan-register-layout {
