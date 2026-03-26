@@ -53,10 +53,6 @@ function navigate(page) {
 // ========================================
 function renderDashboard() {
   return `
-    <div class="quick-search-bar" onclick="openCustomerSearch()">
-      <span class="quick-search-title">고객원장 (개별조회)</span>
-      <span class="quick-search-hint">이름, 전화번호, 주민번호로 검색</span>
-    </div>
     <div class="stat-cards">
       <div class="stat-card">
         <div class="label">이번 달 신규 고객</div>
