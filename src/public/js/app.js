@@ -53,6 +53,10 @@ function navigate(page) {
 // ========================================
 function renderDashboard() {
   return `
+    <div class="quick-search-bar" onclick="openCustomerSearch()">
+      <span class="quick-search-title">고객원장 (개별조회)</span>
+      <span class="quick-search-hint">이름, 전화번호, 주민번호로 검색</span>
+    </div>
     <div class="stat-cards">
       <div class="stat-card">
         <div class="label">이번 달 신규 고객</div>
@@ -804,11 +808,124 @@ function viewCustomer(id) {
 }
 
 function handleModalEsc(e) {
-  if (e.key === 'Escape') closeCustomerModal();
+  if (e.key === 'Escape') {
+    const search = document.getElementById('customerSearchModal');
+    if (search) { closeCustomerSearch(); return; }
+    closeCustomerModal();
+  }
 }
 
 function closeCustomerModal() {
   const modal = document.getElementById('customerModal');
   if (modal) modal.remove();
   document.removeEventListener('keydown', handleModalEsc);
+}
+
+// ========================================
+// 고객원장 개별조회 (검색 모달)
+// ========================================
+function openCustomerSearch() {
+  const old = document.getElementById('customerSearchModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'customerSearchModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="search-modal">
+      <div class="modal-header">
+        <h2 style="font-size:16px;font-weight:700;">고객원장 (개별조회)</h2>
+        <button class="modal-close" onclick="closeCustomerSearch()">&times;</button>
+      </div>
+      <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;background:#fff;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="searchType" style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
+            <option value="name">이름</option>
+            <option value="phone">전화번호</option>
+            <option value="ssn">주민번호</option>
+          </select>
+          <input type="text" id="searchInput" placeholder="검색어 입력..." style="flex:1;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;" autofocus>
+          <button class="btn btn-primary" onclick="executeCustomerSearch()" style="padding:8px 20px;font-size:13px;">검색</button>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#94a3b8;">이름/전화번호가 중복인 경우 복수의 고객이 조회됩니다. 고객을 더블클릭하면 상세정보를 확인할 수 있습니다.</div>
+      </div>
+      <div id="searchResults" style="padding:16px 20px;min-height:200px;max-height:400px;overflow-y:auto;">
+        <div class="empty-state" style="padding:40px 20px;">
+          <div class="icon">&#128269;</div>
+          <p>이름, 전화번호 또는 주민번호로 검색하세요.</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeCustomerSearch();
+  });
+  document.addEventListener('keydown', handleModalEsc);
+
+  // 엔터키로 검색
+  setTimeout(() => {
+    const input = document.getElementById('searchInput');
+    if (input) {
+      input.focus();
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') executeCustomerSearch();
+      });
+    }
+  }, 100);
+}
+
+function closeCustomerSearch() {
+  const modal = document.getElementById('customerSearchModal');
+  if (modal) modal.remove();
+}
+
+function executeCustomerSearch() {
+  const type = document.getElementById('searchType').value;
+  const keyword = document.getElementById('searchInput').value.trim();
+  const resultsDiv = document.getElementById('searchResults');
+
+  if (!keyword) {
+    resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128269;</div><p>검색어를 입력하세요.</p></div>';
+    return;
+  }
+
+  // customerData에서 검색
+  const results = [];
+  for (const [id, c] of Object.entries(customerData)) {
+    let match = false;
+    if (type === 'name' && c.name.includes(keyword)) match = true;
+    if (type === 'phone' && c.phone.replace(/-/g,'').includes(keyword.replace(/-/g,''))) match = true;
+    if (type === 'ssn' && c.ssn.replace(/-/g,'').includes(keyword.replace(/-/g,''))) match = true;
+    if (match) results.push({ id: parseInt(id), ...c });
+  }
+
+  if (results.length === 0) {
+    resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128566;</div><p>검색 결과가 없습니다.</p></div>';
+    return;
+  }
+
+  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
+
+  let html = `
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px;">검색 결과: <strong>${results.length}명</strong>${results.length > 1 ? ' (동명이인 또는 중복 연락처)' : ''}</div>
+    <table>
+      <thead><tr><th>No</th><th>고객명</th><th>연락처</th><th>주민번호</th><th>상태</th><th>담당자</th><th>등록일</th></tr></thead>
+      <tbody>
+  `;
+  for (const r of results) {
+    const badge = statusMap[r.status] || 'badge-lead';
+    html += `<tr class="search-result-row" ondblclick="closeCustomerSearch();viewCustomer(${r.id});" title="더블클릭하여 상세보기">
+      <td>${r.id}</td>
+      <td><strong>${r.name}</strong></td>
+      <td>${r.phone}</td>
+      <td>${r.ssn}</td>
+      <td><span class="badge ${badge}">${r.status}</span></td>
+      <td>${r.assignedTo}</td>
+      <td>${r.regDate}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  resultsDiv.innerHTML = html;
 }

@@ -376,6 +376,50 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid #e2e8f0;
 }
 
+/* === 고객원장 개별조회 바 === */
+.quick-search-bar {
+  background: #fff;
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.quick-search-bar:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+  box-shadow: 0 2px 12px rgba(59,130,246,0.15);
+}
+.quick-search-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.quick-search-hint {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+/* === 검색 모달 === */
+.search-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  overflow: hidden;
+}
+.search-result-row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.search-result-row:hover { background: #eff6ff !important; }
+.search-result-row:active { background: #dbeafe !important; }
+
 /* === 모달 (고객 상세 팝업) === */
 .modal-overlay {
   position: fixed;
