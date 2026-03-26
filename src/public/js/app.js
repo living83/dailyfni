@@ -239,7 +239,7 @@ function renderLoanRegister() {
 
   // 고객 데이터에서 파생값 계산
   const birthFromSsn = c ? c.ssn.substring(0,6) : '';
-  const genderFromSsn = c ? (c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남(1)':'여(2)') : '';
+  const genderFromSsn = c ? (c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남(3)':'여(4)') : '';
   const phoneParts = c ? c.phone.split('-') : ['','',''];
   const salaryYear = c ? c.salary : '';
   const salaryMonth = c ? Math.round(c.salary / 12) : '';
@@ -286,13 +286,13 @@ function renderLoanRegister() {
               <th>생년월일 <span class="required">*</span></th>
               <td><input type="text" placeholder="생년월일을(를) 입력하세요." value="${birthFromSsn}" ${ro}></td>
               <th>성별</th>
-              <td><select ${c?'disabled style="background:#f1f5f9;"':''}>${sel(['남(1)','여(2)'], genderFromSsn || '남(1)')}</select></td>
+              <td><select ${c?'disabled style="background:#f1f5f9;"':''}>${sel(['남(3)','여(4)'], genderFromSsn || '남(3)')}</select></td>
             </tr>
             <tr>
               <th>휴대폰 <span class="required">*</span></th>
               <td colspan="5">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <select style="width:80px;" ${c?'disabled style="background:#f1f5f9;width:80px;"':''}>${sel(['통신사()','SKT','KT','LGU+','알뜰폰'], '')}</select>
+                  <select style="width:80px;" ${c?'disabled style="background:#f1f5f9;width:80px;"':''}>${sel(['통신사()','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], '')}</select>
                   <input type="text" style="width:60px;" placeholder="010" value="${phoneParts[0]||''}" ${ro}>
                   <input type="text" style="width:80px;" placeholder="중간자리" value="${phoneParts[1]||''}" ${ro}>
                   <input type="text" style="width:80px;" placeholder="뒷자리" value="${phoneParts[2]||''}" ${ro}>
@@ -344,7 +344,7 @@ function renderLoanRegister() {
             </tr>
             <tr>
               <th>4대보험 여부</th>
-              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입','확인불가'], '')}</select></td>
+              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입'], '')}</select></td>
               <th>(직장)사업자번호</th>
               <td colspan="2">
                 <div style="display:flex;gap:4px;">
@@ -409,7 +409,7 @@ function renderLoanRegister() {
             </tr>
             <tr>
               <th>차량소유구분</th>
-              <td colspan="2"><select>${sel(['==선택==','본인소유','가족소유','리스','렌트','기타'], '')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','소유(본인)','소유(공동명의대표)','소유(공동명의)','미소유'], '')}</select></td>
               <th>공동명의자명</th>
               <td colspan="2"><input type="text" placeholder=""></td>
             </tr>
@@ -422,7 +422,7 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>회파복 구분</th>
-              <td colspan="5"><select>${sel(['==선택==','해당없음','회생','파산','면책','개인워크아웃','기타'], '')}</select></td>
+              <td colspan="5"><select>${sel(['==선택==','회생','파산','회복','무'], '')}</select></td>
             </tr>
             <tr>
               <th>법원명</th>
