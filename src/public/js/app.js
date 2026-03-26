@@ -5,6 +5,7 @@
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
   customers: { title: '고객 관리', render: renderCustomers },
+  'customer-detail': { title: '고객 상세정보', render: renderCustomerDetail },
   loans: { title: '대출 신청 관리', render: renderLoans },
   'loan-register': { title: '대출 접수', render: renderLoanRegister },
   consultation: { title: '상담 이력', render: renderConsultation },
@@ -163,16 +164,16 @@ function renderCustomers() {
       <div class="panel-body">
         <table>
           <thead>
-            <tr><th>No</th><th>고객명</th><th>연락처</th><th>DB 출처</th><th>담당자</th><th>최근 상태</th><th>등록일</th><th>관리</th></tr>
+            <tr><th>No</th><th>고객명</th><th>연락처</th><th>DB 출처</th><th>담당자</th><th>최근 상태</th><th>등록일</th></tr>
           </thead>
           <tbody>
-            <tr><td>312</td><td>박지영</td><td>010-1234-5678</td><td>네이버 광고</td><td>김대리</td><td><span class="badge badge-submit">접수</span></td><td>2026-03-26</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>311</td><td>이승호</td><td>010-9876-5432</td><td>카카오 DB</td><td>이과장</td><td><span class="badge badge-review">심사중</span></td><td>2026-03-25</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>310</td><td>최민수</td><td>010-5555-1234</td><td>자체 DB</td><td>김대리</td><td><span class="badge badge-approved">승인</span></td><td>2026-03-25</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>309</td><td>정하나</td><td>010-3333-7890</td><td>소개/추천</td><td>박사원</td><td><span class="badge badge-executed">실행</span></td><td>2026-03-24</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>308</td><td>한동욱</td><td>010-7777-4321</td><td>네이버 광고</td><td>이과장</td><td><span class="badge badge-rejected">부결</span></td><td>2026-03-24</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>307</td><td>강서연</td><td>010-2222-8888</td><td>카카오 DB</td><td>김대리</td><td><span class="badge badge-consult">상담</span></td><td>2026-03-23</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>306</td><td>윤재현</td><td>010-4444-6666</td><td>자체 DB</td><td>박사원</td><td><span class="badge badge-lead">리드</span></td><td>2026-03-23</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
+            <tr><td>312</td><td><a href="#" class="customer-link" onclick="viewCustomer(312);return false;">박지영</a></td><td>010-1234-5678</td><td>네이버 광고</td><td>김대리</td><td><span class="badge badge-submit">접수</span></td><td>2026-03-26</td></tr>
+            <tr><td>311</td><td><a href="#" class="customer-link" onclick="viewCustomer(311);return false;">이승호</a></td><td>010-9876-5432</td><td>카카오 DB</td><td>이과장</td><td><span class="badge badge-review">심사중</span></td><td>2026-03-25</td></tr>
+            <tr><td>310</td><td><a href="#" class="customer-link" onclick="viewCustomer(310);return false;">최민수</a></td><td>010-5555-1234</td><td>자체 DB</td><td>김대리</td><td><span class="badge badge-approved">승인</span></td><td>2026-03-25</td></tr>
+            <tr><td>309</td><td><a href="#" class="customer-link" onclick="viewCustomer(309);return false;">정하나</a></td><td>010-3333-7890</td><td>소개/추천</td><td>박사원</td><td><span class="badge badge-executed">실행</span></td><td>2026-03-24</td></tr>
+            <tr><td>308</td><td><a href="#" class="customer-link" onclick="viewCustomer(308);return false;">한동욱</a></td><td>010-7777-4321</td><td>네이버 광고</td><td>이과장</td><td><span class="badge badge-rejected">부결</span></td><td>2026-03-24</td></tr>
+            <tr><td>307</td><td><a href="#" class="customer-link" onclick="viewCustomer(307);return false;">강서연</a></td><td>010-2222-8888</td><td>카카오 DB</td><td>김대리</td><td><span class="badge badge-consult">상담</span></td><td>2026-03-23</td></tr>
+            <tr><td>306</td><td><a href="#" class="customer-link" onclick="viewCustomer(306);return false;">윤재현</a></td><td>010-4444-6666</td><td>자체 DB</td><td>박사원</td><td><span class="badge badge-lead">리드</span></td><td>2026-03-23</td></tr>
           </tbody>
         </table>
       </div>
@@ -594,4 +595,190 @@ function renderAudit() {
       </div>
     </div>
   `;
+}
+
+// ========================================
+// 고객 상세 샘플 데이터
+// ========================================
+const customerData = {
+  312: { name:'박지영', ssn:'920315-2******', age:33, phone:'010-1234-5678', phone2:'', email:'jiyoung.park@email.com', address:'서울특별시 강남구 테헤란로 123, 4층 402호', residenceAddress:'서울특별시 강남구 테헤란로 123, 4층 402호', company:'(주)한국금융서비스', companyAddr:'서울특별시 중구 을지로 45, 7층', companyPhone:'02-1234-5678', salary:4200, employmentType:'정규직', workYears:'3년 2개월', courtName:'서울중앙지방법원', caseNo:'2026가단12345', refundBank:'국민은행', refundAccount:'123-456-789012', refundHolder:'박지영', creditScore:680, existingLoans:'신한은행 2,000만 (잔여 1,200만)', dbSource:'네이버 광고', assignedTo:'김대리', status:'접수', regDate:'2026-03-26', memo:'금리 비교 후 진행 희망. 서류 준비 중.' },
+  311: { name:'이승호', ssn:'880720-1******', age:37, phone:'010-9876-5432', phone2:'010-5555-0000', email:'seungho.lee@company.com', address:'경기도 성남시 분당구 판교로 256, 8층', residenceAddress:'경기도 성남시 분당구 판교로 256, 8층', company:'테크스타트(주)', companyAddr:'경기도 성남시 분당구 판교역로 152', companyPhone:'031-987-6543', salary:5800, employmentType:'정규직', workYears:'5년 8개월', courtName:'', caseNo:'', refundBank:'신한은행', refundAccount:'110-234-567890', refundHolder:'이승호', creditScore:720, existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'이과장', status:'심사중', regDate:'2026-03-25', memo:'소득 증빙 제출 완료. 심사 진행 중.' },
+  310: { name:'최민수', ssn:'950103-1******', age:31, phone:'010-5555-1234', phone2:'', email:'minsu.choi@gmail.com', address:'서울특별시 마포구 월드컵북로 21', residenceAddress:'서울특별시 마포구 월드컵북로 21', company:'(주)디자인웍스', companyAddr:'서울특별시 마포구 양화로 45', companyPhone:'02-3456-7890', salary:3600, employmentType:'계약직', workYears:'1년 6개월', courtName:'', caseNo:'', refundBank:'우리은행', refundAccount:'1002-345-678901', refundHolder:'최민수', creditScore:650, existingLoans:'카카오뱅크 500만', dbSource:'자체 DB', assignedTo:'김대리', status:'승인', regDate:'2026-03-25', memo:'승인 완료. 실행 일정 협의 중.' },
+  309: { name:'정하나', ssn:'000515-4******', age:25, phone:'010-3333-7890', phone2:'', email:'hana.jung@naver.com', address:'인천광역시 남동구 구월로 123', residenceAddress:'인천광역시 남동구 구월로 123', company:'CJ올리브영 인천점', companyAddr:'인천광역시 남동구 인하로 321', companyPhone:'032-111-2222', salary:2800, employmentType:'정규직', workYears:'2년 1개월', courtName:'인천지방법원', caseNo:'2025가소98765', refundBank:'하나은행', refundAccount:'267-890-123456', refundHolder:'정하나', creditScore:590, existingLoans:'토스뱅크 300만', dbSource:'소개/추천', assignedTo:'박사원', status:'실행', regDate:'2026-03-24', memo:'대출 실행 완료.' },
+  308: { name:'한동욱', ssn:'850211-1******', age:41, phone:'010-7777-4321', phone2:'010-8888-1111', email:'dongwook.han@daum.net', address:'경기도 수원시 영통구 영통로 200', residenceAddress:'경기도 수원시 영통구 영통로 200', company:'삼성전자(주)', companyAddr:'경기도 수원시 영통구 삼성로 129', companyPhone:'031-200-1234', salary:7200, employmentType:'정규직', workYears:'12년 3개월', courtName:'', caseNo:'', refundBank:'삼성증권', refundAccount:'55-123456-78', refundHolder:'한동욱', creditScore:480, existingLoans:'국민은행 5,000만, 하나은행 2,000만', dbSource:'네이버 광고', assignedTo:'이과장', status:'부결', regDate:'2026-03-24', memo:'소득 대비 기존 대출 과다. 부결 처리.' },
+  307: { name:'강서연', ssn:'970830-2******', age:28, phone:'010-2222-8888', phone2:'', email:'seoyeon.kang@outlook.com', address:'서울특별시 송파구 올림픽로 300', residenceAddress:'서울특별시 송파구 올림픽로 300', company:'(주)네오위즈', companyAddr:'서울특별시 강남구 삼성로 512', companyPhone:'02-6789-0123', salary:4500, employmentType:'정규직', workYears:'3년 10개월', courtName:'', caseNo:'', refundBank:'카카오뱅크', refundAccount:'3333-01-2345678', refundHolder:'강서연', creditScore:710, existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'김대리', status:'상담', regDate:'2026-03-23', memo:'초기 상담 완료. 추가 상담 예정.' },
+  306: { name:'윤재현', ssn:'910612-1******', age:34, phone:'010-4444-6666', phone2:'', email:'jaehyun.yoon@gmail.com', address:'대전광역시 서구 둔산로 50', residenceAddress:'대전광역시 서구 둔산로 50', company:'한국철도공사', companyAddr:'대전광역시 동구 중앙로 240', companyPhone:'042-567-8901', salary:5100, employmentType:'정규직', workYears:'7년 5개월', courtName:'', caseNo:'', refundBank:'농협은행', refundAccount:'302-1234-5678-91', refundHolder:'윤재현', creditScore:750, existingLoans:'농협 1,500만 (잔여 800만)', dbSource:'자체 DB', assignedTo:'박사원', status:'리드', regDate:'2026-03-23', memo:'DB 유입. 아직 연락 전.' }
+};
+
+let currentCustomerId = null;
+function viewCustomer(id) {
+  currentCustomerId = id;
+  navigate('customer-detail');
+}
+
+// ========================================
+// 고객 상세정보 페이지
+// ========================================
+function renderCustomerDetail() {
+  const c = customerData[currentCustomerId];
+  if (!c) return '<div class="empty-state"><div class="icon">&#128566;</div><p>고객 정보를 찾을 수 없습니다.</p></div>';
+
+  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
+  const badgeClass = statusMap[c.status] || 'badge-lead';
+
+  return `
+    <div style="margin-bottom:16px;">
+      <button class="btn btn-outline btn-sm" onclick="navigate('customers')">&#8592; 고객 목록으로</button>
+      <span style="margin-left:12px;font-size:11px;color:#94a3b8;">No. ${currentCustomerId}</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+      <div style="width:56px;height:56px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700;">${c.name.charAt(0)}</div>
+      <div>
+        <div style="font-size:20px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:12px;vertical-align:middle;">${c.status}</span></div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm">수정</button>
+        <button class="btn btn-outline btn-sm">상담 기록</button>
+        <button class="btn btn-outline btn-sm">대출 접수</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="showDetailTab(this,'tab-basic')">기본 정보</div>
+      <div class="tab" onclick="showDetailTab(this,'tab-work')">직장 정보</div>
+      <div class="tab" onclick="showDetailTab(this,'tab-legal')">법원/계좌</div>
+      <div class="tab" onclick="showDetailTab(this,'tab-credit')">신용/대출</div>
+      <div class="tab" onclick="showDetailTab(this,'tab-history')">상담/변경 이력</div>
+    </div>
+
+    <div id="tab-basic" class="detail-tab">
+      <div class="panel">
+        <div class="panel-header"><h2>인적 사항</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="info-table">
+            <tbody>
+              <tr><th>고객명</th><td>${c.name}</td><th>주민등록번호</th><td>${c.ssn}</td></tr>
+              <tr><th>만 나이</th><td>${c.age}세</td><th>성별</th><td>${c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남':'여'}</td></tr>
+              <tr><th>휴대전화</th><td>${c.phone}</td><th>보조 연락처</th><td>${c.phone2 || '-'}</td></tr>
+              <tr><th>이메일</th><td>${c.email}</td><th>DB 유입출처</th><td>${c.dbSource}</td></tr>
+              <tr><th>초본 주소</th><td colspan="3">${c.residenceAddress}</td></tr>
+              <tr><th>실거주 주소</th><td colspan="3">${c.address}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-work" class="detail-tab" style="display:none;">
+      <div class="panel">
+        <div class="panel-header"><h2>직장 정보</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="info-table">
+            <tbody>
+              <tr><th>직장명</th><td>${c.company}</td><th>고용형태</th><td>${c.employmentType}</td></tr>
+              <tr><th>직장 주소</th><td colspan="3">${c.companyAddr}</td></tr>
+              <tr><th>직장 전화</th><td>${c.companyPhone}</td><th>재직기간</th><td>${c.workYears}</td></tr>
+              <tr><th>연봉</th><td>${c.salary.toLocaleString()}만원</td><th>월 환산</th><td>${Math.round(c.salary/12).toLocaleString()}만원</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-legal" class="detail-tab" style="display:none;">
+      <div class="panel">
+        <div class="panel-header"><h2>법원 사건 정보</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="info-table">
+            <tbody>
+              <tr><th>법원명</th><td>${c.courtName || '-'}</td><th>사건번호</th><td>${c.caseNo || '-'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-header"><h2>환급 계좌 정보</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="info-table">
+            <tbody>
+              <tr><th>은행명</th><td>${c.refundBank}</td><th>예금주</th><td>${c.refundHolder}</td></tr>
+              <tr><th>계좌번호</th><td colspan="3">${c.refundAccount}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-credit" class="detail-tab" style="display:none;">
+      <div class="panel">
+        <div class="panel-header"><h2>신용 및 기존 대출</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="info-table">
+            <tbody>
+              <tr><th>신용점수</th><td><span style="font-weight:700;color:${c.creditScore>=700?'#16a34a':c.creditScore>=600?'#d97706':'#ef4444'}">${c.creditScore}점</span></td><th>등급</th><td>${c.creditScore>=700?'양호':c.creditScore>=600?'보통':'주의'}</td></tr>
+              <tr><th>기존 대출</th><td colspan="3">${c.existingLoans || '없음'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-header"><h2>연결된 대출 신청</h2></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>신청번호</th><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
+            <tbody>
+              <tr><td>LA-20260326-001</td><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-history" class="detail-tab" style="display:none;">
+      <div class="panel">
+        <div class="panel-header"><h2>상담 이력</h2></div>
+        <div class="panel-body">
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="tl-date">2026-03-26 10:30</div>
+              <div class="tl-content">대출 조건 문의, 금리 비교 안내. 서류 준비 안내 완료.</div>
+              <div class="tl-user">채널: 전화 | 담당: ${c.assignedTo}</div>
+            </div>
+            <div class="timeline-item">
+              <div class="tl-date">2026-03-24 14:00</div>
+              <div class="tl-content">초기 상담. 대출 가능 여부 확인 및 필요 서류 안내.</div>
+              <div class="tl-user">채널: 방문 | 담당: ${c.assignedTo}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-header"><h2>상태 변경 이력</h2></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>일시</th><th>변경 전</th><th>변경 후</th><th>사유</th><th>처리자</th></tr></thead>
+            <tbody>
+              <tr><td>2026-03-26 10:30</td><td>상담</td><td>${c.status}</td><td>서류 접수 완료</td><td>${c.assignedTo}</td></tr>
+              <tr><td>2026-03-24 14:00</td><td>리드</td><td>상담</td><td>초기 상담 완료</td><td>${c.assignedTo}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-header"><h2>메모</h2></div>
+        <div class="panel-body" style="padding:14px 18px;">
+          <div style="font-size:12px;color:#334155;background:#f8fafc;padding:10px 14px;border-radius:6px;border:1px solid #e2e8f0;">${c.memo}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function showDetailTab(el, tabId) {
+  document.querySelectorAll('.detail-tab').forEach(t => t.style.display = 'none');
+  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabId).style.display = 'block';
+  el.classList.add('active');
 }

@@ -346,3 +346,35 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
 .empty-state p { font-size: 13px; }
+
+/* === 고객명 링크 === */
+.customer-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+.customer-link:hover { text-decoration: underline; color: #1d4ed8; }
+
+/* === 정보 테이블 (상세 페이지용) === */
+.info-table { width: 100%; border-collapse: collapse; }
+.info-table th {
+  background: #f8fafc;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+  width: 140px;
+  white-space: nowrap;
+}
+.info-table td {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #1e293b;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* === 상세 탭 === */
+.detail-tab { margin-top: 0; }
