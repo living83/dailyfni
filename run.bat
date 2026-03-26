@@ -31,8 +31,7 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":3000" ^| findstr "LI
     timeout /t 2 /nobreak >nul
 )
 echo [시작] 서버를 시작합니다...
-set RUNDIR=%~dp0
-start "대부중개 서버" cmd /k "cd /d %RUNDIR% && node src/index.js"
+start "대부중개 서버" "%~dp0_server.bat"
 timeout /t 3 /nobreak >nul
 echo.
 echo [완료] 서버가 시작되었습니다.
@@ -64,8 +63,7 @@ for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":3000" ^| findstr "LI
 )
 timeout /t 2 /nobreak >nul
 echo [재시작] 서버를 시작합니다...
-set RUNDIR=%~dp0
-start "대부중개 서버" cmd /k "cd /d %RUNDIR% && node src/index.js"
+start "대부중개 서버" "%~dp0_server.bat"
 timeout /t 3 /nobreak >nul
 echo.
 echo [완료] 서버가 재시작되었습니다.
