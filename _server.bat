@@ -9,6 +9,12 @@ echo   http://localhost:3000
 echo   종료하려면 Ctrl+C 또는 창을 닫으세요
 echo ========================================
 echo.
+echo [준비] 패키지 확인 중...
+if not exist "node_modules" (
+    echo [설치] npm install 실행 중...
+    npm install
+    echo.
+)
 node src/index.js
 echo.
 echo [오류] 서버가 종료되었습니다. 위 에러 메시지를 확인하세요.
