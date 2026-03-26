@@ -4,7 +4,7 @@
 
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
-  customers: { title: '고객 관리', render: renderCustomers },
+  customers: { title: '고객현황', render: renderCustomers },
   loans: { title: '대출 신청 관리', render: renderLoans },
   'loan-register': { title: '대출 접수', render: renderLoanRegister },
   consultation: { title: '상담 이력', render: renderConsultation },
