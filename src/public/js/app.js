@@ -4,6 +4,7 @@
 
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
+  'customer-register': { title: '고객등록', render: renderCustomerRegister },
   customers: { title: '고객현황', render: renderCustomers },
   loans: { title: '대출 신청 관리', render: renderLoans },
   'loan-register': { title: '대출 접수', render: renderLoanRegister },
@@ -1109,153 +1110,131 @@ function executeCustomerSearch() {
 }
 
 // ========================================
-// 고객 등록 (빈 폼 모달)
+// 고객 등록 (웹 페이지)
 // ========================================
-function openCustomerRegister() {
-  const old = document.getElementById('customerModal');
-  if (old) old.remove();
-
-  const modal = document.createElement('div');
-  modal.id = 'customerModal';
-  modal.className = 'modal-overlay';
-  modal.innerHTML = `
-    <div class="modal-container">
-      <div class="modal-header">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:40px;height:40px;background:#10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700;">+</div>
-          <div>
-            <div style="font-size:16px;font-weight:700;">신규 고객 등록</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">고객 원장 정보를 입력하세요</div>
+function renderCustomerRegister() {
+  return `
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <div class="panel">
+          <div class="panel-header"><h2>인적 사항</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
+                <tr><th>만 나이</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select><option>선택</option><option>남</option><option>여</option></select></td></tr>
+                <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
+                <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select><option>선택하세요</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>기타</option></select></td></tr>
+                <tr><th>초본 주소</th><td colspan="3"><input type="text" placeholder="초본 주소 입력" style="width:100%;"></td></tr>
+                <tr><th>실거주 주소</th><td colspan="3"><input type="text" placeholder="실거주 주소 입력" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-primary btn-sm" onclick="alert('저장 기능은 백엔드 연동 후 활성화됩니다.')">저장</button>
-          <button class="modal-close" onclick="closeCustomerModal()">&times;</button>
+
+        <div class="panel">
+          <div class="panel-header"><h2>직장 정보</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>직장명</th><td><input type="text" placeholder="직장명"></td><th>고용형태</th><td><select><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
+                <tr><th>직장 주소</th><td colspan="3"><input type="text" placeholder="직장 주소 입력" style="width:100%;"></td></tr>
+                <tr><th>직장 전화</th><td><input type="text" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" placeholder="예: 3년 2개월"></td></tr>
+                <tr><th>연봉</th><td><input type="text" placeholder="만원 단위"></td><th>월 환산</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>법원 사건 정보</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>법원명</th><td><input type="text" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" placeholder="사건번호 (해당 시)"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>환급 계좌</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>은행명</th><td><select><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" placeholder="예금주"></td></tr>
+                <tr><th>계좌번호</th><td colspan="3"><input type="text" placeholder="계좌번호 입력" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>신용 및 기존 대출</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>신용점수</th><td><input type="text" placeholder="신용점수"></td><th>등급</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
+                <tr><th>기존 대출</th><td colspan="3"><input type="text" placeholder="예: 신한은행 2,000만 (잔여 1,200만)" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-      <div class="modal-body">
-        <div class="modal-left">
-          <div class="panel">
-            <div class="panel-header"><h2>인적 사항</h2></div>
-            <div class="panel-body" style="padding:0;">
-              <table class="info-table">
-                <tbody>
-                  <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
-                  <tr><th>만 나이</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select><option>선택</option><option>남</option><option>여</option></select></td></tr>
-                  <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
-                  <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select><option>선택하세요</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>기타</option></select></td></tr>
-                  <tr><th>초본 주소</th><td colspan="3"><input type="text" placeholder="초본 주소 입력" style="width:100%;"></td></tr>
-                  <tr><th>실거주 주소</th><td colspan="3"><input type="text" placeholder="실거주 주소 입력" style="width:100%;"></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-header"><h2>직장 정보</h2></div>
-            <div class="panel-body" style="padding:0;">
-              <table class="info-table">
-                <tbody>
-                  <tr><th>직장명</th><td><input type="text" placeholder="직장명"></td><th>고용형태</th><td><select><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
-                  <tr><th>직장 주소</th><td colspan="3"><input type="text" placeholder="직장 주소 입력" style="width:100%;"></td></tr>
-                  <tr><th>직장 전화</th><td><input type="text" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" placeholder="예: 3년 2개월"></td></tr>
-                  <tr><th>연봉</th><td><input type="text" placeholder="만원 단위"></td><th>월 환산</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
-                </tbody>
-              </table>
-            </div>
+      <div style="width:340px;flex-shrink:0;">
+        <div class="panel">
+          <div class="panel-header"><h2>메모</h2></div>
+          <div class="panel-body" style="padding:10px 14px;">
+            <textarea rows="3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;resize:vertical;" placeholder="메모 입력"></textarea>
           </div>
+        </div>
 
-          <div class="panel">
-            <div class="panel-header"><h2>법원 사건 정보</h2></div>
-            <div class="panel-body" style="padding:0;">
-              <table class="info-table">
-                <tbody>
-                  <tr><th>법원명</th><td><input type="text" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" placeholder="사건번호 (해당 시)"></td></tr>
-                </tbody>
-              </table>
+        <div class="panel">
+          <div class="panel-header"><h2>담당자 배정</h2></div>
+          <div class="panel-body" style="padding:10px 14px;">
+            <div class="form-group" style="margin-bottom:8px;">
+              <label>담당자 <span class="required">*</span></label>
+              <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+                <option>선택하세요</option><option>김대리</option><option>이과장</option><option>박사원</option>
+              </select>
             </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header"><h2>환급 계좌</h2></div>
-            <div class="panel-body" style="padding:0;">
-              <table class="info-table">
-                <tbody>
-                  <tr><th>은행명</th><td><select><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" placeholder="예금주"></td></tr>
-                  <tr><th>계좌번호</th><td colspan="3"><input type="text" placeholder="계좌번호 입력" style="width:100%;"></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header"><h2>신용 및 기존 대출</h2></div>
-            <div class="panel-body" style="padding:0;">
-              <table class="info-table">
-                <tbody>
-                  <tr><th>신용점수</th><td><input type="text" placeholder="신용점수"></td><th>등급</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
-                  <tr><th>기존 대출</th><td colspan="3"><input type="text" placeholder="예: 신한은행 2,000만 (잔여 1,200만)" style="width:100%;"></td></tr>
-                </tbody>
-              </table>
+            <div class="form-group">
+              <label>초기 상태</label>
+              <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+                <option>리드</option><option>상담</option>
+              </select>
             </div>
           </div>
         </div>
 
-        <div class="modal-right">
-          <div class="panel">
-            <div class="panel-header"><h2>메모</h2></div>
-            <div class="panel-body" style="padding:10px 14px;">
-              <textarea rows="3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;resize:vertical;" placeholder="메모 입력"></textarea>
+        <div class="panel">
+          <div class="panel-header"><h2>첫 상담 기록</h2></div>
+          <div class="panel-body" style="padding:10px 14px;">
+            <div class="form-group" style="margin-bottom:8px;">
+              <label>상담 채널</label>
+              <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+                <option>선택</option><option>전화</option><option>방문</option><option>카카오톡</option><option>문자</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>상담 내용</label>
+              <textarea rows="3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;resize:vertical;" placeholder="첫 상담 내용 입력"></textarea>
+            </div>
+            <div class="form-group">
+              <label>다음 액션</label>
+              <input type="text" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;" placeholder="예: 03-28 서류 제출 확인">
             </div>
           </div>
+        </div>
 
-          <div class="panel">
-            <div class="panel-header"><h2>담당자 배정</h2></div>
-            <div class="panel-body" style="padding:10px 14px;">
-              <div class="form-group" style="margin-bottom:8px;">
-                <label>담당자 <span class="required">*</span></label>
-                <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
-                  <option>선택하세요</option><option>김대리</option><option>이과장</option><option>박사원</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>초기 상태</label>
-                <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
-                  <option>리드</option><option>상담</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header"><h2>첫 상담 기록</h2></div>
-            <div class="panel-body" style="padding:10px 14px;">
-              <div class="form-group" style="margin-bottom:8px;">
-                <label>상담 채널</label>
-                <select style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
-                  <option>선택</option><option>전화</option><option>방문</option><option>카카오톡</option><option>문자</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>상담 내용</label>
-                <textarea rows="3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;resize:vertical;" placeholder="첫 상담 내용 입력"></textarea>
-              </div>
-              <div class="form-group">
-                <label>다음 액션</label>
-                <input type="text" style="width:100%;padding:6px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;" placeholder="예: 03-28 서류 제출 확인">
-              </div>
-            </div>
-          </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" style="flex:1;padding:10px;font-size:14px;" onclick="alert('저장 기능은 백엔드 연동 후 활성화됩니다.')">고객 등록</button>
+          <button class="btn btn-outline" style="padding:10px 16px;" onclick="navigate('customer-register')">초기화</button>
         </div>
       </div>
     </div>
   `;
-
-  document.body.appendChild(modal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeCustomerModal();
-  });
-  document.addEventListener('keydown', handleModalEsc);
 }
 
 // ========================================
