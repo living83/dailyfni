@@ -5,6 +5,7 @@
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
   'customer-register': { title: '고객등록', render: renderCustomerRegister },
+  'customer-ledger': { title: '고객원장', render: renderCustomerLedger },
   customers: { title: '고객현황', render: renderCustomers },
   loans: { title: '대출 신청 관리', render: renderLoans },
   'loan-register': { title: '대출 접수', render: renderLoanRegister },
@@ -782,7 +783,14 @@ const customerData = {
   306: { name:'윤재현', ssn:'910612-1******', age:34, phone:'010-4444-6666', phone2:'', email:'jaehyun.yoon@gmail.com', address:'대전광역시 서구 둔산로 50', residenceAddress:'대전광역시 서구 둔산로 50', company:'한국철도공사', companyAddr:'대전광역시 동구 중앙로 240', companyPhone:'042-567-8901', salary:5100, employmentType:'정규직', workYears:'7년 5개월', courtName:'', caseNo:'', refundBank:'농협은행', refundAccount:'302-1234-5678-91', refundHolder:'윤재현', creditScore:750, existingLoans:'농협 1,500만 (잔여 800만)', dbSource:'자체 DB', assignedTo:'박사원', status:'리드', regDate:'2026-03-23', memo:'DB 유입. 아직 연락 전.' }
 };
 
-// 고객 상세 팝업 열기
+// 고객원장 페이지로 이동
+let currentLedgerId = null;
+function viewCustomerLedger(id) {
+  currentLedgerId = id;
+  navigate('customer-ledger');
+}
+
+// 고객 상세 팝업 열기 (고객현황 목록에서 클릭 시)
 function viewCustomer(id) {
   const c = customerData[id];
   if (!c) return;
@@ -1095,7 +1103,7 @@ function executeCustomerSearch() {
   `;
   for (const r of results) {
     const badge = statusMap[r.status] || 'badge-lead';
-    html += `<tr class="search-result-row" ondblclick="closeCustomerSearch();viewCustomer(${r.id});" title="더블클릭하여 상세보기">
+    html += `<tr class="search-result-row" ondblclick="closeCustomerSearch();viewCustomerLedger(${r.id});" title="더블클릭하여 고객원장 보기">
       <td>${r.id}</td>
       <td><strong>${r.name}</strong></td>
       <td>${r.phone}</td>
@@ -1107,6 +1115,181 @@ function executeCustomerSearch() {
   }
   html += '</tbody></table>';
   resultsDiv.innerHTML = html;
+}
+
+// ========================================
+// 고객원장 (조회 - 데이터 채워진 상태)
+// ========================================
+function renderCustomerLedger() {
+  const c = currentLedgerId ? customerData[currentLedgerId] : null;
+  if (!c) return '<div class="empty-state"><div class="icon">&#128566;</div><p>고객 정보를 찾을 수 없습니다.</p></div>';
+
+  const gender = c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남':'여';
+  const creditColor = c.creditScore>=700?'#16a34a':c.creditScore>=600?'#d97706':'#ef4444';
+  const creditGrade = c.creditScore>=700?'양호':c.creditScore>=600?'보통':'주의';
+  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
+  const badgeClass = statusMap[c.status] || 'badge-lead';
+
+  return `
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+      <div style="width:48px;height:48px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;">${c.name.charAt(0)}</div>
+      <div>
+        <div style="font-size:18px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:12px;vertical-align:middle;">${c.status}</span> <span style="font-size:12px;color:#94a3b8;">No.${currentLedgerId}</span></div>
+        <div style="font-size:12px;color:#64748b;margin-top:2px;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="alert('수정 기능은 백엔드 연동 후 활성화됩니다.')">수정 저장</button>
+        <button class="btn btn-outline btn-sm" onclick="goLoanRegister(${currentLedgerId})">대출 접수</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <div class="panel">
+          <div class="panel-header"><h2>인적 사항</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>고객명</th><td><input type="text" value="${c.name}"></td><th>주민등록번호</th><td><input type="text" value="${c.ssn}"></td></tr>
+                <tr><th>만 나이</th><td><input type="text" value="${c.age}세" readonly style="background:#f1f5f9;"></td><th>성별</th><td><input type="text" value="${gender}" readonly style="background:#f1f5f9;"></td></tr>
+                <tr><th>휴대전화</th><td><input type="text" value="${c.phone}"></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || ''}" placeholder="-"></td></tr>
+                <tr><th>이메일</th><td><input type="text" value="${c.email}"></td><th>DB 유입출처</th><td><input type="text" value="${c.dbSource}"></td></tr>
+                <tr><th>초본 주소</th><td colspan="3"><input type="text" value="${c.residenceAddress}" style="width:100%;"></td></tr>
+                <tr><th>실거주 주소</th><td colspan="3"><input type="text" value="${c.address}" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>직장 정보</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>직장명</th><td><input type="text" value="${c.company}"></td><th>고용형태</th><td><input type="text" value="${c.employmentType}"></td></tr>
+                <tr><th>직장 주소</th><td colspan="3"><input type="text" value="${c.companyAddr}" style="width:100%;"></td></tr>
+                <tr><th>직장 전화</th><td><input type="text" value="${c.companyPhone}"></td><th>재직기간</th><td><input type="text" value="${c.workYears}"></td></tr>
+                <tr><th>연봉</th><td><input type="text" value="${c.salary.toLocaleString()}만원"></td><th>월 환산</th><td><input type="text" value="${Math.round(c.salary/12).toLocaleString()}만원" readonly style="background:#f1f5f9;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>법원 사건 정보</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>법원명</th><td><input type="text" value="${c.courtName || ''}" placeholder="해당 없음"></td><th>사건번호</th><td><input type="text" value="${c.caseNo || ''}" placeholder="해당 없음"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>환급 계좌</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>은행명</th><td><input type="text" value="${c.refundBank}"></td><th>예금주</th><td><input type="text" value="${c.refundHolder}"></td></tr>
+                <tr><th>계좌번호</th><td colspan="3"><input type="text" value="${c.refundAccount}" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>신용 및 기존 대출</h2></div>
+          <div class="panel-body" style="padding:0;">
+            <table class="info-table">
+              <tbody>
+                <tr><th>신용점수</th><td><input type="text" value="${c.creditScore}점" style="color:${creditColor};font-weight:700;"></td><th>등급</th><td><input type="text" value="${creditGrade}" readonly style="background:#f1f5f9;"></td></tr>
+                <tr><th>기존 대출</th><td colspan="3"><input type="text" value="${c.existingLoans || '없음'}" style="width:100%;"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>연결된 대출 신청</h2></div>
+          <div class="panel-body">
+            <table>
+              <thead><tr><th>신청번호</th><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
+              <tbody>
+                <tr><td>LA-20260326-001</td><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:340px;flex-shrink:0;">
+        <div class="panel">
+          <div class="panel-header"><h2>메모</h2></div>
+          <div class="panel-body" style="padding:10px 14px;">
+            <textarea rows="3" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:12px;resize:vertical;">${c.memo}</textarea>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2>상담 이력</h2>
+            <button class="btn btn-primary btn-sm">+ 상담 기록</button>
+          </div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-26 10:30</div>
+                <div class="tl-content">대출 조건 문의, 금리 비교 안내. 서류 준비 안내 완료.</div>
+                <div class="tl-user">채널: 전화 | 담당: ${c.assignedTo}</div>
+              </div>
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-24 14:00</div>
+                <div class="tl-content">초기 상담. 대출 가능 여부 확인 및 필요 서류 안내.</div>
+                <div class="tl-user">채널: 방문 | 담당: ${c.assignedTo}</div>
+              </div>
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-22 11:00</div>
+                <div class="tl-content">첫 전화 상담. 고객 니즈 파악 및 기본 정보 수집.</div>
+                <div class="tl-user">채널: 전화 | 담당: ${c.assignedTo}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>상태 변경 이력</h2></div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-26 10:30</div>
+                <div class="tl-content"><span class="badge badge-consult">상담</span> &rarr; <span class="badge ${badgeClass}">${c.status}</span></div>
+                <div class="tl-user">사유: 서류 접수 완료 | ${c.assignedTo}</div>
+              </div>
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-24 14:00</div>
+                <div class="tl-content"><span class="badge badge-lead">리드</span> &rarr; <span class="badge badge-consult">상담</span></div>
+                <div class="tl-user">사유: 초기 상담 완료 | ${c.assignedTo}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><h2>담당자 변경 이력</h2></div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="tl-date">2026-03-22 09:00</div>
+                <div class="tl-content">최초 배정: ${c.assignedTo}</div>
+                <div class="tl-user">처리: 박팀장</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 // ========================================
