@@ -376,5 +376,74 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid #e2e8f0;
 }
 
-/* === 상세 탭 === */
-.detail-tab { margin-top: 0; }
+/* === 모달 (고객 상세 팝업) === */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 30px 20px;
+  overflow-y: auto;
+}
+.modal-container {
+  background: #f0f2f5;
+  border-radius: 12px;
+  width: 95%;
+  max-width: 1300px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.modal-header {
+  background: #fff;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 12px 12px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  margin-left: 8px;
+}
+.modal-close:hover { color: #ef4444; }
+.modal-body {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+.modal-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-right {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-left .panel,
+.modal-right .panel { margin-bottom: 0; }
+
+@media (max-width: 900px) {
+  .modal-body { flex-direction: column; }
+  .modal-right { width: 100%; }
+}
