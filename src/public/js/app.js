@@ -226,21 +226,67 @@ function renderLoans() {
 // ========================================
 // 4. 대출 접수 (표준 접수 폼)
 // ========================================
+let loanRegisterCustomerId = null;
+
+function goLoanRegister(customerId) {
+  closeCustomerModal();
+  loanRegisterCustomerId = customerId;
+  navigate('loan-register');
+}
+
 function renderLoanRegister() {
+  const c = loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null;
+
+  const selOpt = (options, selected) => options.map(o =>
+    `<option${o === selected ? ' selected' : ''}>${o}</option>`
+  ).join('');
+
+  const dbOptions = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','기타'];
+  const assignOptions = ['선택하세요','김대리','이과장','박사원'];
+
   return `
+    ${c ? `<div class="panel" style="border-left:3px solid #3b82f6;">
+      <div class="panel-body" style="padding:12px 18px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${c.phone}) | ${c.ssn} | ${c.company} | 연봉 ${c.salary.toLocaleString()}만원</div>
+        <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;navigate('loan-register');">연동 해제</button>
+      </div>
+    </div>` : ''}
     <div class="panel">
       <div class="panel-header"><h2>표준 대출 접수</h2></div>
       <div class="panel-body" style="padding:20px;">
+        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">고객 정보</div>
         <div class="form-row">
           <div class="form-group">
             <label>고객명 <span class="required">*</span></label>
-            <input type="text" placeholder="고객명 입력 또는 검색">
+            <input type="text" id="lr-name" placeholder="고객명 입력 또는 검색" value="${c ? c.name : ''}">
           </div>
           <div class="form-group">
             <label>연락처 <span class="required">*</span></label>
-            <input type="text" placeholder="010-0000-0000">
+            <input type="text" id="lr-phone" placeholder="010-0000-0000" value="${c ? c.phone : ''}">
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>주민등록번호</label>
+            <input type="text" id="lr-ssn" placeholder="주민번호" value="${c ? c.ssn : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
+          </div>
+          <div class="form-group">
+            <label>직장명</label>
+            <input type="text" id="lr-company" placeholder="직장명" value="${c ? c.company : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>연봉 (만원)</label>
+            <input type="text" id="lr-salary" placeholder="연봉" value="${c ? c.salary : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
+          </div>
+          <div class="form-group">
+            <label>신용점수</label>
+            <input type="text" id="lr-credit" placeholder="신용점수" value="${c ? c.creditScore : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
+          </div>
+        </div>
+
+        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin:20px 0 12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">대출 정보</div>
         <div class="form-row">
           <div class="form-group">
             <label>대출 희망 금액 <span class="required">*</span></label>
@@ -260,23 +306,11 @@ function renderLoanRegister() {
         <div class="form-row">
           <div class="form-group">
             <label>DB 출처 <span class="required">*</span></label>
-            <select>
-              <option>선택하세요</option>
-              <option>네이버 광고</option>
-              <option>카카오 DB</option>
-              <option>자체 DB</option>
-              <option>소개/추천</option>
-              <option>기타</option>
-            </select>
+            <select>${selOpt(dbOptions, c ? c.dbSource : '선택하세요')}</select>
           </div>
           <div class="form-group">
             <label>담당자 <span class="required">*</span></label>
-            <select>
-              <option>선택하세요</option>
-              <option>김대리</option>
-              <option>이과장</option>
-              <option>박사원</option>
-            </select>
+            <select>${selOpt(assignOptions, c ? c.assignedTo : '선택하세요')}</select>
           </div>
         </div>
         <div class="form-row">
@@ -294,9 +328,11 @@ function renderLoanRegister() {
             </select>
           </div>
         </div>
+
+        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin:20px 0 12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">추가 정보</div>
         <div class="form-group">
           <label>메모/특이사항</label>
-          <textarea rows="3" placeholder="메모 입력"></textarea>
+          <textarea rows="3" placeholder="메모 입력">${c ? c.memo : ''}</textarea>
         </div>
         <div class="form-group">
           <label>서류 첨부</label>
@@ -305,7 +341,7 @@ function renderLoanRegister() {
         </div>
         <div style="margin-top:16px;display:flex;gap:8px;">
           <button class="btn btn-primary">접수 등록</button>
-          <button class="btn btn-outline">취소</button>
+          <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
         </div>
       </div>
     </div>
@@ -639,7 +675,7 @@ function viewCustomer(id) {
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button class="btn btn-primary btn-sm">수정</button>
-          <button class="btn btn-outline btn-sm">대출 접수</button>
+          <button class="btn btn-outline btn-sm" onclick="goLoanRegister(${id})">대출 접수</button>
           <button class="modal-close" onclick="closeCustomerModal()">&times;</button>
         </div>
       </div>
