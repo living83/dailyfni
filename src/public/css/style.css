@@ -397,6 +397,46 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid #e2e8f0;
 }
 
+/* === 론앤마스터 연동 폼 테이블 === */
+.form-table { width: 100%; border-collapse: collapse; }
+.form-table th {
+  background: #f8fafc;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  width: 120px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.form-table td {
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.form-table input[type="text"],
+.form-table select,
+.form-table textarea {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+.form-table input[type="text"]:focus,
+.form-table select:focus { border-color: #3b82f6; }
+.form-section-title {
+  background: #334155;
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* === 검색 폼 === */
 .search-form-grid {
   display: grid;

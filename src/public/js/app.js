@@ -224,7 +224,7 @@ function renderLoans() {
 }
 
 // ========================================
-// 4. 대출 접수 (표준 접수 폼)
+// 4. 대출 접수 (론앤마스터 연동 폼)
 // ========================================
 let loanRegisterCustomerId = null;
 
@@ -237,124 +237,238 @@ function goLoanRegister(customerId) {
 function renderLoanRegister() {
   const c = loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null;
 
-  const selOpt = (options, selected) => options.map(o =>
-    `<option${o === selected ? ' selected' : ''}>${o}</option>`
-  ).join('');
+  // 고객 데이터에서 파생값 계산
+  const birthFromSsn = c ? c.ssn.substring(0,6) : '';
+  const genderFromSsn = c ? (c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남(1)':'여(2)') : '';
+  const phoneParts = c ? c.phone.split('-') : ['','',''];
+  const salaryYear = c ? c.salary : '';
+  const salaryMonth = c ? Math.round(c.salary / 12) : '';
 
-  const dbOptions = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','기타'];
-  const assignOptions = ['선택하세요','김대리','이과장','박사원'];
+  const sel = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
+  const ro = c ? 'readonly style="background:#f1f5f9;"' : '';
 
   return `
     ${c ? `<div class="panel" style="border-left:3px solid #3b82f6;">
-      <div class="panel-body" style="padding:12px 18px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${c.phone}) | ${c.ssn} | ${c.company} | 연봉 ${c.salary.toLocaleString()}만원</div>
+      <div class="panel-body" style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${c.phone}) | ${c.company} | 연봉 ${c.salary.toLocaleString()}만원 | 신용 ${c.creditScore}점</div>
         <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;navigate('loan-register');">연동 해제</button>
       </div>
     </div>` : ''}
+
     <div class="panel">
-      <div class="panel-header"><h2>표준 대출 접수</h2></div>
-      <div class="panel-body" style="padding:20px;">
-        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">고객 정보</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>고객명 <span class="required">*</span></label>
-            <input type="text" id="lr-name" placeholder="고객명 입력 또는 검색" value="${c ? c.name : ''}">
-          </div>
-          <div class="form-group">
-            <label>연락처 <span class="required">*</span></label>
-            <input type="text" id="lr-phone" placeholder="010-0000-0000" value="${c ? c.phone : ''}">
-          </div>
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>신청서 입력</h2>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;navigate('loan-register');">reset</button>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>주민등록번호</label>
-            <input type="text" id="lr-ssn" placeholder="주민번호" value="${c ? c.ssn : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
-          </div>
-          <div class="form-group">
-            <label>직장명</label>
-            <input type="text" id="lr-company" placeholder="직장명" value="${c ? c.company : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>연봉 (만원)</label>
-            <input type="text" id="lr-salary" placeholder="연봉" value="${c ? c.salary : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
-          </div>
-          <div class="form-group">
-            <label>신용점수</label>
-            <input type="text" id="lr-credit" placeholder="신용점수" value="${c ? c.creditScore : ''}" readonly style="${c ? 'background:#f1f5f9;' : ''}">
-          </div>
-        </div>
+      </div>
+      <div class="panel-body" style="padding:0;">
 
-        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin:20px 0 12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">대출 정보</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>대출 희망 금액 <span class="required">*</span></label>
-            <input type="text" placeholder="금액 입력 (만원)">
-          </div>
-          <div class="form-group">
-            <label>대출 종류 <span class="required">*</span></label>
-            <select>
-              <option>선택하세요</option>
-              <option>신용대출</option>
-              <option>담보대출</option>
-              <option>자동차대출</option>
-              <option>기타</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>DB 출처 <span class="required">*</span></label>
-            <select>${selOpt(dbOptions, c ? c.dbSource : '선택하세요')}</select>
-          </div>
-          <div class="form-group">
-            <label>담당자 <span class="required">*</span></label>
-            <select>${selOpt(assignOptions, c ? c.assignedTo : '선택하세요')}</select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>수수료율 (%)</label>
-            <input type="text" placeholder="예: 3.5">
-          </div>
-          <div class="form-group">
-            <label>상위 에이전시</label>
-            <select>
-              <option>선택하세요</option>
-              <option>A 에이전시</option>
-              <option>B 에이전시</option>
-              <option>C 에이전시</option>
-            </select>
-          </div>
-        </div>
+        <!-- 등록직원 -->
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>등록직원</th>
+              <td colspan="5">
+                <select style="width:200px;">${sel(['==선택==','김대리','이과장','박사원'], c ? c.assignedTo : '==선택==')}</select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
-        <div style="font-size:12px;font-weight:600;color:#3b82f6;margin:20px 0 12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">추가 정보</div>
-        <div class="form-group">
-          <label>메모/특이사항</label>
-          <textarea rows="3" placeholder="메모 입력">${c ? c.memo : ''}</textarea>
-        </div>
-        <div class="form-group">
-          <label>서류 첨부</label>
-          <input type="file" multiple>
-          <div style="font-size:11px;color:#94a3b8;margin-top:4px;">허용: PDF, JPG, PNG / 최대 10MB</div>
-        </div>
-        <div style="margin-top:16px;display:flex;gap:8px;">
-          <button class="btn btn-primary">접수 등록</button>
-          <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
-        </div>
+        <!-- 고객 정보 -->
+        <div class="form-section-title">고객 정보</div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>이름 <span class="required">*</span></th>
+              <td><input type="text" placeholder="이름을(를) 입력하세요." value="${c ? c.name : ''}" ${ro}></td>
+              <th>생년월일 <span class="required">*</span></th>
+              <td><input type="text" placeholder="생년월일을(를) 입력하세요." value="${birthFromSsn}" ${ro}></td>
+              <th>성별</th>
+              <td><select ${c?'disabled style="background:#f1f5f9;"':''}>${sel(['남(1)','여(2)'], genderFromSsn || '남(1)')}</select></td>
+            </tr>
+            <tr>
+              <th>휴대폰 <span class="required">*</span></th>
+              <td colspan="5">
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <select style="width:80px;" ${c?'disabled style="background:#f1f5f9;width:80px;"':''}>${sel(['통신사()','SKT','KT','LGU+','알뜰폰'], '')}</select>
+                  <input type="text" style="width:60px;" placeholder="010" value="${phoneParts[0]||''}" ${ro}>
+                  <input type="text" style="width:80px;" placeholder="중간자리" value="${phoneParts[1]||''}" ${ro}>
+                  <input type="text" style="width:80px;" placeholder="뒷자리" value="${phoneParts[2]||''}" ${ro}>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>대출요청액 <span class="required">*</span></th>
+              <td colspan="3"><div style="display:flex;align-items:center;gap:4px;"><input type="text" placeholder="1000" style="width:200px;"> <span style="font-size:12px;color:#64748b;">만원</span></div></td>
+              <th>DB 출처</th>
+              <td><select>${sel(['==선택==','네이버 광고','카카오 DB','자체 DB','소개/추천','기타'], c ? c.dbSource : '==선택==')}</select></td>
+            </tr>
+            <tr>
+              <th>실거주지주소 <span class="required">*</span></th>
+              <td colspan="5">
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <input type="text" style="width:60px;" placeholder="" value="${c ? '' : ''}">
+                  <input type="text" style="width:60px;" placeholder="">
+                  <input type="text" style="width:70px;" placeholder="">
+                  <button class="btn btn-sm btn-outline">검색</button>
+                  <button class="btn btn-sm btn-outline">검색()</button>
+                  <input type="text" style="flex:1;" placeholder="상세주소" value="${c ? c.address : ''}" ${ro}>
+                  <input type="text" style="width:100px;" placeholder="연우빌딩">
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>주거종류</th>
+              <td colspan="2"><select>${sel(['==선택==','자가','전세','월세','기숙사','기타'], '')}</select></td>
+              <th>주택소유구분</th>
+              <td colspan="2"><select>${sel(['==선택==','본인소유','배우자소유','가족소유','무주택','기타'], '')}</select></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 직장 정보 -->
+        <div class="form-section-title">직장 정보</div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>직업구분 <span class="required">*</span></th>
+              <td colspan="5"><select>${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], '')}</select></td>
+            </tr>
+            <tr>
+              <th>직장명 <span class="required">*</span></th>
+              <td colspan="2"><input type="text" placeholder="직장명" value="${c ? c.company : ''}" ${ro}></td>
+              <th>입사(설립)일자</th>
+              <td colspan="2"><input type="text" placeholder="입사일자" value="${c ? '' : ''}"></td>
+            </tr>
+            <tr>
+              <th>4대보험 여부</th>
+              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입','확인불가'], '')}</select></td>
+              <th>(직장)사업자번호</th>
+              <td colspan="2">
+                <div style="display:flex;gap:4px;">
+                  <input type="text" style="width:70px;" placeholder="">
+                  <input type="text" style="width:70px;" placeholder="">
+                  <input type="text" style="width:70px;" placeholder="">
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>연소득(년/월) <span class="required">*</span></th>
+              <td colspan="5">
+                <div style="display:flex;align-items:center;gap:4px;">
+                  <input type="text" style="width:120px;background:${c?'#fffde7':''};" placeholder="연소득(년)" value="${salaryYear}">
+                  <span style="font-size:12px;color:#64748b;">만원/</span>
+                  <input type="text" style="width:100px;" placeholder="" value="${salaryMonth}">
+                  <span style="font-size:12px;color:#64748b;">만원</span>
+                  <span style="margin-left:12px;font-size:12px;color:#64748b;">건강보험납부금액</span>
+                  <input type="text" style="width:100px;" placeholder="">
+                  <span style="font-size:12px;color:#64748b;">원</span>
+                  <button class="btn btn-sm btn-outline">역산</button>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>직장 주소</th>
+              <td colspan="5">
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <input type="text" style="width:60px;" placeholder="">
+                  <input type="text" style="width:60px;" placeholder="">
+                  <input type="text" style="width:70px;" placeholder="">
+                  <button class="btn btn-sm btn-outline">검색</button>
+                  <button class="btn btn-sm btn-outline">검색()</button>
+                  <input type="text" style="flex:1;" placeholder="상세주소" value="${c ? c.companyAddr : ''}" ${ro}>
+                  <input type="text" style="width:100px;" placeholder="연우빌딩">
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 차량 정보 -->
+        <div class="form-section-title" style="color:#c53030;">차량 정보 - <span style="font-size:11px;">오토론 접수시 필수입력!</span></div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>차량번호</th>
+              <td colspan="2"><input type="text" placeholder="띄어쓰기 없이 차량번호만 기재 (ex:123가4567)"></td>
+              <th>차량명</th>
+              <td colspan="2"><input type="text" placeholder=""></td>
+            </tr>
+            <tr>
+              <th>차량연식</th>
+              <td colspan="2"><select>${sel(['==선택==','2026','2025','2024','2023','2022','2021','2020','2019','2018','2017','2016','2015','기타'], '')}</select></td>
+              <th>주행거리</th>
+              <td colspan="2">
+                <div style="display:flex;align-items:center;gap:4px;">
+                  <input type="text" placeholder="숫자로만 입력요망 (ex:5만키로 → 50000라고만 입력)">
+                  <span style="font-size:12px;color:#64748b;">km</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>차량소유구분</th>
+              <td colspan="2"><select>${sel(['==선택==','본인소유','가족소유','리스','렌트','기타'], '')}</select></td>
+              <th>공동명의자명</th>
+              <td colspan="2"><input type="text" placeholder=""></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 회파복 -->
+        <div class="form-section-title" style="color:#c53030;">회파복 - <span style="font-size:11px;">(*회복자의경우 법원명 항목만 기재, ※신협5619~시작하는 계좌는 환급계좌가 아니오니 유의하시기 바랍니다.)</span></div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>회파복 구분</th>
+              <td colspan="5"><select>${sel(['==선택==','해당없음','회생','파산','면책','개인워크아웃','기타'], '')}</select></td>
+            </tr>
+            <tr>
+              <th>법원명</th>
+              <td colspan="2"><input type="text" placeholder="회복자의 경우 신용회복위원회 라고 기재" value="${c ? c.courtName : ''}" ${c&&c.courtName ? ro : ''}></td>
+              <th>사건번호</th>
+              <td colspan="2">
+                <div style="display:flex;gap:4px;align-items:center;">
+                  <input type="text" style="width:60px;" placeholder="0000" value="${c&&c.caseNo ? c.caseNo.substring(0,4) : ''}">
+                  <select style="width:70px;">${sel(['선택','가단','가합','개회','개파','기타'], c&&c.caseNo ? '' : '선택')}</select>
+                  <input type="text" style="width:80px;" placeholder="" value="${c&&c.caseNo ? c.caseNo.replace(/[^0-9]/g,'').substring(4) : ''}">
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <th>환급은행 <span class="required">*</span></th>
+              <td colspan="2"><select>${sel(['==선택==','국민은행','신한은행','우리은행','하나은행','농협은행','카카오뱅크','토스뱅크','기업은행','SC제일','씨티','기타'], c ? c.refundBank : '==선택==')}</select></td>
+              <th>환급은행계좌</th>
+              <td colspan="2"><input type="text" placeholder="계좌번호 입력" value="${c ? c.refundAccount : ''}" ${c&&c.refundAccount ? ro : ''}></td>
+            </tr>
+            <tr>
+              <th>월변제금액</th>
+              <td colspan="3"><div style="display:flex;align-items:center;gap:4px;"><input type="text" placeholder="" style="width:200px;"> <span style="font-size:12px;color:#64748b;">만원</span></div></td>
+              <td colspan="2"></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 기타사항 -->
+        <div class="form-section-title">기타사항 <span style="font-size:11px;color:#c53030;">※하단 상품 선택란 빨간글씨 필수항목 또는 각 금융사별 자료실 가이드 우측 상단 ★접수시 필수 기재사항 참고하여 기재 후 접수!</span></div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <td colspan="6" style="padding:0;">
+                <textarea rows="5" style="width:100%;border:none;padding:12px;font-size:12px;resize:vertical;" placeholder="기타사항을 입력하세요...">${c ? c.memo : ''}</textarea>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-header"><h2>제출 서류 체크리스트</h2></div>
-      <div class="panel-body" style="padding:14px 18px;">
-        <label style="display:block;margin-bottom:6px;font-size:12px;"><input type="checkbox"> 신분증 사본</label>
-        <label style="display:block;margin-bottom:6px;font-size:12px;"><input type="checkbox"> 소득 증빙서류 (원천징수영수증 등)</label>
-        <label style="display:block;margin-bottom:6px;font-size:12px;"><input type="checkbox"> 재직증명서</label>
-        <label style="display:block;margin-bottom:6px;font-size:12px;"><input type="checkbox"> 주민등록등본</label>
-        <label style="display:block;margin-bottom:6px;font-size:12px;"><input type="checkbox"> 기타 추가 서류</label>
-      </div>
+    <!-- 하단 버튼 -->
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;">접수 등록</button>
+      <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
     </div>
   `;
 }
