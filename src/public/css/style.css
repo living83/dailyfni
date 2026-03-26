@@ -397,6 +397,30 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid #e2e8f0;
 }
 
+/* === 검색 폼 === */
+.search-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.search-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 4px;
+}
+.search-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+.search-field input:focus { border-color: #3b82f6; }
+
 /* === 검색 모달 === */
 .search-modal {
   background: #fff;

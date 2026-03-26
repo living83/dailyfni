@@ -833,17 +833,25 @@ function openCustomerSearch() {
         <h2 style="font-size:16px;font-weight:700;">고객원장 (개별조회)</h2>
         <button class="modal-close" onclick="closeCustomerSearch()">&times;</button>
       </div>
-      <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;background:#fff;">
-        <div style="display:flex;gap:8px;align-items:center;">
-          <select id="searchType" style="padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;">
-            <option value="name">이름</option>
-            <option value="phone">전화번호</option>
-            <option value="ssn">주민번호</option>
-          </select>
-          <input type="text" id="searchInput" placeholder="검색어 입력..." style="flex:1;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none;" autofocus>
-          <button class="btn btn-primary" onclick="executeCustomerSearch()" style="padding:8px 20px;font-size:13px;">검색</button>
+      <div style="padding:20px;border-bottom:1px solid #e2e8f0;background:#fff;">
+        <div class="search-form-grid">
+          <div class="search-field">
+            <label>이름</label>
+            <input type="text" id="searchName" placeholder="고객명 입력">
+          </div>
+          <div class="search-field">
+            <label>주민번호</label>
+            <input type="text" id="searchSsn" placeholder="주민번호 입력">
+          </div>
+          <div class="search-field">
+            <label>전화번호</label>
+            <input type="text" id="searchPhone" placeholder="전화번호 입력">
+          </div>
+          <div class="search-field" style="align-self:end;">
+            <button class="btn btn-primary" onclick="executeCustomerSearch()" style="width:100%;padding:8px 0;font-size:13px;">검색</button>
+          </div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#94a3b8;">이름/전화번호가 중복인 경우 복수의 고객이 조회됩니다. 고객을 더블클릭하면 상세정보를 확인할 수 있습니다.</div>
+        <div style="margin-top:10px;font-size:11px;color:#94a3b8;">* 하나 이상의 항목을 입력하세요. 중복 시 복수 결과가 표시됩니다. 더블클릭하면 상세정보를 확인할 수 있습니다.</div>
       </div>
       <div id="searchResults" style="padding:16px 20px;min-height:200px;max-height:400px;overflow-y:auto;">
         <div class="empty-state" style="padding:40px 20px;">
@@ -862,11 +870,13 @@ function openCustomerSearch() {
 
   // 엔터키로 검색
   setTimeout(() => {
-    const input = document.getElementById('searchInput');
-    if (input) {
-      input.focus();
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') executeCustomerSearch();
+    const nameInput = document.getElementById('searchName');
+    if (nameInput) {
+      nameInput.focus();
+      document.querySelectorAll('.search-field input').forEach(inp => {
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') executeCustomerSearch();
+        });
       });
     }
   }, 100);
@@ -878,22 +888,22 @@ function closeCustomerSearch() {
 }
 
 function executeCustomerSearch() {
-  const type = document.getElementById('searchType').value;
-  const keyword = document.getElementById('searchInput').value.trim();
+  const nameVal = (document.getElementById('searchName').value || '').trim();
+  const ssnVal = (document.getElementById('searchSsn').value || '').trim();
+  const phoneVal = (document.getElementById('searchPhone').value || '').trim();
   const resultsDiv = document.getElementById('searchResults');
 
-  if (!keyword) {
-    resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128269;</div><p>검색어를 입력하세요.</p></div>';
+  if (!nameVal && !ssnVal && !phoneVal) {
+    resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128269;</div><p>하나 이상의 항목을 입력하세요.</p></div>';
     return;
   }
 
-  // customerData에서 검색
   const results = [];
   for (const [id, c] of Object.entries(customerData)) {
-    let match = false;
-    if (type === 'name' && c.name.includes(keyword)) match = true;
-    if (type === 'phone' && c.phone.replace(/-/g,'').includes(keyword.replace(/-/g,''))) match = true;
-    if (type === 'ssn' && c.ssn.replace(/-/g,'').includes(keyword.replace(/-/g,''))) match = true;
+    let match = true;
+    if (nameVal && !c.name.includes(nameVal)) match = false;
+    if (phoneVal && !c.phone.replace(/-/g,'').includes(phoneVal.replace(/-/g,''))) match = false;
+    if (ssnVal && !c.ssn.replace(/-/g,'').includes(ssnVal.replace(/-/g,''))) match = false;
     if (match) results.push({ id: parseInt(id), ...c });
   }
 
