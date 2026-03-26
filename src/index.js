@@ -10,6 +10,12 @@ const writerRoutes = require('./routes/writerRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const reviewerRoutes = require('./routes/reviewerRoutes');
 const publisherRoutes = require('./routes/publisherRoutes');
+const customerRoutes = require('./routes/customerRoutes');
+const loanRoutes = require('./routes/loanRoutes');
+const settlementRoutes = require('./routes/settlementRoutes');
+const employeeRoutes = require('./routes/employeeRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const auditRoutes = require('./routes/auditRoutes');
 
 const path = require('path');
 
@@ -34,6 +40,12 @@ app.use('/api', writerRoutes);
 app.use('/api', imageRoutes);
 app.use('/api', reviewerRoutes);
 app.use('/api', publisherRoutes);
+app.use('/api', customerRoutes);
+app.use('/api', loanRoutes);
+app.use('/api', settlementRoutes);
+app.use('/api', employeeRoutes);
+app.use('/api', notificationRoutes);
+app.use('/api', auditRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
