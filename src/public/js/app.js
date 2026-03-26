@@ -239,7 +239,8 @@ function renderLoanRegister() {
 
   // 고객 데이터에서 파생값 계산
   const birthFromSsn = c ? c.ssn.substring(0,6) : '';
-  const genderFromSsn = c ? (c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남(3)':'여(4)') : '';
+  const genderChar = c ? c.ssn.charAt(7) : '';
+  const genderFromSsn = {'1':'남(1)','2':'여(2)','3':'남(3)','4':'여(4)'}[genderChar] || '';
   const phoneParts = c ? c.phone.split('-') : ['','',''];
   const salaryYear = c ? c.salary : '';
   const salaryMonth = c ? Math.round(c.salary / 12) : '';
@@ -286,7 +287,7 @@ function renderLoanRegister() {
               <th>생년월일 <span class="required">*</span></th>
               <td><input type="text" placeholder="생년월일을(를) 입력하세요." value="${birthFromSsn}" ${ro}></td>
               <th>성별</th>
-              <td><select ${c?'disabled style="background:#f1f5f9;"':''}>${sel(['남(3)','여(4)'], genderFromSsn || '남(3)')}</select></td>
+              <td><select ${c?'disabled style="background:#f1f5f9;"':''}>${sel(['남(1)','여(2)','남(3)','여(4)'], genderFromSsn || '남(1)')}</select></td>
             </tr>
             <tr>
               <th>휴대폰 <span class="required">*</span></th>
