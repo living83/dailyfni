@@ -249,12 +249,14 @@ function renderLoanRegister() {
   const ro = c ? 'readonly style="background:#f1f5f9;"' : '';
 
   return `
-    ${c ? `<div class="panel" style="border-left:3px solid #3b82f6;">
+    ${c ? `<div class="panel" style="border-left:3px solid #3b82f6;margin-bottom:12px;">
       <div class="panel-body" style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;">
         <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${c.phone}) | ${c.company} | 연봉 ${c.salary.toLocaleString()}만원 | 신용 ${c.creditScore}점</div>
         <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;navigate('loan-register');">연동 해제</button>
       </div>
     </div>` : ''}
+    <div class="loan-register-layout">
+    <div class="loan-register-left">
 
     <div class="panel">
       <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -471,6 +473,25 @@ function renderLoanRegister() {
       <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;">접수 등록</button>
       <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
     </div>
+    </div><!-- /loan-register-left -->
+
+    <div class="loan-register-right">
+      <div class="panel" style="margin-bottom:0;">
+        <div class="panel-header" style="position:sticky;top:0;z-index:10;background:#fff;">
+          <h2>상품 선택</h2>
+          <input type="text" id="productSearch" placeholder="상품명 검색..." style="width:140px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" oninput="filterProducts()">
+        </div>
+        <div class="panel-body" style="padding:8px;">
+          <div class="product-filters" id="productFilters">
+            ${productFilters.map(f => `<label class="product-filter-tag"><input type="checkbox" value="${f}" onchange="filterProducts()"> ${f}</label>`).join('')}
+          </div>
+          <div id="productList">
+            ${renderProductList()}
+          </div>
+        </div>
+      </div>
+    </div><!-- /loan-register-right -->
+    </div><!-- /loan-register-layout -->
   `;
 }
 
@@ -1085,4 +1106,71 @@ function executeCustomerSearch() {
   }
   html += '</tbody></table>';
   resultsDiv.innerHTML = html;
+}
+
+// ========================================
+// 상품 목록 렌더링 / 필터
+// ========================================
+function renderProductList(searchText, activeFilters) {
+  searchText = (searchText || '').toLowerCase();
+  activeFilters = activeFilters || [];
+
+  return productCategories.map(cat => {
+    let products = cat.products;
+
+    // 검색 필터
+    if (searchText) {
+      products = products.filter(p => p.name.toLowerCase().includes(searchText) || p.desc.toLowerCase().includes(searchText));
+    }
+
+    // 태그 필터
+    if (activeFilters.length > 0) {
+      products = products.filter(p => {
+        return activeFilters.some(f => {
+          if (f === '직장인') return p.tags.some(t => t.includes('직장인'));
+          if (f === '사업자') return p.tags.some(t => t.includes('사업자'));
+          if (f === '오토론') return p.desc.includes('오토') || p.name.includes('오토');
+          if (f === '부동산') return p.desc.includes('아파트') || p.desc.includes('부동산') || p.name.includes('담보');
+          if (f === '회파복') return p.name.includes('회생') || p.name.includes('파산') || p.name.includes('회복');
+          if (f === '채무통합') return p.desc.includes('채무통합') || p.desc.includes('대환');
+          return p.tags.some(t => t.includes(f));
+        });
+      });
+    }
+
+    if (products.length === 0 && (searchText || activeFilters.length > 0)) return '';
+
+    const isOpen = cat.open && !searchText && activeFilters.length === 0;
+    return `
+      <div class="product-category">
+        <div class="product-cat-header" style="border-left:3px solid ${cat.color};" onclick="this.parentElement.classList.toggle('open')">
+          <span>${cat.name} (${products.length})</span>
+          <span class="arrow">&#9654;</span>
+        </div>
+        <div class="product-cat-body" ${isOpen || searchText || activeFilters.length > 0 ? '' : 'style="display:none;"'}>
+          ${products.map(p => `
+            <div class="product-item" onclick="selectProduct(this)" title="${p.auth || ''}">
+              <div class="product-name">${p.name}</div>
+              <div class="product-tags">${p.tags.slice(0,4).map(t => `<span class="ptag">${t}</span>`).join('')}${p.tags.length > 4 ? `<span class="ptag">+${p.tags.length-4}</span>` : ''}</div>
+              <div class="product-desc">${p.desc.split('\n')[0]}</div>
+              ${p.manager ? `<div class="product-manager">상담사: ${p.manager}</div>` : ''}
+              <div class="product-auth">[${p.auth || ''}]</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filterProducts() {
+  const search = (document.getElementById('productSearch')?.value || '').trim();
+  const checks = [...document.querySelectorAll('#productFilters input:checked')].map(c => c.value);
+  const list = document.getElementById('productList');
+  if (list) list.innerHTML = renderProductList(search, checks);
+}
+
+function selectProduct(el) {
+  document.querySelectorAll('.product-item').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
 }
