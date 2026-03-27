@@ -16,6 +16,7 @@ const settlementRoutes = require('./routes/settlementRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const auditRoutes = require('./routes/auditRoutes');
+const crawlerRoutes = require('./routes/crawlerRoutes');
 
 const path = require('path');
 
@@ -46,6 +47,7 @@ app.use('/api', settlementRoutes);
 app.use('/api', employeeRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api', auditRoutes);
+app.use('/api', crawlerRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
