@@ -1466,7 +1466,7 @@ function renderProductList(searchText, activeFilters) {
     const isOpen = cat.open && !searchText && activeFilters.length === 0;
     return `
       <div class="product-category">
-        <div class="product-cat-header" style="border-left:3px solid ${cat.color};" onclick="this.parentElement.classList.toggle('open')">
+        <div class="product-cat-header" style="border-left:3px solid ${cat.color};" onclick="var b=this.nextElementSibling;b.style.display=b.style.display==='none'?'block':'none';this.parentElement.classList.toggle('open')">
           <span>${cat.name} (${products.length})</span>
           <span class="arrow">&#9654;</span>
         </div>
