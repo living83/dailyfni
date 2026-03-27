@@ -148,29 +148,61 @@ async function getProductGuide(fidx) {
   };
 }
 
-// 상품 목록에서 fidx 매핑 수집 (1회성, 주의해서 사용)
+// 상품 목록에서 fidx 매핑 수집 (현재 페이지 DOM에서 추출)
 async function getProductFidxMap(agentNo, upw) {
   if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
 
-  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
-
-  await delay(2000, 3000);
-  await page.goto(url, { waitUntil: 'networkidle2' });
-  await delay(2000, 3000);
+  // 현재 페이지가 신청서입력 페이지인지 확인
+  const currentUrl = page.url();
+  if (!currentUrl.includes('loanlist_app')) {
+    const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+    await delay(3000, 5000);
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    await delay(3000, 5000);
+  }
 
   const products = await page.evaluate(() => {
     const result = [];
-    // 상품명 링크에서 fidx 추출
-    document.querySelectorAll('a').forEach(a => {
-      const onclick = a.getAttribute('onclick') || '';
-      const match = onclick.match(/fidx=(\d+)/);
+    // 모든 방식으로 fidx 추출 (onclick, href, 자바스크립트 호출 등)
+    const allElements = document.querySelectorAll('a, span, div, td, input');
+    const seen = new Set();
+    allElements.forEach(el => {
+      const onclick = el.getAttribute('onclick') || '';
+      const href = el.getAttribute('href') || '';
+      const allAttrs = onclick + ' ' + href;
+      const match = allAttrs.match(/fidx[=:](\d+)/i);
       if (match) {
-        result.push({
-          name: a.textContent.trim(),
-          fidx: parseInt(match[1])
-        });
+        const fidx = parseInt(match[1]);
+        if (!seen.has(fidx)) {
+          seen.add(fidx);
+          // 상품명 찾기: 가장 가까운 텍스트
+          let name = el.textContent.trim();
+          if (!name || name.length > 50) {
+            const parent = el.closest('td') || el.parentElement;
+            if (parent) {
+              const nameEl = parent.querySelector('a, b, strong, span');
+              if (nameEl) name = nameEl.textContent.trim();
+            }
+          }
+          if (name && name.length < 50) {
+            result.push({ name, fidx });
+          }
+        }
       }
     });
+
+    // 추가: 페이지 전체 HTML에서 fidx 패턴 검색
+    const html = document.body.innerHTML;
+    const regex = /fidx[=:](\d+)/gi;
+    let m;
+    while ((m = regex.exec(html)) !== null) {
+      const fidx = parseInt(m[1]);
+      if (!seen.has(fidx)) {
+        seen.add(fidx);
+        result.push({ name: '(이름 미확인)', fidx });
+      }
+    }
+
     return result;
   });
 

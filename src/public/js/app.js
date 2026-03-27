@@ -489,7 +489,8 @@ function renderLoanRegister() {
           <h2>상품 선택</h2>
           <div style="display:flex;gap:4px;align-items:center;">
             <input type="text" id="productSearch" placeholder="상품명 검색..." style="width:120px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" oninput="filterProducts()">
-            <button class="btn btn-sm" id="crawlerBtn" onclick="crawlerLogin()" style="font-size:10px;padding:3px 6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#64748b;" title="론앤마스터 연동">연동</button>
+            <button class="btn btn-sm" onclick="crawlerLogin()" style="font-size:10px;padding:3px 6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#64748b;" title="론앤마스터 연동">연동</button>
+            <button class="btn btn-sm" onclick="collectFidxMap()" style="font-size:10px;padding:3px 6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#64748b;" title="상품 fidx 자동 수집">매핑</button>
           </div>
         </div>
         <div class="panel-body" style="padding:8px;">
@@ -1658,4 +1659,63 @@ function showGuideModal(productName, guideData) {
 function closeGuideModal() {
   const modal = document.getElementById('guideModal');
   if (modal) modal.remove();
+}
+
+// fidx 자동 수집
+async function collectFidxMap() {
+  const agentNo = prompt('론앤마스터 에이전트 번호 (URL의 no= 값):', '12');
+  if (!agentNo) return;
+  const upw = prompt('upw 값:', '1');
+  if (!upw) return;
+
+  try {
+    const res = await fetch('/api/crawler/product-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentNo, upw })
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { alert('응답 파싱 실패'); return; }
+
+    if (data.success && data.data && data.data.length > 0) {
+      // 결과를 팝업으로 표시
+      const items = data.data;
+      let html = `<div style="padding:16px;max-height:70vh;overflow-y:auto;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">수집 결과: ${items.length}개 상품</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">아래 데이터를 복사하여 products.js에 fidx를 매핑하세요.</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;">상품명</th><th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;">fidx</th></tr></thead>
+          <tbody>`;
+      items.forEach(item => {
+        html += `<tr><td style="padding:3px 8px;font-size:11px;border-bottom:1px solid #f1f5f9;">${item.name}</td><td style="padding:3px 8px;font-size:11px;border-bottom:1px solid #f1f5f9;font-weight:700;color:#3b82f6;">${item.fidx}</td></tr>`;
+      });
+      html += `</tbody></table>
+        <div style="margin-top:12px;">
+          <textarea id="fidxJsonOutput" rows="4" style="width:100%;font-size:10px;border:1px solid #e2e8f0;border-radius:4px;padding:6px;font-family:monospace;" readonly>${JSON.stringify(items, null, 0)}</textarea>
+          <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="document.getElementById('fidxJsonOutput').select();document.execCommand('copy');alert('복사됨!');">JSON 복사</button>
+        </div>
+      </div>`;
+
+      const old = document.getElementById('guideModal');
+      if (old) old.remove();
+      const modal = document.createElement('div');
+      modal.id = 'guideModal';
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="search-modal" style="max-width:700px;">
+          <div class="modal-header">
+            <h2 style="font-size:15px;font-weight:700;">상품 fidx 매핑 결과</h2>
+            <button class="modal-close" onclick="closeGuideModal()">&times;</button>
+          </div>
+          ${html}
+        </div>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeGuideModal(); });
+    } else {
+      alert('수집 실패: ' + (data.message || '결과 없음'));
+    }
+  } catch (e) {
+    alert('수집 오류: ' + e.message);
+  }
 }
