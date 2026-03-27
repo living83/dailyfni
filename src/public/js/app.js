@@ -326,13 +326,10 @@ function renderLoanRegister() {
               <th>실거주지주소 <span class="required">*</span></th>
               <td colspan="5">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <input type="text" style="width:60px;" placeholder="" value="${c ? '' : ''}">
-                  <input type="text" style="width:60px;" placeholder="">
-                  <input type="text" style="width:70px;" placeholder="">
-                  <button class="btn btn-sm btn-outline">검색</button>
-                  <button class="btn btn-sm btn-outline">검색()</button>
-                  <input type="text" style="flex:1;" placeholder="상세주소" value="${c ? c.address : ''}" ${ro}>
-                  <input type="text" style="width:100px;" placeholder="연우빌딩">
+                  <input type="text" id="lr-addr-zone" style="width:60px;" placeholder="우편번호" readonly>
+                  <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-addr')">주소 검색</button>
+                  <input type="text" id="lr-addr-road" style="flex:1;" placeholder="도로명주소" value="${c ? c.address : ''}" readonly>
+                  <input type="text" id="lr-addr-detail" style="width:150px;" placeholder="상세주소">
                 </div>
               </td>
             </tr>
@@ -390,13 +387,10 @@ function renderLoanRegister() {
               <th>직장 주소</th>
               <td colspan="5">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <input type="text" style="width:60px;" placeholder="">
-                  <input type="text" style="width:60px;" placeholder="">
-                  <input type="text" style="width:70px;" placeholder="">
-                  <button class="btn btn-sm btn-outline">검색</button>
-                  <button class="btn btn-sm btn-outline">검색()</button>
-                  <input type="text" style="flex:1;" placeholder="상세주소" value="${c ? c.companyAddr : ''}" ${ro}>
-                  <input type="text" style="width:100px;" placeholder="연우빌딩">
+                  <input type="text" id="lr-waddr-zone" style="width:60px;" placeholder="우편번호" readonly>
+                  <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-waddr')">주소 검색</button>
+                  <input type="text" id="lr-waddr-road" style="flex:1;" placeholder="도로명주소" value="${c ? c.companyAddr : ''}" readonly>
+                  <input type="text" id="lr-waddr-detail" style="width:150px;" placeholder="상세주소">
                 </div>
               </td>
             </tr>
@@ -1185,6 +1179,22 @@ function saveLedgerMemo(customerId) {
     timeline.insertBefore(newItem, timeline.firstChild);
   }
   textarea.value = '';
+}
+
+// ========================================
+// 도로명주소 검색 (행정안전부 Juso API)
+// ========================================
+function openAddrSearch(prefix) {
+  new daum.Postcode({
+    oncomplete: function(data) {
+      const zoneEl = document.getElementById(prefix + '-zone');
+      const roadEl = document.getElementById(prefix + '-road');
+      if (zoneEl) zoneEl.value = data.zonecode;
+      if (roadEl) roadEl.value = data.roadAddress || data.jibunAddress;
+      const detailEl = document.getElementById(prefix + '-detail');
+      if (detailEl) detailEl.focus();
+    }
+  }).open();
 }
 
 function saveRegisterMemo() {
