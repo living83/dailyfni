@@ -1515,12 +1515,13 @@ async function crawlerLogin() {
       body: JSON.stringify({ userId, password })
     });
     const text = await res.text();
-    try { var data = JSON.parse(text); } catch { alert('서버 응답 오류'); return; }
+    let data;
+    try { data = JSON.parse(text); } catch { alert('서버 응답을 처리할 수 없습니다.'); return; }
     if (data.success) {
       crawlerLoggedIn = true;
       alert('론앤마스터 로그인 성공');
     } else {
-      alert('로그인 실패: ' + data.message);
+      alert('연동 실패: ' + (data.message || '알 수 없는 오류'));
     }
   } catch (e) {
     alert('서버 연결 실패: ' + e.message);
