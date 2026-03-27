@@ -1270,9 +1270,6 @@ function renderCustomerLedger() {
             </div>
           </div>
         </div>
-            </div>
-          </div>
-        </div>
 
         <div class="panel"><div class="panel-header"><h2>상태 변경 이력</h2></div>
           <div class="panel-body" style="padding:8px 12px;">
