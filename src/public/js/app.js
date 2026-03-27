@@ -1545,31 +1545,23 @@ async function checkCrawlerStatus() {
 // 상품 더블클릭 → 가이드 팝업
 async function openProductGuide(el) {
   const productName = el.dataset.productName;
-
-  // 크롤러 상태 확인
-  const loggedIn = await checkCrawlerStatus();
-
-  if (!loggedIn) {
-    // 크롤러 미연결 시 로그인 안내 모달
-    showGuideModal(productName, null);
-    return;
-  }
-
-  // fidx 매핑 (products.js에 fidx가 있으면 사용, 없으면 이름으로 검색)
   const fidx = el.dataset.fidx;
-  if (fidx) {
+
+  // fidx가 있으면 바로 가이드 가져오기 시도
+  if (fidx && fidx !== '' && fidx !== 'undefined') {
     try {
       showGuideModal(productName, { loading: true });
       const res = await fetch('/api/crawler/product-guide/' + fidx);
       const text = await res.text();
-      try { var data = JSON.parse(text); } catch { showGuideModal(productName, { error: '서버 응답 오류' }); return; }
-      if (data.success) {
+      let data;
+      try { data = JSON.parse(text); } catch { showGuideModal(productName, null); return; }
+      if (data.success && data.data && data.data.body) {
         showGuideModal(productName, data.data);
       } else {
-        showGuideModal(productName, { error: data.message });
+        showGuideModal(productName, null);
       }
     } catch (e) {
-      showGuideModal(productName, { error: e.message });
+      showGuideModal(productName, null);
     }
   } else {
     showGuideModal(productName, null);
