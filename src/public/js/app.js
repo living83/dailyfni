@@ -1201,12 +1201,6 @@ function renderCustomerLedger() {
         <div style="font-size:16px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${c.status}</span> <span style="font-size:11px;color:#94a3b8;">No.${currentLedgerId}</span></div>
         <div style="font-size:11px;color:#64748b;margin-top:1px;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
       </div>
-      <div style="display:flex;gap:6px;">
-        <button class="btn btn-outline btn-sm" id="ledgerEditBtn" onclick="toggleLedgerEdit()">수정</button>
-        <button class="btn btn-primary btn-sm" id="ledgerSaveBtn" style="display:none;" onclick="saveLedger()">수정 저장</button>
-        <button class="btn btn-outline btn-sm" id="ledgerCancelBtn" style="display:none;" onclick="cancelLedgerEdit()">취소</button>
-        <button class="btn btn-outline btn-sm" onclick="goLoanRegister(${currentLedgerId})">대출 접수</button>
-      </div>
     </div>
 
     <div id="ledgerForm" style="display:flex;gap:8px;align-items:flex-start;max-width:1305px;">
@@ -1258,6 +1252,12 @@ function renderCustomerLedger() {
       </div>
 
       <div style="width:320px;flex-shrink:0;">
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <button class="btn btn-outline btn-sm" id="ledgerEditBtn" onclick="toggleLedgerEdit()" style="flex:1;">수정</button>
+          <button class="btn btn-primary btn-sm" id="ledgerSaveBtn" style="display:none;flex:1;" onclick="saveLedger()">수정 저장</button>
+          <button class="btn btn-outline btn-sm" id="ledgerCancelBtn" style="display:none;flex:1;" onclick="cancelLedgerEdit()">취소</button>
+          <button class="btn btn-outline btn-sm" onclick="goLoanRegister(${currentLedgerId})" style="flex:1;">대출 접수</button>
+        </div>
         <div class="panel"><div class="panel-header"><h2>메모 / 상담 이력</h2><button class="btn btn-primary btn-sm" onclick="saveLedgerMemo(${currentLedgerId})">기록 저장</button></div>
           <div class="panel-body" style="padding:8px 12px;">
             <textarea id="ledgerMemo" rows="3" placeholder="메모를 입력하면 상담 이력에 기록됩니다..." style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;"></textarea>
