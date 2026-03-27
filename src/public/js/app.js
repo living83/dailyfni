@@ -1591,21 +1591,48 @@ function showGuideModal(productName, guideData) {
   } else if (guideData.error) {
     content = `<div style="text-align:center;padding:30px;font-size:13px;color:#ef4444;">오류: ${guideData.error}</div>`;
   } else {
-    // 가이드 내용 표시
-    const bodyLines = (guideData.body || '').split('\n').filter(l => l.trim()).map(l =>
-      `<div style="font-size:12px;line-height:1.8;color:#334155;">${l}</div>`
-    ).join('');
+    // 본문을 기본가이드 / 참고사항으로 분리
+    const body = guideData.body || '';
+    let leftContent = body;
+    let rightContent = '';
 
-    const files = (guideData.files || []).map(f =>
-      `<a href="${f.url}" target="_blank" style="display:inline-block;margin:2px 4px;padding:3px 8px;background:#3b82f6;color:#fff;border-radius:4px;font-size:11px;text-decoration:none;">${f.name}</a>`
+    // *참고사항* 또는 *참고사항* 기준으로 분리
+    const refIdx = body.indexOf('*참고사항*');
+    if (refIdx !== -1) {
+      leftContent = body.substring(0, refIdx);
+      rightContent = body.substring(refIdx);
+    }
+
+    const formatLines = (text) => text.split('\n').filter(l => l.trim()).map(l => {
+      // 색상 강조
+      if (l.includes('★') || l.includes('📢') || l.includes('📌')) {
+        return `<div style="font-size:12px;line-height:1.7;color:#c53030;font-weight:600;">${l}</div>`;
+      }
+      if (l.startsWith('▣') || l.startsWith('■') || l.includes('기본가이드')) {
+        return `<div style="font-size:13px;line-height:1.7;color:#1e293b;font-weight:700;margin-top:8px;">${l}</div>`;
+      }
+      return `<div style="font-size:11px;line-height:1.7;color:#334155;">${l}</div>`;
+    }).join('');
+
+    const files = (guideData.buttons || []).filter(b => b !== '닫기' && b !== '🔍').map(f =>
+      `<span style="display:inline-block;margin:2px 3px;padding:3px 8px;background:#3b82f6;color:#fff;border-radius:4px;font-size:10px;cursor:pointer;">${f}</span>`
     ).join('');
 
     content = `
-      <div style="padding:16px;max-height:70vh;overflow-y:auto;">
-        ${files ? `<div style="margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">파일: ${files}</div>` : ''}
-        ${bodyLines}
-        <div style="margin-top:12px;font-size:10px;color:#94a3b8;">수집 시간: ${guideData.fetchedAt || ''}</div>
+      <div style="padding:10px 14px;">
+        ${files ? `<div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;">파일: ${files}</div>` : ''}
       </div>
+      <div style="display:flex;gap:1px;background:#e2e8f0;max-height:70vh;">
+        <div style="flex:1;padding:12px;overflow-y:auto;background:#fff;">
+          <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #334155;">기본가이드</div>
+          ${formatLines(leftContent)}
+        </div>
+        <div style="flex:1;padding:12px;overflow-y:auto;background:#fff;">
+          <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #334155;">참고사항</div>
+          ${rightContent ? formatLines(rightContent) : '<div style="font-size:12px;color:#94a3b8;">참고사항 없음</div>'}
+        </div>
+      </div>
+      <div style="padding:6px 14px;font-size:10px;color:#94a3b8;background:#fff;">수집: ${guideData.fetchedAt || ''}</div>
     `;
   }
 
@@ -1613,7 +1640,7 @@ function showGuideModal(productName, guideData) {
   modal.id = 'guideModal';
   modal.className = 'modal-overlay';
   modal.innerHTML = `
-    <div class="search-modal" style="max-width:900px;">
+    <div class="search-modal" style="max-width:1100px;">
       <div class="modal-header">
         <h2 style="font-size:15px;font-weight:700;">${productName} - 상품 가이드</h2>
         <button class="modal-close" onclick="closeGuideModal()">&times;</button>
