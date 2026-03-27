@@ -60,6 +60,10 @@ function navigate(page) {
   const active = document.querySelector(`.nav-item[data-page="${page}"]`);
   if (active) active.classList.add('active');
   document.getElementById('content').innerHTML = p.render();
+  // 대출 접수 페이지 렌더 후 추천 상품 자동 표시
+  if (page === 'loan-register' && loanRegisterCustomerId) {
+    setTimeout(() => renderRecommendations(), 50);
+  }
 }
 
 // ========================================
@@ -497,6 +501,7 @@ function renderLoanRegister() {
           <div class="product-filters" id="productFilters">
             ${productFilters.map(f => `<label class="product-filter-tag"><input type="checkbox" value="${f}" onchange="filterProducts()"> ${f}</label>`).join('')}
           </div>
+          <div id="recommendedProducts"></div>
           <div id="productList">
             ${renderProductList()}
           </div>
@@ -1491,6 +1496,76 @@ function filterProducts() {
   const checks = [...document.querySelectorAll('#productFilters input:checked')].map(c => c.value);
   const list = document.getElementById('productList');
   if (list) list.innerHTML = renderProductList(search, checks);
+}
+
+// 고객 기반 상품 추천 렌더링
+function renderRecommendations() {
+  const container = document.getElementById('recommendedProducts');
+  if (!container) return;
+
+  const c = loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null;
+  if (!c) { container.innerHTML = ''; return; }
+
+  // 고객 정보에서 매칭 조건 추출
+  const jobTypeMap = {
+    '정규직': '직장인(4대가입)', '계약직': '직장인(4대미가입)',
+    '프리랜서': '프리랜서', '자영업': '개인사업자', '무직': '무직'
+  };
+  const customer = {
+    age: c.age || 0,
+    jobType: jobTypeMap[c.employmentType] || '직장인(4대가입)',
+    vehicleNo: '', // 차량번호 (입력 폼에서 가져옴)
+    vehicleYear: 0,
+    vehicleKm: 0,
+    recoveryType: c.courtName ? '회생' : '무',
+    loanAmount: 0
+  };
+
+  // 대출 접수 폼에서 추가 정보 가져오기
+  const loanAmtEl = document.querySelector('.form-table input[placeholder="1000"]');
+  if (loanAmtEl && loanAmtEl.value) customer.loanAmount = parseInt(loanAmtEl.value) || 0;
+
+  const vehicleEl = document.querySelector('.form-table input[placeholder*="차량번호"]');
+  if (vehicleEl && vehicleEl.value) customer.vehicleNo = vehicleEl.value;
+
+  const result = matchProducts(customer);
+
+  if (result.recommended.length === 0 && result.conditional.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  let html = `<div style="margin-bottom:8px;padding:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
+    <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;">
+      ★ ${c.name}님 추천 상품 (${result.recommended.length + result.conditional.length}개)
+    </div>`;
+
+  // 추천 상품
+  result.recommended.slice(0, 8).forEach(r => {
+    html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #16a34a;margin-bottom:3px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="product-name" style="margin:0;">${r.name}</span>
+        <span style="font-size:10px;color:#16a34a;font-weight:700;">★ ${r.matchRate}%</span>
+      </div>
+      <div style="font-size:9px;color:#64748b;">${r.reasons.join(' | ')}</div>
+      <div style="font-size:9px;color:#94a3b8;">${r.notes}</div>
+    </div>`;
+  });
+
+  // 조건부 상품
+  result.conditional.slice(0, 5).forEach(r => {
+    html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #d97706;margin-bottom:3px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="product-name" style="margin:0;">${r.name}</span>
+        <span style="font-size:10px;color:#d97706;font-weight:700;">△ ${r.matchRate}%</span>
+      </div>
+      <div style="font-size:9px;color:#d97706;">${r.failReasons.join(' | ')}</div>
+      <div style="font-size:9px;color:#94a3b8;">${r.notes}</div>
+    </div>`;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 function selectProduct(el) {
