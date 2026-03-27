@@ -487,7 +487,10 @@ function renderLoanRegister() {
       <div class="panel" style="margin-bottom:0;">
         <div class="panel-header" style="position:sticky;top:0;z-index:10;background:#fff;">
           <h2>상품 선택</h2>
-          <input type="text" id="productSearch" placeholder="상품명 검색..." style="width:140px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" oninput="filterProducts()">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <input type="text" id="productSearch" placeholder="상품명 검색..." style="width:120px;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" oninput="filterProducts()">
+            <button class="btn btn-sm" id="crawlerBtn" onclick="crawlerLogin()" style="font-size:10px;padding:3px 6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#64748b;" title="론앤마스터 연동">연동</button>
+          </div>
         </div>
         <div class="panel-body" style="padding:8px;">
           <div class="product-filters" id="productFilters">
@@ -1468,7 +1471,7 @@ function renderProductList(searchText, activeFilters) {
         </div>
         <div class="product-cat-body" ${isOpen || searchText || activeFilters.length > 0 ? '' : 'style="display:none;"'}>
           ${products.map(p => `
-            <div class="product-item" onclick="selectProduct(this)" title="${p.auth || ''}">
+            <div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${p.name}" title="더블클릭: 상품 가이드 보기">
               <div class="product-name">${p.name}</div>
               <div class="product-tags">${p.tags.slice(0,4).map(t => `<span class="ptag">${t}</span>`).join('')}${p.tags.length > 4 ? `<span class="ptag">+${p.tags.length-4}</span>` : ''}</div>
               <div class="product-desc">${p.desc.split('\n')[0]}</div>
@@ -1492,4 +1495,142 @@ function filterProducts() {
 function selectProduct(el) {
   document.querySelectorAll('.product-item').forEach(p => p.classList.remove('selected'));
   el.classList.add('selected');
+}
+
+// ========================================
+// 론앤마스터 크롤러 연동
+// ========================================
+let crawlerLoggedIn = false;
+
+async function crawlerLogin() {
+  const userId = prompt('론앤마스터 아이디:');
+  if (!userId) return;
+  const password = prompt('론앤마스터 비밀번호:');
+  if (!password) return;
+
+  try {
+    const res = await fetch('/api/crawler/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      crawlerLoggedIn = true;
+      alert('론앤마스터 로그인 성공');
+    } else {
+      alert('로그인 실패: ' + data.message);
+    }
+  } catch (e) {
+    alert('서버 연결 실패: ' + e.message);
+  }
+}
+
+async function checkCrawlerStatus() {
+  try {
+    const res = await fetch('/api/crawler/status');
+    const data = await res.json();
+    crawlerLoggedIn = data.data?.isLoggedIn || false;
+    return crawlerLoggedIn;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 상품 더블클릭 → 가이드 팝업
+async function openProductGuide(el) {
+  const productName = el.dataset.productName;
+
+  // 크롤러 상태 확인
+  const loggedIn = await checkCrawlerStatus();
+
+  if (!loggedIn) {
+    // 크롤러 미연결 시 로그인 안내 모달
+    showGuideModal(productName, null);
+    return;
+  }
+
+  // fidx 매핑 (products.js에 fidx가 있으면 사용, 없으면 이름으로 검색)
+  const fidx = el.dataset.fidx;
+  if (fidx) {
+    try {
+      showGuideModal(productName, { loading: true });
+      const res = await fetch('/api/crawler/product-guide/' + fidx);
+      const data = await res.json();
+      if (data.success) {
+        showGuideModal(productName, data.data);
+      } else {
+        showGuideModal(productName, { error: data.message });
+      }
+    } catch (e) {
+      showGuideModal(productName, { error: e.message });
+    }
+  } else {
+    showGuideModal(productName, null);
+  }
+}
+
+function showGuideModal(productName, guideData) {
+  const old = document.getElementById('guideModal');
+  if (old) old.remove();
+
+  let content = '';
+
+  if (!guideData) {
+    content = `
+      <div style="text-align:center;padding:30px 20px;">
+        <div style="font-size:14px;color:#475569;margin-bottom:16px;">론앤마스터 연동이 필요합니다.</div>
+        <p style="font-size:12px;color:#94a3b8;margin-bottom:16px;">상품 가이드를 보려면 론앤마스터에 로그인하세요.</p>
+        <button class="btn btn-primary" onclick="closeGuideModal();crawlerLogin();">론앤마스터 로그인</button>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">또는 론앤마스터에서 직접 확인:</div>
+          <button class="btn btn-outline btn-sm" onclick="window.open('https://lmaster.kr','_blank')">론앤마스터 바로가기</button>
+        </div>
+      </div>
+    `;
+  } else if (guideData.loading) {
+    content = `<div style="text-align:center;padding:40px;font-size:13px;color:#64748b;">상품 가이드를 불러오는 중...</div>`;
+  } else if (guideData.error) {
+    content = `<div style="text-align:center;padding:30px;font-size:13px;color:#ef4444;">오류: ${guideData.error}</div>`;
+  } else {
+    // 가이드 내용 표시
+    const bodyLines = (guideData.body || '').split('\n').filter(l => l.trim()).map(l =>
+      `<div style="font-size:12px;line-height:1.8;color:#334155;">${l}</div>`
+    ).join('');
+
+    const files = (guideData.files || []).map(f =>
+      `<a href="${f.url}" target="_blank" style="display:inline-block;margin:2px 4px;padding:3px 8px;background:#3b82f6;color:#fff;border-radius:4px;font-size:11px;text-decoration:none;">${f.name}</a>`
+    ).join('');
+
+    content = `
+      <div style="padding:16px;max-height:70vh;overflow-y:auto;">
+        ${files ? `<div style="margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">파일: ${files}</div>` : ''}
+        ${bodyLines}
+        <div style="margin-top:12px;font-size:10px;color:#94a3b8;">수집 시간: ${guideData.fetchedAt || ''}</div>
+      </div>
+    `;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'guideModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="search-modal" style="max-width:900px;">
+      <div class="modal-header">
+        <h2 style="font-size:15px;font-weight:700;">${productName} - 상품 가이드</h2>
+        <button class="modal-close" onclick="closeGuideModal()">&times;</button>
+      </div>
+      ${content}
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeGuideModal();
+  });
+}
+
+function closeGuideModal() {
+  const modal = document.getElementById('guideModal');
+  if (modal) modal.remove();
 }
