@@ -1471,7 +1471,7 @@ function renderProductList(searchText, activeFilters) {
         </div>
         <div class="product-cat-body" ${isOpen || searchText || activeFilters.length > 0 ? '' : 'style="display:none;"'}>
           ${products.map(p => `
-            <div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${p.name}" title="더블클릭: 상품 가이드 보기">
+            <div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${p.name}" data-fidx="${p.fidx||''}" title="더블클릭: 상품 가이드 보기">
               <div class="product-name">${p.name}</div>
               <div class="product-tags">${p.tags.slice(0,4).map(t => `<span class="ptag">${t}</span>`).join('')}${p.tags.length > 4 ? `<span class="ptag">+${p.tags.length-4}</span>` : ''}</div>
               <div class="product-desc">${p.desc.split('\n')[0]}</div>
