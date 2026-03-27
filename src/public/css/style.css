@@ -412,8 +412,7 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  max-width: 1305px;
-}
+  max-width: 1566px;}
 .loan-register-left { flex: 1; min-width: 0; }
 .loan-register-right {
   width: 494px;
