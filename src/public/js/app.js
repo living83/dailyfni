@@ -1590,7 +1590,7 @@ function showGuideModal(productName, guideData) {
         <button class="btn btn-primary" onclick="closeGuideModal();crawlerLogin();">론앤마스터 로그인</button>
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;">
           <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">또는 론앤마스터에서 직접 확인:</div>
-          <button class="btn btn-outline btn-sm" onclick="window.open('https://lmaster.kr','_blank')">론앤마스터 바로가기</button>
+          <button class="btn btn-outline btn-sm" onclick="window.open('https://lmaster.kr/jisa/login.asp','_blank')">론앤마스터 바로가기</button>
         </div>
       </div>
     `;

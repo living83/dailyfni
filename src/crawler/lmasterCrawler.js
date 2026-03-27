@@ -5,7 +5,7 @@
 const puppeteer = require('puppeteer-core');
 
 const LMASTER_BASE = 'https://lmaster.kr';
-const LOGIN_URL = LMASTER_BASE + '/admin/agent/login.asp';
+const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
 const PRODUCT_INFO_URL = LMASTER_BASE + '/admin/agent/win_fininfo.asp';
 const LOAN_APP_URL = LMASTER_BASE + '/admin/agent/loanlist_app.asp';
 
