@@ -1191,7 +1191,7 @@ function renderCustomerLedger() {
       </div>
     </div>
 
-    <div id="ledgerForm" style="display:flex;gap:8px;align-items:flex-start;">
+    <div id="ledgerForm" style="display:flex;gap:8px;align-items:flex-start;max-width:1305px;">
       <div style="flex:1;min-width:0;">
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
