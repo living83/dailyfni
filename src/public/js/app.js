@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = parseInt(hash.replace('#ledger-', ''));
     if (id && customerData[id]) {
       currentLedgerId = id;
+      document.title = customerData[id].name + ' - 고객원장';
       navigate('customer-ledger');
     } else {
       navigate('dashboard');
