@@ -410,12 +410,13 @@ tbody tr:last-child td { border-bottom: none; }
 /* === 대출 접수 좌우 레이아웃 === */
 .loan-register-layout {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-start;
+  max-width: 1305px;
 }
 .loan-register-left { flex: 1; min-width: 0; }
 .loan-register-right {
-  width: 380px;
+  width: 494px;
   flex-shrink: 0;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
