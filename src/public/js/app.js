@@ -1514,7 +1514,8 @@ async function crawlerLogin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, password })
     });
-    const data = await res.json();
+    const text = await res.text();
+    try { var data = JSON.parse(text); } catch { alert('서버 응답 오류'); return; }
     if (data.success) {
       crawlerLoggedIn = true;
       alert('론앤마스터 로그인 성공');
@@ -1529,7 +1530,10 @@ async function crawlerLogin() {
 async function checkCrawlerStatus() {
   try {
     const res = await fetch('/api/crawler/status');
-    const data = await res.json();
+    if (!res.ok) return false;
+    const text = await res.text();
+    if (text.startsWith('<')) return false;
+    const data = JSON.parse(text);
     crawlerLoggedIn = data.data?.isLoggedIn || false;
     return crawlerLoggedIn;
   } catch (e) {
@@ -1556,7 +1560,8 @@ async function openProductGuide(el) {
     try {
       showGuideModal(productName, { loading: true });
       const res = await fetch('/api/crawler/product-guide/' + fidx);
-      const data = await res.json();
+      const text = await res.text();
+      try { var data = JSON.parse(text); } catch { showGuideModal(productName, { error: '서버 응답 오류' }); return; }
       if (data.success) {
         showGuideModal(productName, data.data);
       } else {
