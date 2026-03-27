@@ -20,7 +20,18 @@ const pages = {
 
 // --- 초기화 ---
 document.addEventListener('DOMContentLoaded', () => {
-  navigate('dashboard');
+  const hash = location.hash;
+  if (hash && hash.startsWith('#ledger-')) {
+    const id = parseInt(hash.replace('#ledger-', ''));
+    if (id && customerData[id]) {
+      currentLedgerId = id;
+      navigate('customer-ledger');
+    } else {
+      navigate('dashboard');
+    }
+  } else {
+    navigate('dashboard');
+  }
   bindNav();
   bindToggle();
 });
@@ -786,8 +797,7 @@ const customerData = {
 // 고객원장 페이지로 이동
 let currentLedgerId = null;
 function viewCustomerLedger(id) {
-  currentLedgerId = id;
-  navigate('customer-ledger');
+  window.open(location.pathname + '#ledger-' + id, '_blank');
 }
 
 // 고객 상세 팝업 열기 (고객현황 목록에서 클릭 시)
