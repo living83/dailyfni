@@ -17,6 +17,7 @@ const employeeRoutes = require('./routes/employeeRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const auditRoutes = require('./routes/auditRoutes');
 const crawlerRoutes = require('./routes/crawlerRoutes');
+const loginRoutes = require('./routes/loginRoutes');
 
 const path = require('path');
 
@@ -48,6 +49,7 @@ app.use('/api', employeeRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api', auditRoutes);
 app.use('/api', crawlerRoutes);
+app.use('/api', loginRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);

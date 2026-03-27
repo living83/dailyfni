@@ -9,8 +9,9 @@ const VALID_ROLES = ['admin', 'sales'];
 const VALID_DATA_SCOPES = ['self', 'all'];
 
 class Employee {
-  constructor({ name, department, position, role = 'sales', dataScope = 'self', isActive = true, joinDate, password }) {
+  constructor({ name, loginId, department, position, role = 'sales', dataScope = 'self', isActive = true, joinDate, password }) {
     this.id = uuidv4();
+    this.loginId = loginId || '';
     this.name = name;
     this.department = department || '';
     this.position = position || '';
@@ -154,6 +155,10 @@ function deactivate(id) {
   return employee;
 }
 
+function findByLoginId(loginId) {
+  return Array.from(employees.values()).find(e => e.loginId === loginId) || null;
+}
+
 async function resetPassword(id, tempPassword) {
   const employee = employees.get(id);
   if (!employee) return null;
@@ -165,10 +170,10 @@ async function resetPassword(id, tempPassword) {
 // --- 초기 샘플 데이터 ---
 async function initSampleData() {
   const samples = [
-    { name: '박팀장', department: '관리부', position: '팀장', role: 'admin', dataScope: 'all', joinDate: '2020-03-01', password: 'admin1234' },
-    { name: '김대리', department: '영업부', position: '대리', role: 'sales', dataScope: 'self', joinDate: '2021-06-15', password: 'sales1234' },
-    { name: '이과장', department: '영업부', position: '과장', role: 'sales', dataScope: 'self', joinDate: '2019-11-01', password: 'sales1234' },
-    { name: '박사원', department: '영업부', position: '사원', role: 'sales', dataScope: 'self', joinDate: '2023-01-10', password: 'sales1234' },
+    { name: '박팀장', loginId: 'admin', department: '관리부', position: '팀장', role: 'admin', dataScope: 'all', joinDate: '2020-03-01', password: '1234' },
+    { name: '김대리', loginId: 'kim', department: '영업부', position: '대리', role: 'sales', dataScope: 'self', joinDate: '2021-06-15', password: '1234' },
+    { name: '이과장', loginId: 'lee', department: '영업부', position: '과장', role: 'sales', dataScope: 'self', joinDate: '2019-11-01', password: '1234' },
+    { name: '박사원', loginId: 'park', department: '영업부', position: '사원', role: 'sales', dataScope: 'self', joinDate: '2023-01-10', password: '1234' },
   ];
 
   for (const sample of samples) {
@@ -186,6 +191,7 @@ module.exports = {
   create,
   findAll,
   findById,
+  findByLoginId,
   update,
   remove,
   activate,
