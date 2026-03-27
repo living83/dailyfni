@@ -1176,6 +1176,27 @@ function saveLedgerMemo(customerId) {
   textarea.value = '';
 }
 
+function saveRegisterMemo() {
+  const memo = document.getElementById('regMemo');
+  const channel = document.getElementById('regChannel');
+  const content = memo.value.trim();
+  if (!content) { alert('메모를 입력하세요.'); return; }
+
+  const now = new Date();
+  const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const ch = channel.value !== '선택' ? channel.value : '메모';
+
+  const timeline = document.getElementById('regConsultTimeline');
+  if (timeline) {
+    if (timeline.querySelector('div[style]')) timeline.innerHTML = '';
+    const newItem = document.createElement('div');
+    newItem.className = 'timeline-item';
+    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">${content}</div><div class="tl-user">${ch} | 김대리</div>`;
+    timeline.insertBefore(newItem, timeline.firstChild);
+  }
+  memo.value = '';
+}
+
 function cancelLedgerEdit() {
   ledgerEditMode = true;
   toggleLedgerEdit();
@@ -1341,12 +1362,6 @@ function renderCustomerRegister() {
       </div>
 
       <div style="width:300px;flex-shrink:0;">
-        <div class="panel"><div class="panel-header"><h2>메모</h2></div>
-          <div class="panel-body" style="padding:8px 10px;">
-            <textarea rows="2" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:vertical;" placeholder="메모 입력"></textarea>
-          </div>
-        </div>
-
         <div class="panel"><div class="panel-header"><h2>담당자 배정</h2></div>
           <div class="panel-body" style="padding:8px 10px;">
             <div class="form-group" style="margin-bottom:6px;">
@@ -1360,19 +1375,24 @@ function renderCustomerRegister() {
           </div>
         </div>
 
-        <div class="panel"><div class="panel-header"><h2>첫 상담 기록</h2></div>
+        <div class="panel"><div class="panel-header"><h2>메모 / 상담 이력</h2><button class="btn btn-primary btn-sm" onclick="saveRegisterMemo()">기록 저장</button></div>
           <div class="panel-body" style="padding:8px 10px;">
             <div class="form-group" style="margin-bottom:6px;">
               <label>상담 채널</label>
-              <select style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택</option><option>전화</option><option>방문</option><option>카카오톡</option><option>문자</option></select>
+              <select id="regChannel" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택</option><option>전화</option><option>방문</option><option>카카오톡</option><option>문자</option></select>
             </div>
             <div class="form-group" style="margin-bottom:6px;">
-              <label>상담 내용</label>
-              <textarea rows="2" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:vertical;" placeholder="첫 상담 내용 입력"></textarea>
+              <label>메모</label>
+              <textarea id="regMemo" rows="2" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:60px;box-sizing:border-box;" placeholder="메모를 입력하면 상담 이력에 기록됩니다..."></textarea>
             </div>
-            <div class="form-group">
+            <div class="form-group" style="margin-bottom:6px;">
               <label>다음 액션</label>
-              <input type="text" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;" placeholder="예: 03-28 서류 제출 확인">
+              <input type="text" id="regNextAction" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;" placeholder="예: 03-28 서류 제출 확인">
+            </div>
+          </div>
+          <div class="panel-body" style="padding:8px 10px;border-top:1px solid #e2e8f0;max-height:200px;overflow-y:auto;">
+            <div class="timeline" id="regConsultTimeline">
+              <div style="text-align:center;font-size:11px;color:#94a3b8;padding:10px 0;">기록 저장 시 여기에 이력이 표시됩니다.</div>
             </div>
           </div>
         </div>
