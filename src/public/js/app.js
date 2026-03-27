@@ -1158,6 +1158,24 @@ function saveLedger() {
   alert('저장되었습니다.');
 }
 
+function saveLedgerMemo(customerId) {
+  const textarea = document.getElementById('ledgerMemo');
+  const content = textarea.value.trim();
+  if (!content) { alert('메모를 입력하세요.'); return; }
+
+  const now = new Date();
+  const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  const timeline = document.getElementById('ledgerConsultTimeline');
+  if (timeline) {
+    const newItem = document.createElement('div');
+    newItem.className = 'timeline-item';
+    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">${content}</div><div class="tl-user">메모 | 김대리</div>`;
+    timeline.insertBefore(newItem, timeline.firstChild);
+  }
+  textarea.value = '';
+}
+
 function cancelLedgerEdit() {
   ledgerEditMode = true;
   toggleLedgerEdit();
@@ -1240,18 +1258,18 @@ function renderCustomerLedger() {
       </div>
 
       <div style="width:320px;flex-shrink:0;">
-        <div class="panel"><div class="panel-header"><h2>메모</h2></div>
+        <div class="panel"><div class="panel-header"><h2>메모 / 상담 이력</h2><button class="btn btn-primary btn-sm" onclick="saveLedgerMemo(${currentLedgerId})">기록 저장</button></div>
           <div class="panel-body" style="padding:8px 12px;">
-            <textarea rows="2" ${ro} style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:vertical;background:#f8fafc;">${c.memo}</textarea>
+            <textarea id="ledgerMemo" rows="3" placeholder="메모를 입력하면 상담 이력에 기록됩니다..." style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;"></textarea>
           </div>
-        </div>
-
-        <div class="panel"><div class="panel-header"><h2>상담 이력</h2><button class="btn btn-primary btn-sm">+ 상담 기록</button></div>
-          <div class="panel-body" style="padding:8px 12px;">
-            <div class="timeline">
+          <div class="panel-body" style="padding:8px 12px;border-top:1px solid #e2e8f0;max-height:300px;overflow-y:auto;">
+            <div class="timeline" id="ledgerConsultTimeline">
               <div class="timeline-item"><div class="tl-date">2026-03-26 10:30</div><div class="tl-content">대출 조건 문의, 금리 비교 안내.</div><div class="tl-user">전화 | ${c.assignedTo}</div></div>
               <div class="timeline-item"><div class="tl-date">2026-03-24 14:00</div><div class="tl-content">초기 상담. 대출 가능 여부 확인.</div><div class="tl-user">방문 | ${c.assignedTo}</div></div>
               <div class="timeline-item"><div class="tl-date">2026-03-22 11:00</div><div class="tl-content">첫 전화 상담. 고객 니즈 파악.</div><div class="tl-user">전화 | ${c.assignedTo}</div></div>
+            </div>
+          </div>
+        </div>
             </div>
           </div>
         </div>
