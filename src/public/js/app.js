@@ -678,7 +678,7 @@ function renderSettlementRebate() {
       </div>
       <div class="panel-body" style="padding:16px;">
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
-          <input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" onchange="parseRebateExcel(this)">
+          <input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" multiple onchange="parseRebateExcel(this)">
           <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 리베이트/환수 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
         </div>
         <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
@@ -721,7 +721,7 @@ function renderSettlementPolicy() {
       </div>
       <div class="panel-body" style="padding:16px;">
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
-          <input type="file" id="policyFile" accept=".xlsx,.xls,.csv" onchange="parsePolicyExcel(this)">
+          <input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">
           <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 정산 정책 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
         </div>
         <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
@@ -797,61 +797,95 @@ function renderSettlementClose() {
 }
 
 // 엑셀 파일 파싱 (CSV 방식)
-function parseRebateExcel(input) {
-  const file = input.files[0];
-  if (!file) return;
+// CSV 파일 읽기 (한글 인코딩 자동 감지)
+function readCsvFile(file, callback) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let text = e.target.result;
+    // 한글 깨짐 체크 (깨지면 EUC-KR로 재시도)
+    if (text.includes('�') || text.includes('ï¿½')) {
+      const reader2 = new FileReader();
+      reader2.onload = function(e2) {
+        callback(e2.target.result);
+      };
+      reader2.readAsText(file, 'EUC-KR');
+    } else {
+      callback(text);
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
 
-  if (file.name.endsWith('.csv')) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const lines = e.target.result.split('\n').filter(l => l.trim());
-      if (lines.length < 2) { alert('데이터가 없습니다.'); return; }
-      const headers = lines[0].split(',').map(h => h.trim());
-      settlementRebateData = lines.slice(1).map(line => {
-        const cols = line.split(',').map(c => c.trim());
-        return {
-          type: cols[0] || '리베이트',
-          amount: cols[1] || '0',
-          reason: cols[2] || '',
-          month: cols[3] || '',
-          relatedId: cols[4] || '',
-          manager: cols[5] || ''
-        };
-      });
-      navigate('settlement');
-      alert(`${settlementRebateData.length}건 로드 완료`);
-    };
-    reader.readAsText(file, 'UTF-8');
-  } else {
-    alert('현재 CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+function parseRebateExcel(input) {
+  const files = input.files;
+  if (!files.length) return;
+
+  let allData = [];
+  let processed = 0;
+
+  for (const file of files) {
+    if (!file.name.endsWith('.csv')) {
+      alert('CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+      continue;
+    }
+    readCsvFile(file, function(text) {
+      const lines = text.split('\n').filter(l => l.trim());
+      if (lines.length >= 2) {
+        lines.slice(1).forEach(line => {
+          const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          allData.push({
+            type: cols[0] || '리베이트',
+            amount: cols[1] || '0',
+            reason: cols[2] || '',
+            month: cols[3] || '',
+            relatedId: cols[4] || '',
+            manager: cols[5] || ''
+          });
+        });
+      }
+      processed++;
+      if (processed === files.length) {
+        settlementRebateData = allData;
+        navigate('settlement');
+        alert(`${allData.length}건 로드 완료 (${files.length}개 파일)`);
+      }
+    });
   }
 }
 
 function parsePolicyExcel(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const files = input.files;
+  if (!files.length) return;
 
-  if (file.name.endsWith('.csv')) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const lines = e.target.result.split('\n').filter(l => l.trim());
-      if (lines.length < 2) { alert('데이터가 없습니다.'); return; }
-      settlementPolicyData = lines.slice(1).map(line => {
-        const cols = line.split(',').map(c => c.trim());
-        return {
-          product: cols[0] || '',
-          feeRate: cols[1] || '',
-          clawback: cols[2] || '',
-          effectiveMonth: cols[3] || '',
-          note: cols[4] || ''
-        };
-      });
-      navigate('settlement');
-      alert(`${settlementPolicyData.length}건 로드 완료`);
-    };
-    reader.readAsText(file, 'UTF-8');
-  } else {
-    alert('현재 CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+  let allData = [];
+  let processed = 0;
+
+  for (const file of files) {
+    if (!file.name.endsWith('.csv')) {
+      alert('CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+      continue;
+    }
+    readCsvFile(file, function(text) {
+      const lines = text.split('\n').filter(l => l.trim());
+      if (lines.length >= 2) {
+        lines.slice(1).forEach(line => {
+          const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          allData.push({
+            product: cols[0] || '',
+            feeRate: cols[1] || '',
+            clawback: cols[2] || '',
+            effectiveMonth: cols[3] || '',
+            note: cols[4] || ''
+          });
+        });
+      }
+      processed++;
+      if (processed === files.length) {
+        settlementPolicyData = allData;
+        navigate('settlement');
+        alert(`${allData.length}건 로드 완료 (${files.length}개 파일)`);
+      }
+    });
   }
 }
 
