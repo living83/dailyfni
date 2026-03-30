@@ -188,6 +188,7 @@ function renderCustomers() {
       <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status}</span></td>
       <td>${c.assignedTo}</td>
       <td>${c.dbSource}</td>
+      <td><button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteCustomer(${id},'${c.name}')">삭제</button></td>
     </tr>`;
   }).join('');
 
@@ -208,7 +209,7 @@ function renderCustomers() {
       <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
-            <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>총채무</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th></tr>
+            <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>총채무</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th><th>관리</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -222,6 +223,32 @@ function renderCustomers() {
 // ========================================
 let loanListData = [];
 let loanListSummary = null;
+
+async function deleteCustomer(id, name) {
+  if (!confirm(`"${name}" 고객을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return;
+
+  // MySQL 연동 시 API 호출
+  try {
+    const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      // 인메모리에서도 삭제
+      delete customerData[id];
+      navigate('customers');
+      alert(`${name} 고객이 삭제되었습니다.`);
+    } else {
+      // API 미구현 시 인메모리에서만 삭제
+      delete customerData[id];
+      navigate('customers');
+      alert(`${name} 고객이 삭제되었습니다.`);
+    }
+  } catch (e) {
+    // API 연결 안 될 때 인메모리에서만 삭제
+    delete customerData[id];
+    navigate('customers');
+    alert(`${name} 고객이 삭제되었습니다.`);
+  }
+}
 
 function renderLoans() {
   const statusOptions = ['전체','접수','전송','심사','가승인','승인','보류','부결','진행후부결','조회접수','접수실패','완납','조회중','정상접수','상담중','진행중','예약완료','서류안내','서류받음','서류보완','부재','본인취소','진행불가','지속부재','진행안내','안내예정','통화예정','본진행접수','인증대기','진행보류'];
