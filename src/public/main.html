@@ -86,6 +86,10 @@
         <h1 class="page-title" id="pageTitle">대시보드</h1>
       </div>
       <div class="header-right">
+        <div id="crawlerStatus" onclick="headerCrawlerLogin()" style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;" title="클릭하여 론앤마스터 연동">
+          <span id="crawlerDot" style="width:6px;height:6px;border-radius:50%;background:#ef4444;"></span>
+          <span id="crawlerLabel">론앤마스터: 미연결</span>
+        </div>
         <div class="header-search">
           <input type="text" placeholder="고객명/연락처 검색..." id="globalSearch">
         </div>

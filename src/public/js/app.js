@@ -1648,6 +1648,7 @@ async function crawlerLogin() {
     try { data = JSON.parse(text); } catch { alert('서버 응답을 처리할 수 없습니다.'); return; }
     if (data.success) {
       crawlerLoggedIn = true;
+      updateCrawlerUI(true);
       alert('론앤마스터 로그인 성공');
     } else {
       alert('연동 실패: ' + (data.message || '알 수 없는 오류'));
@@ -1656,6 +1657,46 @@ async function crawlerLogin() {
     alert('서버 연결 실패: ' + e.message);
   }
 }
+
+// 헤더에서 론앤마스터 연동
+async function headerCrawlerLogin() {
+  if (crawlerLoggedIn) {
+    if (confirm('론앤마스터 연동을 해제하시겠습니까?')) {
+      await fetch('/api/crawler/close', { method: 'POST' });
+      crawlerLoggedIn = false;
+      updateCrawlerUI(false);
+    }
+  } else {
+    await crawlerLogin();
+  }
+}
+
+// 헤더 연동 상태 UI 업데이트
+function updateCrawlerUI(connected) {
+  const el = document.getElementById('crawlerStatus');
+  const dot = document.getElementById('crawlerDot');
+  const label = document.getElementById('crawlerLabel');
+  if (!el) return;
+  if (connected) {
+    el.style.background = '#f0fdf4';
+    el.style.borderColor = '#bbf7d0';
+    el.style.color = '#166534';
+    dot.style.background = '#16a34a';
+    label.textContent = '론앤마스터: 연결됨';
+  } else {
+    el.style.background = '#fef2f2';
+    el.style.borderColor = '#fecaca';
+    el.style.color = '#991b1b';
+    dot.style.background = '#ef4444';
+    label.textContent = '론앤마스터: 미연결';
+  }
+}
+
+// 페이지 로드 시 연동 상태 자동 확인
+setTimeout(async () => {
+  const ok = await checkCrawlerStatus();
+  updateCrawlerUI(ok);
+}, 500);
 
 async function checkCrawlerStatus() {
   try {
