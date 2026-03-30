@@ -1210,7 +1210,6 @@ function toggleLedgerEdit() {
 }
 
 function saveLedger() {
-  ledgerEditMode = false;
   const now = new Date();
   const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   const histDiv = document.getElementById('ledgerChangeHistory');
@@ -1220,6 +1219,8 @@ function saveLedger() {
     newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">고객 원장 정보 수정</div><div class="tl-user">처리: 김대리</div>`;
     histDiv.insertBefore(newItem, histDiv.firstChild);
   }
+  // 읽기 전용으로 복원
+  ledgerEditMode = true;
   toggleLedgerEdit();
   alert('저장되었습니다.');
 }
