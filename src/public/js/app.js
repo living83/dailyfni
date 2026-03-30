@@ -752,6 +752,53 @@ function renderSettlementPolicy() {
   `;
 }
 
+// DB 저장/로드 함수
+async function savePolicyToDB(data) {
+  try {
+    await fetch('/api/settlement/policies/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ policies: data })
+    });
+  } catch (e) { console.error('정산 정책 저장 실패:', e); }
+}
+
+async function saveAdjustmentsToDB(data) {
+  try {
+    await fetch('/api/settlement/adjustments/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adjustments: data })
+    });
+  } catch (e) { console.error('리베이트/환수 저장 실패:', e); }
+}
+
+async function loadSettlementFromDB() {
+  try {
+    const [pRes, aRes] = await Promise.all([
+      fetch('/api/settlement/policies'),
+      fetch('/api/settlement/adjustments')
+    ]);
+    const pData = await pRes.json();
+    const aData = await aRes.json();
+    if (pData.success && pData.data.length > 0) {
+      settlementPolicyData = pData.data.map(r => ({
+        category: r.category, product: r.product,
+        rateUnder: r.rate_under, rateOver: r.rate_over, auth: r.auth
+      }));
+    }
+    if (aData.success && aData.data.length > 0) {
+      settlementRebateData = aData.data.map(r => ({
+        type: r.type, amount: r.amount,
+        reason: r.reason, month: r.target_month, manager: r.manager
+      }));
+    }
+  } catch (e) { console.error('정산 데이터 로드 실패:', e); }
+}
+
+// 페이지 로드 시 DB에서 정산 데이터 불러오기
+setTimeout(() => loadSettlementFromDB(), 300);
+
 function renderSettlementClose() {
   return `
     <div class="panel">
@@ -865,8 +912,9 @@ function parseRebateExcel(input) {
       processed++;
       if (processed === files.length) {
         settlementRebateData = allData;
+        saveAdjustmentsToDB(allData);
         navigate('settlement');
-        alert(`${allData.length}건 로드 완료 (${files.length}개 파일)`);
+        alert(`${allData.length}건 로드 및 저장 완료 (${files.length}개 파일)`);
       }
     });
   }
@@ -942,8 +990,10 @@ function parsePolicyExcel(input) {
       processed++;
       if (processed === files.length) {
         settlementPolicyData = allData;
+        // MySQL에 저장
+        savePolicyToDB(allData);
         navigate('settlement');
-        alert(`${allData.length}건 로드 완료 (${files.length}개 파일)`);
+        alert(`${allData.length}건 로드 및 저장 완료 (${files.length}개 파일)`);
       }
     });
   }
