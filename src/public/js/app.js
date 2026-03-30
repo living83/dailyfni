@@ -615,50 +615,46 @@ function renderConsultation() {
 // ========================================
 // 6. 매출/수당 정산
 // ========================================
+let settlementTab = 'sales';
+let settlementPolicyData = [];
+let settlementRebateData = [];
+
 function renderSettlement() {
   return `
     <div class="tabs">
-      <div class="tab active">매출 집계</div>
-      <div class="tab">직원별 수당</div>
-      <div class="tab">리베이트/환수</div>
-      <div class="tab">정산 정책</div>
-      <div class="tab">월 마감</div>
+      <div class="tab ${settlementTab==='sales'?'active':''}" onclick="settlementTab='sales';navigate('settlement')">매출 집계</div>
+      <div class="tab ${settlementTab==='rebate'?'active':''}" onclick="settlementTab='rebate';navigate('settlement')">리베이트/환수</div>
+      <div class="tab ${settlementTab==='policy'?'active':''}" onclick="settlementTab='policy';navigate('settlement')">정산 정책</div>
+      <div class="tab ${settlementTab==='close'?'active':''}" onclick="settlementTab='close';navigate('settlement')">월 마감</div>
     </div>
+    ${settlementTab==='sales' ? renderSettlementSales() :
+      settlementTab==='rebate' ? renderSettlementRebate() :
+      settlementTab==='policy' ? renderSettlementPolicy() :
+      renderSettlementClose()}
+  `;
+}
+
+function renderSettlementSales() {
+  return `
     <div class="filter-bar">
       <select><option>2026년 3월</option><option>2026년 2월</option><option>2026년 1월</option></select>
       <select><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option></select>
       <button class="btn btn-primary">조회</button>
     </div>
-
     <div class="stat-cards">
-      <div class="stat-card">
-        <div class="label">이번 달 총 매출</div>
-        <div class="value">4,820만</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">총 수당 지급액</div>
-        <div class="value">1,928만</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">리베이트 합계</div>
-        <div class="value">120만</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">환수 합계</div>
-        <div class="value">85만</div>
-      </div>
+      <div class="stat-card"><div class="label">이번 달 총 매출</div><div class="value">4,820만</div></div>
+      <div class="stat-card"><div class="label">총 수수료</div><div class="value">381.5만</div></div>
+      <div class="stat-card"><div class="label">리베이트 합계</div><div class="value">${settlementRebateData.length > 0 ? settlementRebateData.filter(r=>r.type==='리베이트').reduce((s,r)=>s+parseFloat(r.amount||0),0).toFixed(1)+'만' : '120만'}</div></div>
+      <div class="stat-card"><div class="label">환수 합계</div><div class="value">${settlementRebateData.length > 0 ? settlementRebateData.filter(r=>r.type==='환수').reduce((s,r)=>s+parseFloat(r.amount||0),0).toFixed(1)+'만' : '85만'}</div></div>
     </div>
-
     <div class="panel">
       <div class="panel-header">
         <h2>실행 건별 매출 내역</h2>
         <span style="font-size:11px;color:#94a3b8;">정산 기준: 실행 완료 건</span>
       </div>
-      <div class="panel-body">
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead>
-            <tr><th>실행일</th><th>신청번호</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB 출처</th><th>담당자</th></tr>
-          </thead>
+          <thead><tr><th>실행일</th><th>신청번호</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB 출처</th><th>담당자</th></tr></thead>
           <tbody>
             <tr><td>03-25</td><td>LA-20260324-005</td><td>정하나</td><td>1,500만</td><td>3.5%</td><td>52.5만</td><td>소개/추천</td><td>박사원</td></tr>
             <tr><td>03-24</td><td>LA-20260322-012</td><td>송미영</td><td>3,200만</td><td>3.0%</td><td>96.0만</td><td>네이버 광고</td><td>김대리</td></tr>
@@ -669,6 +665,191 @@ function renderSettlement() {
       </div>
     </div>
   `;
+}
+
+function renderSettlementRebate() {
+  return `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>리베이트/환수 엑셀 업로드</h2>
+      </div>
+      <div class="panel-body" style="padding:16px;">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+          <input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" onchange="parseRebateExcel(this)">
+          <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 리베이트/환수 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
+        </div>
+        <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
+          엑셀 컬럼 예시: 구분(리베이트/환수) | 금액 | 사유 | 적용월 | 관련 실행건 | 담당자
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <h2>리베이트/환수 내역 (${settlementRebateData.length}건)</h2>
+        <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>구분</th><th>금액</th><th>사유</th><th>적용월</th><th>관련 실행건</th><th>담당자</th></tr></thead>
+          <tbody id="rebateTableBody">
+            ${settlementRebateData.length > 0 ?
+              settlementRebateData.map(r => `<tr>
+                <td><span class="badge ${r.type==='리베이트'?'badge-approved':'badge-rejected'}">${r.type}</span></td>
+                <td style="font-weight:600;">${r.amount}만</td>
+                <td>${r.reason||''}</td>
+                <td>${r.month||''}</td>
+                <td>${r.relatedId||''}</td>
+                <td>${r.manager||''}</td>
+              </tr>`).join('') :
+              '<tr><td colspan="6" style="text-align:center;padding:30px;color:#94a3b8;">엑셀 파일을 업로드하면 내역이 표시됩니다.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettlementPolicy() {
+  return `
+    <div class="panel">
+      <div class="panel-header">
+        <h2>정산 정책 엑셀 업로드</h2>
+      </div>
+      <div class="panel-body" style="padding:16px;">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+          <input type="file" id="policyFile" accept=".xlsx,.xls,.csv" onchange="parsePolicyExcel(this)">
+          <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 정산 정책 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
+        </div>
+        <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
+          엑셀 컬럼 예시: 상품명 | 수수료율 | 환수기준 | 적용시작월 | 비고
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <h2>현재 적용 정산 정책 (${settlementPolicyData.length}건)</h2>
+        <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>상품명</th><th>수수료율</th><th>환수기준</th><th>적용시작월</th><th>비고</th></tr></thead>
+          <tbody id="policyTableBody">
+            ${settlementPolicyData.length > 0 ?
+              settlementPolicyData.map(p => `<tr>
+                <td>${p.product||''}</td>
+                <td style="font-weight:600;">${p.feeRate||''}%</td>
+                <td>${p.clawback||''}</td>
+                <td>${p.effectiveMonth||''}</td>
+                <td>${p.note||''}</td>
+              </tr>`).join('') :
+              '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8;">엑셀 파일을 업로드하면 정책이 표시됩니다.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettlementClose() {
+  return `
+    <div class="panel">
+      <div class="panel-header"><h2>월 마감 처리</h2></div>
+      <div class="panel-body" style="padding:16px;">
+        <div class="stat-cards" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="label">마감 대상월</div><div class="value">2026년 3월</div></div>
+          <div class="stat-card"><div class="label">마감 상태</div><div class="value" style="color:#d97706;">미마감</div></div>
+          <div class="stat-card"><div class="label">실행 건수</div><div class="value">4건</div></div>
+          <div class="stat-card"><div class="label">총 매출</div><div class="value">4,820만</div></div>
+        </div>
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px;margin-bottom:16px;">
+          <div style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:4px;">마감 전 확인사항</div>
+          <ul style="font-size:11px;color:#92400e;margin-left:16px;line-height:1.8;">
+            <li>모든 실행 건의 수수료율이 정확한지 확인</li>
+            <li>리베이트/환수 내역이 모두 반영되었는지 확인</li>
+            <li>정산 정책(수수료율)이 최신인지 확인</li>
+            <li>마감 후에는 관리자만 수정 가능</li>
+          </ul>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="alert('마감 처리는 백엔드 연동 후 활성화됩니다.')">2026년 3월 마감 처리</button>
+          <button class="btn btn-outline" disabled>마감 해제 (최고관리자)</button>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h2>마감 이력</h2></div>
+      <div class="panel-body">
+        <table>
+          <thead><tr><th>대상월</th><th>마감일시</th><th>마감자</th><th>실행건수</th><th>총매출</th><th>상태</th></tr></thead>
+          <tbody>
+            <tr><td>2026년 2월</td><td>2026-03-05 10:00</td><td>박팀장</td><td>48건</td><td>3,920만</td><td><span class="badge badge-approved">마감완료</span></td></tr>
+            <tr><td>2026년 1월</td><td>2026-02-03 09:30</td><td>박팀장</td><td>52건</td><td>4,150만</td><td><span class="badge badge-approved">마감완료</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+// 엑셀 파일 파싱 (CSV 방식)
+function parseRebateExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.name.endsWith('.csv')) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const lines = e.target.result.split('\n').filter(l => l.trim());
+      if (lines.length < 2) { alert('데이터가 없습니다.'); return; }
+      const headers = lines[0].split(',').map(h => h.trim());
+      settlementRebateData = lines.slice(1).map(line => {
+        const cols = line.split(',').map(c => c.trim());
+        return {
+          type: cols[0] || '리베이트',
+          amount: cols[1] || '0',
+          reason: cols[2] || '',
+          month: cols[3] || '',
+          relatedId: cols[4] || '',
+          manager: cols[5] || ''
+        };
+      });
+      navigate('settlement');
+      alert(`${settlementRebateData.length}건 로드 완료`);
+    };
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    alert('현재 CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+  }
+}
+
+function parsePolicyExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.name.endsWith('.csv')) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const lines = e.target.result.split('\n').filter(l => l.trim());
+      if (lines.length < 2) { alert('데이터가 없습니다.'); return; }
+      settlementPolicyData = lines.slice(1).map(line => {
+        const cols = line.split(',').map(c => c.trim());
+        return {
+          product: cols[0] || '',
+          feeRate: cols[1] || '',
+          clawback: cols[2] || '',
+          effectiveMonth: cols[3] || '',
+          note: cols[4] || ''
+        };
+      });
+      navigate('settlement');
+      alert(`${settlementPolicyData.length}건 로드 완료`);
+    };
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    alert('현재 CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+  }
 }
 
 // ========================================
