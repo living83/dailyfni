@@ -654,12 +654,12 @@ function renderSettlementSales() {
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead><tr><th>실행일</th><th>신청번호</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB 출처</th><th>담당자</th></tr></thead>
+          <thead><tr><th>실행일</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB 출처</th><th>담당자</th></tr></thead>
           <tbody>
-            <tr><td>03-25</td><td>LA-20260324-005</td><td>정하나</td><td>1,500만</td><td>3.5%</td><td>52.5만</td><td>소개/추천</td><td>박사원</td></tr>
-            <tr><td>03-24</td><td>LA-20260322-012</td><td>송미영</td><td>3,200만</td><td>3.0%</td><td>96.0만</td><td>네이버 광고</td><td>김대리</td></tr>
-            <tr><td>03-23</td><td>LA-20260320-008</td><td>오진우</td><td>2,800만</td><td>3.5%</td><td>98.0만</td><td>카카오 DB</td><td>이과장</td></tr>
-            <tr><td>03-22</td><td>LA-20260319-003</td><td>임수현</td><td>4,500만</td><td>3.0%</td><td>135.0만</td><td>자체 DB</td><td>김대리</td></tr>
+            <tr><td>03-25</td><td>정하나</td><td>1,500만</td><td>3.5%</td><td>52.5만</td><td>소개/추천</td><td>박사원</td></tr>
+            <tr><td>03-24</td><td>송미영</td><td>3,200만</td><td>3.0%</td><td>96.0만</td><td>네이버 광고</td><td>김대리</td></tr>
+            <tr><td>03-23</td><td>오진우</td><td>2,800만</td><td>3.5%</td><td>98.0만</td><td>카카오 DB</td><td>이과장</td></tr>
+            <tr><td>03-22</td><td>임수현</td><td>4,500만</td><td>3.0%</td><td>135.0만</td><td>자체 DB</td><td>김대리</td></tr>
           </tbody>
         </table>
       </div>
@@ -1159,9 +1159,9 @@ function viewCustomer(id) {
             <div class="panel-header"><h2>연결된 대출 신청</h2></div>
             <div class="panel-body">
               <table>
-                <thead><tr><th>신청번호</th><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
+                <thead><tr><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
                 <tbody>
-                  <tr><td>LA-20260326-001</td><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr>
+                  <tr><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1547,8 +1547,8 @@ function renderCustomerLedger() {
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>연결된 대출 신청</h2></div><div class="panel-body" style="padding:0;">
-          <table><thead><tr><th>신청번호</th><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
-          <tbody><tr><td>LA-20260326-001</td><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr></tbody></table>
+          <table><thead><tr><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
+          <tbody><tr><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr></tbody></table>
         </div></div>
       </div>
 
