@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id && customerData[id]) {
       currentLedgerId = id;
       document.title = customerData[id].name + ' - 고객원장';
+      // 사이드바 숨기고 메인 영역 전체 사용
+      document.getElementById('sidebar').style.display = 'none';
+      document.querySelector('.main-wrapper').style.marginLeft = '0';
       navigate('customer-ledger');
     } else {
       navigate('dashboard');
@@ -1050,7 +1053,15 @@ const customerData = {
 // 고객원장 페이지로 이동
 let currentLedgerId = null;
 function viewCustomerLedger(id) {
-  window.open(location.pathname + '#ledger-' + id, '_blank');
+  // 이미 고객원장 페이지에 있으면 같은 페이지에서 교체
+  if (location.hash.startsWith('#ledger-')) {
+    currentLedgerId = id;
+    document.title = customerData[id].name + ' - 고객원장';
+    location.hash = 'ledger-' + id;
+    navigate('customer-ledger');
+  } else {
+    window.open(location.pathname + '#ledger-' + id, '_blank');
+  }
 }
 
 // 고객 상세 팝업 열기 (고객현황 목록에서 클릭 시)
@@ -1483,6 +1494,46 @@ function cancelLedgerEdit() {
   navigate('customer-ledger');
 }
 
+function ledgerSearch() {
+  const nameVal = (document.getElementById('ledgerSearchName')?.value || '').trim();
+  const ssnVal = (document.getElementById('ledgerSearchSsn')?.value || '').trim();
+  const phoneVal = (document.getElementById('ledgerSearchPhone')?.value || '').trim();
+  const resultDiv = document.getElementById('ledgerSearchResult');
+
+  if (!nameVal && !ssnVal && !phoneVal) {
+    if (resultDiv) resultDiv.innerHTML = '<span style="color:#ef4444;">검색어를 입력하세요.</span>';
+    return;
+  }
+
+  const results = [];
+  for (const [id, c] of Object.entries(customerData)) {
+    let match = true;
+    if (nameVal && !c.name.includes(nameVal)) match = false;
+    if (phoneVal && !c.phone.replace(/-/g,'').includes(phoneVal.replace(/-/g,''))) match = false;
+    if (ssnVal && !c.ssn.replace(/-/g,'').includes(ssnVal.replace(/-/g,''))) match = false;
+    if (match) results.push({ id: parseInt(id), ...c });
+  }
+
+  if (results.length === 0) {
+    if (resultDiv) resultDiv.innerHTML = '<span style="color:#ef4444;">검색 결과 없음</span>';
+    return;
+  }
+
+  if (results.length === 1) {
+    // 1명이면 바로 전환
+    currentLedgerId = results[0].id;
+    document.title = results[0].name + ' - 고객원장';
+    location.hash = 'ledger-' + results[0].id;
+    navigate('customer-ledger');
+  } else {
+    // 복수 결과 - 선택 UI
+    let html = results.map(r =>
+      `<a href="#" onclick="currentLedgerId=${r.id};document.title='${r.name} - 고객원장';location.hash='ledger-${r.id}';navigate('customer-ledger');return false;" style="margin-right:8px;color:#2563eb;text-decoration:underline;font-weight:600;">${r.name}(${r.ssn.substring(0,6)})</a>`
+    ).join('');
+    if (resultDiv) resultDiv.innerHTML = html;
+  }
+}
+
 function renderCustomerLedger() {
   ledgerEditMode = false;
   const c = currentLedgerId ? customerData[currentLedgerId] : null;
@@ -1496,11 +1547,20 @@ function renderCustomerLedger() {
   const ro = 'readonly style="background:#f8fafc;border-color:#e2e8f0;"';
 
   return `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-      <div style="width:40px;height:40px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700;">${c.name.charAt(0)}</div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;gap:8px;align-items:center;">
+      <span style="font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">고객 조회</span>
+      <input type="text" id="ledgerSearchName" placeholder="이름" style="width:100px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+      <input type="text" id="ledgerSearchSsn" placeholder="주민번호" style="width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+      <input type="text" id="ledgerSearchPhone" placeholder="전화번호" style="width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+      <button class="btn btn-primary btn-sm" onclick="ledgerSearch()">검색</button>
+      <div id="ledgerSearchResult" style="flex:1;font-size:11px;color:#94a3b8;"></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+      <div style="width:36px;height:36px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;">${c.name.charAt(0)}</div>
       <div style="flex:1;">
-        <div style="font-size:16px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${c.status}</span> <span style="font-size:11px;color:#94a3b8;">No.${currentLedgerId}</span></div>
-        <div style="font-size:11px;color:#64748b;margin-top:1px;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
+        <div style="font-size:15px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${c.status}</span> <span style="font-size:11px;color:#94a3b8;">No.${currentLedgerId}</span></div>
+        <div style="font-size:11px;color:#64748b;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
       </div>
     </div>
 
@@ -1547,8 +1607,8 @@ function renderCustomerLedger() {
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>연결된 대출 신청</h2></div><div class="panel-body" style="padding:0;">
-          <table><thead><tr><th>대출금액</th><th>수수료율</th><th>상태</th><th>신청일</th></tr></thead>
-          <tbody><tr><td>3,000만</td><td>3.5%</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.regDate}</td></tr></tbody></table>
+          <table><thead><tr><th>대출상품</th><th>대출금액</th><th>상태</th><th>신청일</th></tr></thead>
+          <tbody><tr><td>${c.loanAmount ? 'SBI저축은행' : '-'}</td><td>${c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.loanDate||c.regDate}</td></tr></tbody></table>
         </div></div>
       </div>
 
