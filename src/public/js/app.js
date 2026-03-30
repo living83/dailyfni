@@ -163,35 +163,51 @@ function renderDashboard() {
 // 2. 고객 관리
 // ========================================
 function renderCustomers() {
+  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
+  const creditStatusBadge = (s) => {
+    const map = {'정상':'badge-approved','회생':'badge-review','파산':'badge-rejected','회복':'badge-consult'};
+    return `<span class="badge ${map[s]||'badge-lead'}">${s}</span>`;
+  };
+
+  const ids = Object.keys(customerData).sort((a,b) => b-a);
+  const rows = ids.map(id => {
+    const c = customerData[id];
+    const ssnFront = c.ssn.substring(0,6);
+    return `<tr>
+      <td>${id}</td>
+      <td><a href="#" class="customer-link" onclick="viewCustomer(${id});return false;">${c.name}</a></td>
+      <td>${ssnFront}</td>
+      <td>${creditStatusBadge(c.creditStatus||'정상')}</td>
+      <td style="color:${c.creditScore>=700?'#16a34a':c.creditScore>=600?'#d97706':'#ef4444'};font-weight:600;">${c.creditScore}</td>
+      <td>${c.totalDebt||'-'}</td>
+      <td>${c.loanDate||'-'}</td>
+      <td>${c.loanAmount||'-'}</td>
+      <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status}</span></td>
+      <td>${c.assignedTo}</td>
+      <td>${c.dbSource}</td>
+    </tr>`;
+  }).join('');
+
   return `
     <div class="filter-bar">
-      <input type="text" placeholder="고객명/연락처 검색">
-      <select><option>전체 상태</option><option>리드</option><option>상담</option><option>접수</option><option>실행</option></select>
-      <select><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option></select>
+      <input type="text" placeholder="고객명 검색">
+      <select><option>전체 신용상태</option><option>정상</option><option>회생</option><option>파산</option><option>회복</option></select>
+      <select><option>전체 진행상태</option><option>리드</option><option>상담</option><option>접수</option><option>심사중</option><option>승인</option><option>부결</option><option>실행</option></select>
       <select><option>전체 담당자</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
-      <input type="date" value="2026-03-01"> ~ <input type="date" value="2026-03-26">
       <button class="btn btn-primary">검색</button>
-      <button class="btn btn-primary" style="margin-left:auto">+ 고객 등록</button>
+      <button class="btn btn-primary" style="margin-left:auto" onclick="navigate('customer-register')">+ 고객 등록</button>
     </div>
     <div class="panel">
       <div class="panel-header">
-        <h2>고객 목록 (총 312명)</h2>
+        <h2>고객현황 (${ids.length}명)</h2>
         <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
       </div>
-      <div class="panel-body">
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
-            <tr><th>No</th><th>고객명</th><th>연락처</th><th>DB 출처</th><th>담당자</th><th>최근 상태</th><th>등록일</th></tr>
+            <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>총채무</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th></tr>
           </thead>
-          <tbody>
-            <tr><td>312</td><td><a href="#" class="customer-link" onclick="viewCustomer(312);return false;">박지영</a></td><td>010-1234-5678</td><td>네이버 광고</td><td>김대리</td><td><span class="badge badge-submit">접수</span></td><td>2026-03-26</td></tr>
-            <tr><td>311</td><td><a href="#" class="customer-link" onclick="viewCustomer(311);return false;">이승호</a></td><td>010-9876-5432</td><td>카카오 DB</td><td>이과장</td><td><span class="badge badge-review">심사중</span></td><td>2026-03-25</td></tr>
-            <tr><td>310</td><td><a href="#" class="customer-link" onclick="viewCustomer(310);return false;">최민수</a></td><td>010-5555-1234</td><td>자체 DB</td><td>김대리</td><td><span class="badge badge-approved">승인</span></td><td>2026-03-25</td></tr>
-            <tr><td>309</td><td><a href="#" class="customer-link" onclick="viewCustomer(309);return false;">정하나</a></td><td>010-3333-7890</td><td>소개/추천</td><td>박사원</td><td><span class="badge badge-executed">실행</span></td><td>2026-03-24</td></tr>
-            <tr><td>308</td><td><a href="#" class="customer-link" onclick="viewCustomer(308);return false;">한동욱</a></td><td>010-7777-4321</td><td>네이버 광고</td><td>이과장</td><td><span class="badge badge-rejected">부결</span></td><td>2026-03-24</td></tr>
-            <tr><td>307</td><td><a href="#" class="customer-link" onclick="viewCustomer(307);return false;">강서연</a></td><td>010-2222-8888</td><td>카카오 DB</td><td>김대리</td><td><span class="badge badge-consult">상담</span></td><td>2026-03-23</td></tr>
-            <tr><td>306</td><td><a href="#" class="customer-link" onclick="viewCustomer(306);return false;">윤재현</a></td><td>010-4444-6666</td><td>자체 DB</td><td>박사원</td><td><span class="badge badge-lead">리드</span></td><td>2026-03-23</td></tr>
-          </tbody>
+          <tbody>${rows}</tbody>
         </table>
       </div>
     </div>
@@ -841,13 +857,13 @@ function renderAudit() {
 // 고객 상세 샘플 데이터
 // ========================================
 const customerData = {
-  312: { name:'박지영', ssn:'920315-2******', age:33, phone:'010-1234-5678', phone2:'', email:'jiyoung.park@email.com', address:'서울특별시 강남구 테헤란로 123, 4층 402호', residenceAddress:'서울특별시 강남구 테헤란로 123, 4층 402호', company:'(주)한국금융서비스', companyAddr:'서울특별시 중구 을지로 45, 7층', companyPhone:'02-1234-5678', salary:4200, employmentType:'정규직', workYears:'3년 2개월', courtName:'서울중앙지방법원', caseNo:'2026가단12345', refundBank:'국민은행', refundAccount:'123-456-789012', refundHolder:'박지영', creditScore:680, existingLoans:'신한은행 2,000만 (잔여 1,200만)', dbSource:'네이버 광고', assignedTo:'김대리', status:'접수', regDate:'2026-03-26', memo:'금리 비교 후 진행 희망. 서류 준비 중.' },
-  311: { name:'이승호', ssn:'880720-1******', age:37, phone:'010-9876-5432', phone2:'010-5555-0000', email:'seungho.lee@company.com', address:'경기도 성남시 분당구 판교로 256, 8층', residenceAddress:'경기도 성남시 분당구 판교로 256, 8층', company:'테크스타트(주)', companyAddr:'경기도 성남시 분당구 판교역로 152', companyPhone:'031-987-6543', salary:5800, employmentType:'정규직', workYears:'5년 8개월', courtName:'', caseNo:'', refundBank:'신한은행', refundAccount:'110-234-567890', refundHolder:'이승호', creditScore:720, existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'이과장', status:'심사중', regDate:'2026-03-25', memo:'소득 증빙 제출 완료. 심사 진행 중.' },
-  310: { name:'최민수', ssn:'950103-1******', age:31, phone:'010-5555-1234', phone2:'', email:'minsu.choi@gmail.com', address:'서울특별시 마포구 월드컵북로 21', residenceAddress:'서울특별시 마포구 월드컵북로 21', company:'(주)디자인웍스', companyAddr:'서울특별시 마포구 양화로 45', companyPhone:'02-3456-7890', salary:3600, employmentType:'계약직', workYears:'1년 6개월', courtName:'', caseNo:'', refundBank:'우리은행', refundAccount:'1002-345-678901', refundHolder:'최민수', creditScore:650, existingLoans:'카카오뱅크 500만', dbSource:'자체 DB', assignedTo:'김대리', status:'승인', regDate:'2026-03-25', memo:'승인 완료. 실행 일정 협의 중.' },
-  309: { name:'정하나', ssn:'000515-4******', age:25, phone:'010-3333-7890', phone2:'', email:'hana.jung@naver.com', address:'인천광역시 남동구 구월로 123', residenceAddress:'인천광역시 남동구 구월로 123', company:'CJ올리브영 인천점', companyAddr:'인천광역시 남동구 인하로 321', companyPhone:'032-111-2222', salary:2800, employmentType:'정규직', workYears:'2년 1개월', courtName:'인천지방법원', caseNo:'2025가소98765', refundBank:'하나은행', refundAccount:'267-890-123456', refundHolder:'정하나', creditScore:590, existingLoans:'토스뱅크 300만', dbSource:'소개/추천', assignedTo:'박사원', status:'실행', regDate:'2026-03-24', memo:'대출 실행 완료.' },
-  308: { name:'한동욱', ssn:'850211-1******', age:41, phone:'010-7777-4321', phone2:'010-8888-1111', email:'dongwook.han@daum.net', address:'경기도 수원시 영통구 영통로 200', residenceAddress:'경기도 수원시 영통구 영통로 200', company:'삼성전자(주)', companyAddr:'경기도 수원시 영통구 삼성로 129', companyPhone:'031-200-1234', salary:7200, employmentType:'정규직', workYears:'12년 3개월', courtName:'', caseNo:'', refundBank:'삼성증권', refundAccount:'55-123456-78', refundHolder:'한동욱', creditScore:480, existingLoans:'국민은행 5,000만, 하나은행 2,000만', dbSource:'네이버 광고', assignedTo:'이과장', status:'부결', regDate:'2026-03-24', memo:'소득 대비 기존 대출 과다. 부결 처리.' },
-  307: { name:'강서연', ssn:'970830-2******', age:28, phone:'010-2222-8888', phone2:'', email:'seoyeon.kang@outlook.com', address:'서울특별시 송파구 올림픽로 300', residenceAddress:'서울특별시 송파구 올림픽로 300', company:'(주)네오위즈', companyAddr:'서울특별시 강남구 삼성로 512', companyPhone:'02-6789-0123', salary:4500, employmentType:'정규직', workYears:'3년 10개월', courtName:'', caseNo:'', refundBank:'카카오뱅크', refundAccount:'3333-01-2345678', refundHolder:'강서연', creditScore:710, existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'김대리', status:'상담', regDate:'2026-03-23', memo:'초기 상담 완료. 추가 상담 예정.' },
-  306: { name:'윤재현', ssn:'910612-1******', age:34, phone:'010-4444-6666', phone2:'', email:'jaehyun.yoon@gmail.com', address:'대전광역시 서구 둔산로 50', residenceAddress:'대전광역시 서구 둔산로 50', company:'한국철도공사', companyAddr:'대전광역시 동구 중앙로 240', companyPhone:'042-567-8901', salary:5100, employmentType:'정규직', workYears:'7년 5개월', courtName:'', caseNo:'', refundBank:'농협은행', refundAccount:'302-1234-5678-91', refundHolder:'윤재현', creditScore:750, existingLoans:'농협 1,500만 (잔여 800만)', dbSource:'자체 DB', assignedTo:'박사원', status:'리드', regDate:'2026-03-23', memo:'DB 유입. 아직 연락 전.' }
+  312: { name:'박지영', ssn:'920315-2******', age:33, phone:'010-1234-5678', phone2:'', email:'jiyoung.park@email.com', address:'서울특별시 강남구 테헤란로 123, 4층 402호', residenceAddress:'서울특별시 강남구 테헤란로 123, 4층 402호', company:'(주)한국금융서비스', companyAddr:'서울특별시 중구 을지로 45, 7층', companyPhone:'02-1234-5678', salary:4200, employmentType:'정규직', workYears:'3년 2개월', courtName:'서울중앙지방법원', caseNo:'2026가단12345', refundBank:'국민은행', refundAccount:'123-456-789012', refundHolder:'박지영', creditScore:680, creditStatus:'회생', totalDebt:'3,200만', loanDate:'2026-03-26', loanAmount:'3,000만', existingLoans:'신한은행 2,000만 (잔여 1,200만)', dbSource:'네이버 광고', assignedTo:'김대리', status:'접수', regDate:'2026-03-26', memo:'금리 비교 후 진행 희망. 서류 준비 중.' },
+  311: { name:'이승호', ssn:'880720-1******', age:37, phone:'010-9876-5432', phone2:'010-5555-0000', email:'seungho.lee@company.com', address:'경기도 성남시 분당구 판교로 256, 8층', residenceAddress:'경기도 성남시 분당구 판교로 256, 8층', company:'테크스타트(주)', companyAddr:'경기도 성남시 분당구 판교역로 152', companyPhone:'031-987-6543', salary:5800, employmentType:'정규직', workYears:'5년 8개월', courtName:'', caseNo:'', refundBank:'신한은행', refundAccount:'110-234-567890', refundHolder:'이승호', creditScore:720, creditStatus:'정상', totalDebt:'0', loanDate:'2026-03-25', loanAmount:'5,000만', existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'이과장', status:'심사중', regDate:'2026-03-25', memo:'소득 증빙 제출 완료. 심사 진행 중.' },
+  310: { name:'최민수', ssn:'950103-1******', age:31, phone:'010-5555-1234', phone2:'', email:'minsu.choi@gmail.com', address:'서울특별시 마포구 월드컵북로 21', residenceAddress:'서울특별시 마포구 월드컵북로 21', company:'(주)디자인웍스', companyAddr:'서울특별시 마포구 양화로 45', companyPhone:'02-3456-7890', salary:3600, employmentType:'계약직', workYears:'1년 6개월', courtName:'', caseNo:'', refundBank:'우리은행', refundAccount:'1002-345-678901', refundHolder:'최민수', creditScore:650, creditStatus:'정상', totalDebt:'500만', loanDate:'2026-03-25', loanAmount:'2,000만', existingLoans:'카카오뱅크 500만', dbSource:'자체 DB', assignedTo:'김대리', status:'승인', regDate:'2026-03-25', memo:'승인 완료. 실행 일정 협의 중.' },
+  309: { name:'정하나', ssn:'000515-4******', age:25, phone:'010-3333-7890', phone2:'', email:'hana.jung@naver.com', address:'인천광역시 남동구 구월로 123', residenceAddress:'인천광역시 남동구 구월로 123', company:'CJ올리브영 인천점', companyAddr:'인천광역시 남동구 인하로 321', companyPhone:'032-111-2222', salary:2800, employmentType:'정규직', workYears:'2년 1개월', courtName:'인천지방법원', caseNo:'2025가소98765', refundBank:'하나은행', refundAccount:'267-890-123456', refundHolder:'정하나', creditScore:590, creditStatus:'회복', totalDebt:'800만', loanDate:'2026-03-24', loanAmount:'1,500만', existingLoans:'토스뱅크 300만', dbSource:'소개/추천', assignedTo:'박사원', status:'실행', regDate:'2026-03-24', memo:'대출 실행 완료.' },
+  308: { name:'한동욱', ssn:'850211-1******', age:41, phone:'010-7777-4321', phone2:'010-8888-1111', email:'dongwook.han@daum.net', address:'경기도 수원시 영통구 영통로 200', residenceAddress:'경기도 수원시 영통구 영통로 200', company:'삼성전자(주)', companyAddr:'경기도 수원시 영통구 삼성로 129', companyPhone:'031-200-1234', salary:7200, employmentType:'정규직', workYears:'12년 3개월', courtName:'', caseNo:'', refundBank:'삼성증권', refundAccount:'55-123456-78', refundHolder:'한동욱', creditScore:480, creditStatus:'정상', totalDebt:'7,000만', loanDate:'2026-03-24', loanAmount:'4,000만', existingLoans:'국민은행 5,000만, 하나은행 2,000만', dbSource:'네이버 광고', assignedTo:'이과장', status:'부결', regDate:'2026-03-24', memo:'소득 대비 기존 대출 과다. 부결 처리.' },
+  307: { name:'강서연', ssn:'970830-2******', age:28, phone:'010-2222-8888', phone2:'', email:'seoyeon.kang@outlook.com', address:'서울특별시 송파구 올림픽로 300', residenceAddress:'서울특별시 송파구 올림픽로 300', company:'(주)네오위즈', companyAddr:'서울특별시 강남구 삼성로 512', companyPhone:'02-6789-0123', salary:4500, employmentType:'정규직', workYears:'3년 10개월', courtName:'', caseNo:'', refundBank:'카카오뱅크', refundAccount:'3333-01-2345678', refundHolder:'강서연', creditScore:710, creditStatus:'정상', totalDebt:'0', loanDate:'', loanAmount:'', existingLoans:'없음', dbSource:'카카오 DB', assignedTo:'김대리', status:'상담', regDate:'2026-03-23', memo:'초기 상담 완료. 추가 상담 예정.' },
+  306: { name:'윤재현', ssn:'910612-1******', age:34, phone:'010-4444-6666', phone2:'', email:'jaehyun.yoon@gmail.com', address:'대전광역시 서구 둔산로 50', residenceAddress:'대전광역시 서구 둔산로 50', company:'한국철도공사', companyAddr:'대전광역시 동구 중앙로 240', companyPhone:'042-567-8901', salary:5100, employmentType:'정규직', workYears:'7년 5개월', courtName:'', caseNo:'', refundBank:'농협은행', refundAccount:'302-1234-5678-91', refundHolder:'윤재현', creditScore:750, creditStatus:'정상', totalDebt:'800만', loanDate:'', loanAmount:'', existingLoans:'농협 1,500만 (잔여 800만)', dbSource:'자체 DB', assignedTo:'박사원', status:'리드', regDate:'2026-03-23', memo:'DB 유입. 아직 연락 전.' }
 };
 
 // 고객원장 페이지로 이동
