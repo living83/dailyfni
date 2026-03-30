@@ -344,23 +344,26 @@ function matchProducts(customer) {
         if (!p.fidx || registeredFidx.has(p.fidx)) return;
 
         // tags에서 자동 조건 생성
+        const desc = p.desc || '';
         const autoCond = {
           name: p.name,
           category: cat.name,
           jobTypes: p.tags || [],
           ageMin: 20, ageMax: 70,
           loanMin: 50, loanMax: 10000,
-          vehicle: !!(p.desc && p.desc.includes('🚗')),
+          vehicle: false,
           vehicleYear: null, vehicleKm: null,
           recovery: detectRecovery(p.name, cat.name),
           insurance4: null,
-          notes: p.desc ? p.desc.split('\n')[0] : ''
+          notes: desc.split('\n')[0],
+          suspended: false,
+          requireProperty: false,
+          exclusions: []
         };
 
-        // 오토론 카테고리면 차량 필수
-        if (cat.name.includes('오토론') || p.name.includes('오토')) {
-          autoCond.vehicle = true;
-        }
+        // desc에서 조건 자동 파싱
+        const parsed = parseDescConditions(desc, p.name, cat.name);
+        Object.assign(autoCond, parsed);
 
         const match = matchOneProduct(p.fidx, autoCond, { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount });
         results.push(match);
@@ -377,6 +380,78 @@ function matchProducts(customer) {
     unsuitable: results.filter(r => r.status === 'unsuitable'),
     all: results
   };
+}
+
+// desc에서 불가사항/조건 자동 파싱
+function parseDescConditions(desc, productName, categoryName) {
+  const result = {
+    vehicle: false,
+    vehicleYear: null,
+    vehicleKm: null,
+    requireProperty: false,
+    suspended: false,
+    exclusions: [],
+    insurance4Months: null
+  };
+
+  if (!desc) return result;
+
+  // 상품 중단 감지
+  if (desc.includes('임시중단') || productName.includes('임시중단')) {
+    result.suspended = true;
+    result.exclusions.push('상품 임시중단');
+  }
+
+  // 차량 조건 파싱 (🚗 포함 시)
+  if (desc.includes('🚗') || categoryName.includes('오토론') || productName.includes('오토') || productName.includes('차량')) {
+    result.vehicle = true;
+
+    // 차량 연식 파싱 (예: 2007년식부터, 2014년식부터, 10년이내, 12년이내)
+    const yearMatch = desc.match(/(\d{4})년식/);
+    if (yearMatch) result.vehicleYear = parseInt(yearMatch[1]);
+    const yearInMatch = desc.match(/(\d+)년이내/);
+    if (yearInMatch) result.vehicleYear = new Date().getFullYear() - parseInt(yearInMatch[1]);
+
+    // 주행거리 파싱 (예: 20만km미만, 20만km이하, 30만km미만)
+    const kmMatch = desc.match(/(\d+)만km/i);
+    if (kmMatch) result.vehicleKm = parseInt(kmMatch[1]) * 10000;
+
+    // 본인명의 체크
+    if (desc.includes('본인|') || desc.includes('본인명의')) {
+      result.exclusions.push('본인명의 차량만');
+    }
+  }
+
+  // 부동산 조건 파싱 (🏠 포함 시)
+  if (desc.includes('🏠')) {
+    result.requireProperty = true;
+
+    // KB시세 조건
+    const kbMatch = desc.match(/KB시세(\d+[.\d]*)억/);
+    if (kbMatch) result.exclusions.push(`KB시세 ${kbMatch[1]}억 이상`);
+
+    const kbMatch2 = desc.match(/시세(\d+)천/);
+    if (kbMatch2) result.exclusions.push(`시세 ${kbMatch2[1]}천만 이상`);
+  }
+
+  // 4대보험 가입 기간 (📌 포함 시)
+  if (desc.includes('📌')) {
+    const ins4Match = desc.match(/4대가입\s*(\d+)개월/);
+    if (ins4Match) result.insurance4Months = parseInt(ins4Match[1]);
+
+    const ins4Match2 = desc.match(/4대가입\s*(\d+)고지/);
+    if (ins4Match2) result.insurance4Months = parseInt(ins4Match2[1]);
+
+    const ins4Match3 = desc.match(/(\d+)납/);
+    if (ins4Match3 && !result.insurance4Months) result.insurance4Months = parseInt(ins4Match3[1]);
+  }
+
+  // 사잇돌+오토 동시 불가
+  if (desc.includes('사잇돌+오토') && desc.includes('不')) {
+    result.exclusions.push('사잇돌+오토 동시 불가');
+  }
+
+  return result;
 }
 
 // 회파복 자동 감지
@@ -465,9 +540,43 @@ function matchOneProduct(fidx, cond, customer) {
     }
   }
 
+  // 6. 상품 중단 체크
+  if (cond.suspended) {
+    match.failReasons.push('상품 임시중단');
+    match.score = 0;
+  }
+
+  // 7. 부동산 담보 체크
+  if (cond.requireProperty) {
+    match.maxScore += 1;
+    match.failReasons.push('부동산 보유 확인 필요');
+  }
+
+  // 8. 4대보험 가입 기간 체크
+  if (cond.insurance4Months && cond.insurance4Months > 0) {
+    match.maxScore += 1;
+    match.reasons.push(`4대보험 ${cond.insurance4Months}개월+ 필요`);
+  }
+
+  // 9. 불가사항/특수조건 표시
+  if (cond.exclusions && cond.exclusions.length > 0) {
+    cond.exclusions.forEach(ex => {
+      if (!match.failReasons.includes(ex)) {
+        match.failReasons.push(ex);
+      }
+    });
+  }
+
+  // 10. 회파복 고객에게 일반 상품 추천 금지 (핵심 불가사항)
+  if (recoveryType !== '무' && cond.recovery.length === 1 && cond.recovery[0] === '무') {
+    match.score = 0;
+    match.failReasons = ['회파복 고객에게 일반 상품 추천 불가'];
+  }
+
   // 매칭률 계산
   match.matchRate = match.maxScore > 0 ? Math.round((match.score / match.maxScore) * 100) : 0;
-  match.status = match.failReasons.length === 0 ? 'recommended' :
+  match.status = cond.suspended ? 'unsuitable' :
+                 match.failReasons.length === 0 ? 'recommended' :
                  match.matchRate >= 60 ? 'conditional' : 'unsuitable';
 
   return match;
