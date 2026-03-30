@@ -1,13 +1,14 @@
 export const SITE = {
   name: process.env.NEXT_PUBLIC_SITE_NAME || "DAILY F&I",
   companyName: process.env.NEXT_PUBLIC_COMPANY_NAME || "(주)데일리에프앤아이대부",
-  businessNumber: process.env.NEXT_PUBLIC_BUSINESS_NUMBER || "000-00-00000",
+  businessNumber: process.env.NEXT_PUBLIC_BUSINESS_NUMBER || "894-86-03385",
   registrationNumber: process.env.NEXT_PUBLIC_REGISTRATION_NUMBER || "2024-금감원-2626",
   registrationType: "대부업, 대부중개업",
   ceoName: process.env.NEXT_PUBLIC_CEO_NAME || "홍나령",
-  phone: process.env.NEXT_PUBLIC_PHONE || "1588-0000",
+  phone: process.env.NEXT_PUBLIC_PHONE || "02-2138-0759",
+  complaintPhone: "02-2138-0749",
   email: process.env.NEXT_PUBLIC_EMAIL || "info@dailyfni.co.kr",
-  address: process.env.NEXT_PUBLIC_ADDRESS || "서울특별시",
+  address: process.env.NEXT_PUBLIC_ADDRESS || "서울시 강남구 자봉로센길 606 대상디트레지아빌리스타 615호",
   website: "www.dailyfni.co.kr",
 };
 
@@ -93,13 +94,16 @@ export const LOAN_AREAS = [
 ];
 
 export const COMMON_LEGAL_NOTICE = `※ 대부업·대부중개업 법적 고지사항
-• 상호: (주)데일리에프앤아이대부 | 대표: 홍나령
-• 등록번호: 2024-금감원-2626 (대부업, 대부중개업)
-• 대부중개수수료: 대출금액의 0% (고객 부담 없음, 금융사로부터 수수료 수령)
-• 이자율은 연 20% 이내이며, 개인 신용도 및 대출 조건에 따라 달라질 수 있습니다.
+• 상호: (주)데일리에프앤아이대부 | 대표: 홍나령 | 사업자등록번호: 894-86-03385
+• 대부업 등록번호: 2024-금감원-2626 (대부업, 대부중개업)
+• 주소: 서울시 강남구 자봉로센길 606 대상디트레지아빌리스타 615호
+• 고객문의접수: 02-2138-0749 | 대표전화: 02-2138-0759
+• 금리 연 20% 이내(연체금리는 약정금리+3% 이내, 연 20% 이내) 건, 2021.7.7부터 적용
+• 취급수수료 등 부대비용 없음 ※ 대부대비: 등록대부업체, 자발교부세, 등기신청수수료, 근저당권설정/말소 관련비용 등은 별도 부담
 • 과도한 빚은 당신에게 큰 불행을 안겨줄 수 있습니다.
 • 대출 시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다.
-• 금리, 한도 등 대출조건은 개인별 심사 결과에 따라 상이합니다.`;
+• 금리, 한도 등 대출조건은 개인별 심사 결과에 따라 상이합니다.
+• 대출 시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다. 각 금융회사에서 적용하는 금리, 조건 등은 해당 금융회사에 문의하시기 바랍니다.`;
 
 export const MASKING = {
   phone: (phone: string) => {

@@ -15,42 +15,49 @@ export default function Footer() {
 
       {/* 회사 정보 */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* 회사 정보 */}
-          <div>
-            <h3 className="text-white font-semibold text-sm mb-3">회사 정보</h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {/* 로고 & 회사 정보 */}
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-7 h-7 bg-white rounded-full flex items-center justify-center">
+                <span className="text-navy font-bold text-xs">d</span>
+              </div>
+              <div className="leading-none">
+                <span className="text-white font-bold text-sm tracking-wide">DAILY F&I</span>
+                <span className="block text-[9px] text-gray-500">주식회사 데일리에프앤아이대부</span>
+              </div>
+            </div>
             <ul className="space-y-1.5 text-xs">
-              <li>상호: {SITE.companyName}</li>
-              <li>대표: {SITE.ceoName}</li>
+              <li>상호: {SITE.companyName} | 대표: {SITE.ceoName}</li>
               <li>등록번호: {SITE.registrationNumber} ({SITE.registrationType})</li>
               <li>사업자등록번호: {SITE.businessNumber}</li>
               <li>주소: {SITE.address}</li>
             </ul>
           </div>
 
-          {/* 연락처 */}
+          {/* 고객센터 */}
           <div>
             <h3 className="text-white font-semibold text-sm mb-3">고객센터</h3>
             <ul className="space-y-1.5 text-xs">
               <li>
                 대표전화:{" "}
-                <a
-                  href={`tel:${SITE.phone}`}
-                  className="text-gray-300 hover:text-white"
-                >
+                <a href={`tel:${SITE.phone}`} className="text-gray-300 hover:text-white">
                   {SITE.phone}
                 </a>
               </li>
               <li>
+                고객불만접수:{" "}
+                <a href={`tel:${SITE.complaintPhone}`} className="text-gray-300 hover:text-white">
+                  {SITE.complaintPhone}
+                </a>
+              </li>
+              <li>
                 이메일:{" "}
-                <a
-                  href={`mailto:${SITE.email}`}
-                  className="text-gray-300 hover:text-white"
-                >
+                <a href={`mailto:${SITE.email}`} className="text-gray-300 hover:text-white">
                   {SITE.email}
                 </a>
               </li>
-              <li>운영시간: 평일 09:00 ~ 18:00 (주말/공휴일 휴무)</li>
+              <li>운영시간: 평일 09:00 ~ 18:00</li>
             </ul>
           </div>
 
@@ -85,28 +92,29 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* 보안 인증 & 카피라이트 */}
+        {/* 인증 배지 & 카피라이트 */}
         <div className="mt-8 pt-6 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* 파인 배지 */}
+            <div className="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded-full">
+              <svg className="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              <span className="text-xs text-gray-300">파인(금융소비자정보포털)</span>
+            </div>
+            {/* 금융감독원 배지 */}
+            <div className="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded-full">
+              <svg className="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-xs text-gray-300">금융감독원 등록</span>
+            </div>
+            {/* SSL 배지 */}
             <div className="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded-full">
               <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z"
-                  clipRule="evenodd"
-                />
+                <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
               </svg>
               <span className="text-xs text-gray-300">SSL 보안 적용</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-gray-800 px-3 py-1.5 rounded-full">
-              <svg className="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span className="text-xs text-gray-300">정식 등록 업체</span>
             </div>
           </div>
           <p className="text-xs">
