@@ -1077,34 +1077,192 @@ function renderExport() {
 // ========================================
 // 9. 직원/권한 관리
 // ========================================
+let employeeList = [];
+
 function renderEmployees() {
+  // DB에서 로드 안 됐으면 로드
+  if (employeeList.length === 0) {
+    loadEmployees();
+  }
+
+  const rows = employeeList.map(e => {
+    const roleLabel = e.role === 'admin' ? '관리자' : '영업직원';
+    const roleBadge = e.role === 'admin' ? 'badge-approved' : 'badge-lead';
+    const scopeLabel = e.data_scope === 'all' ? '전사' : '본인';
+    const statusLabel = e.is_active ? '활성' : '비활성';
+    const statusBadge = e.is_active ? 'badge-approved' : 'badge-closed';
+    const joinDate = e.join_date ? new Date(e.join_date).toISOString().split('T')[0] : '-';
+    return `<tr>
+      <td>${e.name}</td><td>${e.login_id}</td><td>${e.department}</td><td>${e.position_title}</td>
+      <td><span class="badge ${roleBadge}">${roleLabel}</span></td>
+      <td>${scopeLabel}</td>
+      <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
+      <td>${joinDate}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="editEmployee(${e.id})">수정</button>
+        <button class="btn btn-sm btn-outline" onclick="resetEmployeePassword(${e.id})">비밀번호</button>
+      </td>
+    </tr>`;
+  }).join('');
+
   return `
     <div class="filter-bar">
-      <input type="text" placeholder="직원명 검색">
-      <select><option>전체 역할</option><option>관리자</option><option>영업직원</option></select>
-      <select><option>전체 상태</option><option>활성</option><option>비활성</option></select>
-      <button class="btn btn-primary">검색</button>
-      <button class="btn btn-primary" style="margin-left:auto">+ 직원 등록</button>
+      <input type="text" id="empSearch" placeholder="직원명 검색">
+      <select id="empRole"><option>전체 역할</option><option>관리자</option><option>영업직원</option></select>
+      <select id="empStatus"><option>전체 상태</option><option>활성</option><option>비활성</option></select>
+      <button class="btn btn-primary" onclick="loadEmployees()">검색</button>
+      <button class="btn btn-primary" style="margin-left:auto" onclick="showAddEmployeeModal()">+ 직원 등록</button>
     </div>
     <div class="panel">
-      <div class="panel-header"><h2>직원 목록</h2></div>
-      <div class="panel-body">
+      <div class="panel-header"><h2>직원 목록 (${employeeList.length}명)</h2></div>
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead>
-            <tr><th>이름</th><th>소속</th><th>직급</th><th>역할</th><th>데이터 범위</th><th>상태</th><th>입사일</th><th>관리</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>박팀장</td><td>영업1팀</td><td>팀장</td><td><span class="badge badge-approved">관리자</span></td><td>전사</td><td><span class="badge badge-approved">활성</span></td><td>2020-03-01</td><td><button class="btn btn-sm btn-outline">수정</button> <button class="btn btn-sm btn-outline">비밀번호</button></td></tr>
-            <tr><td>김대리</td><td>영업1팀</td><td>대리</td><td><span class="badge badge-lead">영업직원</span></td><td>본인</td><td><span class="badge badge-approved">활성</span></td><td>2022-06-15</td><td><button class="btn btn-sm btn-outline">수정</button> <button class="btn btn-sm btn-outline">비밀번호</button></td></tr>
-            <tr><td>이과장</td><td>영업2팀</td><td>과장</td><td><span class="badge badge-lead">영업직원</span></td><td>본인</td><td><span class="badge badge-approved">활성</span></td><td>2021-01-10</td><td><button class="btn btn-sm btn-outline">수정</button> <button class="btn btn-sm btn-outline">비밀번호</button></td></tr>
-            <tr><td>박사원</td><td>영업1팀</td><td>사원</td><td><span class="badge badge-lead">영업직원</span></td><td>본인</td><td><span class="badge badge-approved">활성</span></td><td>2024-09-01</td><td><button class="btn btn-sm btn-outline">수정</button> <button class="btn btn-sm btn-outline">비밀번호</button></td></tr>
-            <tr><td>최주임</td><td>영업2팀</td><td>주임</td><td><span class="badge badge-lead">영업직원</span></td><td>본인</td><td><span class="badge badge-closed">비활성</span></td><td>2023-03-20</td><td><button class="btn btn-sm btn-outline">수정</button> <button class="btn btn-sm btn-outline">비밀번호</button></td></tr>
-          </tbody>
+          <thead><tr><th>이름</th><th>아이디</th><th>소속</th><th>직급</th><th>역할</th><th>데이터 범위</th><th>상태</th><th>입사일</th><th>관리</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#94a3b8;">직원 데이터를 불러오는 중...</td></tr>'}</tbody>
         </table>
       </div>
     </div>
   `;
 }
+
+async function loadEmployees() {
+  try {
+    const search = document.getElementById('empSearch')?.value || '';
+    const role = document.getElementById('empRole')?.value || '';
+    const status = document.getElementById('empStatus')?.value || '';
+    let url = '/api/employees?';
+    if (search) url += `search=${encodeURIComponent(search)}&`;
+    if (role && role !== '전체 역할') url += `role=${encodeURIComponent(role)}&`;
+    if (status && status !== '전체 상태') url += `status=${encodeURIComponent(status)}&`;
+
+    const res = await fetch(url);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      employeeList = data.data;
+      const tbody = document.querySelector('#content table tbody');
+      if (tbody && document.getElementById('empSearch')) {
+        navigate('employees');
+      }
+    }
+  } catch (e) { console.error(e); }
+}
+
+function showAddEmployeeModal() {
+  const old = document.getElementById('guideModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'guideModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="search-modal" style="max-width:500px;">
+      <div class="modal-header">
+        <h2 style="font-size:15px;font-weight:700;">직원 등록</h2>
+        <button class="modal-close" onclick="closeGuideModal()">&times;</button>
+      </div>
+      <div style="padding:16px;">
+        <div class="form-group"><label>아이디 <span class="required">*</span></label><input type="text" id="newEmpLoginId" placeholder="로그인 아이디"></div>
+        <div class="form-group"><label>이름 <span class="required">*</span></label><input type="text" id="newEmpName" placeholder="이름"></div>
+        <div class="form-group"><label>비밀번호 <span class="required">*</span></label><input type="password" id="newEmpPw" placeholder="비밀번호"></div>
+        <div class="form-row">
+          <div class="form-group"><label>소속</label><input type="text" id="newEmpDept" placeholder="영업부"></div>
+          <div class="form-group"><label>직급</label><input type="text" id="newEmpPos" placeholder="사원"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>역할</label><select id="newEmpRole"><option value="sales">영업직원</option><option value="admin">관리자</option></select></div>
+          <div class="form-group"><label>데이터 범위</label><select id="newEmpScope"><option value="self">본인</option><option value="all">전사</option></select></div>
+        </div>
+        <div class="form-group"><label>입사일</label><input type="date" id="newEmpDate"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="addEmployee()">등록</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeGuideModal(); });
+}
+
+async function addEmployee() {
+  const data = {
+    loginId: document.getElementById('newEmpLoginId').value.trim(),
+    name: document.getElementById('newEmpName').value.trim(),
+    password: document.getElementById('newEmpPw').value,
+    department: document.getElementById('newEmpDept').value.trim(),
+    position: document.getElementById('newEmpPos').value.trim(),
+    role: document.getElementById('newEmpRole').value,
+    dataScope: document.getElementById('newEmpScope').value,
+    joinDate: document.getElementById('newEmpDate').value || null
+  };
+
+  if (!data.loginId || !data.name || !data.password) {
+    alert('아이디, 이름, 비밀번호는 필수입니다.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    if (result.success) {
+      closeGuideModal();
+      employeeList = [];
+      navigate('employees');
+      setTimeout(() => loadEmployees(), 100);
+      alert('직원 등록 완료');
+    } else {
+      alert('등록 실패: ' + result.message);
+    }
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function editEmployee(id) {
+  const emp = employeeList.find(e => e.id === id);
+  if (!emp) return;
+
+  const name = prompt('이름:', emp.name);
+  if (name === null) return;
+  const dept = prompt('소속:', emp.department);
+  const pos = prompt('직급:', emp.position_title);
+  const role = prompt('역할 (admin/sales):', emp.role);
+  const scope = prompt('데이터 범위 (self/all):', emp.data_scope);
+
+  try {
+    const res = await fetch(`/api/employees/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, department: dept, position: pos, role, dataScope: scope, isActive: emp.is_active })
+    });
+    const result = await res.json();
+    if (result.success) {
+      employeeList = [];
+      navigate('employees');
+      setTimeout(() => loadEmployees(), 100);
+      alert('수정 완료');
+    }
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function resetEmployeePassword(id) {
+  const pw = prompt('새 비밀번호:');
+  if (!pw) return;
+
+  try {
+    const res = await fetch(`/api/employees/${id}/reset-password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const result = await res.json();
+    if (result.success) alert('비밀번호 변경 완료');
+    else alert('실패: ' + result.message);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// 페이지 진입 시 직원 목록 로드
+setTimeout(() => { if (employeeList.length === 0) loadEmployees(); }, 500);
 
 // ========================================
 // 10. 알림
