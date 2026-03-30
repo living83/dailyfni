@@ -798,22 +798,44 @@ function renderSettlementClose() {
 
 // 엑셀 파일 파싱 (CSV 방식)
 // CSV 파일 읽기 (한글 인코딩 자동 감지)
-function readCsvFile(file, callback) {
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    let text = e.target.result;
-    // 한글 깨짐 체크 (깨지면 EUC-KR로 재시도)
-    if (text.includes('�') || text.includes('ï¿½')) {
-      const reader2 = new FileReader();
-      reader2.onload = function(e2) {
-        callback(e2.target.result);
-      };
-      reader2.readAsText(file, 'EUC-KR');
-    } else {
-      callback(text);
-    }
-  };
-  reader.readAsText(file, 'UTF-8');
+// 파일 읽기 (엑셀 + CSV 모두 지원)
+function readSpreadsheetFile(file, callback) {
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'xlsx' || ext === 'xls') {
+    // 엑셀 파일 → SheetJS로 파싱
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      // 모든 시트를 합산
+      let allLines = [];
+      wb.SheetNames.forEach(name => {
+        const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]);
+        const lines = csv.split('\n').filter(l => l.trim());
+        if (allLines.length === 0) {
+          allLines = lines;
+        } else {
+          allLines = allLines.concat(lines.slice(1)); // 헤더 제외
+        }
+      });
+      callback(allLines.join('\n'));
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    // CSV 파일 → 인코딩 자동 감지
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      let text = e.target.result;
+      if (text.includes('�') || text.includes('ï¿½')) {
+        const reader2 = new FileReader();
+        reader2.onload = function(e2) { callback(e2.target.result); };
+        reader2.readAsText(file, 'EUC-KR');
+      } else {
+        callback(text);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
 }
 
 function parseRebateExcel(input) {
@@ -824,11 +846,11 @@ function parseRebateExcel(input) {
   let processed = 0;
 
   for (const file of files) {
-    if (!file.name.endsWith('.csv')) {
-      alert('CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+    if (!file.name.match(/\.(csv|xlsx|xls)$/i)) {
+      alert('엑셀(.xlsx) 또는 CSV 파일만 지원합니다.');
       continue;
     }
-    readCsvFile(file, function(text) {
+    readSpreadsheetFile(file, function(text) {
       const lines = text.split('\n').filter(l => l.trim());
       if (lines.length >= 2) {
         lines.slice(1).forEach(line => {
@@ -861,11 +883,11 @@ function parsePolicyExcel(input) {
   let processed = 0;
 
   for (const file of files) {
-    if (!file.name.endsWith('.csv')) {
-      alert('CSV 파일만 지원합니다. 엑셀에서 CSV로 저장 후 업로드하세요.\n(파일 > 다른 이름으로 저장 > CSV UTF-8)');
+    if (!file.name.match(/\.(csv|xlsx|xls)$/i)) {
+      alert('엑셀(.xlsx) 또는 CSV 파일만 지원합니다.');
       continue;
     }
-    readCsvFile(file, function(text) {
+    readSpreadsheetFile(file, function(text) {
       const lines = text.split('\n').filter(l => l.trim());
       if (lines.length >= 2) {
         lines.slice(1).forEach(line => {
