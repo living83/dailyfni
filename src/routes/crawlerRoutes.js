@@ -43,6 +43,17 @@ router.post('/crawler/product-map', async (req, res) => {
   }
 });
 
+// 대출신청내역 목록 조회
+router.get('/crawler/loan-list', async (req, res) => {
+  try {
+    const { agentNo, upw, status, dateType, dateRange, product } = req.query;
+    const data = await crawler.getLoanList(agentNo || '12', upw || '1', { status, dateType, dateRange, product });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 브라우저 종료
 router.post('/crawler/close', async (req, res) => {
   try {

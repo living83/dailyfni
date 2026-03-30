@@ -201,44 +201,96 @@ function renderCustomers() {
 // ========================================
 // 3. 대출 신청 관리
 // ========================================
+let loanListData = [];
+let loanListSummary = null;
+
 function renderLoans() {
+  const statusOptions = ['전체','접수','전송','심사','가승인','승인','보류','부결','진행후부결','조회접수','접수실패','완납','조회중','정상접수','상담중','진행중','예약완료','서류안내','서류받음','서류보완','부재','본인취소','진행불가','지속부재','진행안내','안내예정','통화예정','본진행접수','인증대기','진행보류'];
+
+  const summaryHtml = loanListSummary ? `
+    <div class="stat-cards" style="margin-bottom:10px;">
+      <div class="stat-card"><div class="label">금일 접수</div><div class="value">${loanListSummary.todayApply}건</div></div>
+      <div class="stat-card"><div class="label">금일 승인</div><div class="value">${loanListSummary.todayApproved}건 / ${loanListSummary.todayApprovedAmount}만원</div></div>
+      <div class="stat-card"><div class="label">금일 부결</div><div class="value">${loanListSummary.todayRejected}건</div></div>
+    </div>` : '';
+
+  const statusBadge = (s) => {
+    const map = {'접수':'badge-submit','전송':'badge-submit','심사':'badge-review','가승인':'badge-review','승인':'badge-approved','부결':'badge-rejected','진행후부결':'badge-rejected','완납':'badge-executed','본인취소':'badge-closed','진행불가':'badge-closed','조회중':'badge-lead','정상접수':'badge-submit','상담중':'badge-consult','진행중':'badge-consult','서류안내':'badge-consult','서류받음':'badge-consult','인증대기':'badge-lead'};
+    return `<span class="badge ${map[s]||'badge-lead'}">${s}</span>`;
+  };
+
+  let rowsHtml = '';
+  if (loanListData.length > 0) {
+    rowsHtml = loanListData.map(r => `
+      <tr>
+        <td>${r.applyDate}</td><td>${r.processDate}</td><td>${r.productName}</td>
+        <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
+        <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
+        <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
+      </tr>`).join('');
+  } else {
+    rowsHtml = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8;">론앤마스터 연동 후 [동기화] 버튼을 클릭하세요.</td></tr>';
+  }
+
   return `
-    <div class="tabs">
-      <div class="tab active">전체</div>
-      <div class="tab">리드</div>
-      <div class="tab">상담</div>
-      <div class="tab">접수</div>
-      <div class="tab">심사중</div>
-      <div class="tab">승인</div>
-      <div class="tab">실행</div>
-      <div class="tab">부결/환수</div>
-    </div>
+    ${summaryHtml}
     <div class="filter-bar">
-      <input type="text" placeholder="고객명/연락처">
-      <select><option>전체 담당자</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
-      <input type="date" value="2026-03-01"> ~ <input type="date" value="2026-03-26">
-      <button class="btn btn-primary">검색</button>
+      <select id="loanStatusFilter">${statusOptions.map(s => `<option>${s}</option>`).join('')}</select>
+      <select id="loanDateType"><option value="접수일">접수일</option><option value="처리일">처리일</option><option value="승인일">승인일</option></select>
+      <select id="loanDateRange"><option value="당월">당월</option><option value="당일">당일</option><option value="전일">전일</option><option value="전월">전월</option></select>
+      <button class="btn btn-primary" onclick="syncLoanList()">동기화</button>
+      <span id="loanSyncStatus" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
     </div>
     <div class="panel">
       <div class="panel-header">
-        <h2>대출 신청 목록 (84건)</h2>
+        <h2>대출 신청 내역 <span style="font-size:12px;color:#94a3b8;font-weight:400;">(론앤마스터 연동)</span></h2>
+        <span style="font-size:11px;color:#94a3b8;">${loanListData.length}건</span>
       </div>
-      <div class="panel-body">
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
-            <tr><th>신청번호</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>상태</th><th>담당자</th><th>신청일</th><th>최종변경</th><th>관리</th></tr>
+            <tr><th>접수일시</th><th>처리일시</th><th>상품명</th><th>모집인</th><th>이름</th><th>생년월일</th><th>성별</th><th>직업구분</th><th>처리상태</th><th>승인액</th><th>심사메모</th></tr>
           </thead>
-          <tbody>
-            <tr><td>LA-20260326-001</td><td>박지영</td><td>3,000만</td><td>3.5%</td><td><span class="badge badge-submit">접수</span></td><td>김대리</td><td>03-26</td><td>03-26 10:30</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>LA-20260325-003</td><td>이승호</td><td>5,000만</td><td>3.0%</td><td><span class="badge badge-review">심사중</span></td><td>이과장</td><td>03-25</td><td>03-26 09:15</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>LA-20260325-002</td><td>최민수</td><td>2,000만</td><td>4.0%</td><td><span class="badge badge-approved">승인</span></td><td>김대리</td><td>03-25</td><td>03-26 08:40</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>LA-20260324-005</td><td>정하나</td><td>1,500만</td><td>3.5%</td><td><span class="badge badge-executed">실행</span></td><td>박사원</td><td>03-24</td><td>03-25 16:20</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
-            <tr><td>LA-20260324-004</td><td>한동욱</td><td>4,000만</td><td>3.0%</td><td><span class="badge badge-rejected">부결</span></td><td>이과장</td><td>03-24</td><td>03-25 14:10</td><td><button class="btn btn-sm btn-outline">상세</button></td></tr>
+          <tbody id="loanListBody">
+            ${rowsHtml}
           </tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+async function syncLoanList() {
+  const statusEl = document.getElementById('loanSyncStatus');
+  const statusFilter = document.getElementById('loanStatusFilter')?.value;
+  const dateType = document.getElementById('loanDateType')?.value;
+  const dateRange = document.getElementById('loanDateRange')?.value;
+
+  if (statusEl) statusEl.textContent = '동기화 중...';
+
+  try {
+    let url = '/api/crawler/loan-list?agentNo=12&upw=1';
+    if (statusFilter && statusFilter !== '전체') url += '&status=' + encodeURIComponent(statusFilter);
+    if (dateType) url += '&dateType=' + encodeURIComponent(dateType);
+    if (dateRange) url += '&dateRange=' + encodeURIComponent(dateRange);
+
+    const res = await fetch(url);
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { if (statusEl) statusEl.textContent = '응답 파싱 실패'; return; }
+
+    if (data.success) {
+      loanListData = data.data.rows || [];
+      loanListSummary = data.data.summary;
+      if (statusEl) statusEl.textContent = `${loanListData.length}건 동기화 완료 (${new Date().toLocaleTimeString()})`;
+      // 테이블 업데이트
+      navigate('loans');
+    } else {
+      if (statusEl) statusEl.textContent = '동기화 실패: ' + (data.message || '');
+    }
+  } catch (e) {
+    if (statusEl) statusEl.textContent = '연결 실패: ' + e.message;
+  }
 }
 
 // ========================================

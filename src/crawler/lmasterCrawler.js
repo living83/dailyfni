@@ -8,6 +8,7 @@ const LMASTER_BASE = 'https://lmaster.kr';
 const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
 const PRODUCT_INFO_URL = LMASTER_BASE + '/admin/agent/win_fininfo.asp';
 const LOAN_APP_URL = LMASTER_BASE + '/admin/agent/loanlist_app.asp';
+const LOAN_LIST_URL = LMASTER_BASE + '/admin/agent/list_loanlist.asp';
 
 // 브라우저 인스턴스 (싱글톤)
 let browser = null;
@@ -262,6 +263,104 @@ async function submitLoanApplication(agentNo, upw, formData) {
 }
 
 // 브라우저 종료
+// 대출신청내역 목록 가져오기 (사용자 행동 모방)
+async function getLoanList(agentNo, upw, filters = {}) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  let url = `${LOAN_LIST_URL}?no=${agentNo}&upw=${upw}`;
+
+  // 필터 파라미터 추가
+  if (filters.status) url += `&s_state=${encodeURIComponent(filters.status)}`;
+  if (filters.dateType) url += `&s_date_type=${filters.dateType}`;
+  if (filters.dateRange) url += `&s_date_range=${filters.dateRange}`;
+  if (filters.product) url += `&s_fin_name=${encodeURIComponent(filters.product)}`;
+
+  await delay(2000, 4000);
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await delay(1500, 2500);
+
+  const data = await page.evaluate(() => {
+    const rows = [];
+    const table = document.querySelector('table.tbl_list') || document.querySelector('table[class*=list]');
+
+    if (!table) {
+      // 테이블 클래스를 못 찾으면 모든 테이블에서 탐색
+      const allTables = document.querySelectorAll('table');
+      for (const t of allTables) {
+        const ths = t.querySelectorAll('th');
+        const thTexts = [...ths].map(th => th.textContent.trim());
+        if (thTexts.includes('이름') && thTexts.includes('처리상태')) {
+          // 이 테이블이 대출 목록 테이블
+          const trs = t.querySelectorAll('tbody tr, tr');
+          for (const tr of trs) {
+            const tds = tr.querySelectorAll('td');
+            if (tds.length >= 10) {
+              rows.push({
+                applyDate: tds[0]?.textContent?.trim() || '',
+                processDate: tds[1]?.textContent?.trim() || '',
+                agency: tds[2]?.textContent?.trim() || '',
+                productName: tds[3]?.textContent?.trim() || '',
+                recruiter: tds[4]?.textContent?.trim() || '',
+                auth: tds[5]?.textContent?.trim() || '',
+                consent: tds[6]?.textContent?.trim() || '',
+                customerName: tds[7]?.textContent?.trim() || '',
+                birthDate: tds[8]?.textContent?.trim() || '',
+                gender: tds[9]?.textContent?.trim() || '',
+                jobType: tds[10]?.textContent?.trim() || '',
+                status: tds[11]?.textContent?.trim() || '',
+                approvedAmount: tds[12]?.textContent?.trim() || '',
+                reviewMemo: tds[13]?.textContent?.trim() || '',
+                branchMemo: tds[14]?.textContent?.trim() || '',
+              });
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    // 요약 정보
+    const summaryText = document.body.innerText;
+    const summaryMatch = summaryText.match(/금일.*접수:(\d+)건.*승인:(\d+)건\/([\d,]+)만원.*부결:(\d+)건/);
+    const summary = summaryMatch ? {
+      todayApply: parseInt(summaryMatch[1]),
+      todayApproved: parseInt(summaryMatch[2]),
+      todayApprovedAmount: summaryMatch[3],
+      todayRejected: parseInt(summaryMatch[4])
+    } : null;
+
+    // 페이지 정보
+    const pageText = document.body.innerText;
+    const totalMatch = pageText.match(/(\d+)건/);
+    const total = totalMatch ? parseInt(totalMatch[1]) : 0;
+
+    return { rows, summary, total };
+  });
+
+  return {
+    ...data,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+// 대출신청 상세 정보 1건 가져오기
+async function getLoanDetail(detailUrl) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  await delay(2000, 3500);
+  await page.goto(LMASTER_BASE + detailUrl, { waitUntil: 'networkidle2' });
+  await delay(1000, 2000);
+
+  const data = await page.evaluate(() => {
+    return { body: document.body.innerText };
+  });
+
+  return {
+    ...data,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
 async function closeBrowser() {
   if (browser) {
     await browser.close();
@@ -285,6 +384,8 @@ module.exports = {
   getProductGuide,
   getProductFidxMap,
   submitLoanApplication,
+  getLoanList,
+  getLoanDetail,
   closeBrowser,
   getStatus
 };
