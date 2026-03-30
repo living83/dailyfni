@@ -28,7 +28,7 @@ class LegalNoticeTool extends Tool {
         {
           id: 'company_info',
           label: '업체 정보',
-          template: '상호: {companyName} | 대표: {ceoName} | 사업자등록번호: {businessNumber} | 대부중개업 등록번호: {registrationNumber}',
+          template: '상호: {companyName} | 대표: {ceoName} | 사업자등록번호: {businessNumber} | 등록번호: {registrationNumber} (대부업, 대부중개업)',
           required: true,
         },
         {

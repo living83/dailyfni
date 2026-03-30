@@ -21,7 +21,7 @@ export default function HeroSection() {
                 clipRule="evenodd"
               />
             </svg>
-            <span className="text-xs font-medium">정식 등록 대부중개업체</span>
+            <span className="text-xs font-medium">2024-금감원-2626 | 대부업·대부중개업 정식 등록</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight mb-4">

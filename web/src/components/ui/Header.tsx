@@ -13,12 +13,17 @@ export default function Header() {
         <div className="flex items-center justify-between h-16">
           {/* 로고 */}
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center">
-              <span className="text-navy font-bold text-sm">FN</span>
+            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+              <span className="text-navy font-bold text-sm">d</span>
             </div>
-            <span className="text-lg font-bold tracking-tight">
-              {SITE.name}
-            </span>
+            <div className="flex flex-col leading-none">
+              <span className="text-base font-bold tracking-wide">
+                DAILY F&I
+              </span>
+              <span className="text-[9px] text-gray-300 tracking-tight hidden sm:block">
+                주식회사 데일리에프앤아이대부
+              </span>
+            </div>
           </Link>
 
           {/* 데스크톱 네비게이션 */}

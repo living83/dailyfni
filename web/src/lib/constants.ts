@@ -1,11 +1,14 @@
 export const SITE = {
-  name: process.env.NEXT_PUBLIC_SITE_NAME || "대부중개",
-  companyName: process.env.NEXT_PUBLIC_COMPANY_NAME || "회사명",
+  name: process.env.NEXT_PUBLIC_SITE_NAME || "DAILY F&I",
+  companyName: process.env.NEXT_PUBLIC_COMPANY_NAME || "(주)데일리에프앤아이대부",
   businessNumber: process.env.NEXT_PUBLIC_BUSINESS_NUMBER || "000-00-00000",
-  ceoName: process.env.NEXT_PUBLIC_CEO_NAME || "대표자명",
+  registrationNumber: process.env.NEXT_PUBLIC_REGISTRATION_NUMBER || "2024-금감원-2626",
+  registrationType: "대부업, 대부중개업",
+  ceoName: process.env.NEXT_PUBLIC_CEO_NAME || "홍나령",
   phone: process.env.NEXT_PUBLIC_PHONE || "1588-0000",
-  email: process.env.NEXT_PUBLIC_EMAIL || "info@example.com",
-  address: process.env.NEXT_PUBLIC_ADDRESS || "서울특별시 강남구",
+  email: process.env.NEXT_PUBLIC_EMAIL || "info@dailyfni.co.kr",
+  address: process.env.NEXT_PUBLIC_ADDRESS || "서울특별시",
+  website: "www.dailyfni.co.kr",
 };
 
 export const CARRIERS = [
@@ -89,8 +92,9 @@ export const LOAN_AREAS = [
   },
 ];
 
-export const COMMON_LEGAL_NOTICE = `※ 대부중개업 법적 고지사항
-• 대부중개업 등록번호: [등록번호 기재]
+export const COMMON_LEGAL_NOTICE = `※ 대부업·대부중개업 법적 고지사항
+• 상호: (주)데일리에프앤아이대부 | 대표: 홍나령
+• 등록번호: 2024-금감원-2626 (대부업, 대부중개업)
 • 대부중개수수료: 대출금액의 0% (고객 부담 없음, 금융사로부터 수수료 수령)
 • 이자율은 연 20% 이내이며, 개인 신용도 및 대출 조건에 따라 달라질 수 있습니다.
 • 과도한 빚은 당신에게 큰 불행을 안겨줄 수 있습니다.

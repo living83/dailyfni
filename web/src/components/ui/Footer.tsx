@@ -22,6 +22,7 @@ export default function Footer() {
             <ul className="space-y-1.5 text-xs">
               <li>상호: {SITE.companyName}</li>
               <li>대표: {SITE.ceoName}</li>
+              <li>등록번호: {SITE.registrationNumber} ({SITE.registrationType})</li>
               <li>사업자등록번호: {SITE.businessNumber}</li>
               <li>주소: {SITE.address}</li>
             </ul>
