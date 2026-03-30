@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "seed": "node src/database/seed.js",
     "demo": "node src/demo.js"
   },
   "keywords": [
@@ -20,6 +21,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.20.0",
     "puppeteer-core": "^24.40.0",
     "uuid": "^10.0.0"
   }

@@ -54,11 +54,15 @@ app.use('/api', loginRoutes);
 // --- 에러 핸들링 ---
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n=== DailyFNI Agency System ===`);
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-  console.log(`Health: http://localhost:${PORT}/api/health`);
-  console.log(`==============================\n`);
+app.listen(PORT, async () => {
+  console.log(`\n=== 대부중개 전산시스템 ===`);
+  console.log(`서버: http://localhost:${PORT}`);
+
+  // MySQL 연결 확인
+  const { testConnection } = require('./database/db');
+  const dbOk = await testConnection();
+  console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+  console.log(`==========================\n`);
 });
 
 module.exports = app;
