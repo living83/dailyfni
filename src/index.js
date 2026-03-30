@@ -10,6 +10,12 @@ const writerRoutes = require('./routes/writerRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const reviewerRoutes = require('./routes/reviewerRoutes');
 const publisherRoutes = require('./routes/publisherRoutes');
+const legalRoutes = require('./routes/legalRoutes');
+const customerRoutes = require('./routes/customerRoutes');
+const contentRoutes = require('./routes/contentRoutes');
+const imageAssetRoutes = require('./routes/imageAssetRoutes');
+const monitoringRoutes = require('./routes/monitoringRoutes');
+const webDesignRoutes = require('./routes/webDesignRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +37,12 @@ app.use('/api', writerRoutes);
 app.use('/api', imageRoutes);
 app.use('/api', reviewerRoutes);
 app.use('/api', publisherRoutes);
+app.use('/api', legalRoutes);
+app.use('/api', customerRoutes);
+app.use('/api', contentRoutes);
+app.use('/api', imageAssetRoutes);
+app.use('/api', monitoringRoutes);
+app.use('/api', webDesignRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
