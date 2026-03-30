@@ -323,91 +323,49 @@ function matchProducts(customer) {
 
   // 고객 정보 정규화
   const age = customer.age || 0;
-  const jobType = customer.jobType || ''; // 직업구분 (form-table의 select 값)
-  const hasVehicle = !!customer.vehicleNo; // 차량번호 유무
-  const vehicleYear = customer.vehicleYear || 0; // 차량연식
-  const vehicleKm = customer.vehicleKm || 0; // 주행거리
-  const recoveryType = customer.recoveryType || '무'; // 회파복 구분
-  const loanAmount = customer.loanAmount || 0; // 대출요청액
+  const jobType = customer.jobType || '';
+  const hasVehicle = !!customer.vehicleNo;
+  const vehicleYear = customer.vehicleYear || 0;
+  const vehicleKm = customer.vehicleKm || 0;
+  const recoveryType = customer.recoveryType || '무';
+  const loanAmount = customer.loanAmount || 0;
 
+  // 1단계: productConditions에 등록된 상품 매칭
   for (const [fidx, cond] of Object.entries(productConditions)) {
-    const match = {
-      fidx: parseInt(fidx),
-      name: cond.name,
-      category: cond.category,
-      notes: cond.notes,
-      score: 0,
-      maxScore: 0,
-      reasons: [],
-      failReasons: []
-    };
-
-    // 1. 직군 매칭 (필수)
-    match.maxScore += 3;
-    const jobMatched = cond.jobTypes.some(j => jobType.includes(j) || j.includes(jobType));
-    if (jobMatched) {
-      match.score += 3;
-      match.reasons.push('직군 적합');
-    } else {
-      match.failReasons.push(`직군 부적합 (${cond.jobTypes.slice(0,3).join(',')}...)`);
-    }
-
-    // 2. 연령 매칭 (필수)
-    match.maxScore += 2;
-    if (age >= cond.ageMin && age <= cond.ageMax) {
-      match.score += 2;
-      match.reasons.push(`연령 적합 (${cond.ageMin}~${cond.ageMax}세)`);
-    } else {
-      match.failReasons.push(`연령 부적합 (${cond.ageMin}~${cond.ageMax}세)`);
-    }
-
-    // 3. 회파복 매칭 (필수)
-    match.maxScore += 3;
-    if (cond.recovery.includes(recoveryType)) {
-      match.score += 3;
-      match.reasons.push('회파복 적합');
-    } else {
-      match.failReasons.push(`회파복 부적합 (${cond.recovery.join('/')} 만 가능)`);
-    }
-
-    // 4. 차량 조건 (해당 시)
-    if (cond.vehicle) {
-      match.maxScore += 2;
-      if (hasVehicle) {
-        match.score += 2;
-        match.reasons.push('차량 보유 ✓');
-        // 차량 연식 체크
-        if (cond.vehicleYear && vehicleYear && vehicleYear < cond.vehicleYear) {
-          match.score -= 1;
-          match.failReasons.push(`차량연식 부적합 (${cond.vehicleYear}년식~)`);
-        }
-        // 주행거리 체크
-        if (cond.vehicleKm && vehicleKm && vehicleKm > cond.vehicleKm) {
-          match.score -= 1;
-          match.failReasons.push(`주행거리 초과 (${(cond.vehicleKm/10000).toFixed(0)}만km 이하)`);
-        }
-      } else {
-        match.failReasons.push('차량 필요 상품');
-      }
-    }
-
-    // 5. 대출금액 범위
-    if (loanAmount > 0) {
-      match.maxScore += 1;
-      if (loanAmount >= cond.loanMin && loanAmount <= cond.loanMax) {
-        match.score += 1;
-        match.reasons.push('대출금액 범위 적합');
-      } else {
-        match.failReasons.push(`대출금액 범위 초과 (${cond.loanMin}~${cond.loanMax}만)`);
-      }
-    }
-
-    // 매칭률 계산
-    match.matchRate = match.maxScore > 0 ? Math.round((match.score / match.maxScore) * 100) : 0;
-    match.status = match.failReasons.length === 0 ? 'recommended' :
-                   match.matchRate >= 60 ? 'conditional' : 'unsuitable';
-
+    const match = matchOneProduct(parseInt(fidx), cond, { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount });
     results.push(match);
+  }
+
+  // 2단계: products.js에서 productConditions에 없는 상품 자동 매칭
+  if (typeof productCategories !== 'undefined') {
+    const registeredFidx = new Set(Object.keys(productConditions).map(Number));
+    productCategories.forEach(cat => {
+      cat.products.forEach(p => {
+        if (!p.fidx || registeredFidx.has(p.fidx)) return;
+
+        // tags에서 자동 조건 생성
+        const autoCond = {
+          name: p.name,
+          category: cat.name,
+          jobTypes: p.tags || [],
+          ageMin: 20, ageMax: 70,
+          loanMin: 50, loanMax: 10000,
+          vehicle: !!(p.desc && p.desc.includes('🚗')),
+          vehicleYear: null, vehicleKm: null,
+          recovery: detectRecovery(p.name, cat.name),
+          insurance4: null,
+          notes: p.desc ? p.desc.split('\n')[0] : ''
+        };
+
+        // 오토론 카테고리면 차량 필수
+        if (cat.name.includes('오토론') || p.name.includes('오토')) {
+          autoCond.vehicle = true;
+        }
+
+        const match = matchOneProduct(p.fidx, autoCond, { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount });
+        results.push(match);
+      });
+    });
   }
 
   // 매칭률 순 정렬
@@ -419,4 +377,98 @@ function matchProducts(customer) {
     unsuitable: results.filter(r => r.status === 'unsuitable'),
     all: results
   };
+}
+
+// 회파복 자동 감지
+function detectRecovery(productName, categoryName) {
+  const name = productName + categoryName;
+  if (name.includes('회생') || name.includes('파산') || name.includes('회복') || name.includes('회파복')) {
+    const recovery = [];
+    if (name.includes('회생')) recovery.push('회생');
+    if (name.includes('파산')) recovery.push('파산');
+    if (name.includes('회복')) recovery.push('회복');
+    return recovery;
+  }
+  return ['무'];
+}
+
+// 단일 상품 매칭
+function matchOneProduct(fidx, cond, customer) {
+  const { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount } = customer;
+
+  const match = {
+    fidx: fidx,
+    name: cond.name,
+    category: cond.category,
+    notes: cond.notes,
+    score: 0,
+    maxScore: 0,
+    reasons: [],
+    failReasons: []
+  };
+
+  // 1. 직군 매칭 (필수)
+  match.maxScore += 3;
+  const jobMatched = cond.jobTypes.some(j => jobType.includes(j) || j.includes(jobType));
+  if (jobMatched) {
+    match.score += 3;
+    match.reasons.push('직군 적합');
+  } else {
+    match.failReasons.push(`직군 부적합 (${cond.jobTypes.slice(0,3).join(',')}...)`);
+  }
+
+  // 2. 연령 매칭 (필수)
+  match.maxScore += 2;
+  if (age >= cond.ageMin && age <= cond.ageMax) {
+    match.score += 2;
+    match.reasons.push(`연령 적합 (${cond.ageMin}~${cond.ageMax}세)`);
+  } else {
+    match.failReasons.push(`연령 부적합 (${cond.ageMin}~${cond.ageMax}세)`);
+  }
+
+  // 3. 회파복 매칭 (필수)
+  match.maxScore += 3;
+  if (cond.recovery.includes(recoveryType)) {
+    match.score += 3;
+    match.reasons.push('회파복 적합');
+  } else {
+    match.failReasons.push(`회파복 부적합 (${cond.recovery.join('/')} 만 가능)`);
+  }
+
+  // 4. 차량 조건 (해당 시)
+  if (cond.vehicle) {
+    match.maxScore += 2;
+    if (hasVehicle) {
+      match.score += 2;
+      match.reasons.push('차량 보유');
+      if (cond.vehicleYear && vehicleYear && vehicleYear < cond.vehicleYear) {
+        match.score -= 1;
+        match.failReasons.push(`차량연식 부적합 (${cond.vehicleYear}년식~)`);
+      }
+      if (cond.vehicleKm && vehicleKm && vehicleKm > cond.vehicleKm) {
+        match.score -= 1;
+        match.failReasons.push(`주행거리 초과 (${(cond.vehicleKm/10000).toFixed(0)}만km 이하)`);
+      }
+    } else {
+      match.failReasons.push('차량 필요 상품');
+    }
+  }
+
+  // 5. 대출금액 범위
+  if (loanAmount > 0 && cond.loanMin && cond.loanMax) {
+    match.maxScore += 1;
+    if (loanAmount >= cond.loanMin && loanAmount <= cond.loanMax) {
+      match.score += 1;
+      match.reasons.push('대출금액 범위 적합');
+    } else {
+      match.failReasons.push(`대출금액 범위 (${cond.loanMin}~${cond.loanMax}만)`);
+    }
+  }
+
+  // 매칭률 계산
+  match.matchRate = match.maxScore > 0 ? Math.round((match.score / match.maxScore) * 100) : 0;
+  match.status = match.failReasons.length === 0 ? 'recommended' :
+                 match.matchRate >= 60 ? 'conditional' : 'unsuitable';
+
+  return match;
 }
