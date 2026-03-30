@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 :MENU
 title 대부중개 전산시스템
@@ -15,12 +15,12 @@ echo    3. 서버 재시작
 echo    4. 종료
 echo.
 set choice=
-set /p choice=선택:
+set /p choice="선택: "
 
-if [%choice%]==[1] goto START
-if [%choice%]==[2] goto STOP
-if [%choice%]==[3] goto RESTART
-if [%choice%]==[4] goto QUIT
+if "%choice%"=="1" goto START
+if "%choice%"=="2" goto STOP
+if "%choice%"=="3" goto RESTART
+if "%choice%"=="4" goto QUIT
 goto MENU
 
 :START
@@ -32,7 +32,8 @@ if not exist node_modules (
     echo.
 )
 echo [시작] 서버를 백그라운드로 시작합니다...
-start /min "node-server" cmd /c "cd /d "%~dp0" & node src/index.js"
+set PROJDIR=%cd%
+start /min "node-server" cmd /k "cd /d %PROJDIR% && node src/index.js"
 ping 127.0.0.1 -n 3 >nul
 echo [완료] 서버가 시작되었습니다.
 echo        http://localhost:3000
@@ -57,7 +58,8 @@ if not exist node_modules (
     echo.
 )
 echo [시작] 서버를 백그라운드로 시작합니다...
-start /min "node-server" cmd /c "cd /d "%~dp0" & node src/index.js"
+set PROJDIR=%cd%
+start /min "node-server" cmd /k "cd /d %PROJDIR% && node src/index.js"
 ping 127.0.0.1 -n 3 >nul
 echo [완료] 서버가 재시작되었습니다.
 echo        http://localhost:3000
@@ -78,10 +80,7 @@ goto :eof
 
 :KILLNODE
 echo [중지] 서버를 중지합니다...
-tasklist /FI "WINDOWTITLE eq node-server" 2>nul | findstr "cmd" >nul
-if %errorlevel%==0 (
-    taskkill /FI "WINDOWTITLE eq node-server" /F >nul 2>&1
-)
+taskkill /F /IM node.exe >nul 2>&1
 call :KILLPORT
 echo [완료] 서버가 중지되었습니다.
 goto :eof
