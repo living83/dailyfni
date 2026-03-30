@@ -889,34 +889,55 @@ function parsePolicyExcel(input) {
       let currentCategory = '';
       lines.forEach(line => {
         const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        // 카테고리 행 감지 (저축은행, 캐피탈, 오토론, 신용, 회파복 등)
-        const firstCol = cols[0] || '';
-        if (['저축은행','캐피탈','햇살론','오토론','신용','회파복','소비자금융'].some(k => firstCol.includes(k)) && !cols[1]) {
-          currentCategory = firstCol;
-          return;
+        const col0 = (cols[0] || '').replace(/%$/,'');
+        const col1 = (cols[1] || '').replace(/%$/,'');
+        const col2 = cols[2] || '';
+        const col3 = cols[3] || '';
+        const col4 = cols[4] || '';
+
+        // 헤더/설명 행 스킵
+        if (['금융사별 수수료','소비자 금융사별 수수료','수수료 색상','금융사','상품구분'].some(k => col0.includes(k) || col1.includes(k))) return;
+
+        // 상품구분이 있으면 카테고리 업데이트
+        if (col0 && col0.length > 1 && col0 !== '%') {
+          // 카테고리만 있는 행 (금융사 컬럼이 비어있거나 '금융사'인 경우)
+          if (!col1 || col1 === '금융사' || col1 === '지급수당') {
+            currentCategory = col0;
+            return;
+          }
+          // 상품구분 + 금융사 같이 있는 행
+          currentCategory = col0;
         }
-        // 헤더/빈 행 필터링
-        if (!firstCol || firstCol === '금융사' || firstCol === '상품구분' || firstCol === '금융사별 수수료'
-            || firstCol === '수수료 색상 파란색 인상/신규' || firstCol === '수수료 색상 붉은색 인하'
-            || firstCol === '%' || firstCol === '소비자 금융사별 수수료'
-            || firstCol === '오토 통합론') return;
-        // 금융사명에 % 붙은 것 제거
-        const product = firstCol.replace(/%$/,'');
-        if (!product || product.length < 2) return;
-        // 수수료율 파싱
-        const rateUnder = cols[1] || '';
-        const rateOver = cols[2] || '';
-        const auth = cols[3] || '';
-        // 실제 데이터 행만 추가 (수수료율이 있는 행)
-        if (rateUnder || rateOver) {
-          allData.push({
-            category: currentCategory,
-            product: product,
-            rateUnder: rateUnder === '통' ? '통' : rateUnder,
-            rateOver: rateOver,
-            auth: auth
-          });
+
+        // 금융사명 결정 (col0에 있거나 col1에 있음)
+        let product = '';
+        let rateUnder = '';
+        let rateOver = '';
+        let auth = '';
+
+        if (col0 && !['%',''].includes(col0) && col0.length > 1 && (col2 || col3)) {
+          // 상품구분 없이 col0=금융사, col1=수수료1, col2=수수료2, col3=인증
+          product = col0;
+          rateUnder = col1;
+          rateOver = col2;
+          auth = col3;
+        } else if (col1 && col1.length > 1 && col1 !== '지급수당' && (col2 || col3)) {
+          // col0=상품구분(or빈칸), col1=금융사, col2=수수료1, col3=수수료2, col4=인증
+          product = col1;
+          rateUnder = col2;
+          rateOver = col3;
+          auth = col4;
         }
+
+        if (!product || product === '%') return;
+
+        allData.push({
+          category: currentCategory,
+          product: product,
+          rateUnder: rateUnder,
+          rateOver: rateOver,
+          auth: auth
+        });
       });
       processed++;
       if (processed === files.length) {
