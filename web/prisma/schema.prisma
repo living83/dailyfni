@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── 고객 신청 ───
+model Application {
+  id              String   @id @default(uuid())
+  name            String   @db.VarChar(50)
+  carrier         String   @db.VarChar(20) // 통신사
+  phone           String   @db.VarChar(20)
+  consentGiven    Boolean  @default(false)
+  isEmployee      String?  @db.VarChar(20) // 직장인/자영업/무직/기타
+  has4Insurance   String?  @db.VarChar(10) // 가입/미가입
+  step            Int      @default(1)
+  status          String   @default("pending") @db.VarChar(20) // pending, submitted, completed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  submissions ApplicationSubmission[]
+
+  @@map("applications")
+}
+
+model ApplicationSubmission {
+  id              String   @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id])
+  transmissionType String  @db.VarChar(20) // primary, secondary
+  payload         String   @db.Text // 전송 항목 (마스킹 저장)
+  status          String   @default("pending") @db.VarChar(20) // pending, success, failed, waiting
+  failReason      String?  @db.Text
+  retryCount      Int      @default(0)
+  maxRetry        Int      @default(3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("application_submissions")
+}
+
+// ─── 이미지 자산 관리 ───
+model ImageAsset {
+  id          String   @id @default(uuid())
+  fileUrl     String   @db.VarChar(500)
+  fileName    String   @db.VarChar(255)
+  fileSize    Int
+  fileType    String   @db.VarChar(20) // jpg, png, webp
+  purpose     String   @db.VarChar(50) // main_banner, thumbnail, landing_header, inline, cta_banner
+  area        String   @db.VarChar(50) // rehabilitation, auto, credit, realestate
+  slot        String?  @db.VarChar(50)
+  status      String   @default("draft") @db.VarChar(20) // draft, review, approved, deployed, rejected
+  aiPrompt    String?  @db.Text
+  riskLevel   String?  @db.VarChar(20) // normal, high
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reviews     ImageReview[]
+  deployments ImageDeployment[]
+
+  @@map("image_assets")
+}
+
+model ImageReview {
+  id            String   @id @default(uuid())
+  assetId       String
+  asset         ImageAsset @relation(fields: [assetId], references: [id])
+  reviewerId    String
+  stage         String   @db.VarChar(20) // review, approve, reject
+  checklist     String   @db.Text // JSON 형태의 체크리스트 결과
+  rejectReason  String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  @@map("image_reviews")
+}
+
+model ImageDeployment {
+  id              String   @id @default(uuid())
+  assetId         String
+  asset           ImageAsset @relation(fields: [assetId], references: [id])
+  deployedBy      String
+  targetPage      String   @db.VarChar(100)
+  targetSlot      String   @db.VarChar(100)
+  previousAssetId String?
+  createdAt       DateTime @default(now())
+
+  @@map("image_deployments")
+}
+
+// ─── 메인 섹션 관리 ───
+model MainSection {
+  id          String   @id @default(uuid())
+  areaCode    String   @unique @db.VarChar(50) // rehabilitation, auto, credit, realestate
+  title       String   @db.VarChar(100)
+  description String   @db.Text
+  sortOrder   Int
+  isVisible   Boolean  @default(true)
+  legalNotice String   @db.Text
+  isProtected Boolean  @default(false) // 법적 필수 고지 섹션 OFF 방지
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  changeLogs SectionChangeLog[]
+
+  @@map("main_sections")
+}
+
+model SectionChangeLog {
+  id          String   @id @default(uuid())
+  sectionId   String
+  section     MainSection @relation(fields: [sectionId], references: [id])
+  changedBy   String
+  changeType  String   @db.VarChar(50) // order, visibility, content
+  beforeValue String   @db.Text
+  afterValue  String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@map("section_change_logs")
+}
+
+// ─── 랜딩 페이지 ───
+model LandingPage {
+  id              String   @id @default(uuid())
+  areaCode        String   @unique @db.VarChar(50)
+  title           String   @db.VarChar(200)
+  description     String   @db.Text
+  eligibility     String   @db.Text // 자격 조건
+  loanLimit       String   @db.VarChar(200) // 한도
+  interestRate    String   @db.VarChar(200) // 금리
+  fees            String   @db.VarChar(200) // 수수료
+  repaymentMethod String   @db.Text // 상환 방식
+  legalNotice     String   @db.Text
+  ctaPosition     String   @default("bottom") @db.VarChar(20) // top, bottom, both
+  ctaChannels     String   @default("[]") @db.Text // JSON array
+  isPublished     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("landing_pages")
+}
+
+// ─── 법적 고지 문구 ───
+model LegalNotice {
+  id        String   @id @default(uuid())
+  type      String   @db.VarChar(20) // common, area_specific
+  areaCode  String?  @db.VarChar(50) // null이면 공통
+  content   String   @db.Text
+  version   Int      @default(1)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("legal_notices")
+}
+
+// ─── 전산 연동 설정 ───
+model IntegrationSetting {
+  id            String   @id @default(uuid())
+  method        String   @db.VarChar(20) // api, file, manual
+  endpoint      String?  @db.VarChar(500)
+  authKey       String?  @db.Text // 암호화 저장
+  fileFormat    String?  @db.VarChar(20)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("integration_settings")
+}
+
+// ─── 연동 로그 ───
+model IntegrationLog {
+  id            String   @id @default(uuid())
+  submissionId  String?
+  requestTime   DateTime @default(now())
+  payload       String   @db.Text // 마스킹된 전송 항목
+  status        String   @db.VarChar(20) // success, failed, waiting
+  failReason    String?  @db.Text
+  retryCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@map("integration_logs")
+}
+
+// ─── 관리자 ───
+model AdminUser {
+  id          String   @id @default(uuid())
+  email       String   @unique @db.VarChar(100)
+  password    String   @db.VarChar(255)
+  name        String   @db.VarChar(50)
+  role        String   @default("admin") @db.VarChar(20)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+// ─── 감사 로그 ───
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String   @db.VarChar(100)
+  target    String   @db.VarChar(100)
+  targetId  String?
+  detail    String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ─── 고객 문의 ───
+model ContactInquiry {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(50)
+  phone     String   @db.VarChar(20)
+  email     String?  @db.VarChar(100)
+  content   String   @db.Text
+  status    String   @default("pending") @db.VarChar(20) // pending, replied, closed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("contact_inquiries")
+}
