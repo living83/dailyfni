@@ -724,9 +724,6 @@ function renderSettlementPolicy() {
           <input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">
           <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 정산 정책 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
         </div>
-        <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
-          엑셀 컬럼 예시: 상품명 | 수수료율 | 환수기준 | 적용시작월 | 비고
-        </div>
       </div>
     </div>
     <div class="panel">
@@ -736,15 +733,15 @@ function renderSettlementPolicy() {
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead><tr><th>상품명</th><th>수수료율</th><th>환수기준</th><th>적용시작월</th><th>비고</th></tr></thead>
+          <thead><tr><th>상품구분</th><th>금융사</th><th>지급수당(500만이하)</th><th>지급수당(500만초과)</th><th>인증</th></tr></thead>
           <tbody id="policyTableBody">
             ${settlementPolicyData.length > 0 ?
               settlementPolicyData.map(p => `<tr>
-                <td>${p.product||''}</td>
-                <td style="font-weight:600;">${p.feeRate||''}%</td>
-                <td>${p.clawback||''}</td>
-                <td>${p.effectiveMonth||''}</td>
-                <td>${p.note||''}</td>
+                <td>${p.category||''}</td>
+                <td style="font-weight:600;">${p.product||''}</td>
+                <td>${p.rateUnder||''}</td>
+                <td>${p.rateOver||''}</td>
+                <td>${p.auth||''}</td>
               </tr>`).join('') :
               '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8;">엑셀 파일을 업로드하면 정책이 표시됩니다.</td></tr>'
             }
@@ -889,18 +886,38 @@ function parsePolicyExcel(input) {
     }
     readSpreadsheetFile(file, function(text) {
       const lines = text.split('\n').filter(l => l.trim());
-      if (lines.length >= 2) {
-        lines.slice(1).forEach(line => {
-          const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+      let currentCategory = '';
+      lines.forEach(line => {
+        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        // 카테고리 행 감지 (저축은행, 캐피탈, 오토론, 신용, 회파복 등)
+        const firstCol = cols[0] || '';
+        if (['저축은행','캐피탈','햇살론','오토론','신용','회파복','소비자금융'].some(k => firstCol.includes(k)) && !cols[1]) {
+          currentCategory = firstCol;
+          return;
+        }
+        // 헤더/빈 행 필터링
+        if (!firstCol || firstCol === '금융사' || firstCol === '상품구분' || firstCol === '금융사별 수수료'
+            || firstCol === '수수료 색상 파란색 인상/신규' || firstCol === '수수료 색상 붉은색 인하'
+            || firstCol === '%' || firstCol === '소비자 금융사별 수수료'
+            || firstCol === '오토 통합론') return;
+        // 금융사명에 % 붙은 것 제거
+        const product = firstCol.replace(/%$/,'');
+        if (!product || product.length < 2) return;
+        // 수수료율 파싱
+        const rateUnder = cols[1] || '';
+        const rateOver = cols[2] || '';
+        const auth = cols[3] || '';
+        // 실제 데이터 행만 추가 (수수료율이 있는 행)
+        if (rateUnder || rateOver) {
           allData.push({
-            product: cols[0] || '',
-            feeRate: cols[1] || '',
-            clawback: cols[2] || '',
-            effectiveMonth: cols[3] || '',
-            note: cols[4] || ''
+            category: currentCategory,
+            product: product,
+            rateUnder: rateUnder === '통' ? '통' : rateUnder,
+            rateOver: rateOver,
+            auth: auth
           });
-        });
-      }
+        }
+      });
       processed++;
       if (processed === files.length) {
         settlementPolicyData = allData;
