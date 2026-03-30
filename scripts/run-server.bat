@@ -12,7 +12,8 @@ echo.
 echo    1. 서버 시작
 echo    2. 서버 중지
 echo    3. 서버 재시작
-echo    4. 종료
+echo    4. 초기 데이터 생성 (최초 1회)
+echo    5. 종료
 echo.
 set choice=
 set /p choice="선택: "
@@ -20,7 +21,8 @@ set /p choice="선택: "
 if "%choice%"=="1" goto START
 if "%choice%"=="2" goto STOP
 if "%choice%"=="3" goto RESTART
-if "%choice%"=="4" goto QUIT
+if "%choice%"=="4" goto SEED
+if "%choice%"=="5" goto QUIT
 goto MENU
 
 :START
@@ -29,6 +31,17 @@ call :KILLPORT
 if not exist node_modules (
     echo [설치] npm install 실행 중...
     call npm install
+    echo.
+)
+if not exist .env (
+    echo [설정] .env 파일 생성 중...
+    echo DB_HOST=localhost>.env
+    echo DB_PORT=3306>>.env
+    echo DB_USER=root>>.env
+    echo DB_PASSWORD=Ajtwoddl83!>>.env
+    echo DB_NAME=dailyfni>>.env
+    echo PORT=3000>>.env
+    echo [완료] .env 파일 생성됨
     echo.
 )
 echo [시작] 서버를 백그라운드로 시작합니다...
@@ -52,17 +65,20 @@ goto MENU
 echo.
 call :KILLNODE
 ping 127.0.0.1 -n 2 >nul
-if not exist node_modules (
-    echo [설치] npm install 실행 중...
-    call npm install
-    echo.
-)
 echo [시작] 서버를 백그라운드로 시작합니다...
 set PROJDIR=%cd%
 start /min "node-server" cmd /k "cd /d %PROJDIR% && node src/index.js"
 ping 127.0.0.1 -n 3 >nul
 echo [완료] 서버가 재시작되었습니다.
 echo        http://localhost:3000
+echo.
+pause
+goto MENU
+
+:SEED
+echo.
+echo [초기화] 직원 계정 생성 중...
+call node src/database/seed.js
 echo.
 pause
 goto MENU
