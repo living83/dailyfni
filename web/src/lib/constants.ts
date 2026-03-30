@@ -8,7 +8,7 @@ export const SITE = {
   phone: process.env.NEXT_PUBLIC_PHONE || "02-2138-0759",
   complaintPhone: "02-2138-0749",
   email: process.env.NEXT_PUBLIC_EMAIL || "info@dailyfni.co.kr",
-  address: process.env.NEXT_PUBLIC_ADDRESS || "서울시 강남구 자봉로센길 606 대상디트레지아빌리스타 615호",
+  address: process.env.NEXT_PUBLIC_ADDRESS || "서울특별시 금천구 서부샛길606 대성디폴리스지식산업센터 비동 2604-1호",
   website: "www.dailyfni.co.kr",
 };
 
@@ -96,7 +96,7 @@ export const LOAN_AREAS = [
 export const COMMON_LEGAL_NOTICE = `※ 대부업·대부중개업 법적 고지사항
 • 상호: (주)데일리에프앤아이대부 | 대표: 홍나령 | 사업자등록번호: 894-86-03385
 • 대부업 등록번호: 2024-금감원-2626 (대부업, 대부중개업)
-• 주소: 서울시 강남구 자봉로센길 606 대상디트레지아빌리스타 615호
+• 주소: 서울특별시 금천구 서부샛길606 대성디폴리스지식산업센터 비동 2604-1호
 • 고객문의접수: 02-2138-0749 | 대표전화: 02-2138-0759
 • 금리 연 20% 이내(연체금리는 약정금리+3% 이내, 연 20% 이내) 건, 2021.7.7부터 적용
 • 취급수수료 등 부대비용 없음 ※ 대부대비: 등록대부업체, 자발교부세, 등기신청수수료, 근저당권설정/말소 관련비용 등은 별도 부담
