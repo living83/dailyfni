@@ -1294,45 +1294,96 @@ setTimeout(() => { if (employeeList.length === 0) loadEmployees(); }, 500);
 // ========================================
 // 10. 알림
 // ========================================
+let notificationData = [];
+let notiFilter = 'unread';
+
 function renderNotifications() {
+  if (notificationData.length === 0) loadNotifications();
+
+  const unreadCount = notificationData.filter(n => !n.is_read).length;
+  const filtered = notiFilter === 'unread' ? notificationData.filter(n => !n.is_read) : notificationData;
+
+  const typeIcon = (t) => {
+    const map = { reminder: '상담 리마인더', stagnant: '상태 정체', document: '서류 미비', system: '시스템' };
+    return map[t] || '알림';
+  };
+
+  const rows = filtered.length > 0 ? filtered.map(n => {
+    const date = n.created_at ? new Date(n.created_at).toLocaleString('ko-KR') : '';
+    return `<div class="timeline-item" style="${n.is_read ? 'opacity:0.6;' : ''}">
+      <div class="tl-date">${date}</div>
+      <div class="tl-content"><strong>${n.title}</strong></div>
+      <div class="tl-user">${n.content || ''}${!n.is_read ? ` <a href="#" onclick="markNotiRead(${n.id});return false;" style="color:#3b82f6;font-size:10px;">읽음</a>` : ''}</div>
+    </div>`;
+  }).join('') : '<div style="text-align:center;padding:30px;color:#94a3b8;">알림이 없습니다.</div>';
+
   return `
     <div class="tabs">
-      <div class="tab active">미확인 (3)</div>
-      <div class="tab">전체</div>
+      <div class="tab ${notiFilter==='unread'?'active':''}" onclick="notiFilter='unread';navigate('notifications')">미확인 (${unreadCount})</div>
+      <div class="tab ${notiFilter==='all'?'active':''}" onclick="notiFilter='all';navigate('notifications')">전체</div>
+    </div>
+    <div class="filter-bar">
+      <button class="btn btn-outline btn-sm" onclick="markAllNotiRead()">전체 읽음</button>
+      <button class="btn btn-outline btn-sm" onclick="loadNotifications()">새로고침</button>
     </div>
     <div class="panel">
-      <div class="panel-body">
-        <div class="timeline">
-          <div class="timeline-item">
-            <div class="tl-date">2026-03-26 10:30</div>
-            <div class="tl-content"><strong>[상담 리마인더]</strong> 박지영 고객 서류 제출 확인 예정 (03-28)</div>
-            <div class="tl-user">담당: 김대리</div>
-          </div>
-          <div class="timeline-item">
-            <div class="tl-date">2026-03-26 09:00</div>
-            <div class="tl-content"><strong>[상태 정체]</strong> 이승호 고객 - 심사중 상태 3일 경과</div>
-            <div class="tl-user">담당: 이과장</div>
-          </div>
-          <div class="timeline-item">
-            <div class="tl-date">2026-03-25 17:00</div>
-            <div class="tl-content"><strong>[서류 미비]</strong> 강서연 고객 - 소득 증빙서류 미제출 (2일 경과)</div>
-            <div class="tl-user">담당: 김대리</div>
-          </div>
-          <div class="timeline-item">
-            <div class="tl-date">2026-03-25 09:00</div>
-            <div class="tl-content"><strong>[월 마감 안내]</strong> 2026년 3월 정산 마감 D-5</div>
-            <div class="tl-user">시스템</div>
-          </div>
-          <div class="timeline-item">
-            <div class="tl-date">2026-03-24 15:20</div>
-            <div class="tl-content"><strong>[상태 변경]</strong> 정하나 고객 대출 실행 완료</div>
-            <div class="tl-user">처리: 박사원</div>
-          </div>
-        </div>
+      <div class="panel-body" style="padding:8px 12px;">
+        <div class="timeline">${rows}</div>
       </div>
     </div>
   `;
 }
+
+async function loadNotifications() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+    const res = await fetch(`/api/notifications?userId=${user.id || ''}`);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      notificationData = data.data;
+      // 헤더 뱃지 업데이트
+      updateNotiBadge();
+    }
+  } catch (e) { console.error(e); }
+}
+
+function updateNotiBadge() {
+  const unread = notificationData.filter(n => !n.is_read).length;
+  const badge = document.querySelector('.nav-badge');
+  if (badge) badge.textContent = unread > 0 ? unread : '';
+  const dot = document.querySelector('.noti-dot');
+  if (dot) dot.style.display = unread > 0 ? '' : 'none';
+}
+
+async function markNotiRead(id) {
+  try {
+    await fetch(`/api/notifications/${id}/read`, { method: 'PUT' });
+    const noti = notificationData.find(n => n.id === id);
+    if (noti) noti.is_read = 1;
+    navigate('notifications');
+    updateNotiBadge();
+  } catch (e) { console.error(e); }
+}
+
+async function markAllNotiRead() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+    await fetch('/api/notifications/read-all', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id })
+    });
+    notificationData.forEach(n => n.is_read = 1);
+    navigate('notifications');
+    updateNotiBadge();
+  } catch (e) { console.error(e); }
+}
+
+// 30초마다 알림 자동 확인
+setInterval(() => loadNotifications(), 30000);
+// 페이지 로드 시 알림 로드
+setTimeout(() => loadNotifications(), 1000);
 
 // ========================================
 // 11. 감사로그

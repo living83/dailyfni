@@ -20,6 +20,7 @@ const crawlerRoutes = require('./routes/crawlerRoutes');
 const loginRoutes = require('./routes/loginRoutes');
 const settlementApiRoutes = require('./routes/settlementApiRoutes');
 const employeeApiRoutes = require('./routes/employeeApiRoutes');
+const notificationApiRoutes = require('./routes/notificationApiRoutes');
 
 const path = require('path');
 
@@ -54,6 +55,7 @@ app.use('/api', crawlerRoutes);
 app.use('/api', loginRoutes);
 app.use('/api', settlementApiRoutes);
 app.use('/api', employeeApiRoutes);
+app.use('/api', notificationApiRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
