@@ -15,7 +15,7 @@ export default function Header() {
           {/* 로고 */}
           <Link href="/" className="flex items-center">
             <Image
-              src="/logo-white.svg"
+              src="/logo-white.png"
               alt="DAILY F&I - 주식회사 데일리에프앤아이대부"
               width={180}
               height={40}

@@ -21,7 +21,7 @@ export default function Footer() {
           <div className="md:col-span-2">
             <div className="mb-4">
               <Image
-                src="/logo-white.svg"
+                src="/logo-white.png"
                 alt="DAILY F&I - 주식회사 데일리에프앤아이대부"
                 width={160}
                 height={36}
