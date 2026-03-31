@@ -19,13 +19,28 @@ export default function ApplyPage() {
   const [submitted, setSubmitted] = useState(false);
   const [complete, setComplete] = useState(false);
 
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
   const updateField = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: "" }));
     if (field === "consent") setConsentWarning(false);
   };
 
-  const handleStep1Submit = () => {
+  // 전산 API로 데이터 전송
+  const sendToSystem = async (data: Record<string, string>) => {
+    const endpoint = process.env.NEXT_PUBLIC_INTAKE_API || "http://localhost:3000/api/intake/homepage";
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("전송 실패");
+    return res.json();
+  };
+
+  const handleStep1Submit = async () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name || formData.name.trim().length < 2)
@@ -42,20 +57,53 @@ export default function ApplyPage() {
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
 
-    setSubmitted(true);
-    setStep(2);
+    // 1차 전송: 필수 정보 → 대부중개 전산
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await sendToSystem({
+        name: formData.name.trim(),
+        phone: formData.phone.replace(/-/g, ""),
+        content: `통신사: ${formData.carrier}`,
+        source: "홈페이지",
+      });
+      setSubmitted(true);
+      setStep(2);
+    } catch {
+      setSubmitError("접수에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleStep2Submit = () => {
+  const handleStep2Submit = async () => {
     if (!formData.employmentType) return;
     if (formData.employmentType === "employed") {
       setStep(3);
     } else {
+      // 2차 전송: 추가 정보
+      try {
+        await sendToSystem({
+          name: formData.name.trim(),
+          phone: formData.phone.replace(/-/g, ""),
+          content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType}`,
+          source: "홈페이지",
+        });
+      } catch { /* 2차 전송 실패는 무시 */ }
       setComplete(true);
     }
   };
 
-  const handleStep3Submit = () => {
+  const handleStep3Submit = async () => {
+    // 2차 전송: 전체 정보
+    try {
+      await sendToSystem({
+        name: formData.name.trim(),
+        phone: formData.phone.replace(/-/g, ""),
+        content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType} / 4대보험: ${formData.has4Insurance}`,
+        source: "홈페이지",
+      });
+    } catch { /* 2차 전송 실패는 무시 */ }
     setComplete(true);
   };
 
@@ -211,11 +259,16 @@ export default function ApplyPage() {
                   )}
                 </div>
 
+                {submitError && (
+                  <p className="text-error text-sm text-center font-medium">{submitError}</p>
+                )}
+
                 <button
                   onClick={handleStep1Submit}
-                  className="w-full py-3.5 bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg transition-colors"
+                  disabled={submitting}
+                  className="w-full py-3.5 bg-accent hover:bg-accent-hover disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
                 >
-                  등록
+                  {submitting ? "접수 중..." : "등록"}
                 </button>
               </div>
             </div>
