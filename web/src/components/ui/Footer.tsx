@@ -7,11 +7,11 @@ export default function Footer() {
       {/* 빨간 경고문 */}
       <div className="bg-white border-t border-gray-200 py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-1">
-          <p className="text-error text-sm sm:text-base font-semibold">대출실행시 이자외에 기타비용 일체없음, 중개수수료를 요구하거나 받는 것은 불법입니다.</p>
-          <p className="text-error text-sm sm:text-base font-semibold">대출이자 또는 원금연체시 신용상에 불이익을 받으실 수 있습니다.</p>
-          <p className="text-error text-sm sm:text-base font-semibold">과도한 빚, 고통의 시작입니다.</p>
-          <p className="text-error text-sm sm:text-base font-semibold">대출 시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다.</p>
-          <p className="text-error text-sm sm:text-base font-semibold">대출 시 신용등급 또는 개인신용평점 하락으로 다른 금융거래가 제약받을 수 있습니다.</p>
+          <p className="text-error text-lg sm:text-xl font-bold">대출실행시 이자외에 기타비용 일체없음, 중개수수료를 요구하거나 받는 것은 불법입니다.</p>
+          <p className="text-error text-lg sm:text-xl font-bold">대출이자 또는 원금연체시 신용상에 불이익을 받으실 수 있습니다.</p>
+          <p className="text-error text-lg sm:text-xl font-bold">과도한 빚, 고통의 시작입니다.</p>
+          <p className="text-error text-lg sm:text-xl font-bold">대출 시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다.</p>
+          <p className="text-error text-lg sm:text-xl font-bold">대출 시 신용등급 또는 개인신용평점 하락으로 다른 금융거래가 제약받을 수 있습니다.</p>
         </div>
       </div>
 
