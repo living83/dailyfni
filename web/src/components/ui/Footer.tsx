@@ -71,6 +71,8 @@ export default function Footer() {
               <ul className="space-y-1.5 text-xs">
                 <li><Link href="/terms" className="hover:text-white transition-colors">이용약관</Link></li>
                 <li><Link href="/privacy" className="hover:text-white transition-colors font-semibold text-gray-300">개인정보처리방침</Link></li>
+                <li><Link href="/legal" className="hover:text-white transition-colors">책임의 한계와 법적고지</Link></li>
+                <li><Link href="/sms-terms" className="hover:text-white transition-colors">SMS약관</Link></li>
                 <li><Link href="/contact" className="hover:text-white transition-colors">고객문의</Link></li>
                 <li><Link href="/apply" className="hover:text-white transition-colors">온라인 신청</Link></li>
               </ul>
