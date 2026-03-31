@@ -383,13 +383,13 @@ function renderLoanRegister() {
       </div>
       <div class="panel-body" style="padding:0;">
 
-        <!-- 등록직원 -->
+        <!-- 등록직원 (로그인 사용자 자동 셋팅) -->
         <table class="form-table">
           <tbody>
             <tr>
               <th>등록직원</th>
               <td colspan="5">
-                <select style="width:200px;">${sel(['==선택==','김대리','이과장','박사원'], c ? c.assignedTo : '==선택==')}</select>
+                <input type="text" style="width:200px;background:#f1f5f9;" value="${(() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}').name||''; } catch { return ''; } })()}" readonly>
               </td>
             </tr>
           </tbody>
