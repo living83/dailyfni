@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { SITE, COMMON_LEGAL_NOTICE } from "@/lib/constants";
 
 export default function Footer() {
@@ -18,14 +19,13 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* 로고 & 회사 정보 */}
           <div className="md:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-7 h-7 bg-white rounded-full flex items-center justify-center">
-                <span className="text-navy font-bold text-xs">d</span>
-              </div>
-              <div className="leading-none">
-                <span className="text-white font-bold text-sm tracking-wide">DAILY F&I</span>
-                <span className="block text-[9px] text-gray-500">주식회사 데일리에프앤아이대부</span>
-              </div>
+            <div className="mb-4">
+              <Image
+                src="/logo-white.svg"
+                alt="DAILY F&I - 주식회사 데일리에프앤아이대부"
+                width={160}
+                height={36}
+              />
             </div>
             <ul className="space-y-1.5 text-xs">
               <li>상호: {SITE.companyName} | 대표: {SITE.ceoName}</li>

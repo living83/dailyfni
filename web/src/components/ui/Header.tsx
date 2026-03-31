@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { SITE, LOAN_AREAS } from "@/lib/constants";
+import Image from "next/image";
+import { LOAN_AREAS } from "@/lib/constants";
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -12,18 +13,14 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* 로고 */}
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
-              <span className="text-navy font-bold text-sm">d</span>
-            </div>
-            <div className="flex flex-col leading-none">
-              <span className="text-base font-bold tracking-wide">
-                DAILY F&I
-              </span>
-              <span className="text-[9px] text-gray-300 tracking-tight hidden sm:block">
-                주식회사 데일리에프앤아이대부
-              </span>
-            </div>
+          <Link href="/" className="flex items-center">
+            <Image
+              src="/logo-white.svg"
+              alt="DAILY F&I - 주식회사 데일리에프앤아이대부"
+              width={180}
+              height={40}
+              priority
+            />
           </Link>
 
           {/* 데스크톱 네비게이션 */}
