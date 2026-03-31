@@ -8,7 +8,7 @@ export default function Footer() {
       {/* 법적 고지 */}
       <div className="bg-gray-800 border-t border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <p className="text-xs leading-relaxed whitespace-pre-line text-gray-400">
+          <p className="text-[10px] leading-relaxed whitespace-pre-line text-gray-400">
             {COMMON_LEGAL_NOTICE}
           </p>
         </div>

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { LOAN_AREAS } from "@/lib/constants";
 
 export default function Header() {
@@ -10,17 +9,20 @@ export default function Header() {
 
   return (
     <header className="bg-navy text-white sticky top-0 z-50 shadow-lg">
+      {/* 상단 고지 바 */}
+      <div className="bg-navy-dark border-b border-navy-light">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-[10px] text-gray-400 py-1 text-center sm:text-left">
+            (주)데일리에프앤아이대부중개 2024-금감원-2626(대부중개업)
+          </p>
+        </div>
+      </div>
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-14">
           {/* 로고 */}
-          <Link href="/" className="flex items-center">
-            <Image
-              src="/logo-white.png"
-              alt="DAILY F&I - 주식회사 데일리에프앤아이대부"
-              width={180}
-              height={40}
-              priority
-            />
+          <Link href="/" className="text-base font-bold tracking-wide text-white">
+            DAILY F&I
           </Link>
 
           {/* 데스크톱 네비게이션 */}
@@ -54,26 +56,11 @@ export default function Header() {
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="메뉴 열기"
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {mobileMenuOpen ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               )}
             </svg>
           </button>

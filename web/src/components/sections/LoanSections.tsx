@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LOAN_AREAS, COMMON_LEGAL_NOTICE } from "@/lib/constants";
+import { LOAN_AREAS } from "@/lib/constants";
 
 export default function LoanSections() {
   return (
@@ -122,12 +122,6 @@ export default function LoanSections() {
           </div>
         </div>
 
-        {/* 법적 고지 요약 */}
-        <div className="mt-10 p-4 bg-gray-50 border border-gray-200 rounded-xl">
-          <p className="text-[10px] sm:text-xs text-gray-400 leading-relaxed whitespace-pre-line">
-            {COMMON_LEGAL_NOTICE}
-          </p>
-        </div>
       </div>
     </section>
   );
