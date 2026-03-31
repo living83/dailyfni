@@ -2055,11 +2055,11 @@ function renderIntake() {
                         i.status === 'processed' ? '<span class="badge badge-approved">처리</span>' :
                         '<span class="badge badge-rejected">반려</span>';
     const actions = i.status === 'pending' ? `
-      <button class="btn btn-sm btn-primary" onclick="processIntake(${i.id},'${i.name}','${i.phone}')">접수</button>
+      <button class="btn btn-sm btn-primary" onclick="processIntake(${i.id},'${i.name}','${i.phone}','${(i.content||'').replace(/'/g,"\\'")}','${i.source||'홈페이지'}')">접수</button>
       <button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="rejectIntake(${i.id})">반려</button>
     ` : (i.assigned_to || '-');
 
-    return `<tr>
+    return `<tr ondblclick="processIntake(${i.id},'${i.name}','${i.phone}','${(i.content||'').replace(/'/g,"\\'")}','${i.source||'홈페이지'}')" style="cursor:${i.status==='pending'?'pointer':'default'};" title="${i.status==='pending'?'더블클릭: 고객등록으로 이동':''}">
       <td>${date}</td>
       <td style="font-weight:600;">${i.name}</td>
       <td>${i.phone}</td>
@@ -2146,7 +2146,10 @@ function updateIntakeBadge() {
   }
 }
 
-async function processIntake(id, name, phone) {
+// 신규 유입 → 고객등록 연동 데이터
+let intakePrefill = null;
+
+async function processIntake(id, name, phone, content, source) {
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
   if (!confirm(`${name} (${phone}) 고객을 접수 처리하시겠습니까?\n\n고객등록 화면으로 이동합니다.`)) return;
 
@@ -2156,6 +2159,8 @@ async function processIntake(id, name, phone) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ assignedTo: user.name, assignedToId: user.id })
     });
+    // 고객등록 화면에 데이터 전달
+    intakePrefill = { name: name, phone: phone, memo: content || '', dbSource: source || '홈페이지' };
     intakeData = [];
     navigate('customer-register');
   } catch (e) { alert('오류: ' + e.message); }
@@ -2186,15 +2191,29 @@ setInterval(() => loadIntake(), 60000);
 // 고객 등록 (웹 페이지)
 // ========================================
 function renderCustomerRegister() {
+  const pf = intakePrefill || {};
+  const selDb = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
+  const dbOpts = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','홈페이지','기타'];
+
+  // 사용 후 초기화
+  const prefillBanner = pf.name ? `
+    <div class="panel" style="border-left:3px solid #f59e0b;margin-bottom:6px;">
+      <div class="panel-body" style="padding:8px 14px;font-size:12px;">
+        <strong style="color:#f59e0b;">신규 유입 고객 접수</strong> - ${pf.name} (${pf.phone}) | 출처: ${pf.dbSource||'홈페이지'}
+      </div>
+    </div>
+  ` : '';
+
   return `
+    ${prefillBanner}
     <div style="display:flex;gap:8px;align-items:flex-start;max-width:1305px;">
       <div style="flex:1;min-width:0;">
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
+            <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력" value="${pf.name||''}"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
             <tr><th>만 나이</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select><option>선택</option><option>남</option><option>여</option></select></td></tr>
-            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
-            <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select><option>선택하세요</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>기타</option></select></td></tr>
+            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000" value="${pf.phone||''}"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
+            <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select>${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
             <tr><th>초본 주소</th><td colspan="3"><input type="text" placeholder="초본 주소 입력" style="width:100%;"></td></tr>
             <tr><th>실거주 주소</th><td colspan="3"><input type="text" placeholder="실거주 주소 입력" style="width:100%;"></td></tr>
           </tbody></table>
