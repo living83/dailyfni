@@ -5,6 +5,7 @@
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
   'customer-register': { title: '고객등록', render: renderCustomerRegister },
+  intake: { title: '신규 유입', render: renderIntake },
   'customer-ledger': { title: '고객원장', render: renderCustomerLedger },
   customers: { title: '고객현황', render: renderCustomers },
   loans: { title: '대출 신청 관리', render: renderLoans },
@@ -74,6 +75,7 @@ function navigate(page) {
 // ========================================
 function renderDashboard() {
   return `
+    <div id="intakeCard"></div>
     <div class="stat-cards">
       <div class="stat-card">
         <div class="label">이번 달 신규 고객</div>
@@ -2032,6 +2034,153 @@ function renderCustomerLedger() {
     </div>
   `;
 }
+
+// ========================================
+// 고객 등록 (웹 페이지)
+// ========================================
+// ========================================
+// 신규 유입 페이지
+// ========================================
+let intakeData = [];
+
+function renderIntake() {
+  if (intakeData.length === 0) loadIntake();
+
+  const pending = intakeData.filter(i => i.status === 'pending');
+  const processed = intakeData.filter(i => i.status !== 'pending');
+
+  const rows = intakeData.map(i => {
+    const date = i.created_at ? new Date(i.created_at).toLocaleString('ko-KR') : '';
+    const statusBadge = i.status === 'pending' ? '<span class="badge badge-consult">대기</span>' :
+                        i.status === 'processed' ? '<span class="badge badge-approved">처리</span>' :
+                        '<span class="badge badge-rejected">반려</span>';
+    const actions = i.status === 'pending' ? `
+      <button class="btn btn-sm btn-primary" onclick="processIntake(${i.id},'${i.name}','${i.phone}')">접수</button>
+      <button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="rejectIntake(${i.id})">반려</button>
+    ` : (i.assigned_to || '-');
+
+    return `<tr>
+      <td>${date}</td>
+      <td style="font-weight:600;">${i.name}</td>
+      <td>${i.phone}</td>
+      <td>${i.source || '홈페이지'}</td>
+      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${i.content||''}">${i.content||'-'}</td>
+      <td>${statusBadge}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="stat-cards" style="margin-bottom:10px;">
+      <div class="stat-card" style="border-left:3px solid #f59e0b;">
+        <div class="label">대기 중</div>
+        <div class="value" style="color:#f59e0b;">${pending.length}건</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">처리 완료</div>
+        <div class="value">${processed.length}건</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <h2>신규 유입 고객</h2>
+        <button class="btn btn-outline btn-sm" onclick="loadIntake()">새로고침</button>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>접수일시</th><th>이름</th><th>연락처</th><th>출처</th><th>상담내용</th><th>상태</th><th>처리</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8;">신규 유입 고객이 없습니다.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function loadIntake() {
+  try {
+    const res = await fetch('/api/intake/list');
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      intakeData = data.data;
+      updateIntakeBadge();
+    }
+  } catch (e) { console.error(e); }
+}
+
+function updateIntakeBadge() {
+  const pending = intakeData.filter(i => i.status === 'pending').length;
+  const badge = document.getElementById('intakeBadge');
+  if (badge) {
+    badge.textContent = pending;
+    badge.style.display = pending > 0 ? '' : 'none';
+  }
+  // 대시보드 카드 업데이트
+  const card = document.getElementById('intakeCard');
+  if (card && pending > 0) {
+    const recentPending = intakeData.filter(i => i.status === 'pending').slice(0, 5);
+    card.innerHTML = `
+      <div class="panel" style="border-left:3px solid #f59e0b;margin-bottom:10px;">
+        <div class="panel-header">
+          <h2 style="color:#f59e0b;">신규 유입 고객 (${pending}건)</h2>
+          <button class="btn btn-sm btn-outline" onclick="navigate('intake')">전체보기</button>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <table>
+            <thead><tr><th>이름</th><th>연락처</th><th>출처</th><th>접수시간</th><th>처리</th></tr></thead>
+            <tbody>${recentPending.map(i => {
+              const ago = Math.round((Date.now() - new Date(i.created_at).getTime()) / 60000);
+              const agoText = ago < 60 ? ago + '분전' : Math.round(ago/60) + '시간전';
+              return `<tr>
+                <td style="font-weight:600;">${i.name}</td>
+                <td>${i.phone}</td>
+                <td>${i.source||'홈페이지'}</td>
+                <td>${agoText}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="processIntake(${i.id},'${i.name}','${i.phone}')">접수</button></td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+}
+
+async function processIntake(id, name, phone) {
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  if (!confirm(`${name} (${phone}) 고객을 접수 처리하시겠습니까?\n\n고객등록 화면으로 이동합니다.`)) return;
+
+  try {
+    await fetch(`/api/intake/${id}/process`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedTo: user.name, assignedToId: user.id })
+    });
+    intakeData = [];
+    navigate('customer-register');
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function rejectIntake(id) {
+  const reason = prompt('반려 사유:');
+  if (reason === null) return;
+
+  try {
+    await fetch(`/api/intake/${id}/reject`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason })
+    });
+    intakeData = [];
+    navigate('intake');
+    setTimeout(() => loadIntake(), 100);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// 페이지 로드 시 신규 유입 확인
+setTimeout(() => loadIntake(), 800);
+// 1분마다 자동 확인
+setInterval(() => loadIntake(), 60000);
 
 // ========================================
 // 고객 등록 (웹 페이지)
