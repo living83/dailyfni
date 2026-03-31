@@ -141,15 +141,12 @@ export default function ApplyPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* 미니멀 헤더 */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <Link href="/">
-          <Image src="/logo.png" alt="DAILY F&I" width={140} height={32} />
-        </Link>
-        <Link href="/" className="text-gray-400 hover:text-gray-600">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </Link>
+      <header className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="text-center">
+          <Link href="/" className="text-sm font-bold text-navy">
+            (주)데일리에프앤아이대부 2024-금감원-2626(대부업, 대부중개업)
+          </Link>
+        </div>
       </header>
 
       {/* 프로그레스 바 */}
