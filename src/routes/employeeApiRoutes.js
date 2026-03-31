@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { query } = require('../database/db');
+const { logAudit } = require('../database/auditHelper');
 
 // 직원 목록 조회
 router.get('/employees', async (req, res) => {
@@ -42,6 +43,7 @@ router.post('/employees', async (req, res) => {
       [loginId, name, department || '', position || '', role || 'sales', dataScope || 'self', hash, joinDate || null]
     );
 
+    await logAudit({ eventType: 'employee_manage', targetType: 'employee', targetId: result.insertId, targetName: name, afterValue: `등록 (${role})`, performedBy: 'admin' });
     res.json({ success: true, data: { id: result.insertId }, message: '직원 등록 완료' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -56,6 +58,7 @@ router.put('/employees/:id', async (req, res) => {
       'UPDATE employees SET name=?, department=?, position_title=?, role=?, data_scope=?, is_active=?, join_date=? WHERE id=?',
       [name, department || '', position || '', role || 'sales', dataScope || 'self', isActive !== false ? 1 : 0, joinDate || null, req.params.id]
     );
+    await logAudit({ eventType: 'employee_manage', targetType: 'employee', targetId: req.params.id, targetName: name, afterValue: '직원 정보 수정', performedBy: 'admin' });
     res.json({ success: true, message: '수정 완료' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -70,6 +73,7 @@ router.put('/employees/:id/reset-password', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 12);
     await query('UPDATE employees SET password_hash=? WHERE id=?', [hash, req.params.id]);
+    await logAudit({ eventType: 'employee_manage', targetType: 'employee', targetId: req.params.id, afterValue: '비밀번호 재설정', performedBy: 'admin' });
     res.json({ success: true, message: '비밀번호 변경 완료' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

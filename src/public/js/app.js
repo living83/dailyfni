@@ -1390,33 +1390,74 @@ setTimeout(() => loadNotifications(), 1000);
 // ========================================
 // 11. 감사로그
 // ========================================
+let auditData = [];
+
 function renderAudit() {
+  if (auditData.length === 0) loadAuditLogs();
+
+  const eventLabel = (t) => {
+    const map = { login:'로그인', status_change:'상태 변경', assignee_change:'담당자 변경', settlement_change:'정산 변경', close_month:'월 마감', customer_edit:'고객 수정', customer_delete:'고객 삭제', employee_manage:'직원 관리' };
+    return map[t] || t;
+  };
+  const eventBadge = (t) => {
+    const map = { login:'badge-lead', status_change:'badge-submit', assignee_change:'badge-consult', settlement_change:'badge-review', close_month:'badge-executed', customer_edit:'badge-consult', customer_delete:'badge-rejected', employee_manage:'badge-approved' };
+    return map[t] || 'badge-lead';
+  };
+
+  const rows = auditData.length > 0 ? auditData.map(a => {
+    const date = a.performed_at ? new Date(a.performed_at).toLocaleString('ko-KR') : '';
+    return `<tr>
+      <td style="white-space:nowrap;">${date}</td>
+      <td><span class="badge ${eventBadge(a.event_type)}">${eventLabel(a.event_type)}</span></td>
+      <td>${a.target_name || '-'}</td>
+      <td>${a.before_value || '-'}</td>
+      <td>${a.after_value || '-'}</td>
+      <td>${a.reason || '-'}</td>
+      <td>${a.performed_by || '-'}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8;">감사로그가 없습니다.</td></tr>';
+
   return `
     <div class="filter-bar">
-      <input type="date" value="2026-03-01"> ~ <input type="date" value="2026-03-26">
-      <select><option>전체 직원</option><option>박팀장</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
-      <select><option>전체 이벤트</option><option>상태 변경</option><option>담당자 변경</option><option>정산 변경</option><option>마감 처리</option></select>
-      <button class="btn btn-primary">조회</button>
+      <input type="date" id="auditStart" value="${new Date(Date.now()-30*86400000).toISOString().split('T')[0]}"> ~
+      <input type="date" id="auditEnd" value="${new Date().toISOString().split('T')[0]}">
+      <select id="auditEmployee"><option>전체 직원</option><option>박팀장</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
+      <select id="auditEvent"><option>전체 이벤트</option><option>로그인</option><option>상태 변경</option><option>담당자 변경</option><option>정산 변경</option><option>월 마감</option><option>고객 수정</option><option>고객 삭제</option><option>직원 관리</option></select>
+      <button class="btn btn-primary" onclick="loadAuditLogs()">조회</button>
     </div>
     <div class="panel">
-      <div class="panel-header"><h2>감사로그</h2></div>
-      <div class="panel-body">
+      <div class="panel-header"><h2>감사로그 (${auditData.length}건)</h2></div>
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead>
-            <tr><th>일시</th><th>구분</th><th>대상</th><th>변경 전</th><th>변경 후</th><th>사유</th><th>처리자</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>03-26 10:30</td><td><span class="badge badge-submit">상태 변경</span></td><td>박지영 (LA-0326-001)</td><td>상담</td><td>접수</td><td>서류 접수 완료</td><td>김대리</td></tr>
-            <tr><td>03-26 09:15</td><td><span class="badge badge-submit">상태 변경</span></td><td>이승호 (LA-0325-003)</td><td>접수</td><td>심사중</td><td>심사 의뢰</td><td>이과장</td></tr>
-            <tr><td>03-25 16:20</td><td><span class="badge badge-executed">상태 변경</span></td><td>정하나 (LA-0324-005)</td><td>승인</td><td>실행</td><td>대출 실행 완료</td><td>박사원</td></tr>
-            <tr><td>03-25 14:10</td><td><span class="badge badge-rejected">상태 변경</span></td><td>한동욱 (LA-0324-004)</td><td>심사중</td><td>부결</td><td>소득 기준 미달</td><td>이과장</td></tr>
-            <tr><td>03-25 11:00</td><td><span class="badge badge-consult">담당자 변경</span></td><td>강서연</td><td>박사원</td><td>김대리</td><td>팀 재배치</td><td>박팀장</td></tr>
-            <tr><td>03-24 17:00</td><td><span class="badge badge-review">정산 변경</span></td><td>2월 정산</td><td>-</td><td>환수 85만</td><td>조기 상환 환수</td><td>박팀장</td></tr>
-          </tbody>
+          <thead><tr><th>일시</th><th>구분</th><th>대상</th><th>변경 전</th><th>변경 후</th><th>사유</th><th>처리자</th></tr></thead>
+          <tbody>${rows}</tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+async function loadAuditLogs() {
+  try {
+    const startDate = document.getElementById('auditStart')?.value || '';
+    const endDate = document.getElementById('auditEnd')?.value || '';
+    const employee = document.getElementById('auditEmployee')?.value || '';
+    const eventType = document.getElementById('auditEvent')?.value || '';
+
+    let url = '/api/audit-logs?';
+    if (startDate) url += `startDate=${startDate}&`;
+    if (endDate) url += `endDate=${endDate}&`;
+    if (employee) url += `performedBy=${encodeURIComponent(employee)}&`;
+    if (eventType) url += `eventType=${encodeURIComponent(eventType)}&`;
+
+    const res = await fetch(url);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      auditData = data.data;
+      if (document.getElementById('auditStart')) navigate('audit');
+    }
+  } catch (e) { console.error(e); }
 }
 
 // ========================================

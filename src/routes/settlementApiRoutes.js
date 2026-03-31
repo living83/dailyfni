@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
+const { logAudit } = require('../database/auditHelper');
 
 // === 정산 정책 ===
 
@@ -33,6 +34,7 @@ router.post('/settlement/policies/upload', async (req, res) => {
       );
     }
 
+    await logAudit({ eventType: 'settlement_change', targetType: 'policy', afterValue: `정산 정책 ${policies.length}건 업로드`, performedBy: 'admin' });
     res.json({ success: true, message: `${policies.length}건 저장 완료` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -66,6 +68,7 @@ router.post('/settlement/adjustments/upload', async (req, res) => {
       );
     }
 
+    await logAudit({ eventType: 'settlement_change', targetType: 'adjustment', afterValue: `리베이트/환수 ${adjustments.length}건 업로드`, performedBy: 'admin' });
     res.json({ success: true, message: `${adjustments.length}건 저장 완료` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
