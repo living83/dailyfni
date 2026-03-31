@@ -37,16 +37,16 @@ export const INSURANCE_OPTIONS = [
 export const LOAN_AREAS = [
   {
     code: "rehabilitation",
-    title: "개인회생 · 파산",
-    shortTitle: "개인회생",
-    description: "개인회생 및 파산 관련 전문 상담과 대출 중개 서비스를 제공합니다.",
+    title: "회생 · 파산 · 신용회복",
+    shortTitle: "회생,파산,신용회복",
+    description: "개인회생, 파산, 신용회복 관련 전문 상담과 대출 중개 서비스를 제공합니다.",
     priority: 1,
     color: "navy",
     icon: "shield",
     highlights: [
-      "법원 인가 절차 안내",
       "개인회생 전문 상담",
       "파산 면책 후 재기 지원",
+      "신용회복 절차 안내",
     ],
   },
   {
@@ -78,11 +78,25 @@ export const LOAN_AREAS = [
     ],
   },
   {
+    code: "unemployed",
+    title: "무직자 대출",
+    shortTitle: "무직자",
+    description: "무직자도 가능한 대출 상품을 비교하고 중개합니다.",
+    priority: 4,
+    color: "slate",
+    icon: "user",
+    highlights: [
+      "무직자 맞춤 상품",
+      "담보/신용 대출",
+      "자격 조건 안내",
+    ],
+  },
+  {
     code: "realestate",
     title: "부동산 대출",
     shortTitle: "부동산",
     description: "부동산 담보 대출 및 전세 자금 대출을 중개합니다.",
-    priority: 4,
+    priority: 5,
     color: "gray-700",
     icon: "building",
     highlights: [
