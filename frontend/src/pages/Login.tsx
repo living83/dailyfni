@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Lock, LogIn } from 'lucide-react'
+import { Mail, Lock, LogIn, Sparkles } from 'lucide-react'
 import api from '../lib/api'
 
 export default function Login() {
@@ -20,10 +20,15 @@ export default function Login() {
       localStorage.setItem('token', data.token)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Invalid credentials. Please try again.')
+      setError(err.response?.data?.message || '서버에 연결할 수 없습니다. Demo 모드를 이용하세요.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleDemo = () => {
+    localStorage.setItem('token', 'demo-token')
+    navigate('/')
   }
 
   return (
@@ -104,6 +109,20 @@ export default function Login() {
                 Sign In
               </>
             )}
+          </button>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border"></div></div>
+            <div className="relative flex justify-center text-xs"><span className="bg-card px-3 text-muted-foreground">또는</span></div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDemo}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-primary/30 text-primary font-medium hover:bg-primary/10 transition-colors"
+          >
+            <Sparkles className="w-4 h-4" />
+            Demo 모드로 둘러보기
           </button>
         </form>
       </div>
