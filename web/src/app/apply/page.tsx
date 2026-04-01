@@ -16,11 +16,8 @@ export default function ApplyPage() {
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [consentWarning, setConsentWarning] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [complete, setComplete] = useState(false);
-
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
 
   const updateField = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -28,19 +25,20 @@ export default function ApplyPage() {
     if (field === "consent") setConsentWarning(false);
   };
 
-  // 전산 API로 데이터 전송
-  const sendToSystem = async (data: Record<string, string>) => {
+  // 전산 API 전송 (실패해도 무시 — 고객 경험에 영향 없음)
+  const sendToSystem = (data: Record<string, string>) => {
     const endpoint = process.env.NEXT_PUBLIC_INTAKE_API || "http://localhost:3000/api/intake/homepage";
-    const res = await fetch(endpoint, {
+    fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+    }).catch(() => {
+      // 전산 연동 실패는 백그라운드 처리, 고객에게 영향 없음
+      console.warn("[전산 연동 실패] 데이터:", data);
     });
-    if (!res.ok) throw new Error("전송 실패");
-    return res.json();
   };
 
-  const handleStep1Submit = async () => {
+  const handleStep1Submit = () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name || formData.name.trim().length < 2)
@@ -57,53 +55,45 @@ export default function ApplyPage() {
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
 
-    // 1차 전송: 필수 정보 → 대부중개 전산
     setSubmitting(true);
-    setSubmitError("");
-    try {
-      await sendToSystem({
-        name: formData.name.trim(),
-        phone: formData.phone.replace(/-/g, ""),
-        content: `통신사: ${formData.carrier}`,
-        source: "홈페이지",
-      });
-      setSubmitted(true);
-      setStep(2);
-    } catch {
-      setSubmitError("접수에 실패했습니다. 다시 시도해 주세요.");
-    } finally {
-      setSubmitting(false);
-    }
+
+    // 1차 전송: 전산에 백그라운드 전송 (실패해도 접수 완료 처리)
+    sendToSystem({
+      name: formData.name.trim(),
+      phone: formData.phone.replace(/-/g, ""),
+      content: `통신사: ${formData.carrier}`,
+      source: "홈페이지",
+    });
+
+    // 고객에게는 즉시 접수 완료 → 다음 단계
+    setSubmitting(false);
+    setStep(2);
   };
 
-  const handleStep2Submit = async () => {
+  const handleStep2Submit = () => {
     if (!formData.employmentType) return;
     if (formData.employmentType === "employed") {
       setStep(3);
     } else {
-      // 2차 전송: 추가 정보
-      try {
-        await sendToSystem({
-          name: formData.name.trim(),
-          phone: formData.phone.replace(/-/g, ""),
-          content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType}`,
-          source: "홈페이지",
-        });
-      } catch { /* 2차 전송 실패는 무시 */ }
+      // 2차 전송: 추가 정보 백그라운드 전송
+      sendToSystem({
+        name: formData.name.trim(),
+        phone: formData.phone.replace(/-/g, ""),
+        content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType}`,
+        source: "홈페이지",
+      });
       setComplete(true);
     }
   };
 
-  const handleStep3Submit = async () => {
-    // 2차 전송: 전체 정보
-    try {
-      await sendToSystem({
-        name: formData.name.trim(),
-        phone: formData.phone.replace(/-/g, ""),
-        content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType} / 4대보험: ${formData.has4Insurance}`,
-        source: "홈페이지",
-      });
-    } catch { /* 2차 전송 실패는 무시 */ }
+  const handleStep3Submit = () => {
+    // 2차 전송: 전체 정보 백그라운드 전송
+    sendToSystem({
+      name: formData.name.trim(),
+      phone: formData.phone.replace(/-/g, ""),
+      content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType} / 4대보험: ${formData.has4Insurance}`,
+      source: "홈페이지",
+    });
     setComplete(true);
   };
 
@@ -113,7 +103,7 @@ export default function ApplyPage() {
         <header className="bg-white border-b border-gray-200 px-4 py-3">
           <div className="text-center">
             <Link href="/" className="text-sm font-bold text-navy">
-              (주)데일리에프앤아이대부 2024-금감원-2626(대부업, 대부중개업)
+              (주)데일리에프앤아이대부 2024-금감원-2626(대부중개업)
             </Link>
           </div>
         </header>
@@ -144,7 +134,7 @@ export default function ApplyPage() {
       <header className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="text-center">
           <Link href="/" className="text-sm font-bold text-navy">
-            (주)데일리에프앤아이대부 2024-금감원-2626(대부업, 대부중개업)
+            (주)데일리에프앤아이대부 2024-금감원-2626(대부중개업)
           </Link>
         </div>
       </header>
@@ -175,7 +165,6 @@ export default function ApplyPage() {
               <p className="text-gray-500 text-sm mb-6">기본 정보를 입력해 주세요.</p>
 
               <div className="space-y-4">
-                {/* 이름 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
                   <input
@@ -190,7 +179,6 @@ export default function ApplyPage() {
                   {errors.name && <p className="mt-1 text-xs text-error">{errors.name}</p>}
                 </div>
 
-                {/* 통신사 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">통신사</label>
                   <select
@@ -210,7 +198,6 @@ export default function ApplyPage() {
                   {errors.carrier && <p className="mt-1 text-xs text-error">{errors.carrier}</p>}
                 </div>
 
-                {/* 전화번호 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
                   <input
@@ -225,7 +212,6 @@ export default function ApplyPage() {
                   {errors.phone && <p className="mt-1 text-xs text-error">{errors.phone}</p>}
                 </div>
 
-                {/* 개인정보 동의 */}
                 <div
                   className={`p-4 rounded-lg border transition-all ${
                     consentWarning
@@ -255,10 +241,6 @@ export default function ApplyPage() {
                     </p>
                   )}
                 </div>
-
-                {submitError && (
-                  <p className="text-error text-sm text-center font-medium">{submitError}</p>
-                )}
 
                 <button
                   onClick={handleStep1Submit}
