@@ -25,11 +25,17 @@ const intakeRoutes = require('./routes/intakeRoutes');
 const auditApiRoutes = require('./routes/auditApiRoutes');
 
 const path = require('path');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- 미들웨어 ---
+app.use(cors({
+  origin: ['https://home.dailyfni.co.kr', 'https://dailyfni.co.kr', 'http://localhost:3001', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
