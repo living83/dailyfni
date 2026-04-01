@@ -13,7 +13,7 @@ export default function Header() {
       <div className="bg-navy-dark border-b border-navy-light">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="text-lg sm:text-xl font-bold text-white py-2">
-            (주)데일리에프앤아이대부 2024-금감원-2626(대부업, 대부중개업)
+            (주)데일리에프앤아이대부 2024-금감원-2626(대부중개업)
           </p>
         </div>
       </div>
