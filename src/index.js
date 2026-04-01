@@ -70,15 +70,41 @@ app.use('/api', auditApiRoutes);
 // --- 에러 핸들링 ---
 app.use(errorHandler);
 
-app.listen(PORT, async () => {
-  console.log(`\n=== 대부중개 전산시스템 ===`);
-  console.log(`서버: http://localhost:${PORT}`);
+// --- HTTPS + HTTP 서버 ---
+const fs = require('fs');
+const https = require('https');
+const http = require('http');
 
-  // MySQL 연결 확인
-  const { testConnection } = require('./database/db');
-  const dbOk = await testConnection();
-  console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
-  console.log(`==========================\n`);
-});
+const sslCertPath = '/etc/letsencrypt/live/work.dailyfni.co.kr';
+const hasSSL = fs.existsSync(sslCertPath + '/fullchain.pem');
+
+if (hasSSL) {
+  const sslOptions = {
+    key: fs.readFileSync(sslCertPath + '/privkey.pem'),
+    cert: fs.readFileSync(sslCertPath + '/fullchain.pem')
+  };
+  https.createServer(sslOptions, app).listen(443, async () => {
+    console.log(`\n=== 대부중개 전산시스템 ===`);
+    console.log(`서버: https://work.dailyfni.co.kr`);
+    const { testConnection } = require('./database/db');
+    const dbOk = await testConnection();
+    console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    console.log(`==========================\n`);
+  });
+  // HTTP → HTTPS 리다이렉트
+  http.createServer((req, res) => {
+    res.writeHead(301, { Location: 'https://work.dailyfni.co.kr' + req.url });
+    res.end();
+  }).listen(80);
+} else {
+  app.listen(PORT, async () => {
+    console.log(`\n=== 대부중개 전산시스템 ===`);
+    console.log(`서버: http://localhost:${PORT}`);
+    const { testConnection } = require('./database/db');
+    const dbOk = await testConnection();
+    console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    console.log(`==========================\n`);
+  });
+}
 
 module.exports = app;
