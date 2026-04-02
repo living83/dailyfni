@@ -180,7 +180,13 @@ function navigate(page) {
   document.getElementById('content').innerHTML = p.render();
   // 대출 접수 페이지 렌더 후 추천 상품 자동 표시
   if (page === 'loan-register' && loanRegisterCustomerId) {
-    setTimeout(() => renderRecommendations(), 50);
+    setTimeout(() => {
+      renderRecommendations();
+      // 폼 입력값 변경 시 추천 상품 자동 갱신
+      document.querySelectorAll('.form-table input, .form-table select').forEach(el => {
+        el.addEventListener('change', () => setTimeout(renderRecommendations, 100));
+      });
+    }, 50);
   }
   // 고객원장 렌더 후 타임라인 로드
   if (page === 'customer-ledger' && currentLedgerId) {
@@ -2835,45 +2841,73 @@ function renderRecommendations() {
   const container = document.getElementById('recommendedProducts');
   if (!container) return;
 
-  const c = loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null;
+  // MySQL 고객 데이터 또는 인메모리
+  const c = loanRegisterCustomerDB || (loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null);
   if (!c) { container.innerHTML = ''; return; }
 
-  // 고객 정보에서 매칭 조건 추출
+  // 직업유형 → 상품 매칭 직군 변환
+  const empType = c.employment_type || c.employmentType || '';
+  const has4Ins = c.has_4_insurance || '';
   const jobTypeMap = {
-    '정규직': '직장인(4대가입)', '계약직': '직장인(4대미가입)',
-    '프리랜서': '프리랜서', '자영업': '개인사업자', '무직': '무직'
+    '정규직': has4Ins === '가입' ? '직장인(4대가입)' : '직장인(4대미가입)',
+    '계약직': '직장인(4대미가입)',
+    '프리랜서': '프리랜서', '자영업': '개인사업자', '개인사업자': '개인사업자',
+    '무직': '무직', '주부': '주부'
   };
+
+  // 대출 접수 폼에서 실시간 입력값 가져오기
+  const getFormVal = (placeholder) => {
+    const el = document.querySelector(`.form-table input[placeholder*="${placeholder}"]`);
+    return el ? el.value.trim() : '';
+  };
+  const getFormSelect = (thText) => {
+    const ths = document.querySelectorAll('.form-table th');
+    for (const th of ths) {
+      if (th.textContent.includes(thText)) {
+        const select = th.nextElementSibling?.querySelector('select');
+        if (select) return select.value;
+        const input = th.nextElementSibling?.querySelector('input');
+        if (input) return input.value.trim();
+      }
+    }
+    return '';
+  };
+
+  // 폼 입력값 우선, 없으면 고객 DB
+  const loanAmountForm = parseInt(getFormVal('1000')) || 0;
+  const vehicleNoForm = getFormVal('차량번호') || c.vehicle_no || '';
+  const vehicleYearForm = getFormSelect('차량연식') || c.vehicle_year || '';
+  const vehicleKmForm = getFormVal('숫자') || c.vehicle_km || '';
+  const recoveryForm = getFormSelect('회파복 구분') || c.recovery_type || '';
+
   const customer = {
     age: c.age || 0,
-    jobType: jobTypeMap[c.employmentType] || '직장인(4대가입)',
-    vehicleNo: '', // 차량번호 (입력 폼에서 가져옴)
-    vehicleYear: 0,
-    vehicleKm: 0,
-    recoveryType: c.courtName ? '회생' : '무',
-    loanAmount: 0
+    jobType: jobTypeMap[empType] || '직장인(4대가입)',
+    vehicleNo: vehicleNoForm,
+    vehicleYear: parseInt(vehicleYearForm) || 0,
+    vehicleKm: parseInt(String(vehicleKmForm).replace(/[^0-9]/g,'')) || 0,
+    recoveryType: (recoveryForm === '==선택==' || recoveryForm === '선택') ? '무' : (recoveryForm || '무'),
+    loanAmount: loanAmountForm
   };
-
-  // 대출 접수 폼에서 추가 정보 가져오기
-  const loanAmtEl = document.querySelector('.form-table input[placeholder="1000"]');
-  if (loanAmtEl && loanAmtEl.value) customer.loanAmount = parseInt(loanAmtEl.value) || 0;
-
-  const vehicleEl = document.querySelector('.form-table input[placeholder*="차량번호"]');
-  if (vehicleEl && vehicleEl.value) customer.vehicleNo = vehicleEl.value;
 
   const result = matchProducts(customer);
 
-  if (result.recommended.length === 0 && result.conditional.length === 0) {
-    container.innerHTML = '';
+  const totalRec = result.recommended.length + result.conditional.length;
+  if (totalRec === 0) {
+    container.innerHTML = `<div style="margin-bottom:8px;padding:8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;font-size:11px;color:#991b1b;">
+      조건에 맞는 추천 상품이 없습니다. 고객 정보를 확인하세요.
+    </div>`;
     return;
   }
 
   let html = `<div style="margin-bottom:8px;padding:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
     <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;">
-      ★ ${c.name}님 추천 상품 (${result.recommended.length + result.conditional.length}개)
+      ★ ${c.name}님 추천 상품 (${totalRec}개)
+      <span style="font-size:10px;font-weight:400;color:#64748b;margin-left:8px;">${customer.jobType} | ${customer.age}세 | 회파복:${customer.recoveryType}${customer.vehicleNo ? ' | 차량보유' : ''}${customer.loanAmount ? ' | '+customer.loanAmount+'만' : ''}</span>
     </div>`;
 
-  // 추천 상품
-  result.recommended.slice(0, 8).forEach(r => {
+  // 추천 상품 (★)
+  result.recommended.slice(0, 10).forEach(r => {
     html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #16a34a;margin-bottom:3px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <span class="product-name" style="margin:0;">${r.name}</span>
@@ -2884,7 +2918,7 @@ function renderRecommendations() {
     </div>`;
   });
 
-  // 조건부 상품
+  // 조건부 상품 (△)
   result.conditional.slice(0, 5).forEach(r => {
     html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #d97706;margin-bottom:3px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
