@@ -182,6 +182,10 @@ function navigate(page) {
   if (page === 'loan-register' && loanRegisterCustomerId) {
     setTimeout(() => renderRecommendations(), 50);
   }
+  // 고객원장 렌더 후 타임라인 로드
+  if (page === 'customer-ledger' && currentLedgerId) {
+    setTimeout(() => loadLedgerTimelines(currentLedgerId), 200);
+  }
 }
 
 // ========================================
@@ -2151,22 +2155,60 @@ function saveLedger() {
   alert('저장되었습니다.');
 }
 
-function saveLedgerMemo(customerId) {
+async function saveLedgerMemo(customerId) {
   const textarea = document.getElementById('ledgerMemo');
   const content = textarea.value.trim();
   if (!content) { alert('메모를 입력하세요.'); return; }
 
-  const now = new Date();
-  const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
 
-  const timeline = document.getElementById('ledgerConsultTimeline');
-  if (timeline) {
-    const newItem = document.createElement('div');
-    newItem.className = 'timeline-item';
-    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">${content}</div><div class="tl-user">메모 | 김대리</div>`;
-    timeline.insertBefore(newItem, timeline.firstChild);
-  }
+  // MySQL에 상담 기록 저장
+  try {
+    await fetch('/api/consultations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: customerId,
+        channel: '메모',
+        content: content,
+        consultedBy: user.name || ''
+      })
+    });
+  } catch (e) { console.error(e); }
+
   textarea.value = '';
+  // 상담이력 새로고침
+  loadLedgerTimelines(customerId);
+}
+
+// 고객원장 타임라인 로드 (상담이력 + 감사로그)
+async function loadLedgerTimelines(customerId) {
+  try {
+    const [cRes, aRes] = await Promise.all([
+      fetch(`/api/consultations?customerId=${customerId}`),
+      fetch(`/api/audit-logs?targetId=${customerId}&targetType=customer`)
+    ]);
+    const cData = await cRes.json();
+    const aData = await aRes.json();
+
+    // 상담이력
+    const consultTimeline = document.getElementById('ledgerConsultTimeline');
+    if (consultTimeline && cData.success) {
+      consultTimeline.innerHTML = cData.data.length > 0 ? cData.data.map(c => {
+        const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
+        return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${c.content}</div><div class="tl-user">${c.channel||'메모'} | ${c.consulted_by||'-'}</div></div>`;
+      }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">상담 기록이 없습니다.</div>';
+    }
+
+    // 변경이력 (감사로그)
+    const changeTimeline = document.getElementById('ledgerChangeHistory');
+    if (changeTimeline && aData.success) {
+      changeTimeline.innerHTML = aData.data.length > 0 ? aData.data.map(a => {
+        const date = a.performed_at ? new Date(a.performed_at).toLocaleString('ko-KR') : '';
+        return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${a.after_value||a.event_type}</div><div class="tl-user">처리: ${a.performed_by||'-'}</div></div>`;
+      }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">변경 이력이 없습니다.</div>';
+    }
+  } catch (e) { console.error(e); }
 }
 
 // ========================================
@@ -2372,18 +2414,15 @@ function renderCustomerLedger() {
           </div>
           <div class="panel-body" style="padding:8px 12px;border-top:1px solid #e2e8f0;max-height:300px;overflow-y:auto;">
             <div class="timeline" id="ledgerConsultTimeline">
-              <div class="timeline-item"><div class="tl-date">2026-03-26 10:30</div><div class="tl-content">대출 조건 문의, 금리 비교 안내.</div><div class="tl-user">전화 | ${c.assignedTo}</div></div>
-              <div class="timeline-item"><div class="tl-date">2026-03-24 14:00</div><div class="tl-content">초기 상담. 대출 가능 여부 확인.</div><div class="tl-user">방문 | ${c.assignedTo}</div></div>
-              <div class="timeline-item"><div class="tl-date">2026-03-22 11:00</div><div class="tl-content">첫 전화 상담. 고객 니즈 파악.</div><div class="tl-user">전화 | ${c.assignedTo}</div></div>
+              <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
             </div>
           </div>
         </div>
 
-        <div class="panel"><div class="panel-header"><h2>상태 변경 이력</h2></div>
+        <div class="panel"><div class="panel-header"><h2>변경 이력</h2></div>
           <div class="panel-body" style="padding:8px 12px;">
-            <div class="timeline">
-              <div class="timeline-item"><div class="tl-date">2026-03-26 10:30</div><div class="tl-content"><span class="badge badge-consult">상담</span> &rarr; <span class="badge ${badgeClass}">${c.status}</span></div><div class="tl-user">서류 접수 완료 | ${c.assignedTo}</div></div>
-              <div class="timeline-item"><div class="tl-date">2026-03-24 14:00</div><div class="tl-content"><span class="badge badge-lead">리드</span> &rarr; <span class="badge badge-consult">상담</span></div><div class="tl-user">초기 상담 완료 | ${c.assignedTo}</div></div>
+            <div class="timeline" id="ledgerChangeHistory">
+              <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
             </div>
           </div>
         </div>

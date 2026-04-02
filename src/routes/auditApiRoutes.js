@@ -5,7 +5,7 @@ const { query } = require('../database/db');
 // 감사로그 조회
 router.get('/audit-logs', async (req, res) => {
   try {
-    const { startDate, endDate, eventType, performedBy } = req.query;
+    const { startDate, endDate, eventType, performedBy, targetId, targetType } = req.query;
     let sql = 'SELECT * FROM audit_logs WHERE 1=1';
     const params = [];
 
@@ -20,6 +20,8 @@ router.get('/audit-logs', async (req, res) => {
       sql += ' AND performed_by = ?';
       params.push(performedBy);
     }
+    if (targetId) { sql += ' AND target_id = ?'; params.push(targetId); }
+    if (targetType) { sql += ' AND target_type = ?'; params.push(targetType); }
 
     sql += ' ORDER BY performed_at DESC LIMIT 100';
     const rows = await query(sql, params);
