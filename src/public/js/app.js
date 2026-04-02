@@ -1537,45 +1537,94 @@ function parsePolicyExcel(input) {
 // ========================================
 // 7. 성과 분석
 // ========================================
+let performanceData = null;
+
 function renderPerformance() {
+  if (!performanceData) loadPerformance();
+
+  const p = performanceData || {};
+  const now = new Date();
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+
+  const sourceRows = (p.bySource || []).map(s => {
+    const convRate = s.intake_count > 0 ? ((s.exec_count / s.intake_count) * 100).toFixed(1) : '0';
+    return `<tr>
+      <td>${s.db_source||'-'}</td>
+      <td>${s.intake_count}</td>
+      <td>${s.exec_count}</td>
+      <td>${convRate}%</td>
+      <td>${Number(s.total_amount).toLocaleString()}만</td>
+      <td>${Number(s.total_fee).toFixed(1)}만</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
+
+  const assignedRows = (p.byAssigned || []).map(s => {
+    const execRate = s.customer_count > 0 ? ((s.exec_count / s.customer_count) * 100).toFixed(1) : '0';
+    return `<tr>
+      <td>${s.assigned_to||'-'}</td>
+      <td>${s.customer_count}</td>
+      <td>${s.exec_count}</td>
+      <td>${execRate}%</td>
+      <td>${Number(s.total_amount).toLocaleString()}만</td>
+      <td>${Number(s.total_fee).toFixed(1)}만</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
+
+  const te = p.totalExec || {};
+
   return `
     <div class="filter-bar">
-      <select><option>2026년 3월</option><option>2026년 2월</option></select>
-      <select><option>월간</option><option>주간</option></select>
-      <button class="btn btn-primary">조회</button>
+      <select id="perfMonth">
+        <option value="">전체</option>
+        ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" onclick="loadPerformance()">조회</button>
+    </div>
+
+    <div class="stat-cards" style="margin-bottom:12px;">
+      <div class="stat-card"><div class="label">전체 고객</div><div class="value">${p.totalCust||0}명</div></div>
+      <div class="stat-card"><div class="label">실행 건수</div><div class="value">${te.cnt||0}건</div></div>
+      <div class="stat-card"><div class="label">총 매출</div><div class="value">${Number(te.amount||0).toLocaleString()}만</div></div>
+      <div class="stat-card"><div class="label">총 수수료</div><div class="value">${Number(te.fee||0).toFixed(1)}만</div></div>
     </div>
 
     <div class="grid-2">
       <div class="panel">
         <div class="panel-header"><h2>DB 출처별 성과</h2></div>
-        <div class="panel-body">
+        <div class="panel-body" style="overflow-x:auto;">
           <table>
-            <thead><tr><th>출처</th><th>유입</th><th>접수</th><th>실행</th><th>전환율</th><th>매출</th></tr></thead>
-            <tbody>
-              <tr><td>네이버 광고</td><td>38</td><td>28</td><td>18</td><td>47.4%</td><td>1,820만</td></tr>
-              <tr><td>카카오 DB</td><td>25</td><td>20</td><td>14</td><td>56.0%</td><td>1,450만</td></tr>
-              <tr><td>자체 DB</td><td>20</td><td>16</td><td>12</td><td>60.0%</td><td>980만</td></tr>
-              <tr><td>소개/추천</td><td>15</td><td>10</td><td>5</td><td>33.3%</td><td>420만</td></tr>
-              <tr><td>기타</td><td>29</td><td>10</td><td>3</td><td>10.3%</td><td>150만</td></tr>
-            </tbody>
+            <thead><tr><th>출처</th><th>유입</th><th>실행</th><th>전환율</th><th>매출</th><th>수수료</th></tr></thead>
+            <tbody>${sourceRows}</tbody>
           </table>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header"><h2>직원별 성과</h2></div>
-        <div class="panel-body">
+        <div class="panel-header"><h2>담당자별 성과</h2></div>
+        <div class="panel-body" style="overflow-x:auto;">
           <table>
-            <thead><tr><th>직원</th><th>접수</th><th>실행</th><th>실행률</th><th>매출</th><th>수당</th></tr></thead>
-            <tbody>
-              <tr><td>김대리</td><td>32</td><td>22</td><td>68.8%</td><td>2,150만</td><td>860만</td></tr>
-              <tr><td>이과장</td><td>28</td><td>18</td><td>64.3%</td><td>1,680만</td><td>672만</td></tr>
-              <tr><td>박사원</td><td>24</td><td>12</td><td>50.0%</td><td>990만</td><td>396만</td></tr>
-            </tbody>
+            <thead><tr><th>담당자</th><th>고객수</th><th>실행</th><th>실행률</th><th>매출</th><th>수수료</th></tr></thead>
+            <tbody>${assignedRows}</tbody>
           </table>
         </div>
       </div>
     </div>
   `;
+}
+
+async function loadPerformance() {
+  try {
+    const month = document.getElementById('perfMonth')?.value || '';
+    const res = await fetch(`/api/dashboard/performance${month ? '?month='+month : ''}`);
+    const data = await res.json();
+    if (data.success) {
+      performanceData = data.data;
+      if (document.getElementById('perfMonth')) navigate('performance');
+    }
+  } catch (e) { console.error(e); }
 }
 
 // ========================================
