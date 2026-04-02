@@ -7,7 +7,7 @@ const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 // 고객 등록
 router.post('/customers', async (req, res) => {
   try {
-    const { name, ssn, phone, phone2, email, address, residenceAddress, company, companyAddr, companyPhone,
+    const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, company, companyAddr, companyPhone,
       salary, employmentType, workYears, courtName, caseNo, refundBank, refundAccount, refundHolder,
       creditScore, creditStatus, totalDebt, existingLoans, dbSource, assignedTo, status, memo, loanDate, loanAmount } = req.body;
 
@@ -24,13 +24,13 @@ router.post('/customers', async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO customers (name, ssn, age, phone, phone2, email, address, residence_address,
+      `INSERT INTO customers (name, ssn, age, phone, carrier, phone2, email, address, residence_address,
         company, company_addr, company_phone, salary, employment_type, work_years,
         court_name, case_no, refund_bank, refund_account, refund_holder,
         credit_score, credit_status, total_debt, existing_loans, db_source,
         assigned_to, status, memo, loan_date, loan_amount, reg_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
-      [name, ssn||'', age, phone, phone2||'', email||'', address||'', residenceAddress||'',
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+      [name, ssn||'', age, phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
        company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', workYears||'',
        courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'',
        creditScore||0, creditStatus||'정상', totalDebt||'0', existingLoans||'', dbSource||'',

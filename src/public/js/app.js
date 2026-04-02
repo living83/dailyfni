@@ -2512,7 +2512,11 @@ async function processIntake(id, name, phone, content, source) {
       body: JSON.stringify({ assignedTo: user.name, assignedToId: user.id })
     });
     // 고객등록 화면에 데이터 전달
-    intakePrefill = { name: name, phone: phone, memo: content || '', dbSource: source || '홈페이지' };
+    // content에서 통신사 파싱 (예: "통신사: LGU+ / 직업: 직장인")
+    let carrierFromContent = '';
+    const carrierMatch = (content||'').match(/통신사:\s*([^\s/]+)/);
+    if (carrierMatch) carrierFromContent = carrierMatch[1];
+    intakePrefill = { name: name, phone: phone, carrier: carrierFromContent, memo: content || '', dbSource: source || '홈페이지' };
     intakeData = [];
     navigate('customer-register');
   } catch (e) { alert('오류: ' + e.message); }
@@ -2546,7 +2550,7 @@ async function submitCustomerRegister() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const data = {
     name: v('reg-name'), ssn: v('reg-ssn'), phone: v('reg-phone'), phone2: v('reg-phone2'),
-    email: v('reg-email'), dbSource: v('reg-dbsource'),
+    carrier: v('reg-carrier'), email: v('reg-email'), dbSource: v('reg-dbsource'),
     address: (v('reg-addr1') + ' ' + v('reg-addr1-detail')).trim(),
     residenceAddress: (v('reg-addr2') + ' ' + v('reg-addr2-detail')).trim(),
     company: v('reg-company'), employmentType: v('reg-emptype'),
@@ -2610,8 +2614,9 @@ function renderCustomerRegister() {
           <table class="info-table"><tbody>
             <tr><th>고객명 <span class="required">*</span></th><td><input type="text" id="reg-name" placeholder="고객명 입력" value="${pf.name||''}"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" id="reg-ssn" placeholder="000000-0000000" oninput="this.value=formatSsn(this.value);calcAge();"></td></tr>
             <tr><th>만 나이</th><td><input type="text" id="reg-age" placeholder="주민번호 입력 시 자동" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select id="reg-gender"><option>선택</option><option>남</option><option>여</option></select></td></tr>
-            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" id="reg-phone" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>보조 연락처</th><td><input type="text" id="reg-phone2" placeholder="연락처"></td></tr>
-            <tr><th>이메일</th><td><input type="text" id="reg-email" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select id="reg-dbsource">${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
+            <tr><th>통신사</th><td><select id="reg-carrier">${selDb(['선택','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], pf.carrier||'선택')}</select></td><th>보조 연락처</th><td><input type="text" id="reg-phone2" placeholder="연락처"></td></tr>
+            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" id="reg-phone" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>이메일</th><td><input type="text" id="reg-email" placeholder="이메일"></td></tr>
+            <tr><th>DB 유입출처 <span class="required">*</span></th><td><select id="reg-dbsource">${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td><th></th><td></td></tr>
             <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr1" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr1')">검색</button><input type="text" id="reg-addr1-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
             <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr2" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr2')">검색</button><input type="text" id="reg-addr2-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
           </tbody></table>
