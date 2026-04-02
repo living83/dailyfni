@@ -573,6 +573,51 @@ function matchOneProduct(fidx, cond, customer) {
     match.failReasons = ['회파복 고객에게 일반 상품 추천 불가'];
   }
 
+  // 11. 회생 납입 회차 체크 (desc에서 파싱)
+  if (recoveryType === '회생' && customer.recoveryPaid > 0 && cond.notes) {
+    const notes = cond.notes;
+    // "회생 1/3 이상", "회생 4회차 이상", "회생 총회차 25%" 등
+    const thirdMatch = notes.match(/[⅓1\/3]/);
+    const halfMatch = notes.match(/[½1\/2]/);
+    const countMatch = notes.match(/(\d+)회차/);
+
+    if (thirdMatch && customer.recoveryTotal > 0) {
+      const required = Math.ceil(customer.recoveryTotal / 3);
+      if (customer.recoveryPaid >= required) {
+        match.score += 1;
+        match.maxScore += 1;
+        match.reasons.push(`회생 1/3 충족 (${customer.recoveryPaid}/${customer.recoveryTotal})`);
+      } else {
+        match.maxScore += 1;
+        match.failReasons.push(`회생 1/3 미충족 (${customer.recoveryPaid}/${customer.recoveryTotal}, 필요:${required}회)`);
+      }
+    } else if (halfMatch && customer.recoveryTotal > 0) {
+      const required = Math.ceil(customer.recoveryTotal / 2);
+      if (customer.recoveryPaid >= required) {
+        match.score += 1;
+        match.maxScore += 1;
+        match.reasons.push(`회생 1/2 충족 (${customer.recoveryPaid}/${customer.recoveryTotal})`);
+      } else {
+        match.maxScore += 1;
+        match.failReasons.push(`회생 1/2 미충족 (${customer.recoveryPaid}/${customer.recoveryTotal}, 필요:${required}회)`);
+      }
+    } else if (countMatch) {
+      const required = parseInt(countMatch[1]);
+      if (customer.recoveryPaid >= required) {
+        match.score += 1;
+        match.maxScore += 1;
+        match.reasons.push(`회생 ${required}회차 충족`);
+      } else {
+        match.maxScore += 1;
+        match.failReasons.push(`회생 ${required}회차 미충족 (현재:${customer.recoveryPaid}회)`);
+      }
+    } else if (customer.recoveryPaid >= 1) {
+      match.score += 1;
+      match.maxScore += 1;
+      match.reasons.push(`회생 납입 ${customer.recoveryPaid}회차`);
+    }
+  }
+
   // 매칭률 계산
   match.matchRate = match.maxScore > 0 ? Math.round((match.score / match.maxScore) * 100) : 0;
   match.status = cond.suspended ? 'unsuitable' :

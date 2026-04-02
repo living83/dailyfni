@@ -2945,6 +2945,8 @@ async function submitCustomerRegister() {
     vehicleNo: v('reg-vno'), vehicleName: v('reg-vname'), vehicleYear: v('reg-vyear'),
     vehicleKm: v('reg-vkm'), vehicleOwnership: v('reg-vown'), vehicleCoOwner: v('reg-vcoowner'),
     recoveryType: v('reg-recovery'),
+    recoveryTotalCount: v('reg-recovery-total'),
+    recoveryPaidCount: v('reg-recovery-paid'),
     courtName: v('reg-court'), caseNo: v('reg-caseno'), monthlyPayment: v('reg-monthly-pay'),
     refundBank: v('reg-bank'), refundHolder: v('reg-holder'), refundAccount: v('reg-account'),
     creditScore: parseInt(v('reg-credit')) || 0, existingLoans: v('reg-loans'),
@@ -3032,7 +3034,7 @@ function renderCustomerRegister() {
 
         <div class="panel"><div class="panel-header"><h2>회파복 / 법원 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>회파복 구분</th><td><select id="reg-recovery"><option>선택</option><option>무</option><option>회생</option><option>파산</option><option>회복</option></select></td><th></th><td></td></tr>
+            <tr><th>회파복 구분</th><td><select id="reg-recovery"><option>선택</option><option>무</option><option>회생</option><option>파산</option><option>회복</option></select></td><th>총회차/납입회차</th><td><div style="display:flex;gap:4px;align-items:center;"><input type="text" id="reg-recovery-total" style="width:60px;" placeholder="총"><span>/</span><input type="text" id="reg-recovery-paid" style="width:60px;" placeholder="납입"></div></td></tr>
             <tr><th>법원명</th><td><input type="text" id="reg-court" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" id="reg-caseno" placeholder="사건번호 (해당 시)"></td></tr>
           </tbody></table>
         </div></div>
@@ -3210,6 +3212,8 @@ function renderRecommendations() {
     vehicleYear: parseInt(vehicleYearForm) || 0,
     vehicleKm: parseInt(String(vehicleKmForm).replace(/[^0-9]/g,'')) || 0,
     recoveryType: (recoveryForm === '==선택==' || recoveryForm === '선택') ? '무' : (recoveryForm || '무'),
+    recoveryPaid: parseInt(c.recovery_paid_count || c.recoveryPaidCount || 0) || 0,
+    recoveryTotal: parseInt(c.recovery_total_count || c.recoveryTotalCount || 0) || 0,
     loanAmount: loanAmountForm
   };
 
@@ -3226,7 +3230,7 @@ function renderRecommendations() {
   let html = `<div style="margin-bottom:8px;padding:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
     <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;">
       ★ ${c.name}님 추천 상품 (${totalRec}개)
-      <span style="font-size:10px;font-weight:400;color:#64748b;margin-left:8px;">${customer.jobType} | ${customer.age}세 | 회파복:${customer.recoveryType}${customer.vehicleNo ? ' | 차량보유' : ''}${customer.loanAmount ? ' | '+customer.loanAmount+'만' : ''}</span>
+      <span style="font-size:10px;font-weight:400;color:#64748b;margin-left:8px;">${customer.jobType} | ${customer.age}세 | 회파복:${customer.recoveryType}${customer.recoveryPaid ? '('+customer.recoveryPaid+'/'+customer.recoveryTotal+'회차)' : ''}${customer.vehicleNo ? ' | 차량보유' : ''}${customer.loanAmount ? ' | '+customer.loanAmount+'만' : ''}</span>
     </div>`;
 
   // 추천 상품 (★)
