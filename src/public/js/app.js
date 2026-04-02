@@ -872,22 +872,40 @@ function renderSettlementRebate() {
 }
 
 function renderSettlementPolicy() {
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+
   return `
     <div class="panel">
       <div class="panel-header">
         <h2>정산 정책 엑셀 업로드</h2>
       </div>
       <div class="panel-body" style="padding:16px;">
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;">적용월:</label>
+          <select id="policyMonth" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            ${months.map(m => `<option value="${m}" ${m===curMonth?'selected':''}>${m}</option>`).join('')}
+          </select>
           ${isAdmin() ? '<input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">' : '<span style="font-size:12px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
-          <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 정산 정책 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
+          <span style="font-size:11px;color:#94a3b8;">적용월을 선택 후 엑셀 업로드</span>
         </div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-header">
-        <h2>현재 적용 정산 정책 (${settlementPolicyData.length}건)</h2>
-        <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
+        <h2>정산 정책 (${settlementPolicyData.length}건)</h2>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="policyViewMonth" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" onchange="loadPolicyByMonth()">
+            <option value="">전체</option>
+            ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="loadPolicyByMonth()">조회</button>
+        </div>
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
@@ -913,11 +931,14 @@ function renderSettlementPolicy() {
 // DB 저장/로드 함수
 async function savePolicyToDB(data) {
   try {
-    await fetch('/api/settlement/policies/upload', {
+    const month = document.getElementById('policyMonth')?.value || new Date().toISOString().substring(0,7);
+    const res = await fetch('/api/settlement/policies/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ policies: data })
+      body: JSON.stringify({ policies: data, month })
     });
+    const result = await res.json();
+    if (!result.success) alert(result.message);
   } catch (e) { console.error('정산 정책 저장 실패:', e); }
 }
 
@@ -929,6 +950,21 @@ async function saveAdjustmentsToDB(data) {
       body: JSON.stringify({ adjustments: data })
     });
   } catch (e) { console.error('리베이트/환수 저장 실패:', e); }
+}
+
+async function loadPolicyByMonth() {
+  const month = document.getElementById('policyViewMonth')?.value || '';
+  try {
+    const res = await fetch(`/api/settlement/policies${month ? '?month='+month : ''}`);
+    const data = await res.json();
+    if (data.success) {
+      settlementPolicyData = data.data.map(r => ({
+        category: r.category, product: r.product,
+        rateUnder: r.rate_under, rateOver: r.rate_over, auth: r.auth
+      }));
+      navigate('settlement');
+    }
+  } catch (e) { console.error(e); }
 }
 
 async function loadSettlementFromDB() {
