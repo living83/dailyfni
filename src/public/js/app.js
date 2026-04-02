@@ -20,6 +20,51 @@ function addModalClose(modal, closeFn) {
   });
 }
 
+// 주민번호 하이픈 자동 포맷
+function formatSsn(val) {
+  const num = val.replace(/[^0-9]/g, '');
+  if (num.length <= 6) return num;
+  return num.substring(0,6) + '-' + num.substring(6,13);
+}
+
+// 주민번호에서 만나이 + 성별 자동 계산
+function calcAge() {
+  const ssn = (document.getElementById('reg-ssn')?.value || '').replace(/-/g,'');
+  if (ssn.length < 7) return;
+  const genderCode = ssn.charAt(6);
+  const century = (genderCode === '1' || genderCode === '2') ? 1900 : 2000;
+  const birthYear = century + parseInt(ssn.substring(0,2));
+  const birthMonth = parseInt(ssn.substring(2,4));
+  const birthDay = parseInt(ssn.substring(4,6));
+  const today = new Date();
+  let age = today.getFullYear() - birthYear;
+  if (today.getMonth()+1 < birthMonth || (today.getMonth()+1 === birthMonth && today.getDate() < birthDay)) age--;
+  const ageEl = document.getElementById('reg-age');
+  if (ageEl) ageEl.value = age + '세';
+  const genderEl = document.getElementById('reg-gender');
+  if (genderEl) genderEl.value = (genderCode === '1' || genderCode === '3') ? '남' : '여';
+}
+
+// 연봉 → 월 환산
+function calcMonthly() {
+  const salary = parseInt(document.getElementById('reg-salary')?.value) || 0;
+  const monthlyEl = document.getElementById('reg-monthly');
+  if (monthlyEl) monthlyEl.value = salary > 0 ? Math.round(salary/12) + '만원' : '';
+}
+
+// 주소 검색 (고객등록용 - 단일 input)
+function openAddrSearchSingle(inputId) {
+  new daum.Postcode({
+    oncomplete: function(data) {
+      const el = document.getElementById(inputId);
+      if (el) {
+        el.value = data.roadAddress || data.jibunAddress;
+        el.removeAttribute('readonly');
+      }
+    }
+  }).open();
+}
+
 // 상담내용 영문 → 한글 변환
 function translateContent(content) {
   if (!content) return '';
@@ -2384,20 +2429,17 @@ setInterval(() => loadIntake(), 60000);
 // 고객 등록 (웹 페이지)
 // ========================================
 async function submitCustomerRegister() {
-  // 폼에서 값 수집
-  const inputs = document.querySelectorAll('#content .info-table input, #content .info-table select, #content .info-table textarea');
-  const vals = [...inputs].map(i => i.value.trim());
-
-  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const v = id => (document.getElementById(id)?.value || '').trim();
   const data = {
-    name: vals[0] || '', ssn: vals[1] || '', phone: vals[4] || '', phone2: vals[5] || '',
-    email: vals[6] || '', dbSource: vals[7] || '', address: vals[8] || '', residenceAddress: vals[9] || '',
-    company: vals[10] || '', employmentType: vals[11] || '', companyAddr: vals[12] || '',
-    companyPhone: vals[13] || '', workYears: vals[14] || '', salary: parseInt(vals[15]) || 0,
-    courtName: vals[17] || '', caseNo: vals[18] || '',
-    refundBank: vals[19] || '', refundHolder: vals[20] || '', refundAccount: vals[21] || '',
-    creditScore: parseInt(vals[22]) || 0, existingLoans: vals[24] || '',
-    assignedTo: user.name || '', status: '리드', memo: ''
+    name: v('reg-name'), ssn: v('reg-ssn'), phone: v('reg-phone'), phone2: v('reg-phone2'),
+    email: v('reg-email'), dbSource: v('reg-dbsource'),
+    address: v('reg-addr1'), residenceAddress: v('reg-addr2'),
+    company: v('reg-company'), employmentType: v('reg-emptype'), companyAddr: v('reg-compaddr'),
+    companyPhone: v('reg-compphone'), workYears: v('reg-workyears'), salary: parseInt(v('reg-salary')) || 0,
+    courtName: v('reg-court'), caseNo: v('reg-caseno'),
+    refundBank: v('reg-bank'), refundHolder: v('reg-holder'), refundAccount: v('reg-account'),
+    creditScore: parseInt(v('reg-credit')) || 0, existingLoans: v('reg-loans'),
+    assignedTo: v('reg-assigned'), status: v('reg-status') || '리드', memo: ''
   };
 
   if (!data.name || !data.phone) {
@@ -2429,8 +2471,12 @@ function renderCustomerRegister() {
   const selDb = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
   const dbOpts = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','홈페이지','기타'];
 
-  // 사용 후 초기화
   const phoneFormatted = formatPhone(pf.phone||'');
+
+  // 담당자 목록 (직원 DB에서)
+  const assignOptions = employeeList.length > 0 ?
+    employeeList.map(e => `<option value="${e.name}">${e.name} (${e.position_title||''})</option>`).join('') :
+    '<option>로딩중...</option>';
 
   const prefillBanner = pf.name ? `
     <div class="panel" style="border-left:3px solid #f59e0b;margin-bottom:6px;">
@@ -2446,41 +2492,41 @@ function renderCustomerRegister() {
       <div style="flex:1;min-width:0;">
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력" value="${pf.name||''}"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
-            <tr><th>만 나이</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select><option>선택</option><option>남</option><option>여</option></select></td></tr>
-            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
-            <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select>${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
-            <tr><th>초본 주소</th><td colspan="3"><input type="text" placeholder="초본 주소 입력" style="width:100%;"></td></tr>
-            <tr><th>실거주 주소</th><td colspan="3"><input type="text" placeholder="실거주 주소 입력" style="width:100%;"></td></tr>
+            <tr><th>고객명 <span class="required">*</span></th><td><input type="text" id="reg-name" placeholder="고객명 입력" value="${pf.name||''}"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" id="reg-ssn" placeholder="000000-0000000" oninput="this.value=formatSsn(this.value);calcAge();"></td></tr>
+            <tr><th>만 나이</th><td><input type="text" id="reg-age" placeholder="주민번호 입력 시 자동" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select id="reg-gender"><option>선택</option><option>남</option><option>여</option></select></td></tr>
+            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" id="reg-phone" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>보조 연락처</th><td><input type="text" id="reg-phone2" placeholder="연락처"></td></tr>
+            <tr><th>이메일</th><td><input type="text" id="reg-email" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select id="reg-dbsource">${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
+            <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr1" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr1')">주소 검색</button></div></td></tr>
+            <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr2" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr2')">주소 검색</button></div></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>직장명</th><td><input type="text" placeholder="직장명"></td><th>고용형태</th><td><select><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
-            <tr><th>직장 주소</th><td colspan="3"><input type="text" placeholder="직장 주소 입력" style="width:100%;"></td></tr>
-            <tr><th>직장 전화</th><td><input type="text" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" placeholder="예: 3년 2개월"></td></tr>
-            <tr><th>연봉</th><td><input type="text" placeholder="만원 단위"></td><th>월 환산</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
+            <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
+            <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">주소 검색</button></div></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" id="reg-workyears" placeholder="예: 3년 2개월"></td></tr>
+            <tr><th>연봉</th><td><input type="text" id="reg-salary" placeholder="만원 단위" oninput="calcMonthly()"></td><th>월 환산</th><td><input type="text" id="reg-monthly" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>법원 사건 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>법원명</th><td><input type="text" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" placeholder="사건번호 (해당 시)"></td></tr>
+            <tr><th>법원명</th><td><input type="text" id="reg-court" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" id="reg-caseno" placeholder="사건번호 (해당 시)"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>은행명</th><td><select><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" placeholder="예금주"></td></tr>
-            <tr><th>계좌번호</th><td colspan="3"><input type="text" placeholder="계좌번호 입력" style="width:100%;"></td></tr>
+            <tr><th>은행명</th><td><select id="reg-bank"><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" id="reg-holder" placeholder="예금주"></td></tr>
+            <tr><th>계좌번호</th><td colspan="3"><input type="text" id="reg-account" placeholder="계좌번호 입력" style="width:100%;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>신용 및 기존 대출</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>신용점수</th><td><input type="text" placeholder="신용점수"></td><th>등급</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
-            <tr><th>기존 대출</th><td colspan="3"><input type="text" placeholder="예: 신한은행 2,000만 (잔여 1,200만)" style="width:100%;"></td></tr>
+            <tr><th>신용점수</th><td><input type="text" id="reg-credit" placeholder="신용점수"></td><th>등급</th><td><input type="text" id="reg-grade" placeholder="등급 입력 (예: 5등급)"></td></tr>
+            <tr><th>기존 대출</th><td colspan="3"><input type="text" id="reg-loans" placeholder="예: 신한은행 2,000만 (잔여 1,200만)" style="width:100%;"></td></tr>
           </tbody></table>
         </div></div>
       </div>
@@ -2490,11 +2536,11 @@ function renderCustomerRegister() {
           <div class="panel-body" style="padding:8px 10px;">
             <div class="form-group" style="margin-bottom:6px;">
               <label>담당자 <span class="required">*</span></label>
-              <select style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택하세요</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
+              <select id="reg-assigned" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택하세요</option>${assignOptions}</select>
             </div>
             <div class="form-group">
               <label>초기 상태</label>
-              <select style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>리드</option><option>상담</option></select>
+              <select id="reg-status" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>리드</option><option>상담</option></select>
             </div>
           </div>
         </div>
