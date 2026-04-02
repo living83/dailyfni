@@ -499,22 +499,39 @@ async function syncLoanList() {
 // ========================================
 let loanRegisterCustomerId = null;
 
-function goLoanRegister(customerId) {
+async function goLoanRegister(customerId) {
   closeCustomerModal();
   loanRegisterCustomerId = customerId;
+  // MySQL에서 고객 데이터 로드
+  try {
+    const res = await fetch(`/api/customers/${customerId}`);
+    const data = await res.json();
+    if (data.success) {
+      loanRegisterCustomerDB = data.data;
+    }
+  } catch (e) {}
   navigate('loan-register');
 }
 
-function renderLoanRegister() {
-  const c = loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null;
+let loanRegisterCustomerDB = null;
 
-  // 고객 데이터에서 파생값 계산
-  const birthFromSsn = c ? c.ssn.substring(0,6) : '';
-  const genderChar = c ? c.ssn.charAt(7) : '';
+function renderLoanRegister() {
+  const c = loanRegisterCustomerDB || (loanRegisterCustomerId ? customerData[loanRegisterCustomerId] : null);
+
+  // 고객 데이터에서 파생값 계산 (MySQL snake_case 호환)
+  const ssn = c ? (c.ssn || '') : '';
+  const birthFromSsn = ssn.replace(/-/g,'').substring(0,6);
+  const ssnClean = ssn.replace(/-/g,'');
+  const genderChar = ssnClean.length >= 7 ? ssnClean.charAt(6) : '';
   const genderFromSsn = {'1':'남(1)','2':'여(2)','3':'남(3)','4':'여(4)'}[genderChar] || '';
-  const phoneParts = c ? c.phone.split('-') : ['','',''];
-  const salaryYear = c ? c.salary : '';
-  const salaryMonth = c ? Math.round(c.salary / 12) : '';
+  const phone = c ? (c.phone || '') : '';
+  const phoneParts = phone.includes('-') ? phone.split('-') : [phone.substring(0,3), phone.substring(3,7), phone.substring(7)];
+  const salaryYear = c ? (c.salary || 0) : '';
+  const salaryMonth = c ? Math.round((c.salary || 0) / 12) : '';
+  const assignedTo = c ? (c.assigned_to || c.assignedTo || '') : '';
+  const dbSource = c ? (c.db_source || c.dbSource || '') : '';
+  const companyAddr = c ? (c.company_addr || c.companyAddr || '') : '';
+  const creditScore = c ? (c.credit_score || c.creditScore || 0) : 0;
 
   const sel = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
   const ro = c ? 'readonly style="background:#f1f5f9;"' : '';
@@ -522,8 +539,8 @@ function renderLoanRegister() {
   return `
     ${c ? `<div class="panel" style="border-left:3px solid #3b82f6;margin-bottom:12px;">
       <div class="panel-body" style="padding:10px 18px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${c.phone}) | ${c.company} | 연봉 ${c.salary.toLocaleString()}만원 | 신용 ${c.creditScore}점</div>
-        <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;navigate('loan-register');">연동 해제</button>
+        <div style="font-size:13px;"><strong>연동 고객:</strong> ${c.name} (${phone}) | ${c.company||''} | 연봉 ${salaryYear}만원 | 신용 ${creditScore}점</div>
+        <button class="btn btn-outline btn-sm" onclick="loanRegisterCustomerId=null;loanRegisterCustomerDB=null;navigate('loan-register');">연동 해제</button>
       </div>
     </div>` : ''}
     <div class="loan-register-layout">
@@ -577,7 +594,7 @@ function renderLoanRegister() {
               <th>대출요청액 <span class="required">*</span></th>
               <td colspan="3"><div style="display:flex;align-items:center;gap:4px;"><input type="text" placeholder="1000" style="width:200px;"> <span style="font-size:12px;color:#64748b;">만원</span></div></td>
               <th>DB 출처</th>
-              <td><select>${sel(['==선택==','네이버 광고','카카오 DB','자체 DB','소개/추천','기타'], c ? c.dbSource : '==선택==')}</select></td>
+              <td><select>${sel(['==선택==','네이버 광고','카카오 DB','자체 DB','소개/추천','홈페이지','기타'], c ? dbSource : '==선택==')}</select></td>
             </tr>
             <tr>
               <th>실거주지주소 <span class="required">*</span></th>
@@ -646,7 +663,7 @@ function renderLoanRegister() {
                 <div style="display:flex;gap:4px;align-items:center;">
                   <input type="text" id="lr-waddr-zone" style="width:60px;" placeholder="우편번호" readonly>
                   <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-waddr')">주소 검색</button>
-                  <input type="text" id="lr-waddr-road" style="flex:1;" placeholder="도로명주소" value="${c ? c.companyAddr : ''}" readonly>
+                  <input type="text" id="lr-waddr-road" style="flex:1;" placeholder="도로명주소" value="${c ? companyAddr : ''}" readonly>
                   <input type="text" id="lr-waddr-detail" style="width:150px;" placeholder="상세주소">
                 </div>
               </td>
