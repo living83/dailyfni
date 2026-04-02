@@ -1058,25 +1058,40 @@ async function submitExecution() {
 }
 
 function renderSettlementRebate() {
+  const now = new Date();
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  const curMonth = months[0];
+
   return `
     <div class="panel">
       <div class="panel-header">
         <h2>리베이트/환수 엑셀 업로드</h2>
       </div>
       <div class="panel-body" style="padding:16px;">
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;">적용월:</label>
+          <select id="rebateMonth" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            ${months.map(m => `<option value="${m}" ${m===curMonth?'selected':''}>${m}</option>`).join('')}
+          </select>
           ${isAdmin() ? '<input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" multiple onchange="parseRebateExcel(this)">' : '<span style="font-size:12px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
-          <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 리베이트/환수 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
-        </div>
-        <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
-          엑셀 컬럼 예시: 구분(리베이트/환수) | 금액 | 사유 | 적용월 | 관련 실행건 | 담당자
+          <span style="font-size:11px;color:#94a3b8;">적용월 선택 후 업로드</span>
         </div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-header">
         <h2>리베이트/환수 내역 (${settlementRebateData.length}건)</h2>
-        <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="rebateViewMonth" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" onchange="loadRebateByMonth()">
+            <option value="">전체</option>
+            ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="loadRebateByMonth()">조회</button>
+        </div>
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
@@ -1173,12 +1188,30 @@ async function savePolicyToDB(data) {
 
 async function saveAdjustmentsToDB(data) {
   try {
-    await fetch('/api/settlement/adjustments/upload', {
+    const month = document.getElementById('rebateMonth')?.value || new Date().toISOString().substring(0,7);
+    const res = await fetch('/api/settlement/adjustments/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adjustments: data })
+      body: JSON.stringify({ adjustments: data, month })
     });
+    const result = await res.json();
+    if (!result.success) alert(result.message);
   } catch (e) { console.error('리베이트/환수 저장 실패:', e); }
+}
+
+async function loadRebateByMonth() {
+  const month = document.getElementById('rebateViewMonth')?.value || '';
+  try {
+    const res = await fetch(`/api/settlement/adjustments${month ? '?month='+month : ''}`);
+    const data = await res.json();
+    if (data.success) {
+      settlementRebateData = data.data.map(r => ({
+        type: r.type, amount: r.amount,
+        reason: r.reason, month: r.target_month, manager: r.manager
+      }));
+      navigate('settlement');
+    }
+  } catch (e) { console.error(e); }
 }
 
 async function loadPolicyByMonth() {
@@ -1222,45 +1255,124 @@ async function loadSettlementFromDB() {
 // 페이지 로드 시 DB에서 정산 데이터 불러오기
 setTimeout(() => loadSettlementFromDB(), 300);
 
+let closeData = [];
+
 function renderSettlementClose() {
+  if (closeData.length === 0) loadMonthlyCloses();
+
+  const now = new Date();
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+
+  const closeRows = closeData.length > 0 ? closeData.map(c => {
+    const closedAt = c.closed_at ? new Date(c.closed_at).toLocaleString('ko-KR') : '-';
+    return `<tr>
+      <td>${c.target_month}</td>
+      <td>${closedAt}</td>
+      <td>${c.closed_by||'-'}</td>
+      <td>${c.execution_count||0}건</td>
+      <td>${(c.total_sales||0).toLocaleString()}만</td>
+      <td>${c.is_closed ? '<span class="badge badge-approved">마감완료</span>' : '<span class="badge badge-consult">미마감</span>'}</td>
+      <td>${isAdmin() && c.is_closed ? `<button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="reopenMonth('${c.target_month}')">해제</button>` : ''}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">마감 이력이 없습니다.</td></tr>';
+
   return `
+    ${!isAdmin() ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px;margin-bottom:12px;font-size:12px;color:#991b1b;">월 마감 처리는 관리자만 가능합니다.</div>' : ''}
     <div class="panel">
       <div class="panel-header"><h2>월 마감 처리</h2></div>
       <div class="panel-body" style="padding:16px;">
-        <div class="stat-cards" style="margin-bottom:16px;">
-          <div class="stat-card"><div class="label">마감 대상월</div><div class="value">2026년 3월</div></div>
-          <div class="stat-card"><div class="label">마감 상태</div><div class="value" style="color:#d97706;">미마감</div></div>
-          <div class="stat-card"><div class="label">실행 건수</div><div class="value">4건</div></div>
-          <div class="stat-card"><div class="label">총 매출</div><div class="value">4,820만</div></div>
-        </div>
+        ${isAdmin() ? `
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;">
+          <label style="font-size:12px;font-weight:600;">마감 대상월:</label>
+          <select id="closeMonth" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
+          </select>
+          <button class="btn btn-primary" onclick="processMonthlyClose()">마감 처리</button>
+        </div>` : ''}
         <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px;margin-bottom:16px;">
           <div style="font-size:12px;color:#92400e;font-weight:600;margin-bottom:4px;">마감 전 확인사항</div>
           <ul style="font-size:11px;color:#92400e;margin-left:16px;line-height:1.8;">
             <li>모든 실행 건의 수수료율이 정확한지 확인</li>
             <li>리베이트/환수 내역이 모두 반영되었는지 확인</li>
             <li>정산 정책(수수료율)이 최신인지 확인</li>
-            <li>마감 후에는 관리자만 수정 가능</li>
+            <li>마감 후에는 정산 정책/리베이트/환수 수정 불가</li>
           </ul>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-primary" onclick="alert('마감 처리는 백엔드 연동 후 활성화됩니다.')">2026년 3월 마감 처리</button>
-          <button class="btn btn-outline" disabled>마감 해제 (최고관리자)</button>
         </div>
       </div>
     </div>
     <div class="panel">
       <div class="panel-header"><h2>마감 이력</h2></div>
-      <div class="panel-body">
+      <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead><tr><th>대상월</th><th>마감일시</th><th>마감자</th><th>실행건수</th><th>총매출</th><th>상태</th></tr></thead>
-          <tbody>
-            <tr><td>2026년 2월</td><td>2026-03-05 10:00</td><td>박팀장</td><td>48건</td><td>3,920만</td><td><span class="badge badge-approved">마감완료</span></td></tr>
-            <tr><td>2026년 1월</td><td>2026-02-03 09:30</td><td>박팀장</td><td>52건</td><td>4,150만</td><td><span class="badge badge-approved">마감완료</span></td></tr>
-          </tbody>
+          <thead><tr><th>대상월</th><th>마감일시</th><th>마감자</th><th>실행건수</th><th>총매출</th><th>상태</th><th>관리</th></tr></thead>
+          <tbody>${closeRows}</tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+async function loadMonthlyCloses() {
+  try {
+    const res = await fetch('/api/settlement/monthly-closes');
+    const data = await res.json();
+    if (data.success) {
+      closeData = data.data;
+      if (document.getElementById('closeMonth') || closeData.length > 0) navigate('settlement');
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function processMonthlyClose() {
+  const month = document.getElementById('closeMonth')?.value;
+  if (!month) return;
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+
+  if (!confirm(`${month} 정산을 마감하시겠습니까?\n\n마감 후 해당 월의 정산 정책/리베이트/환수를 수정할 수 없습니다.`)) return;
+
+  try {
+    const res = await fetch('/api/settlement/close-month', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, closedBy: user.name })
+    });
+    const result = await res.json();
+    if (result.success) {
+      closeData = [];
+      navigate('settlement');
+      setTimeout(() => loadMonthlyCloses(), 100);
+      alert(`${month} 마감 완료`);
+    } else {
+      alert('실패: ' + result.message);
+    }
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function reopenMonth(month) {
+  const reason = prompt('마감 해제 사유:');
+  if (reason === null) return;
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+
+  try {
+    const res = await fetch('/api/settlement/reopen-month', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, reopenedBy: user.name, reason })
+    });
+    const result = await res.json();
+    if (result.success) {
+      closeData = [];
+      navigate('settlement');
+      setTimeout(() => loadMonthlyCloses(), 100);
+      alert(`${month} 마감 해제 완료`);
+    } else {
+      alert('실패: ' + result.message);
+    }
+  } catch (e) { alert('오류: ' + e.message); }
 }
 
 // 엑셀 파일 파싱 (CSV 방식)
