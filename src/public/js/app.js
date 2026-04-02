@@ -10,6 +10,16 @@ function isAdmin() {
   } catch { return false; }
 }
 
+// 모달 배경 클릭으로 닫기 (드래그 방지)
+function addModalClose(modal, closeFn) {
+  let mouseDownTarget = null;
+  modal.addEventListener('mousedown', (e) => { mouseDownTarget = e.target; });
+  modal.addEventListener('mouseup', (e) => {
+    if (e.target === modal && mouseDownTarget === modal) closeFn();
+    mouseDownTarget = null;
+  });
+}
+
 // 상담내용 영문 → 한글 변환
 function translateContent(content) {
   if (!content) return '';
@@ -1282,7 +1292,7 @@ function showAddEmployeeModal() {
     </div>
   `;
   document.body.appendChild(modal);
-  modal.addEventListener('click', (e) => { if (e.target === modal) closeGuideModal(); });
+  addModalClose(modal, closeGuideModal);
 }
 
 async function addEmployee() {
@@ -1797,9 +1807,7 @@ function viewCustomer(id) {
 
   document.body.appendChild(modal);
   // 배경 클릭 시 닫기
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeCustomerModal();
-  });
+  addModalClose(modal, closeCustomerModal);
   // ESC 키로 닫기
   document.addEventListener('keydown', handleModalEsc);
 }
@@ -1864,9 +1872,7 @@ function openCustomerSearch() {
   `;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeCustomerSearch();
-  });
+  addModalClose(modal, closeCustomerSearch);
   document.addEventListener('keydown', handleModalEsc);
 
   // 엔터키로 검색
@@ -2835,9 +2841,7 @@ function showGuideModal(productName, guideData) {
   `;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeGuideModal();
-  });
+  addModalClose(modal, closeGuideModal);
 }
 
 function closeGuideModal() {
@@ -2895,7 +2899,7 @@ async function collectFidxMap() {
           ${html}
         </div>`;
       document.body.appendChild(modal);
-      modal.addEventListener('click', (e) => { if (e.target === modal) closeGuideModal(); });
+      addModalClose(modal, closeGuideModal);
     } else {
       alert('수집 실패: ' + (data.message || '결과 없음'));
     }
