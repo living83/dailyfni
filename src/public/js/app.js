@@ -1344,6 +1344,8 @@ function renderNotifications() {
   `;
 }
 
+let lastNotiCount = 0;
+
 async function loadNotifications() {
   try {
     const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
@@ -1351,11 +1353,58 @@ async function loadNotifications() {
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { return; }
     if (data.success) {
+      const prevUnread = lastNotiCount;
       notificationData = data.data;
-      // 헤더 뱃지 업데이트
+      const newUnread = notificationData.filter(n => !n.is_read).length;
+      // 새 알림이 추가되면 소리 + 브라우저 알림
+      if (newUnread > prevUnread && prevUnread > 0) {
+        playNotiSound();
+        showBrowserNotification(notificationData.find(n => !n.is_read));
+      }
+      lastNotiCount = newUnread;
       updateNotiBadge();
     }
   } catch (e) { console.error(e); }
+}
+
+// 알림 소리
+function playNotiSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    gain.gain.value = 0.3;
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    setTimeout(() => {
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.frequency.value = 1000;
+      gain2.gain.value = 0.3;
+      osc2.start();
+      osc2.stop(ctx.currentTime + 0.3);
+    }, 250);
+  } catch (e) {}
+}
+
+// 브라우저 알림
+function showBrowserNotification(noti) {
+  if (!noti) return;
+  if (Notification.permission === 'granted') {
+    new Notification('대부중개 전산', { body: noti.title, icon: '/favicon.ico' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission();
+  }
+}
+
+// 페이지 로드 시 브라우저 알림 권한 요청
+if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+  Notification.requestPermission();
 }
 
 function updateNotiBadge() {
