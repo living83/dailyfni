@@ -114,12 +114,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const hash = location.hash;
   if (hash && hash.startsWith('#ledger-')) {
     const id = parseInt(hash.replace('#ledger-', ''));
-    if (id && customerData[id]) {
+    if (id) {
       currentLedgerId = id;
-      document.title = customerData[id].name + ' - 고객원장';
       // 사이드바 숨기고 메인 영역 전체 사용
       document.getElementById('sidebar').style.display = 'none';
       document.querySelector('.main-wrapper').style.marginLeft = '0';
+      // MySQL에서 로드 후 타이틀 변경
+      loadLedgerCustomer(id).then(data => {
+        if (data) {
+          ledgerCustomer = data;
+          document.title = data.name + ' - 고객원장';
+          document.getElementById('content').innerHTML = renderCustomerLedger();
+        }
+      });
       navigate('customer-ledger');
     } else {
       navigate('dashboard');
@@ -1713,7 +1720,7 @@ function viewCustomerLedger(id) {
   // 이미 고객원장 페이지에 있으면 같은 페이지에서 교체
   if (location.hash.startsWith('#ledger-')) {
     currentLedgerId = id;
-    document.title = customerData[id].name + ' - 고객원장';
+    ledgerCustomer = null; // MySQL에서 다시 로드
     location.hash = 'ledger-' + id;
     navigate('customer-ledger');
   } else {
