@@ -2,6 +2,14 @@
 // 대부중개 전산시스템 - 프론트엔드 앱
 // ========================================
 
+// 권한 체크 (전사=admin, 본인=sales)
+function isAdmin() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+    return user.dataScope === 'all' || user.role === 'admin';
+  } catch { return false; }
+}
+
 // 상담내용 영문 → 한글 변환
 function translateContent(content) {
   if (!content) return '';
@@ -221,7 +229,7 @@ function renderCustomers() {
       <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
       <td>${c.assigned_to||'-'}</td>
       <td>${c.db_source||'-'}</td>
-      <td><button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteDbCustomer(${c.id},'${c.name}')">삭제</button></td>
+      <td>${isAdmin() ? `<button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteDbCustomer(${c.id},'${c.name}')">삭제</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -773,7 +781,7 @@ function renderSettlementRebate() {
       </div>
       <div class="panel-body" style="padding:16px;">
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
-          <input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" multiple onchange="parseRebateExcel(this)">
+          ${isAdmin() ? '<input type="file" id="rebateFile" accept=".xlsx,.xls,.csv" multiple onchange="parseRebateExcel(this)">' : '<span style="font-size:12px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
           <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 리베이트/환수 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
         </div>
         <div style="font-size:11px;color:#64748b;background:#f8fafc;padding:8px 12px;border-radius:4px;margin-bottom:12px;">
@@ -816,7 +824,7 @@ function renderSettlementPolicy() {
       </div>
       <div class="panel-body" style="padding:16px;">
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
-          <input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">
+          ${isAdmin() ? '<input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">' : '<span style="font-size:12px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
           <span style="font-size:11px;color:#94a3b8;">론앤마스터에서 받은 정산 정책 엑셀 파일을 업로드하세요 (.xlsx, .csv)</span>
         </div>
       </div>
@@ -1193,10 +1201,10 @@ function renderEmployees() {
       <td>${scopeLabel}</td>
       <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
       <td>${joinDate}</td>
-      <td>
+      <td>${isAdmin() ? `
         <button class="btn btn-sm btn-outline" onclick="editEmployee(${e.id})">수정</button>
         <button class="btn btn-sm btn-outline" onclick="resetEmployeePassword(${e.id})">비밀번호</button>
-      </td>
+      ` : '-'}</td>
     </tr>`;
   }).join('');
 
@@ -1206,7 +1214,7 @@ function renderEmployees() {
       <select id="empRole"><option>전체 역할</option><option>관리자</option><option>영업직원</option></select>
       <select id="empStatus"><option>전체 상태</option><option>활성</option><option>비활성</option></select>
       <button class="btn btn-primary" onclick="loadEmployees()">검색</button>
-      <button class="btn btn-primary" style="margin-left:auto" onclick="showAddEmployeeModal()">+ 직원 등록</button>
+      ${isAdmin() ? '<button class="btn btn-primary" style="margin-left:auto" onclick="showAddEmployeeModal()">+ 직원 등록</button>' : ''}
     </div>
     <div class="panel">
       <div class="panel-header"><h2>직원 목록 (${employeeList.length}명)</h2></div>
