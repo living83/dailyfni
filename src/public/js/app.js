@@ -197,71 +197,79 @@ function navigate(page) {
 // ========================================
 // 1. 대시보드
 // ========================================
+let dashboardData = null;
+
 function renderDashboard() {
+  // DB에서 로드
+  if (!dashboardData) {
+    loadDashboard();
+  }
+  const d = dashboardData || {};
+  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','환수':'badge-rejected','종결':'badge-closed'};
+
+  const totalCust = d.totalCustomers || 0;
+  const statusRows = (d.statusCounts || []).map(s => {
+    const pct = totalCust > 0 ? ((s.cnt / totalCust) * 100).toFixed(1) : 0;
+    return `<tr><td><span class="badge ${statusMap[s.status]||'badge-lead'}">${s.status||'-'}</span></td><td>${s.cnt}</td><td>${pct}%</td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
+
+  const dbRows = (d.dbSourceCounts || []).map(s =>
+    `<tr><td>${s.db_source||'-'}</td><td>${s.cnt}</td></tr>`
+  ).join('') || '<tr><td colspan="2" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
+
+  const recentRows = (d.recentCustomers || []).map(c => {
+    const date = c.created_at ? new Date(c.created_at).toISOString().split('T')[0] : '-';
+    return `<tr>
+      <td>${date}</td>
+      <td><a href="#" class="customer-link" ondblclick="viewCustomerLedger(${c.id});return false;">${c.name}</a></td>
+      <td>${formatPhone(c.phone||'')}</td>
+      <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
+      <td>${c.assigned_to||'-'}</td>
+      <td>${c.db_source||'-'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">등록된 고객이 없습니다.</td></tr>';
+
   return `
     <div id="intakeCard"></div>
     <div class="stat-cards">
       <div class="stat-card">
         <div class="label">이번 달 신규 고객</div>
-        <div class="value">127</div>
-        <div class="change up">+12.5% vs 전월</div>
+        <div class="value">${d.newCustomers || 0}명</div>
       </div>
       <div class="stat-card">
-        <div class="label">대출 접수 건</div>
-        <div class="value">84</div>
-        <div class="change up">+8.2% vs 전월</div>
+        <div class="label">전체 고객</div>
+        <div class="value">${totalCust}명</div>
       </div>
       <div class="stat-card">
-        <div class="label">대출 실행 건</div>
-        <div class="value">52</div>
-        <div class="change down">-3.1% vs 전월</div>
+        <div class="label">신규 유입 대기</div>
+        <div class="value" style="color:#f59e0b;">${d.pendingIntake || 0}건</div>
       </div>
       <div class="stat-card">
-        <div class="label">이번 달 매출</div>
-        <div class="value">4,820만</div>
-        <div class="change up">+15.3% vs 전월</div>
+        <div class="label">미확인 알림</div>
+        <div class="value" style="color:#ef4444;">${d.unreadNotis || 0}건</div>
       </div>
       <div class="stat-card">
-        <div class="label">실행률</div>
-        <div class="value">61.9%</div>
-        <div class="change up">+2.4%p vs 전월</div>
+        <div class="label">오늘 상담</div>
+        <div class="value">${d.todayConsults || 0}건</div>
       </div>
     </div>
 
     <div class="grid-2">
       <div class="panel">
-        <div class="panel-header">
-          <h2>대출 상태별 현황</h2>
-        </div>
+        <div class="panel-header"><h2>고객 상태별 현황</h2></div>
         <div class="panel-body">
           <table>
             <thead><tr><th>상태</th><th>건수</th><th>비율</th></tr></thead>
-            <tbody>
-              <tr><td><span class="badge badge-lead">리드</span></td><td>23</td><td>27.4%</td></tr>
-              <tr><td><span class="badge badge-consult">상담</span></td><td>15</td><td>17.9%</td></tr>
-              <tr><td><span class="badge badge-submit">접수</span></td><td>12</td><td>14.3%</td></tr>
-              <tr><td><span class="badge badge-review">심사중</span></td><td>8</td><td>9.5%</td></tr>
-              <tr><td><span class="badge badge-approved">승인</span></td><td>14</td><td>16.7%</td></tr>
-              <tr><td><span class="badge badge-rejected">부결</span></td><td>5</td><td>6.0%</td></tr>
-              <tr><td><span class="badge badge-executed">실행</span></td><td>7</td><td>8.3%</td></tr>
-            </tbody>
+            <tbody>${statusRows}</tbody>
           </table>
         </div>
       </div>
       <div class="panel">
-        <div class="panel-header">
-          <h2>DB 출처별 유입 현황</h2>
-        </div>
+        <div class="panel-header"><h2>DB 출처별 유입 현황</h2></div>
         <div class="panel-body">
           <table>
-            <thead><tr><th>출처</th><th>유입</th><th>실행</th><th>전환율</th></tr></thead>
-            <tbody>
-              <tr><td>네이버 광고</td><td>38</td><td>18</td><td>47.4%</td></tr>
-              <tr><td>카카오 DB</td><td>25</td><td>14</td><td>56.0%</td></tr>
-              <tr><td>자체 DB</td><td>20</td><td>12</td><td>60.0%</td></tr>
-              <tr><td>소개/추천</td><td>15</td><td>5</td><td>33.3%</td></tr>
-              <tr><td>기타</td><td>29</td><td>3</td><td>10.3%</td></tr>
-            </tbody>
+            <thead><tr><th>출처</th><th>건수</th></tr></thead>
+            <tbody>${dbRows}</tbody>
           </table>
         </div>
       </div>
@@ -269,23 +277,32 @@ function renderDashboard() {
 
     <div class="panel">
       <div class="panel-header">
-        <h2>최근 대출 신청</h2>
-        <button class="btn btn-outline btn-sm" onclick="navigate('loans')">전체보기</button>
+        <h2>최근 등록 고객</h2>
+        <button class="btn btn-outline btn-sm" onclick="navigate('customers')">전체보기</button>
       </div>
       <div class="panel-body">
         <table>
-          <thead><tr><th>신청일</th><th>고객명</th><th>연락처</th><th>대출금액</th><th>상태</th><th>담당자</th></tr></thead>
-          <tbody>
-            <tr><td>2026-03-26</td><td>박지영</td><td>010-1234-5678</td><td>3,000만</td><td><span class="badge badge-submit">접수</span></td><td>김대리</td></tr>
-            <tr><td>2026-03-25</td><td>이승호</td><td>010-9876-5432</td><td>5,000만</td><td><span class="badge badge-review">심사중</span></td><td>이과장</td></tr>
-            <tr><td>2026-03-25</td><td>최민수</td><td>010-5555-1234</td><td>2,000만</td><td><span class="badge badge-approved">승인</span></td><td>김대리</td></tr>
-            <tr><td>2026-03-24</td><td>정하나</td><td>010-3333-7890</td><td>1,500만</td><td><span class="badge badge-executed">실행</span></td><td>박사원</td></tr>
-            <tr><td>2026-03-24</td><td>한동욱</td><td>010-7777-4321</td><td>4,000만</td><td><span class="badge badge-rejected">부결</span></td><td>이과장</td></tr>
-          </tbody>
+          <thead><tr><th>등록일</th><th>고객명</th><th>연락처</th><th>상태</th><th>담당자</th><th>DB출처</th></tr></thead>
+          <tbody>${recentRows}</tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+async function loadDashboard() {
+  try {
+    const res = await fetch('/api/dashboard/summary');
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      dashboardData = data.data;
+      if (document.getElementById('intakeCard')) {
+        document.getElementById('content').innerHTML = renderDashboard();
+      }
+    }
+  } catch (e) { console.error(e); }
+}
 }
 
 // ========================================
