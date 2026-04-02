@@ -2475,7 +2475,8 @@ function saveLedger() {
   if (histDiv) {
     const newItem = document.createElement('div');
     newItem.className = 'timeline-item';
-    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">고객 원장 정보 수정</div><div class="tl-user">처리: 김대리</div>`;
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">고객 원장 정보 수정</div><div class="tl-user">처리: ${user.name||'-'}</div>`;
     histDiv.insertBefore(newItem, histDiv.firstChild);
   }
   // 읽기 전용으로 복원
@@ -2707,6 +2708,7 @@ function renderCustomerLedger() {
 
         <div class="panel"><div class="panel-header"><h2>법원 사건 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
+            <tr><th>회파복 구분</th><td><input type="text" value="${c.recovery_type||'-'}" ${ro}></td><th>총회차/납입회차</th><td><input type="text" value="${(c.recovery_total_count||'') && (c.recovery_paid_count||'') ? c.recovery_total_count+'/'+c.recovery_paid_count : '-'}" ${ro}></td></tr>
             <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.case_no||c.caseNo||'-'}" ${ro}></td></tr>
           </tbody></table>
         </div></div>

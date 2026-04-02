@@ -110,7 +110,7 @@ router.put('/customers/:id', async (req, res) => {
        assignedTo||'', status||'리드', memo||'', req.params.id]
     );
 
-    await logAudit({ eventType: 'customer_edit', targetType: 'customer', targetId: req.params.id, targetName: name, afterValue: '고객 정보 수정', performedBy: 'admin' });
+    await logAudit({ eventType: 'customer_edit', targetType: 'customer', targetId: req.params.id, targetName: name, afterValue: '고객 정보 수정', performedBy: req.user?.name || 'admin' });
 
     res.json({ success: true, message: '수정 완료' });
   } catch (err) {
@@ -123,7 +123,7 @@ router.delete('/customers/:id', async (req, res) => {
   try {
     const rows = await query('SELECT name FROM customers WHERE id = ?', [req.params.id]);
     await query('DELETE FROM customers WHERE id = ?', [req.params.id]);
-    await logAudit({ eventType: 'customer_delete', targetType: 'customer', targetId: req.params.id, targetName: rows[0]?.name || '', afterValue: '고객 삭제', performedBy: 'admin' });
+    await logAudit({ eventType: 'customer_delete', targetType: 'customer', targetId: req.params.id, targetName: rows[0]?.name || '', afterValue: '고객 삭제', performedBy: req.user?.name || 'admin' });
     res.json({ success: true, message: '삭제 완료' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
