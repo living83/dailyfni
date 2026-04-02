@@ -2310,6 +2310,47 @@ setInterval(() => loadIntake(), 60000);
 // ========================================
 // 고객 등록 (웹 페이지)
 // ========================================
+async function submitCustomerRegister() {
+  // 폼에서 값 수집
+  const inputs = document.querySelectorAll('#content .info-table input, #content .info-table select, #content .info-table textarea');
+  const vals = [...inputs].map(i => i.value.trim());
+
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const data = {
+    name: vals[0] || '', ssn: vals[1] || '', phone: vals[4] || '', phone2: vals[5] || '',
+    email: vals[6] || '', dbSource: vals[7] || '', address: vals[8] || '', residenceAddress: vals[9] || '',
+    company: vals[10] || '', employmentType: vals[11] || '', companyAddr: vals[12] || '',
+    companyPhone: vals[13] || '', workYears: vals[14] || '', salary: parseInt(vals[15]) || 0,
+    courtName: vals[17] || '', caseNo: vals[18] || '',
+    refundBank: vals[19] || '', refundHolder: vals[20] || '', refundAccount: vals[21] || '',
+    creditScore: parseInt(vals[22]) || 0, existingLoans: vals[24] || '',
+    assignedTo: user.name || '', status: '리드', memo: ''
+  };
+
+  if (!data.name || !data.phone) {
+    alert('고객명과 휴대전화는 필수입니다.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/customers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    if (result.success) {
+      intakePrefill = null;
+      alert(`${data.name} 고객이 등록되었습니다.`);
+      navigate('customers');
+    } else {
+      alert('등록 실패: ' + (result.message || ''));
+    }
+  } catch (e) {
+    alert('오류: ' + e.message);
+  }
+}
+
 function renderCustomerRegister() {
   const pf = intakePrefill || {};
   const selDb = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
@@ -2408,7 +2449,7 @@ function renderCustomerRegister() {
         </div>
 
         <div style="display:flex;gap:6px;margin-top:8px;">
-          <button class="btn btn-primary" style="flex:1;padding:8px;font-size:13px;" onclick="alert('저장 기능은 백엔드 연동 후 활성화됩니다.')">고객 등록</button>
+          <button class="btn btn-primary" style="flex:1;padding:8px;font-size:13px;" onclick="submitCustomerRegister()">고객 등록</button>
           <button class="btn btn-outline" style="padding:8px 14px;font-size:13px;" onclick="navigate('customer-register')">초기화</button>
         </div>
       </div>

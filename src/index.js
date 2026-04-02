@@ -23,6 +23,7 @@ const employeeApiRoutes = require('./routes/employeeApiRoutes');
 const notificationApiRoutes = require('./routes/notificationApiRoutes');
 const intakeRoutes = require('./routes/intakeRoutes');
 const auditApiRoutes = require('./routes/auditApiRoutes');
+const customerApiRoutes = require('./routes/customerApiRoutes');
 
 const path = require('path');
 const cors = require('cors');
@@ -53,7 +54,7 @@ app.use('/api', writerRoutes);
 app.use('/api', imageRoutes);
 app.use('/api', reviewerRoutes);
 app.use('/api', publisherRoutes);
-app.use('/api', customerRoutes);
+// app.use('/api', customerRoutes); // customerApiRoutes로 대체
 app.use('/api', loanRoutes);
 app.use('/api', settlementRoutes);
 app.use('/api', employeeRoutes);
@@ -66,6 +67,7 @@ app.use('/api', employeeApiRoutes);
 app.use('/api', notificationApiRoutes);
 app.use('/api', intakeRoutes);
 app.use('/api', auditApiRoutes);
+app.use('/api', customerApiRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
