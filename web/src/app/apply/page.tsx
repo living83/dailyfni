@@ -25,6 +25,14 @@ export default function ApplyPage() {
     if (field === "consent") setConsentWarning(false);
   };
 
+  // 전화번호 하이픈 자동 삽입
+  const formatPhone = (value: string) => {
+    const nums = value.replace(/[^0-9]/g, "").slice(0, 11);
+    if (nums.length <= 3) return nums;
+    if (nums.length <= 7) return `${nums.slice(0, 3)}-${nums.slice(3)}`;
+    return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
+  };
+
   // 전산 API 전송 (실패해도 무시 — 고객 경험에 영향 없음)
   const sendToSystem = (data: Record<string, string>) => {
     const endpoint = process.env.NEXT_PUBLIC_INTAKE_API || "http://localhost:3000/api/intake/homepage";
@@ -203,8 +211,8 @@ export default function ApplyPage() {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => updateField("phone", e.target.value)}
-                    placeholder="01012345678"
+                    onChange={(e) => updateField("phone", formatPhone(e.target.value))}
+                    placeholder="010-1234-5678"
                     className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 ${
                       errors.phone ? "border-error bg-error/5" : "border-gray-300"
                     }`}
