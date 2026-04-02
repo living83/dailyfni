@@ -7,8 +7,10 @@ const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 // 고객 등록
 router.post('/customers', async (req, res) => {
   try {
-    const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, company, companyAddr, companyPhone,
-      salary, employmentType, has4Insurance, workYears, courtName, caseNo, refundBank, refundAccount, refundHolder,
+    const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, housingType, housingOwnership,
+      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, workYears,
+      vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
+      recoveryType, courtName, caseNo, refundBank, refundAccount, refundHolder, monthlyPayment,
       creditScore, creditStatus, totalDebt, existingLoans, dbSource, assignedTo, status, memo, loanDate, loanAmount } = req.body;
 
     if (!name || !phone) {
@@ -25,14 +27,18 @@ router.post('/customers', async (req, res) => {
 
     const result = await query(
       `INSERT INTO customers (name, ssn, age, phone, carrier, phone2, email, address, residence_address,
-        company, company_addr, company_phone, salary, employment_type, has_4_insurance, work_years,
-        court_name, case_no, refund_bank, refund_account, refund_holder,
+        housing_type, housing_ownership, company, company_addr, company_phone,
+        salary, employment_type, has_4_insurance, work_years,
+        vehicle_no, vehicle_name, vehicle_year, vehicle_km, vehicle_ownership, vehicle_co_owner,
+        recovery_type, court_name, case_no, refund_bank, refund_account, refund_holder, monthly_payment,
         credit_score, credit_status, total_debt, existing_loans, db_source,
         assigned_to, status, memo, loan_date, loan_amount, reg_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
       [name, ssn||'', age, phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
-       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', workYears||'',
-       courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'',
+       housingType||'', housingOwnership||'', company||'', companyAddr||'', companyPhone||'',
+       salary||0, employmentType||'', has4Insurance||'', workYears||'',
+       vehicleNo||'', vehicleName||'', vehicleYear||'', vehicleKm||'', vehicleOwnership||'', vehicleCoOwner||'',
+       recoveryType||'', courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'', monthlyPayment||'',
        creditScore||0, creditStatus||'정상', totalDebt||'0', existingLoans||'', dbSource||'',
        assignedTo||'', status||'리드', memo||'', loanDate||null, loanAmount||'']
     );

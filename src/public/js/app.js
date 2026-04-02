@@ -2556,10 +2556,14 @@ async function submitCustomerRegister() {
     carrier: v('reg-carrier'), email: v('reg-email'), dbSource: v('reg-dbsource'),
     address: (v('reg-addr1') + ' ' + v('reg-addr1-detail')).trim(),
     residenceAddress: (v('reg-addr2') + ' ' + v('reg-addr2-detail')).trim(),
+    housingType: v('reg-housing'), housingOwnership: v('reg-housing-own'),
     company: v('reg-company'), employmentType: v('reg-emptype'), has4Insurance: v('reg-insurance'),
     companyAddr: (v('reg-compaddr') + ' ' + v('reg-compaddr-detail')).trim(),
     companyPhone: v('reg-compphone'), workYears: v('reg-workyears'), salary: parseInt(v('reg-salary')) || 0,
-    courtName: v('reg-court'), caseNo: v('reg-caseno'),
+    vehicleNo: v('reg-vno'), vehicleName: v('reg-vname'), vehicleYear: v('reg-vyear'),
+    vehicleKm: v('reg-vkm'), vehicleOwnership: v('reg-vown'), vehicleCoOwner: v('reg-vcoowner'),
+    recoveryType: v('reg-recovery'),
+    courtName: v('reg-court'), caseNo: v('reg-caseno'), monthlyPayment: v('reg-monthly-pay'),
     refundBank: v('reg-bank'), refundHolder: v('reg-holder'), refundAccount: v('reg-account'),
     creditScore: parseInt(v('reg-credit')) || 0, existingLoans: v('reg-loans'),
     assignedTo: v('reg-assigned'), status: v('reg-status') || '리드', memo: ''
@@ -2622,6 +2626,7 @@ function renderCustomerRegister() {
             <tr><th>DB 유입출처 <span class="required">*</span></th><td><select id="reg-dbsource">${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td><th></th><td></td></tr>
             <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr1" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr1')">검색</button><input type="text" id="reg-addr1-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
             <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr2" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr2')">검색</button><input type="text" id="reg-addr2-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
+            <tr><th>주거종류</th><td><select id="reg-housing"><option>선택</option><option>아파트</option><option>빌라</option><option>연립</option><option>다세대</option><option>단독주택</option><option>상가</option><option>오피스텔</option><option>관사</option><option>기타</option></select></td><th>주택소유구분</th><td><select id="reg-housing-own"><option>선택</option><option>부동산 소유중</option><option>부동산 없음</option><option>기타</option></select></td></tr>
           </tbody></table>
         </div></div>
 
@@ -2635,8 +2640,17 @@ function renderCustomerRegister() {
           </tbody></table>
         </div></div>
 
-        <div class="panel"><div class="panel-header"><h2>법원 사건 정보</h2></div><div class="panel-body" style="padding:0;">
+        <div class="panel"><div class="panel-header"><h2>차량 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
+            <tr><th>차량번호</th><td><input type="text" id="reg-vno" placeholder="123가4567"></td><th>차량명</th><td><input type="text" id="reg-vname" placeholder="차량명"></td></tr>
+            <tr><th>차량연식</th><td><select id="reg-vyear"><option>선택</option>${Array.from({length:20},(_,i)=>2026-i).map(y=>`<option>${y}</option>`).join('')}</select></td><th>주행거리</th><td><div style="display:flex;align-items:center;gap:4px;"><input type="text" id="reg-vkm" placeholder="숫자만" style="flex:1;"><span style="font-size:11px;">km</span></div></td></tr>
+            <tr><th>차량소유구분</th><td><select id="reg-vown"><option>선택</option><option>소유(본인명의)</option><option>소유(공동명의 대표)</option><option>소유(공동명의)</option><option>미소유</option></select></td><th>공동명의자명</th><td><input type="text" id="reg-vcoowner" placeholder=""></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>회파복 / 법원 정보</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>회파복 구분</th><td><select id="reg-recovery"><option>선택</option><option>무</option><option>회생</option><option>파산</option><option>회복</option></select></td><th></th><td></td></tr>
             <tr><th>법원명</th><td><input type="text" id="reg-court" placeholder="법원명 (해당 시)"></td><th>사건번호</th><td><input type="text" id="reg-caseno" placeholder="사건번호 (해당 시)"></td></tr>
           </tbody></table>
         </div></div>
@@ -2644,7 +2658,7 @@ function renderCustomerRegister() {
         <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>은행명</th><td><select id="reg-bank"><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" id="reg-holder" placeholder="예금주"></td></tr>
-            <tr><th>계좌번호</th><td colspan="3"><input type="text" id="reg-account" placeholder="계좌번호 입력" style="width:100%;"></td></tr>
+            <tr><th>계좌번호</th><td><input type="text" id="reg-account" placeholder="계좌번호 입력"></td><th>월변제금액</th><td><div style="display:flex;align-items:center;gap:4px;"><input type="text" id="reg-monthly-pay" placeholder="" style="flex:1;"><span style="font-size:11px;">만원</span></div></td></tr>
           </tbody></table>
         </div></div>
 
