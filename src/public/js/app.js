@@ -532,6 +532,22 @@ function renderLoanRegister() {
   const dbSource = c ? (c.db_source || c.dbSource || '') : '';
   const companyAddr = c ? (c.company_addr || c.companyAddr || '') : '';
   const creditScore = c ? (c.credit_score || c.creditScore || 0) : 0;
+  const residenceAddr = c ? (c.residence_address || c.residenceAddress || c.address || '') : '';
+  const housingType = c ? (c.housing_type || '') : '';
+  const housingOwn = c ? (c.housing_ownership || '') : '';
+  const vehicleNo = c ? (c.vehicle_no || '') : '';
+  const vehicleName = c ? (c.vehicle_name || '') : '';
+  const vehicleYear = c ? (c.vehicle_year || '') : '';
+  const vehicleKm = c ? (c.vehicle_km || '') : '';
+  const vehicleOwn = c ? (c.vehicle_ownership || '') : '';
+  const vehicleCoOwner = c ? (c.vehicle_co_owner || '') : '';
+  const recoveryType = c ? (c.recovery_type || '') : '';
+  const courtName = c ? (c.court_name || c.courtName || '') : '';
+  const caseNo = c ? (c.case_no || c.caseNo || '') : '';
+  const refundBank = c ? (c.refund_bank || c.refundBank || '') : '';
+  const refundAccount = c ? (c.refund_account || c.refundAccount || '') : '';
+  const monthlyPayment = c ? (c.monthly_payment || '') : '';
+  const carrier = c ? (c.carrier || '') : '';
 
   const sel = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
   const ro = c ? 'readonly style="background:#f1f5f9;"' : '';
@@ -583,7 +599,7 @@ function renderLoanRegister() {
               <th>휴대폰 <span class="required">*</span></th>
               <td colspan="5">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <select style="width:80px;" ${c?'disabled style="background:#f1f5f9;width:80px;"':''}>${sel(['통신사()','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], '')}</select>
+                  <select style="width:80px;" ${c?'disabled style="background:#f1f5f9;width:80px;"':''}>${sel(['통신사()','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], carrier||'통신사()')}</select>
                   <input type="text" style="width:60px;" placeholder="010" value="${phoneParts[0]||''}" ${ro}>
                   <input type="text" style="width:80px;" placeholder="중간자리" value="${phoneParts[1]||''}" ${ro}>
                   <input type="text" style="width:80px;" placeholder="뒷자리" value="${phoneParts[2]||''}" ${ro}>
@@ -602,16 +618,16 @@ function renderLoanRegister() {
                 <div style="display:flex;gap:4px;align-items:center;">
                   <input type="text" id="lr-addr-zone" style="width:60px;" placeholder="우편번호" readonly>
                   <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-addr')">주소 검색</button>
-                  <input type="text" id="lr-addr-road" style="flex:1;" placeholder="도로명주소" value="${c ? c.address : ''}" readonly>
+                  <input type="text" id="lr-addr-road" style="flex:1;" placeholder="도로명주소" value="${c ? residenceAddr : ''}" readonly>
                   <input type="text" id="lr-addr-detail" style="width:150px;" placeholder="상세주소">
                 </div>
               </td>
             </tr>
             <tr>
               <th>주거종류</th>
-              <td colspan="2"><select>${sel(['==선택==','자가','전세','월세','기숙사','기타'], '')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','아파트','빌라','연립','다세대','단독주택','상가','오피스텔','관사','기타'], housingType||'==선택==')}</select></td>
               <th>주택소유구분</th>
-              <td colspan="2"><select>${sel(['==선택==','본인소유','배우자소유','가족소유','무주택','기타'], '')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','부동산 소유중','부동산 없음','기타'], housingOwn||'==선택==')}</select></td>
             </tr>
           </tbody>
         </table>
@@ -677,26 +693,26 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>차량번호</th>
-              <td colspan="2"><input type="text" placeholder="띄어쓰기 없이 차량번호만 기재 (ex:123가4567)"></td>
+              <td colspan="2"><input type="text" placeholder="차량번호 (ex:123가4567)" value="${vehicleNo}"></td>
               <th>차량명</th>
-              <td colspan="2"><input type="text" placeholder=""></td>
+              <td colspan="2"><input type="text" placeholder="" value="${vehicleName}"></td>
             </tr>
             <tr>
               <th>차량연식</th>
-              <td colspan="2"><select>${sel(['==선택==','2026','2025','2024','2023','2022','2021','2020','2019','2018','2017','2016','2015','기타'], '')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','2026','2025','2024','2023','2022','2021','2020','2019','2018','2017','2016','2015','기타'], vehicleYear||'==선택==')}</select></td>
               <th>주행거리</th>
               <td colspan="2">
                 <div style="display:flex;align-items:center;gap:4px;">
-                  <input type="text" placeholder="숫자로만 입력요망 (ex:5만키로 → 50000라고만 입력)">
+                  <input type="text" placeholder="숫자로만 입력" value="${vehicleKm}">
                   <span style="font-size:12px;color:#64748b;">km</span>
                 </div>
               </td>
             </tr>
             <tr>
               <th>차량소유구분</th>
-              <td colspan="2"><select>${sel(['==선택==','소유(본인)','소유(공동명의대표)','소유(공동명의)','미소유'], '')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','소유(본인명의)','소유(공동명의 대표)','소유(공동명의)','미소유'], vehicleOwn||'==선택==')}</select></td>
               <th>공동명의자명</th>
-              <td colspan="2"><input type="text" placeholder=""></td>
+              <td colspan="2"><input type="text" placeholder="" value="${vehicleCoOwner}"></td>
             </tr>
           </tbody>
         </table>
@@ -707,25 +723,25 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>회파복 구분</th>
-              <td colspan="5"><select>${sel(['==선택==','회생','파산','회복','무'], '')}</select></td>
+              <td colspan="5"><select>${sel(['==선택==','회생','파산','회복','무'], recoveryType||'==선택==')}</select></td>
             </tr>
             <tr>
               <th>법원명</th>
-              <td colspan="2"><input type="text" placeholder="회복자의 경우 신용회복위원회 라고 기재" value="${c ? c.courtName : ''}" ${c&&c.courtName ? ro : ''}></td>
+              <td colspan="2"><input type="text" placeholder="회복자의 경우 신용회복위원회 라고 기재" value="${courtName}" ${courtName ? ro : ''}></td>
               <th>사건번호</th>
               <td colspan="2">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <input type="text" style="width:60px;" placeholder="0000" value="${c&&c.caseNo ? c.caseNo.substring(0,4) : ''}">
+                  <input type="text" style="width:60px;" placeholder="0000" value="${caseNo ? caseNo.substring(0,4) : ''}">
                   <select style="width:70px;">${sel(['선택','가단','가합','개회','개파','기타'], c&&c.caseNo ? '' : '선택')}</select>
-                  <input type="text" style="width:80px;" placeholder="" value="${c&&c.caseNo ? c.caseNo.replace(/[^0-9]/g,'').substring(4) : ''}">
+                  <input type="text" style="width:80px;" placeholder="" value="${caseNo ? caseNo.replace(/[^0-9]/g,'').substring(4) : ''}">
                 </div>
               </td>
             </tr>
             <tr>
               <th>환급은행 <span class="required">*</span></th>
-              <td colspan="2"><select>${sel(['==선택==','국민은행','신한은행','우리은행','하나은행','농협은행','카카오뱅크','토스뱅크','기업은행','SC제일','씨티','기타'], c ? c.refundBank : '==선택==')}</select></td>
+              <td colspan="2"><select>${sel(['==선택==','국민은행','신한은행','우리은행','하나은행','농협은행','카카오뱅크','토스뱅크','기업은행','SC제일','씨티','기타'], refundBank||'==선택==')}</select></td>
               <th>환급은행계좌</th>
-              <td colspan="2"><input type="text" placeholder="계좌번호 입력" value="${c ? c.refundAccount : ''}" ${c&&c.refundAccount ? ro : ''}></td>
+              <td colspan="2"><input type="text" placeholder="계좌번호 입력" value="${refundAccount}" ${refundAccount ? ro : ''}></td>
             </tr>
             <tr>
               <th>월변제금액</th>
