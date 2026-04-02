@@ -1959,7 +1959,7 @@ function closeCustomerSearch() {
   if (modal) modal.remove();
 }
 
-function executeCustomerSearch() {
+async function executeCustomerSearch() {
   const nameVal = (document.getElementById('searchName').value || '').trim();
   const ssnVal = (document.getElementById('searchSsn').value || '').trim();
   const phoneVal = (document.getElementById('searchPhone').value || '').trim();
@@ -1970,21 +1970,25 @@ function executeCustomerSearch() {
     return;
   }
 
-  const results = [];
-  for (const [id, c] of Object.entries(customerData)) {
-    let match = true;
-    if (nameVal && !c.name.includes(nameVal)) match = false;
-    if (phoneVal && !c.phone.replace(/-/g,'').includes(phoneVal.replace(/-/g,''))) match = false;
-    if (ssnVal && !c.ssn.replace(/-/g,'').includes(ssnVal.replace(/-/g,''))) match = false;
-    if (match) results.push({ id: parseInt(id), ...c });
-  }
+  // MySQL API에서 검색
+  try {
+    const searchTerm = nameVal || phoneVal || ssnVal;
+    const res = await fetch(`/api/customers?search=${encodeURIComponent(searchTerm)}`);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { resultsDiv.innerHTML = '<div class="empty-state"><p>검색 오류</p></div>'; return; }
 
-  if (results.length === 0) {
-    resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128566;</div><p>검색 결과가 없습니다.</p></div>';
-    return;
-  }
+    let results = data.success ? data.data : [];
 
-  const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
+    // 추가 필터링 (API가 name/phone만 검색하므로 ssn은 클라이언트에서)
+    if (ssnVal) results = results.filter(c => (c.ssn||'').replace(/-/g,'').includes(ssnVal.replace(/-/g,'')));
+    if (nameVal && phoneVal) results = results.filter(c => c.name.includes(nameVal) && (c.phone||'').replace(/-/g,'').includes(phoneVal.replace(/-/g,'')));
+
+    if (results.length === 0) {
+      resultsDiv.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><div class="icon">&#128566;</div><p>검색 결과가 없습니다.</p></div>';
+      return;
+    }
+
+    const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
 
   let html = `
     <div style="font-size:12px;color:#64748b;margin-bottom:8px;">검색 결과: <strong>${results.length}명</strong>${results.length > 1 ? ' (동명이인 또는 중복 연락처)' : ''}</div>
@@ -1994,18 +1998,22 @@ function executeCustomerSearch() {
   `;
   for (const r of results) {
     const badge = statusMap[r.status] || 'badge-lead';
+    const regDate = r.reg_date ? new Date(r.reg_date).toISOString().split('T')[0] : (r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '-');
     html += `<tr class="search-result-row" ondblclick="closeCustomerSearch();viewCustomerLedger(${r.id});" title="더블클릭하여 고객원장 보기">
       <td>${r.id}</td>
       <td><strong>${r.name}</strong></td>
-      <td>${r.phone}</td>
-      <td>${r.ssn}</td>
-      <td><span class="badge ${badge}">${r.status}</span></td>
-      <td>${r.assignedTo}</td>
-      <td>${r.regDate}</td>
+      <td>${formatPhone(r.phone||'')}</td>
+      <td>${(r.ssn||'').substring(0,6)}</td>
+      <td><span class="badge ${badge}">${r.status||'리드'}</span></td>
+      <td>${r.assigned_to||'-'}</td>
+      <td>${regDate}</td>
     </tr>`;
   }
   html += '</tbody></table>';
   resultsDiv.innerHTML = html;
+  } catch (e) {
+    resultsDiv.innerHTML = '<div class="empty-state"><p>검색 오류: ' + e.message + '</p></div>';
+  }
 }
 
 // ========================================
