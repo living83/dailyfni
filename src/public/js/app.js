@@ -2,6 +2,25 @@
 // 대부중개 전산시스템 - 프론트엔드 앱
 // ========================================
 
+// 상담내용 영문 → 한글 변환
+function translateContent(content) {
+  if (!content) return '';
+  return content
+    .replace(/employed/g, '직장인')
+    .replace(/self_employed/g, '개인사업자')
+    .replace(/unemployed/g, '무직')
+    .replace(/other/g, '기타')
+    .replace(/yes/g, '가입')
+    .replace(/no/g, '미가입')
+    .replace(/unknown/g, '모름')
+    .replace(/SKT/g, 'SKT')
+    .replace(/KT/g, 'KT')
+    .replace(/LGU/g, 'LGU+')
+    .replace(/통신사:/g, '통신사:')
+    .replace(/직업:/g, '직업:')
+    .replace(/4대보험:/g, '4대보험:');
+}
+
 // 전화번호 하이픈 자동 포맷
 function formatPhone(val) {
   const num = val.replace(/[^0-9]/g, '');
@@ -2157,12 +2176,15 @@ function renderIntake() {
       <button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="rejectIntake(${i.id})">반려</button>
     ` : (i.assigned_to || '-');
 
+    const phoneF = formatPhone(i.phone||'');
+    const contentKo = translateContent(i.content||'');
+
     return `<tr ondblclick="processIntake(${i.id},'${i.name}','${i.phone}','${(i.content||'').replace(/'/g,"\\'")}','${i.source||'홈페이지'}')" style="cursor:${i.status==='pending'?'pointer':'default'};" title="${i.status==='pending'?'더블클릭: 고객등록으로 이동':''}">
       <td>${date}</td>
       <td style="font-weight:600;">${i.name}</td>
-      <td>${i.phone}</td>
+      <td>${phoneF}</td>
       <td>${i.source || '홈페이지'}</td>
-      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${i.content||''}">${i.content||'-'}</td>
+      <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${contentKo}">${contentKo||'-'}</td>
       <td>${statusBadge}</td>
       <td>${actions}</td>
     </tr>`;
