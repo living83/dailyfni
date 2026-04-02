@@ -2359,7 +2359,8 @@ function renderCustomerLedger() {
           <table class="info-table"><tbody>
             <tr><th>고객명</th><td><input type="text" value="${c.name||''}" ${ro}></td><th>주민등록번호</th><td><input type="text" value="${formatSsn(ssn)}" ${ro}></td></tr>
             <tr><th>만 나이</th><td><input type="text" value="${c.age||''}세" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td><th>성별</th><td><input type="text" value="${gender}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
-            <tr><th>휴대전화</th><td><input type="text" value="${formatPhone(c.phone||'')}" ${ro}></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || '-'}" ${ro}></td></tr>
+            <tr><th>통신사</th><td><input type="text" value="${c.carrier||'-'}" ${ro}></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || '-'}" ${ro}></td></tr>
+            <tr><th>휴대전화</th><td><input type="text" value="${formatPhone(c.phone||'')}" ${ro}></td><th>4대보험</th><td><input type="text" value="${c.has_4_insurance||'-'}" ${ro}></td></tr>
             <tr><th>이메일</th><td><input type="text" value="${c.email||''}" ${ro}></td><th>DB 유입출처</th><td><input type="text" value="${dbSource}" ${ro}></td></tr>
             <tr><th>초본 주소</th><td colspan="3"><input type="text" value="${c.address||c.residence_address||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
             <tr><th>실거주 주소</th><td colspan="3"><input type="text" value="${c.residence_address||c.address||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
@@ -2423,14 +2424,6 @@ function renderCustomerLedger() {
           <div class="panel-body" style="padding:8px 12px;">
             <div class="timeline" id="ledgerChangeHistory">
               <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel"><div class="panel-header"><h2>변경 이력</h2></div>
-          <div class="panel-body" style="padding:8px 12px;">
-            <div class="timeline" id="ledgerChangeHistory">
-              <div class="timeline-item"><div class="tl-date">2026-03-22 09:00</div><div class="tl-content">최초 배정: ${c.assignedTo}</div><div class="tl-user">처리: 박팀장</div></div>
             </div>
           </div>
         </div>
