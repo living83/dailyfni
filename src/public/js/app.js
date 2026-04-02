@@ -2,6 +2,14 @@
 // 대부중개 전산시스템 - 프론트엔드 앱
 // ========================================
 
+// 전화번호 하이픈 자동 포맷
+function formatPhone(val) {
+  const num = val.replace(/[^0-9]/g, '');
+  if (num.length <= 3) return num;
+  if (num.length <= 7) return num.substring(0,3) + '-' + num.substring(3);
+  return num.substring(0,3) + '-' + num.substring(3,7) + '-' + num.substring(7,11);
+}
+
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
   'customer-register': { title: '고객등록', render: renderCustomerRegister },
@@ -2237,10 +2245,12 @@ function renderCustomerRegister() {
   const dbOpts = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','홈페이지','기타'];
 
   // 사용 후 초기화
+  const phoneFormatted = formatPhone(pf.phone||'');
+
   const prefillBanner = pf.name ? `
     <div class="panel" style="border-left:3px solid #f59e0b;margin-bottom:6px;">
       <div class="panel-body" style="padding:8px 14px;font-size:12px;">
-        <strong style="color:#f59e0b;">신규 유입 고객 접수</strong> - ${pf.name} (${pf.phone}) | 출처: ${pf.dbSource||'홈페이지'}
+        <strong style="color:#f59e0b;">신규 유입 고객 접수</strong> - ${pf.name} (${phoneFormatted}) | 출처: ${pf.dbSource||'홈페이지'}
       </div>
     </div>
   ` : '';
@@ -2253,7 +2263,7 @@ function renderCustomerRegister() {
           <table class="info-table"><tbody>
             <tr><th>고객명 <span class="required">*</span></th><td><input type="text" placeholder="고객명 입력" value="${pf.name||''}"></td><th>주민등록번호 <span class="required">*</span></th><td><input type="text" placeholder="000000-0000000"></td></tr>
             <tr><th>만 나이</th><td><input type="text" placeholder="자동계산" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select><option>선택</option><option>남</option><option>여</option></select></td></tr>
-            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000" value="${pf.phone||''}"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
+            <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>보조 연락처</th><td><input type="text" placeholder="연락처"></td></tr>
             <tr><th>이메일</th><td><input type="text" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select>${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
             <tr><th>초본 주소</th><td colspan="3"><input type="text" placeholder="초본 주소 입력" style="width:100%;"></td></tr>
             <tr><th>실거주 주소</th><td colspan="3"><input type="text" placeholder="실거주 주소 입력" style="width:100%;"></td></tr>
