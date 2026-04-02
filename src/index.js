@@ -45,21 +45,21 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api', authRoutes);
-app.use('/api', agencyRoutes);
-app.use('/api', plannerRoutes);
-app.use('/api', researchRoutes);
-app.use('/api', seoRoutes);
-app.use('/api', writerRoutes);
-app.use('/api', imageRoutes);
-app.use('/api', reviewerRoutes);
-app.use('/api', publisherRoutes);
+// app.use('/api', authRoutes);
+// app.use('/api', agencyRoutes);
+// app.use('/api', plannerRoutes);
+// app.use('/api', researchRoutes);
+// app.use('/api', seoRoutes);
+// app.use('/api', writerRoutes);
+// app.use('/api', imageRoutes);
+// app.use('/api', reviewerRoutes);
+// app.use('/api', publisherRoutes);
 // app.use('/api', customerRoutes); // customerApiRoutes로 대체
-app.use('/api', loanRoutes);
-app.use('/api', settlementRoutes);
-app.use('/api', employeeRoutes);
-app.use('/api', notificationRoutes);
-app.use('/api', auditRoutes);
+// app.use('/api', loanRoutes);
+// app.use('/api', settlementRoutes);
+// app.use('/api', employeeRoutes);
+// app.use('/api', notificationRoutes);
+// app.use('/api', auditRoutes);
 app.use('/api', crawlerRoutes);
 app.use('/api', loginRoutes);
 app.use('/api', settlementApiRoutes);
