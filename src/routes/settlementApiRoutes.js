@@ -104,4 +104,91 @@ router.post('/settlement/adjustments/upload', async (req, res) => {
   }
 });
 
+// === 매출 집계 ===
+
+// 실행 건 등록
+router.post('/settlement/executions', async (req, res) => {
+  try {
+    const { customerName, executedDate, loanAmount, productName, feeRateUnder, feeRateOver, feeAmount, dbSource, assignedTo } = req.body;
+    const result = await query(
+      `INSERT INTO settlement_executions (customer_name, executed_date, loan_amount, product_name, fee_rate_under, fee_rate_over, fee_amount, db_source, assigned_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [customerName||'', executedDate, loanAmount||0, productName||'', feeRateUnder||0, feeRateOver||0, feeAmount||0, dbSource||'', assignedTo||'']
+    );
+    await logAudit({ eventType: 'settlement_change', targetType: 'execution', targetId: result.insertId, afterValue: `실행 건 등록: ${customerName} ${loanAmount}만`, performedBy: assignedTo });
+    res.json({ success: true, id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 실행 건 목록 조회
+router.get('/settlement/executions', async (req, res) => {
+  try {
+    const { month, dbSource, assignedTo } = req.query;
+    let sql = 'SELECT * FROM settlement_executions WHERE 1=1';
+    const params = [];
+    if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
+    if (dbSource && dbSource !== '전체 출처') { sql += ' AND db_source = ?'; params.push(dbSource); }
+    if (assignedTo && assignedTo !== '전체 담당자') { sql += ' AND assigned_to = ?'; params.push(assignedTo); }
+    sql += ' ORDER BY executed_date DESC';
+    const rows = await query(sql, params);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 매출 요약 (월별)
+router.get('/settlement/summary', async (req, res) => {
+  try {
+    const { month } = req.query;
+    let monthFilter = '';
+    const params = [];
+    if (month) {
+      monthFilter = ' WHERE DATE_FORMAT(executed_date, "%Y-%m") = ?';
+      params.push(month);
+    }
+
+    // 총 매출 (대출금액 합계)
+    const [totalSales] = await query(`SELECT COALESCE(SUM(loan_amount),0) as total FROM settlement_executions${monthFilter}`, params);
+
+    // 총 수수료
+    const [totalFee] = await query(`SELECT COALESCE(SUM(fee_amount),0) as total FROM settlement_executions${monthFilter}`, params);
+
+    // 실행 건수
+    const [execCount] = await query(`SELECT COUNT(*) as cnt FROM settlement_executions${monthFilter}`, params);
+
+    // 리베이트 합계
+    let rebateFilter = '';
+    const rebateParams = [];
+    if (month) { rebateFilter = ' AND target_month = ?'; rebateParams.push(month); }
+    const [rebateTotal] = await query(`SELECT COALESCE(SUM(amount),0) as total FROM settlement_adjustments WHERE type='리베이트'${rebateFilter}`, rebateParams);
+
+    // 환수 합계
+    const [clawbackTotal] = await query(`SELECT COALESCE(SUM(amount),0) as total FROM settlement_adjustments WHERE type='환수'${rebateFilter}`, rebateParams);
+
+    // 출처별 매출
+    const bySource = await query(`SELECT db_source, COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as total_amount, COALESCE(SUM(fee_amount),0) as total_fee FROM settlement_executions${monthFilter} GROUP BY db_source ORDER BY total_amount DESC`, params);
+
+    // 담당자별 매출
+    const byAssigned = await query(`SELECT assigned_to, COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as total_amount, COALESCE(SUM(fee_amount),0) as total_fee FROM settlement_executions${monthFilter} GROUP BY assigned_to ORDER BY total_amount DESC`, params);
+
+    res.json({
+      success: true,
+      data: {
+        totalSales: totalSales.total,
+        totalFee: totalFee.total,
+        execCount: execCount.cnt,
+        rebateTotal: rebateTotal.total,
+        clawbackTotal: clawbackTotal.total,
+        bySource,
+        byAssigned
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

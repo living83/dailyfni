@@ -879,37 +879,183 @@ function renderSettlement() {
   `;
 }
 
+let salesSummary = null;
+let salesExecutions = [];
+
 function renderSettlementSales() {
+  if (!salesSummary) loadSalesSummary();
+
+  const s = salesSummary || {};
+  const now = new Date();
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+
+  const execRows = salesExecutions.length > 0 ? salesExecutions.map(e => {
+    const date = e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : '-';
+    return `<tr>
+      <td>${date}</td><td>${e.customer_name||'-'}</td><td>${e.product_name||'-'}</td>
+      <td>${e.loan_amount||0}만</td><td>${e.fee_rate_under||0}%/${e.fee_rate_over||0}%</td>
+      <td>${e.fee_amount||0}만</td><td>${e.db_source||'-'}</td><td>${e.assigned_to||'-'}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8;">실행 건이 없습니다. 실행 건을 등록하세요.</td></tr>';
+
   return `
     <div class="filter-bar">
-      <select><option>2026년 3월</option><option>2026년 2월</option><option>2026년 1월</option></select>
-      <select><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option></select>
-      <button class="btn btn-primary">조회</button>
+      <select id="salesMonth">${months.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+      <select id="salesSource"><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select>
+      <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
+      ${isAdmin() ? '<button class="btn btn-outline" style="margin-left:auto;" onclick="showAddExecution()">+ 실행 건 등록</button>' : ''}
     </div>
     <div class="stat-cards">
-      <div class="stat-card"><div class="label">이번 달 총 매출</div><div class="value">4,820만</div></div>
-      <div class="stat-card"><div class="label">총 수수료</div><div class="value">381.5만</div></div>
-      <div class="stat-card"><div class="label">리베이트 합계</div><div class="value">${settlementRebateData.length > 0 ? settlementRebateData.filter(r=>r.type==='리베이트').reduce((s,r)=>s+parseFloat(r.amount||0),0).toFixed(1)+'만' : '120만'}</div></div>
-      <div class="stat-card"><div class="label">환수 합계</div><div class="value">${settlementRebateData.length > 0 ? settlementRebateData.filter(r=>r.type==='환수').reduce((s,r)=>s+parseFloat(r.amount||0),0).toFixed(1)+'만' : '85만'}</div></div>
+      <div class="stat-card"><div class="label">총 매출 (대출금액)</div><div class="value">${(s.totalSales||0).toLocaleString()}만</div></div>
+      <div class="stat-card"><div class="label">총 수수료</div><div class="value">${Number(s.totalFee||0).toFixed(1)}만</div></div>
+      <div class="stat-card"><div class="label">리베이트</div><div class="value" style="color:#16a34a;">${Number(s.rebateTotal||0).toFixed(1)}만</div></div>
+      <div class="stat-card"><div class="label">환수</div><div class="value" style="color:#ef4444;">${Number(s.clawbackTotal||0).toFixed(1)}만</div></div>
+      <div class="stat-card"><div class="label">실행 건수</div><div class="value">${s.execCount||0}건</div></div>
     </div>
+
+    ${(s.byAssigned && s.byAssigned.length > 0) ? `
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header"><h2>출처별 매출</h2></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>출처</th><th>건수</th><th>매출</th><th>수수료</th></tr></thead>
+            <tbody>${(s.bySource||[]).map(r => `<tr><td>${r.db_source||'-'}</td><td>${r.cnt}</td><td>${Number(r.total_amount).toLocaleString()}만</td><td>${Number(r.total_fee).toFixed(1)}만</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><h2>담당자별 매출</h2></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>담당자</th><th>건수</th><th>매출</th><th>수수료</th></tr></thead>
+            <tbody>${(s.byAssigned||[]).map(r => `<tr><td>${r.assigned_to||'-'}</td><td>${r.cnt}</td><td>${Number(r.total_amount).toLocaleString()}만</td><td>${Number(r.total_fee).toFixed(1)}만</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>` : ''}
+
     <div class="panel">
       <div class="panel-header">
-        <h2>실행 건별 매출 내역</h2>
-        <span style="font-size:11px;color:#94a3b8;">정산 기준: 실행 완료 건</span>
+        <h2>실행 건별 매출 내역 (${salesExecutions.length}건)</h2>
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
-          <thead><tr><th>실행일</th><th>고객명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB 출처</th><th>담당자</th></tr></thead>
-          <tbody>
-            <tr><td>03-25</td><td>정하나</td><td>1,500만</td><td>3.5%</td><td>52.5만</td><td>소개/추천</td><td>박사원</td></tr>
-            <tr><td>03-24</td><td>송미영</td><td>3,200만</td><td>3.0%</td><td>96.0만</td><td>네이버 광고</td><td>김대리</td></tr>
-            <tr><td>03-23</td><td>오진우</td><td>2,800만</td><td>3.5%</td><td>98.0만</td><td>카카오 DB</td><td>이과장</td></tr>
-            <tr><td>03-22</td><td>임수현</td><td>4,500만</td><td>3.0%</td><td>135.0만</td><td>자체 DB</td><td>김대리</td></tr>
-          </tbody>
+          <thead><tr><th>실행일</th><th>고객명</th><th>상품명</th><th>대출금액</th><th>수수료율</th><th>수수료</th><th>DB출처</th><th>담당자</th></tr></thead>
+          <tbody>${execRows}</tbody>
         </table>
       </div>
     </div>
   `;
+}
+
+async function loadSalesSummary() {
+  try {
+    const month = document.getElementById('salesMonth')?.value || '';
+    const source = document.getElementById('salesSource')?.value || '';
+
+    const [sumRes, execRes] = await Promise.all([
+      fetch(`/api/settlement/summary${month ? '?month='+month : ''}`),
+      fetch(`/api/settlement/executions?${month ? 'month='+month+'&' : ''}${source && source !== '전체 출처' ? 'dbSource='+encodeURIComponent(source) : ''}`)
+    ]);
+    const sumData = await sumRes.json();
+    const execData = await execRes.json();
+
+    if (sumData.success) salesSummary = sumData.data;
+    if (execData.success) salesExecutions = execData.data;
+
+    if (document.getElementById('salesMonth')) navigate('settlement');
+  } catch (e) { console.error(e); }
+}
+
+function showAddExecution() {
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const old = document.getElementById('guideModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'guideModal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="search-modal" style="max-width:500px;">
+      <div class="modal-header">
+        <h2 style="font-size:15px;font-weight:700;">실행 건 등록</h2>
+        <button class="modal-close" onclick="closeGuideModal()">&times;</button>
+      </div>
+      <div style="padding:16px;">
+        <div class="form-row">
+          <div class="form-group"><label>고객명 *</label><input type="text" id="exec-name" placeholder="고객명"></div>
+          <div class="form-group"><label>실행일 *</label><input type="date" id="exec-date" value="${new Date().toISOString().split('T')[0]}"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>상품명</label><input type="text" id="exec-product" placeholder="SBI저축은행"></div>
+          <div class="form-group"><label>대출금액 (만원) *</label><input type="text" id="exec-amount" placeholder="1000"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>수수료율(500↓) %</label><input type="text" id="exec-rate-under" placeholder="2.60"></div>
+          <div class="form-group"><label>수수료율(500↑) %</label><input type="text" id="exec-rate-over" placeholder="1.85"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>DB출처</label><select id="exec-source"><option>선택</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select></div>
+          <div class="form-group"><label>담당자</label><input type="text" id="exec-assigned" value="${user.name||''}" readonly style="background:#f1f5f9;"></div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="submitExecution()">등록</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  addModalClose(modal, closeGuideModal);
+}
+
+async function submitExecution() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const amount = parseInt(v('exec-amount')) || 0;
+  const rateUnder = parseFloat(v('exec-rate-under')) || 0;
+  const rateOver = parseFloat(v('exec-rate-over')) || 0;
+
+  // 수수료 자동 계산
+  let fee = 0;
+  if (rateUnder === 0 && rateOver > 0) {
+    fee = amount * (rateOver / 100);
+  } else if (amount <= 500) {
+    fee = amount * (rateUnder / 100);
+  } else {
+    fee = 500 * (rateUnder / 100) + (amount - 500) * (rateOver / 100);
+  }
+  fee = Math.round(fee * 10) / 10;
+
+  if (!v('exec-name') || !v('exec-date') || !amount) {
+    alert('고객명, 실행일, 대출금액은 필수입니다.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/settlement/executions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerName: v('exec-name'), executedDate: v('exec-date'),
+        loanAmount: amount, productName: v('exec-product'),
+        feeRateUnder: rateUnder, feeRateOver: rateOver, feeAmount: fee,
+        dbSource: v('exec-source'), assignedTo: v('exec-assigned')
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      closeGuideModal();
+      salesSummary = null;
+      salesExecutions = [];
+      navigate('settlement');
+      setTimeout(() => loadSalesSummary(), 100);
+      alert('실행 건 등록 완료 (수수료: ' + fee + '만원)');
+    } else {
+      alert('실패: ' + result.message);
+    }
+  } catch (e) { alert('오류: ' + e.message); }
 }
 
 function renderSettlementRebate() {
