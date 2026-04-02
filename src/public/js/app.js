@@ -1214,6 +1214,7 @@ function renderEmployees() {
       <td>${isAdmin() ? `
         <button class="btn btn-sm btn-outline" onclick="editEmployee(${e.id})">수정</button>
         <button class="btn btn-sm btn-outline" onclick="resetEmployeePassword(${e.id})">비밀번호</button>
+        <button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteEmployee(${e.id},'${e.name}')">삭제</button>
       ` : '-'}</td>
     </tr>`;
   }).join('');
@@ -1371,6 +1372,22 @@ async function resetEmployeePassword(id) {
     const result = await res.json();
     if (result.success) alert('비밀번호 변경 완료');
     else alert('실패: ' + result.message);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+async function deleteEmployee(id, name) {
+  if (!confirm(`"${name}" 직원을 삭제하시겠습니까?`)) return;
+  try {
+    const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
+    const result = await res.json();
+    if (result.success) {
+      employeeList = [];
+      navigate('employees');
+      setTimeout(() => loadEmployees(), 100);
+      alert(`${name} 직원이 삭제되었습니다.`);
+    } else {
+      alert('실패: ' + (result.message || ''));
+    }
   } catch (e) { alert('오류: ' + e.message); }
 }
 

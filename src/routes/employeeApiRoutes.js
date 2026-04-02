@@ -80,4 +80,16 @@ router.put('/employees/:id/reset-password', async (req, res) => {
   }
 });
 
+// 직원 삭제
+router.delete('/employees/:id', async (req, res) => {
+  try {
+    const rows = await query('SELECT name FROM employees WHERE id = ?', [req.params.id]);
+    await query('DELETE FROM employees WHERE id = ?', [req.params.id]);
+    await logAudit({ eventType: 'employee_manage', targetType: 'employee', targetId: req.params.id, targetName: rows[0]?.name || '', afterValue: '직원 삭제', performedBy: 'admin' });
+    res.json({ success: true, message: '삭제 완료' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
