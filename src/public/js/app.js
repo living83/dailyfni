@@ -269,16 +269,16 @@ function renderCustomers() {
   };
 
   const rows = dbCustomers.map(c => {
-    const ssnFront = (c.ssn||'').substring(0,6);
+    const ssn = c.ssn||'';
+    const ssnDisplay = ssn.length >= 8 ? ssn.substring(0,6) + '-' + ssn.charAt(7) : ssn.substring(0,6);
     const loanDate = c.loan_date ? new Date(c.loan_date).toISOString().split('T')[0] : '-';
     const score = c.credit_score || 0;
     return `<tr>
       <td>${c.id}</td>
       <td><a href="#" class="customer-link" onclick="viewCustomer(${c.id});return false;">${c.name}</a></td>
-      <td>${ssnFront}</td>
+      <td>${ssnDisplay}</td>
       <td>${creditStatusBadge(c.credit_status)}</td>
       <td style="color:${score>=700?'#16a34a':score>=600?'#d97706':'#ef4444'};font-weight:600;">${score}</td>
-      <td>${c.total_debt||'-'}</td>
       <td>${loanDate}</td>
       <td>${c.loan_amount||'-'}</td>
       <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
@@ -304,7 +304,7 @@ function renderCustomers() {
       <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
-            <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>총채무</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th><th>관리</th></tr>
+            <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th><th>관리</th></tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">등록된 고객이 없습니다.</td></tr>'}</tbody>
         </table>
@@ -2159,16 +2159,45 @@ function ledgerSearch() {
   }
 }
 
+let ledgerCustomer = null;
+
+async function loadLedgerCustomer(id) {
+  try {
+    const res = await fetch(`/api/customers/${id}`);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return null; }
+    if (data.success) return data.data;
+  } catch (e) {}
+  // fallback to in-memory
+  return customerData[id] || null;
+}
+
 function renderCustomerLedger() {
   ledgerEditMode = false;
-  const c = currentLedgerId ? customerData[currentLedgerId] : null;
-  if (!c) return '<div class="empty-state"><div class="icon">&#128566;</div><p>고객 정보를 찾을 수 없습니다.</p></div>';
 
-  const gender = c.ssn.charAt(7)==='1'||c.ssn.charAt(7)==='3'?'남':'여';
-  const creditColor = c.creditScore>=700?'#16a34a':c.creditScore>=600?'#d97706':'#ef4444';
-  const creditGrade = c.creditScore>=700?'양호':c.creditScore>=600?'보통':'주의';
+  // MySQL에서 로드 안 됐으면 로드 후 다시 렌더
+  if (!ledgerCustomer || ledgerCustomer.id !== currentLedgerId) {
+    loadLedgerCustomer(currentLedgerId).then(data => {
+      if (data) {
+        ledgerCustomer = data;
+        document.getElementById('content').innerHTML = renderCustomerLedger();
+      }
+    });
+    return '<div style="text-align:center;padding:40px;color:#94a3b8;">고객 정보를 불러오는 중...</div>';
+  }
+
+  const c = ledgerCustomer;
+  const ssn = c.ssn || '';
+  const genderChar = ssn.length >= 8 ? ssn.charAt(7) : '';
+  const gender = (genderChar==='1'||genderChar==='3') ? '남' : (genderChar==='2'||genderChar==='4') ? '여' : '-';
+  const creditScore = c.credit_score || c.creditScore || 0;
+  const creditColor = creditScore>=700?'#16a34a':creditScore>=600?'#d97706':'#ef4444';
+  const status = c.status || '리드';
   const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
-  const badgeClass = statusMap[c.status] || 'badge-lead';
+  const badgeClass = statusMap[status] || 'badge-lead';
+  const assignedTo = c.assigned_to || c.assignedTo || '-';
+  const dbSource = c.db_source || c.dbSource || '-';
+  const regDate = c.reg_date ? new Date(c.reg_date).toISOString().split('T')[0] : (c.regDate || '-');
   const ro = 'readonly style="background:#f8fafc;border-color:#e2e8f0;"';
 
   return `
@@ -2184,8 +2213,8 @@ function renderCustomerLedger() {
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
       <div style="width:36px;height:36px;background:#3b82f6;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;">${c.name.charAt(0)}</div>
       <div style="flex:1;">
-        <div style="font-size:15px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${c.status}</span> <span style="font-size:11px;color:#94a3b8;">No.${currentLedgerId}</span></div>
-        <div style="font-size:11px;color:#64748b;">담당: ${c.assignedTo} | 출처: ${c.dbSource} | 등록일: ${c.regDate}</div>
+        <div style="font-size:15px;font-weight:700;">${c.name} <span class="badge ${badgeClass}" style="font-size:11px;vertical-align:middle;">${status}</span> <span style="font-size:11px;color:#94a3b8;">No.${currentLedgerId}</span></div>
+        <div style="font-size:11px;color:#64748b;">담당: ${assignedTo} | 출처: ${dbSource} | 등록일: ${regDate}</div>
       </div>
     </div>
 
@@ -2193,47 +2222,47 @@ function renderCustomerLedger() {
       <div style="flex:1;min-width:0;">
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>고객명</th><td><input type="text" value="${c.name}" ${ro}></td><th>주민등록번호</th><td><input type="text" value="${c.ssn}" ${ro}></td></tr>
-            <tr><th>만 나이</th><td><input type="text" value="${c.age}세" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td><th>성별</th><td><input type="text" value="${gender}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
-            <tr><th>휴대전화</th><td><input type="text" value="${c.phone}" ${ro}></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || '-'}" ${ro}></td></tr>
-            <tr><th>이메일</th><td><input type="text" value="${c.email}" ${ro}></td><th>DB 유입출처</th><td><input type="text" value="${c.dbSource}" ${ro}></td></tr>
-            <tr><th>초본 주소</th><td colspan="3"><input type="text" value="${c.residenceAddress}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
-            <tr><th>실거주 주소</th><td colspan="3"><input type="text" value="${c.address}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
+            <tr><th>고객명</th><td><input type="text" value="${c.name||''}" ${ro}></td><th>주민등록번호</th><td><input type="text" value="${formatSsn(ssn)}" ${ro}></td></tr>
+            <tr><th>만 나이</th><td><input type="text" value="${c.age||''}세" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td><th>성별</th><td><input type="text" value="${gender}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
+            <tr><th>휴대전화</th><td><input type="text" value="${formatPhone(c.phone||'')}" ${ro}></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || '-'}" ${ro}></td></tr>
+            <tr><th>이메일</th><td><input type="text" value="${c.email||''}" ${ro}></td><th>DB 유입출처</th><td><input type="text" value="${dbSource}" ${ro}></td></tr>
+            <tr><th>초본 주소</th><td colspan="3"><input type="text" value="${c.address||c.residence_address||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
+            <tr><th>실거주 주소</th><td colspan="3"><input type="text" value="${c.residence_address||c.address||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>직장명</th><td><input type="text" value="${c.company}" ${ro}></td><th>고용형태</th><td><input type="text" value="${c.employmentType}" ${ro}></td></tr>
-            <tr><th>직장 주소</th><td colspan="3"><input type="text" value="${c.companyAddr}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
-            <tr><th>직장 전화</th><td><input type="text" value="${c.companyPhone}" ${ro}></td><th>재직기간</th><td><input type="text" value="${c.workYears}" ${ro}></td></tr>
-            <tr><th>연봉</th><td><input type="text" value="${c.salary.toLocaleString()}만원" ${ro}></td><th>월 환산</th><td><input type="text" value="${Math.round(c.salary/12).toLocaleString()}만원" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
+            <tr><th>직장명</th><td><input type="text" value="${c.company||''}" ${ro}></td><th>고용형태</th><td><input type="text" value="${c.employment_type||c.employmentType||''}" ${ro}></td></tr>
+            <tr><th>직장 주소</th><td colspan="3"><input type="text" value="${c.company_addr||c.companyAddr||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" value="${c.company_phone||c.companyPhone||''}" ${ro}></td><th>재직기간</th><td><input type="text" value="${c.work_years||c.workYears||''}" ${ro}></td></tr>
+            <tr><th>연봉</th><td><input type="text" value="${(c.salary||0)}만원" ${ro}></td><th>월 환산</th><td><input type="text" value="${c.salary ? Math.round(c.salary/12)+'만원' : ''}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>법원 사건 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>법원명</th><td><input type="text" value="${c.courtName || '-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.caseNo || '-'}" ${ro}></td></tr>
+            <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.case_no||c.caseNo||'-'}" ${ro}></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>은행명</th><td><input type="text" value="${c.refundBank}" ${ro}></td><th>예금주</th><td><input type="text" value="${c.refundHolder}" ${ro}></td></tr>
-            <tr><th>계좌번호</th><td colspan="3"><input type="text" value="${c.refundAccount}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
+            <tr><th>은행명</th><td><input type="text" value="${c.refund_bank||c.refundBank||''}" ${ro}></td><th>예금주</th><td><input type="text" value="${c.refund_holder||c.refundHolder||''}" ${ro}></td></tr>
+            <tr><th>계좌번호</th><td colspan="3"><input type="text" value="${c.refund_account||c.refundAccount||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>신용 및 기존 대출</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>신용점수</th><td><input type="text" value="${c.creditScore}점" ${ro} style="color:${creditColor};font-weight:700;background:#f8fafc;border-color:#e2e8f0;"></td><th>등급</th><td><input type="text" value="${creditGrade}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
-            <tr><th>기존 대출</th><td colspan="3"><input type="text" value="${c.existingLoans || '없음'}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
+            <tr><th>신용점수</th><td><input type="text" value="${creditScore}점" ${ro} style="color:${creditColor};font-weight:700;background:#f8fafc;border-color:#e2e8f0;"></td><th>등급</th><td><input type="text" value="${c.credit_status||c.creditStatus||'-'}" ${ro}></td></tr>
+            <tr><th>기존 대출</th><td colspan="3"><input type="text" value="${c.existing_loans||c.existingLoans||'없음'}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>연결된 대출 신청</h2></div><div class="panel-body" style="padding:0;">
           <table><thead><tr><th>대출상품</th><th>대출금액</th><th>상태</th><th>신청일</th></tr></thead>
-          <tbody><tr><td>${c.loanAmount ? 'SBI저축은행' : '-'}</td><td>${c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${c.status}</span></td><td>${c.loanDate||c.regDate}</td></tr></tbody></table>
+          <tbody><tr><td>${c.loan_amount||c.loanAmount ? '-' : '-'}</td><td>${c.loan_amount||c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${regDate}</td></tr></tbody></table>
         </div></div>
       </div>
 
