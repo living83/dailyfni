@@ -39,12 +39,15 @@ function deleteSession(token) {
 function apiAuth(req, res, next) {
   // 인증 불필요 경로
   const publicPaths = [
+    '/system/login',
+    '/intake/homepage',
+    '/health',
     '/api/system/login',
     '/api/intake/homepage',
     '/api/health'
   ];
 
-  if (publicPaths.some(p => req.path.startsWith(p))) {
+  if (publicPaths.some(p => req.path === p || req.path.startsWith(p))) {
     return next();
   }
 
