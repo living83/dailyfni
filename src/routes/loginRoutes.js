@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { query } = require('../database/db');
+const { createSession, deleteSession } = require('../middleware/apiAuth');
 
 // 로그인
 router.post('/system/login', async (req, res) => {
@@ -33,17 +34,20 @@ router.post('/system/login', async (req, res) => {
       ['login', 'employee', employee.id, employee.name, employee.name, employee.id]
     );
 
+    const userData = {
+      id: employee.id,
+      loginId: employee.login_id,
+      name: employee.name,
+      department: employee.department,
+      position: employee.position_title,
+      role: employee.role,
+      dataScope: employee.data_scope
+    };
+    const token = createSession(employee.id, userData);
+
     res.json({
       success: true,
-      data: {
-        id: employee.id,
-        loginId: employee.login_id,
-        name: employee.name,
-        department: employee.department,
-        position: employee.position_title,
-        role: employee.role,
-        dataScope: employee.data_scope
-      }
+      data: { ...userData, token }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

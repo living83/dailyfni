@@ -2,6 +2,23 @@
 // 대부중개 전산시스템 - 프론트엔드 앱
 // ========================================
 
+// API 인증 토큰 자동 전송
+const _originalFetch = window.fetch;
+window.fetch = function(url, options = {}) {
+  if (typeof url === 'string' && url.startsWith('/api')) {
+    try {
+      const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+      if (user.token) {
+        options.headers = options.headers || {};
+        if (typeof options.headers === 'object' && !(options.headers instanceof Headers)) {
+          options.headers['x-auth-token'] = user.token;
+        }
+      }
+    } catch {}
+  }
+  return _originalFetch.call(this, url, options);
+};
+
 // 권한 체크 (전사=admin, 본인=sales)
 function isAdmin() {
   try {

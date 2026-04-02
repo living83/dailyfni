@@ -40,6 +40,10 @@ app.use(cors({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// API 인증 미들웨어
+const { apiAuth } = require('./middleware/apiAuth');
+app.use('/api', apiAuth);
+
 // --- 라우트 ---
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

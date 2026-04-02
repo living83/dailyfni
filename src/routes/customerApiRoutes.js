@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
 const { logAudit } = require('../database/auditHelper');
+const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 
 // 고객 등록
 router.post('/customers', async (req, res) => {
@@ -58,7 +59,7 @@ router.get('/customers', async (req, res) => {
 
     sql += ' ORDER BY id DESC LIMIT 100';
     const rows = await query(sql, params);
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: maskCustomerList(rows) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -69,7 +70,7 @@ router.get('/customers/:id', async (req, res) => {
   try {
     const rows = await query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ success: false, message: '고객을 찾을 수 없습니다.' });
-    res.json({ success: true, data: rows[0] });
+    res.json({ success: true, data: maskCustomer(rows[0]) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
