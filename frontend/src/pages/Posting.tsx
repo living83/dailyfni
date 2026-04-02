@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   Zap,
-  Calendar,
   Play,
   Trash2,
   CheckCircle2,
@@ -112,16 +111,10 @@ export default function Posting() {
           <h1 className="text-2xl font-bold text-foreground">포스팅 관리</h1>
           <p className="text-sm text-muted-foreground">자동 포스팅 실행 및 예약을 관리합니다</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald text-white text-sm font-medium hover:bg-emerald/90 transition-colors">
-            <Zap className="w-4 h-4" />
-            즉시 발행
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
-            <Calendar className="w-4 h-4" />
-            예약 설정
-          </button>
-        </div>
+        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald text-white text-sm font-medium hover:bg-emerald/90 transition-colors">
+          <Zap className="w-4 h-4" />
+          즉시 발행
+        </button>
       </div>
 
       {/* Posting Queue */}

@@ -4,7 +4,6 @@ import {
   Eye,
   EyeOff,
   Key,
-  Calendar,
   Users,
   Shield,
   Download,
@@ -53,17 +52,6 @@ export default function Settings() {
   const [showNaverSecret, setShowNaverSecret] = useState(false)
   const [naverClientSecret, setNaverClientSecret] = useState('')
 
-  // Posting Schedule
-  const [masterEngine, setMasterEngine] = useState(true)
-  const [postStartHour, setPostStartHour] = useState('09')
-  const [postStartMin, setPostStartMin] = useState('00')
-  const [postEndHour, setPostEndHour] = useState('18')
-  const [postEndMin, setPostEndMin] = useState('00')
-  const [selectedDays, setSelectedDays] = useState([true, true, true, true, true, false, false])
-  const [randomRest, setRandomRest] = useState(true)
-  const [postIntervalMin, setPostIntervalMin] = useState(30)
-  const [postIntervalMax, setPostIntervalMax] = useState(90)
-
   // Engagement Settings
   const [engagementBot, setEngagementBot] = useState(true)
   const [engStartHour, setEngStartHour] = useState('09')
@@ -82,7 +70,6 @@ export default function Settings() {
   const [proxyCheck, setProxyCheck] = useState(true)
   const [proxyInterval, setProxyInterval] = useState('6시간')
 
-  const dayLabels = ['월', '화', '수', '목', '금', '토', '일']
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
   const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
 
@@ -91,9 +78,6 @@ export default function Settings() {
   const labelClass = 'block text-sm font-medium text-foreground mb-1.5'
   const selectClass =
     'rounded-lg bg-input border border-border px-4 py-2.5 text-foreground focus:border-primary focus:outline-none transition-colors appearance-none'
-
-  const toggleDay = (idx: number) =>
-    setSelectedDays((prev) => prev.map((v, i) => (i === idx ? !v : v)))
 
   const toggleAllAccounts = () => {
     const next = !allAccounts
@@ -218,132 +202,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* ─── Panel 2: 포스팅 스케줄 ─── */}
-        <div className="glass-panel rounded-xl p-5 space-y-5">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-secondary" />
-            <h2 className="text-lg font-semibold text-foreground">포스팅 스케줄</h2>
-          </div>
-
-          {/* Master Engine Toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-sm font-medium text-foreground">마스터 엔진</span>
-              <p className="text-xs text-muted-foreground">자동 포스팅 엔진</p>
-            </div>
-            <Toggle enabled={masterEngine} onToggle={() => setMasterEngine(!masterEngine)} />
-          </div>
-
-          {/* Start Time */}
-          <div>
-            <label className={labelClass}>포스팅 시작 시간</label>
-            <div className="flex items-center gap-2">
-              <select
-                value={postStartHour}
-                onChange={(e) => setPostStartHour(e.target.value)}
-                className={`${selectClass} w-24`}
-              >
-                {hours.map((h) => (
-                  <option key={h} value={h}>{h}시</option>
-                ))}
-              </select>
-              <span className="text-muted-foreground">:</span>
-              <select
-                value={postStartMin}
-                onChange={(e) => setPostStartMin(e.target.value)}
-                className={`${selectClass} w-24`}
-              >
-                {minutes.map((m) => (
-                  <option key={m} value={m}>{m}분</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* End Time */}
-          <div>
-            <label className={labelClass}>포스팅 종료 시간</label>
-            <div className="flex items-center gap-2">
-              <select
-                value={postEndHour}
-                onChange={(e) => setPostEndHour(e.target.value)}
-                className={`${selectClass} w-24`}
-              >
-                {hours.map((h) => (
-                  <option key={h} value={h}>{h}시</option>
-                ))}
-              </select>
-              <span className="text-muted-foreground">:</span>
-              <select
-                value={postEndMin}
-                onChange={(e) => setPostEndMin(e.target.value)}
-                className={`${selectClass} w-24`}
-              >
-                {minutes.map((m) => (
-                  <option key={m} value={m}>{m}분</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Day Selection */}
-          <div>
-            <label className={labelClass}>포스팅 요일</label>
-            <div className="flex items-center gap-2">
-              {dayLabels.map((day, idx) => (
-                <button
-                  key={day}
-                  onClick={() => toggleDay(idx)}
-                  className={`w-9 h-9 rounded-full text-sm font-medium transition-colors ${
-                    selectedDays[idx]
-                      ? 'bg-primary text-white'
-                      : 'border border-border text-muted-foreground hover:border-primary hover:text-foreground'
-                  }`}
-                >
-                  {day}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Random Rest */}
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={randomRest}
-              onChange={() => setRandomRest(!randomRest)}
-              className="w-4 h-4 rounded border-border bg-input text-primary focus:ring-primary focus:ring-offset-0 accent-primary"
-            />
-            <div>
-              <span className="text-sm text-foreground">랜덤 휴식</span>
-              <p className="text-xs text-muted-foreground">10% 확률로 하루 쉬기 (어뷰징 방지)</p>
-            </div>
-          </label>
-
-          {/* Posting Interval */}
-          <div>
-            <label className={labelClass}>포스팅 간격</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">최소</span>
-              <input
-                type="number"
-                value={postIntervalMin}
-                onChange={(e) => setPostIntervalMin(Number(e.target.value))}
-                className={`${selectClass} w-20 text-center`}
-              />
-              <span className="text-sm text-muted-foreground">분 ~ 최대</span>
-              <input
-                type="number"
-                value={postIntervalMax}
-                onChange={(e) => setPostIntervalMax(Number(e.target.value))}
-                className={`${selectClass} w-20 text-center`}
-              />
-              <span className="text-sm text-muted-foreground">분</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── Panel 3: 이웃참여 설정 ─── */}
+        {/* ─── Panel 2: 이웃참여 설정 ─── */}
         <div className="glass-panel rounded-xl p-5 space-y-5">
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5 text-emerald" />
