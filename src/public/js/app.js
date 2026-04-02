@@ -2571,7 +2571,12 @@ async function processIntake(id, name, phone, content, source) {
     let carrierFromContent = '';
     let insuranceFromContent = '';
     const carrierMatch = (content||'').match(/통신사:\s*([^\s/]+)/);
-    if (carrierMatch) carrierFromContent = carrierMatch[1];
+    if (carrierMatch) {
+      carrierFromContent = carrierMatch[1];
+      // LGU → LGU+, SKT → SK 등 매핑
+      const carrierMap = {'LGU':'LGU+','LGT':'LGU+','SKT':'SK','알뜰폰':'알뜰','SK알뜰폰':'SK알뜰','KT알뜰폰':'KT알뜰','LG알뜰폰':'LG알뜰'};
+      if (carrierMap[carrierFromContent]) carrierFromContent = carrierMap[carrierFromContent];
+    }
     const insMatch = (content||'').match(/4대보험:\s*([^\s/]+)/);
     if (insMatch) insuranceFromContent = translateContent(insMatch[1]);
     intakePrefill = { name: name, phone: phone, carrier: carrierFromContent, has4Insurance: insuranceFromContent, memo: content || '', dbSource: source || '홈페이지' };
