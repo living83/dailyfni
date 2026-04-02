@@ -17,6 +17,14 @@ router.post('/customers', async (req, res) => {
       return res.status(400).json({ success: false, message: '고객명과 연락처는 필수입니다.' });
     }
 
+    // 이름 + 주민번호 중복 체크
+    if (ssn) {
+      const existing = await query('SELECT id, name FROM customers WHERE name = ? AND ssn = ?', [name, ssn]);
+      if (existing.length > 0) {
+        return res.status(400).json({ success: false, message: `이미 등록된 고객입니다. (${name}, 주민번호 일치)` });
+      }
+    }
+
     // 주민번호로 나이/성별 자동 계산
     let age = 0;
     if (ssn && ssn.length >= 6) {

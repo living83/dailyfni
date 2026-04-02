@@ -303,7 +303,7 @@ function renderCustomers() {
     const score = c.credit_score || 0;
     return `<tr>
       <td>${c.id}</td>
-      <td><a href="#" class="customer-link" onclick="viewCustomer(${c.id});return false;">${c.name}</a></td>
+      <td><a href="#" class="customer-link" ondblclick="viewCustomerLedger(${c.id});return false;" title="더블클릭: 고객원장 열기">${c.name}</a></td>
       <td>${ssnDisplay}</td>
       <td>${creditStatusBadge(c.credit_status)}</td>
       <td style="color:${score>=700?'#16a34a':score>=600?'#d97706':'#ef4444'};font-weight:600;">${score}</td>
