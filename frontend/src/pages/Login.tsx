@@ -20,7 +20,14 @@ export default function Login() {
       localStorage.setItem('token', data.token)
       navigate('/')
     } catch (err: any) {
-      setError(err.response?.data?.message || '서버에 연결할 수 없습니다. Demo 모드를 이용하세요.')
+      const msg = err.response?.data?.message
+      if (msg) {
+        setError(msg)
+      } else if (err.code === 'ERR_NETWORK') {
+        setError('서버에 연결할 수 없습니다. 네트워크를 확인하거나 Demo 모드를 이용하세요.')
+      } else {
+        setError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.')
+      }
     } finally {
       setLoading(false)
     }
@@ -48,7 +55,7 @@ export default function Login() {
             DailyFNI
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            AI Blog Automation Platform
+            네이버 블로그 자동 포스팅 솔루션
           </p>
         </div>
 
@@ -83,7 +90,7 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
+                placeholder="비밀번호를 입력하세요"
                 required
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
               />
@@ -112,8 +119,12 @@ export default function Login() {
           </button>
 
           <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border"></div></div>
-            <div className="relative flex justify-center text-xs"><span className="bg-card px-3 text-muted-foreground">또는</span></div>
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-card px-3 text-muted-foreground">또는</span>
+            </div>
           </div>
 
           <button
