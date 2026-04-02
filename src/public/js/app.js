@@ -303,7 +303,6 @@ async function loadDashboard() {
     }
   } catch (e) { console.error(e); }
 }
-}
 
 // ========================================
 // 2. 고객 관리
