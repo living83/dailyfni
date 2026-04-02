@@ -194,53 +194,56 @@ function renderDashboard() {
 // ========================================
 // 2. 고객 관리
 // ========================================
+let dbCustomers = [];
+
 function renderCustomers() {
+  if (dbCustomers.length === 0) loadDbCustomers();
+
   const statusMap = {'리드':'badge-lead','상담':'badge-consult','접수':'badge-submit','심사중':'badge-review','승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','종결':'badge-closed'};
   const creditStatusBadge = (s) => {
     const map = {'정상':'badge-approved','회생':'badge-review','파산':'badge-rejected','회복':'badge-consult'};
-    return `<span class="badge ${map[s]||'badge-lead'}">${s}</span>`;
+    return `<span class="badge ${map[s]||'badge-lead'}">${s||'정상'}</span>`;
   };
 
-  const ids = Object.keys(customerData).sort((a,b) => b-a);
-  const rows = ids.map(id => {
-    const c = customerData[id];
-    const ssnFront = c.ssn.substring(0,6);
+  const rows = dbCustomers.map(c => {
+    const ssnFront = (c.ssn||'').substring(0,6);
+    const loanDate = c.loan_date ? new Date(c.loan_date).toISOString().split('T')[0] : '-';
+    const score = c.credit_score || 0;
     return `<tr>
-      <td>${id}</td>
-      <td><a href="#" class="customer-link" onclick="viewCustomer(${id});return false;">${c.name}</a></td>
+      <td>${c.id}</td>
+      <td><a href="#" class="customer-link" onclick="viewCustomer(${c.id});return false;">${c.name}</a></td>
       <td>${ssnFront}</td>
-      <td>${creditStatusBadge(c.creditStatus||'정상')}</td>
-      <td style="color:${c.creditScore>=700?'#16a34a':c.creditScore>=600?'#d97706':'#ef4444'};font-weight:600;">${c.creditScore}</td>
-      <td>${c.totalDebt||'-'}</td>
-      <td>${c.loanDate||'-'}</td>
-      <td>${c.loanAmount||'-'}</td>
-      <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status}</span></td>
-      <td>${c.assignedTo}</td>
-      <td>${c.dbSource}</td>
-      <td><button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteCustomer(${id},'${c.name}')">삭제</button></td>
+      <td>${creditStatusBadge(c.credit_status)}</td>
+      <td style="color:${score>=700?'#16a34a':score>=600?'#d97706':'#ef4444'};font-weight:600;">${score}</td>
+      <td>${c.total_debt||'-'}</td>
+      <td>${loanDate}</td>
+      <td>${c.loan_amount||'-'}</td>
+      <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
+      <td>${c.assigned_to||'-'}</td>
+      <td>${c.db_source||'-'}</td>
+      <td><button class="btn btn-sm btn-outline" style="color:#ef4444;border-color:#ef4444;" onclick="deleteDbCustomer(${c.id},'${c.name}')">삭제</button></td>
     </tr>`;
   }).join('');
 
   return `
     <div class="filter-bar">
-      <input type="text" placeholder="고객명 검색">
-      <select><option>전체 신용상태</option><option>정상</option><option>회생</option><option>파산</option><option>회복</option></select>
-      <select><option>전체 진행상태</option><option>리드</option><option>상담</option><option>접수</option><option>심사중</option><option>승인</option><option>부결</option><option>실행</option></select>
-      <select><option>전체 담당자</option><option>김대리</option><option>이과장</option><option>박사원</option></select>
-      <button class="btn btn-primary">검색</button>
+      <input type="text" id="custSearch" placeholder="고객명 검색">
+      <select id="custCreditStatus"><option>전체 신용상태</option><option>정상</option><option>회생</option><option>파산</option><option>회복</option></select>
+      <select id="custStatus"><option>전체 진행상태</option><option>리드</option><option>상담</option><option>접수</option><option>심사중</option><option>승인</option><option>부결</option><option>실행</option></select>
+      <select id="custAssigned"><option>전체 담당자</option></select>
+      <button class="btn btn-primary" onclick="loadDbCustomers()">검색</button>
       <button class="btn btn-primary" style="margin-left:auto" onclick="navigate('customer-register')">+ 고객 등록</button>
     </div>
     <div class="panel">
       <div class="panel-header">
-        <h2>고객현황 (${ids.length}명)</h2>
-        <button class="btn btn-outline btn-sm">엑셀 내보내기</button>
+        <h2>고객현황 (${dbCustomers.length}명)</h2>
       </div>
       <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
             <tr><th>No</th><th>고객명</th><th>주민번호</th><th>신용상태</th><th>신용점수</th><th>총채무</th><th>대출일자</th><th>대출금액</th><th>진행상태</th><th>담당자</th><th>DB출처</th><th>관리</th></tr>
           </thead>
-          <tbody>${rows}</tbody>
+          <tbody>${rows || '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">등록된 고객이 없습니다.</td></tr>'}</tbody>
         </table>
       </div>
     </div>
@@ -252,6 +255,42 @@ function renderCustomers() {
 // ========================================
 let loanListData = [];
 let loanListSummary = null;
+
+async function loadDbCustomers() {
+  try {
+    const search = document.getElementById('custSearch')?.value || '';
+    const creditStatus = document.getElementById('custCreditStatus')?.value || '';
+    const status = document.getElementById('custStatus')?.value || '';
+    const assigned = document.getElementById('custAssigned')?.value || '';
+
+    let url = '/api/customers?';
+    if (search) url += `search=${encodeURIComponent(search)}&`;
+    if (creditStatus && creditStatus !== '전체 신용상태') url += `creditStatus=${encodeURIComponent(creditStatus)}&`;
+    if (status && status !== '전체 진행상태') url += `status=${encodeURIComponent(status)}&`;
+    if (assigned && assigned !== '전체 담당자') url += `assignedTo=${encodeURIComponent(assigned)}&`;
+
+    const res = await fetch(url);
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { return; }
+    if (data.success) {
+      dbCustomers = data.data;
+      if (document.getElementById('custSearch')) navigate('customers');
+    }
+  } catch (e) { console.error(e); }
+}
+
+async function deleteDbCustomer(id, name) {
+  if (!confirm(`"${name}" 고객을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return;
+  try {
+    await fetch(`/api/customers/${id}`, { method: 'DELETE' });
+    dbCustomers = [];
+    navigate('customers');
+    setTimeout(() => loadDbCustomers(), 100);
+  } catch (e) { alert('오류: ' + e.message); }
+}
+
+// 페이지 로드 시 고객 데이터 로드
+setTimeout(() => loadDbCustomers(), 600);
 
 async function deleteCustomer(id, name) {
   if (!confirm(`"${name}" 고객을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return;
