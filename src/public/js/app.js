@@ -1502,8 +1502,11 @@ if (typeof Notification !== 'undefined' && Notification.permission === 'default'
 
 function updateNotiBadge() {
   const unread = notificationData.filter(n => !n.is_read).length;
-  const badge = document.querySelector('.nav-badge');
-  if (badge) badge.textContent = unread > 0 ? unread : '';
+  const badge = document.getElementById('notiBadge');
+  if (badge) {
+    badge.textContent = unread;
+    badge.style.display = unread > 0 ? '' : 'none';
+  }
   const dot = document.querySelector('.noti-dot');
   if (dot) dot.style.display = unread > 0 ? '' : 'none';
 }
