@@ -42,9 +42,11 @@ function apiAuth(req, res, next) {
     '/system/login',
     '/intake/homepage',
     '/health',
+    '/crawler/',
     '/api/system/login',
     '/api/intake/homepage',
-    '/api/health'
+    '/api/health',
+    '/api/crawler/'
   ];
 
   if (publicPaths.some(p => req.path === p || req.path.startsWith(p))) {
