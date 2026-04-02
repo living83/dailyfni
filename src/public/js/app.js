@@ -112,6 +112,7 @@ function formatPhone(val) {
 const pages = {
   dashboard: { title: '대시보드', render: renderDashboard },
   'customer-register': { title: '고객등록', render: renderCustomerRegister },
+  'customer-edit': { title: '고객 수정', render: renderCustomerEdit },
   intake: { title: '신규 유입', render: renderIntake },
   'customer-ledger': { title: '고객원장', render: renderCustomerLedger },
   customers: { title: '고객현황', render: renderCustomers },
@@ -2448,25 +2449,19 @@ async function executeCustomerSearch() {
 let ledgerEditMode = false;
 
 function toggleLedgerEdit() {
-  ledgerEditMode = !ledgerEditMode;
-  const fields = document.querySelectorAll('#ledgerForm input, #ledgerForm textarea, #ledgerForm select');
-  fields.forEach(f => {
-    if (f.dataset.alwaysReadonly) return;
-    if (ledgerEditMode) {
-      f.removeAttribute('readonly');
-      f.removeAttribute('disabled');
-      f.style.background = '#fff';
-      f.style.borderColor = '#3b82f6';
-    } else {
-      f.setAttribute('readonly', true);
-      f.style.background = '#f8fafc';
-      f.style.borderColor = '#e2e8f0';
-    }
-  });
-  document.getElementById('ledgerEditBtn').style.display = ledgerEditMode ? 'none' : '';
-  document.getElementById('ledgerSaveBtn').style.display = ledgerEditMode ? '' : 'none';
-  document.getElementById('ledgerCancelBtn').style.display = ledgerEditMode ? '' : 'none';
+  // 수정 모드 → 고객등록 화면(데이터 채움)으로 전환
+  if (!ledgerEditMode) {
+    const c = ledgerCustomer;
+    if (!c) return;
+    // intakePrefill에 고객 전체 데이터를 넣어서 고객등록 화면으로 이동
+    ledgerEditCustomerId = currentLedgerId;
+    ledgerEditPrefill = c;
+    navigate('customer-edit');
+  }
 }
+
+let ledgerEditCustomerId = null;
+let ledgerEditPrefill = null;
 
 async function saveLedger() {
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
@@ -2970,6 +2965,128 @@ async function rejectIntake(id) {
 setTimeout(() => loadIntake(), 800);
 // 1분마다 자동 확인
 setInterval(() => loadIntake(), 60000);
+
+// ========================================
+// 고객 수정 (고객원장에서 수정 클릭 시)
+// ========================================
+function renderCustomerEdit() {
+  const c = ledgerEditPrefill || {};
+  const selDb = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
+  const dbOpts = ['선택하세요','네이버 광고','카카오 DB','자체 DB','소개/추천','홈페이지','기타'];
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const assignOptions = employeeList.length > 0 ? employeeList.map(e => `<option value="${e.name}" ${e.name===(c.assigned_to||'')?'selected':''}>${e.name}</option>`).join('') : '';
+
+  return `
+    <div class="panel" style="border-left:3px solid #3b82f6;margin-bottom:6px;">
+      <div class="panel-body" style="padding:8px 14px;font-size:12px;">
+        <strong style="color:#3b82f6;">고객 수정</strong> - ${c.name||''} (No.${ledgerEditCustomerId})
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-start;max-width:1305px;">
+      <div style="flex:1;min-width:0;">
+        <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>고객명 *</th><td><input type="text" id="edit-name" value="${c.name||''}"></td><th>주민등록번호 *</th><td><input type="text" id="edit-ssn" value="${formatSsn(c.ssn||'')}" oninput="this.value=formatSsn(this.value)"></td></tr>
+            <tr><th>통신사</th><td><select id="edit-carrier">${selDb(['선택','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], c.carrier||'선택')}</select></td><th>보조 연락처</th><td><input type="text" id="edit-phone2" value="${c.phone2||''}"></td></tr>
+            <tr><th>휴대전화 *</th><td><input type="text" id="edit-phone" value="${formatPhone(c.phone||'')}" oninput="this.value=formatPhone(this.value)"></td><th>4대보험</th><td><select id="edit-insurance">${selDb(['선택','가입','미가입','모름'], c.has_4_insurance||'선택')}</select></td></tr>
+            <tr><th>이메일</th><td><input type="text" id="edit-email" value="${c.email||''}"></td><th>DB 유입출처 *</th><td><select id="edit-dbsource">${selDb(dbOpts, c.db_source||'선택하세요')}</select></td></tr>
+            <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="edit-addr1" style="flex:1;" value="${c.address||''}" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('edit-addr1')">검색</button><input type="text" id="edit-addr1-detail" style="width:200px;" placeholder="상세주소"></div></td></tr>
+            <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="edit-addr2" style="flex:1;" value="${c.residence_address||''}" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('edit-addr2')">검색</button><input type="text" id="edit-addr2-detail" style="width:200px;" placeholder="상세주소"></div></td></tr>
+            <tr><th>주거종류</th><td><select id="edit-housing">${selDb(['선택','아파트','빌라','연립','다세대','단독주택','상가','오피스텔','관사','기타'], c.housing_type||'선택')}</select></td><th>주택소유구분</th><td><select id="edit-housing-own">${selDb(['선택','부동산 소유중','부동산 없음','기타'], c.housing_ownership||'선택')}</select></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>직장명</th><td><input type="text" id="edit-company" value="${c.company||''}"></td><th>고용형태</th><td><select id="edit-emptype">${selDb(['선택','정규직','계약직','프리랜서','자영업','무직'], c.employment_type||'선택')}</select></td></tr>
+            <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="edit-compaddr" style="flex:1;" value="${c.company_addr||''}" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('edit-compaddr')">검색</button><input type="text" id="edit-compaddr-detail" style="width:200px;" placeholder="상세주소"></div></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" id="edit-compphone" value="${c.company_phone||''}"></td><th>재직기간</th><td><input type="text" id="edit-workyears" value="${c.work_years||''}"></td></tr>
+            <tr><th>연봉</th><td><input type="text" id="edit-salary" value="${c.salary||''}"></td><th>월 환산</th><td><input type="text" value="${c.salary ? Math.round(c.salary/12)+'만원' : ''}" readonly style="background:#f1f5f9;"></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>차량 정보</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>차량번호</th><td><input type="text" id="edit-vno" value="${c.vehicle_no||''}"></td><th>차량명</th><td><input type="text" id="edit-vname" value="${c.vehicle_name||''}"></td></tr>
+            <tr><th>차량연식</th><td><select id="edit-vyear"><option>선택</option>${Array.from({length:20},(_,i)=>2026-i).map(y=>`<option ${String(y)===(c.vehicle_year||'')?'selected':''}>${y}</option>`).join('')}</select></td><th>주행거리</th><td><input type="text" id="edit-vkm" value="${c.vehicle_km||''}"></td></tr>
+            <tr><th>차량소유구분</th><td><select id="edit-vown">${selDb(['선택','소유(본인명의)','소유(공동명의 대표)','소유(공동명의)','미소유'], c.vehicle_ownership||'선택')}</select></td><th>공동명의자</th><td><input type="text" id="edit-vcoowner" value="${c.vehicle_co_owner||''}"></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>회파복 / 법원 정보</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>회파복 구분</th><td><select id="edit-recovery">${selDb(['선택','무','회생','파산','회복'], c.recovery_type||'선택')}</select></td><th>총회차/납입회차</th><td><div style="display:flex;gap:4px;align-items:center;"><input type="text" id="edit-recovery-total" style="width:60px;" value="${c.recovery_total_count||''}"><span>/</span><input type="text" id="edit-recovery-paid" style="width:60px;" value="${c.recovery_paid_count||''}"></div></td></tr>
+            <tr><th>법원명</th><td><input type="text" id="edit-court" value="${c.court_name||''}"></td><th>사건번호</th><td><input type="text" id="edit-caseno" value="${c.case_no||''}"></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>은행명</th><td><select id="edit-bank">${selDb(['선택하세요','국민은행','신한은행','우리은행','하나은행','농협은행','카카오뱅크','토스뱅크','기업은행','SC제일','기타'], c.refund_bank||'선택하세요')}</select></td><th>예금주</th><td><input type="text" id="edit-holder" value="${c.refund_holder||''}"></td></tr>
+            <tr><th>계좌번호</th><td><input type="text" id="edit-account" value="${c.refund_account||''}"></td><th>월변제금액</th><td><input type="text" id="edit-monthly-pay" value="${c.monthly_payment||''}"></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>신용 및 기존 대출</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>신용점수</th><td><input type="text" id="edit-credit" value="${c.credit_score||''}"></td><th>등급</th><td><input type="text" id="edit-grade" value="${c.credit_status||''}"></td></tr>
+            <tr><th>기존 대출</th><td colspan="3"><input type="text" id="edit-loans" value="${c.existing_loans||''}" style="width:100%;"></td></tr>
+          </tbody></table>
+        </div></div>
+      </div>
+
+      <div style="width:300px;flex-shrink:0;">
+        <div class="panel"><div class="panel-header"><h2>담당자</h2></div>
+          <div class="panel-body" style="padding:8px 10px;">
+            <select id="edit-assigned" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택하세요</option>${assignOptions}</select>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn btn-primary" style="flex:1;padding:8px;font-size:13px;" onclick="submitCustomerEdit()">수정 저장</button>
+          <button class="btn btn-outline" style="padding:8px 14px;font-size:13px;" onclick="viewCustomerLedger(${ledgerEditCustomerId})">취소</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function submitCustomerEdit() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const data = {
+    name: v('edit-name'), ssn: v('edit-ssn'), phone: v('edit-phone'), carrier: v('edit-carrier'),
+    phone2: v('edit-phone2'), email: v('edit-email'), dbSource: v('edit-dbsource'),
+    address: (v('edit-addr1') + ' ' + v('edit-addr1-detail')).trim(),
+    residenceAddress: (v('edit-addr2') + ' ' + v('edit-addr2-detail')).trim(),
+    housingType: v('edit-housing'), housingOwnership: v('edit-housing-own'),
+    company: v('edit-company'), employmentType: v('edit-emptype'), has4Insurance: v('edit-insurance'),
+    companyAddr: (v('edit-compaddr') + ' ' + v('edit-compaddr-detail')).trim(),
+    companyPhone: v('edit-compphone'), workYears: v('edit-workyears'), salary: parseInt(v('edit-salary')) || 0,
+    vehicleNo: v('edit-vno'), vehicleName: v('edit-vname'), vehicleYear: v('edit-vyear'),
+    vehicleKm: v('edit-vkm'), vehicleOwnership: v('edit-vown'), vehicleCoOwner: v('edit-vcoowner'),
+    recoveryType: v('edit-recovery'), recoveryTotalCount: v('edit-recovery-total'), recoveryPaidCount: v('edit-recovery-paid'),
+    courtName: v('edit-court'), caseNo: v('edit-caseno'),
+    refundBank: v('edit-bank'), refundHolder: v('edit-holder'), refundAccount: v('edit-account'), monthlyPayment: v('edit-monthly-pay'),
+    creditScore: parseInt(v('edit-credit')) || 0, creditStatus: v('edit-grade'), existingLoans: v('edit-loans'),
+    assignedTo: v('edit-assigned')
+  };
+
+  try {
+    const res = await fetch(`/api/customers/${ledgerEditCustomerId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    if (result.success) {
+      ledgerCustomer = null;
+      alert('수정 저장 완료');
+      viewCustomerLedger(ledgerEditCustomerId);
+    } else {
+      alert('저장 실패: ' + (result.message || ''));
+    }
+  } catch (e) { alert('오류: ' + e.message); }
+}
 
 // ========================================
 // 고객 등록 (웹 페이지)

@@ -93,21 +93,30 @@ router.get('/customers/:id', async (req, res) => {
 // 고객 수정
 router.put('/customers/:id', async (req, res) => {
   try {
-    const { name, ssn, phone, phone2, email, address, residenceAddress, company, companyAddr, companyPhone,
-      salary, employmentType, workYears, courtName, caseNo, refundBank, refundAccount, refundHolder,
-      creditScore, creditStatus, totalDebt, existingLoans, dbSource, assignedTo, status, memo } = req.body;
+    const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, housingType, housingOwnership,
+      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, workYears,
+      vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
+      recoveryType, recoveryPaidCount, recoveryTotalCount, courtName, caseNo,
+      refundBank, refundAccount, refundHolder, monthlyPayment,
+      creditScore, creditStatus, existingLoans, dbSource, assignedTo, status, memo } = req.body;
 
     await query(
-      `UPDATE customers SET name=?, ssn=?, phone=?, phone2=?, email=?, address=?, residence_address=?,
-        company=?, company_addr=?, company_phone=?, salary=?, employment_type=?, work_years=?,
-        court_name=?, case_no=?, refund_bank=?, refund_account=?, refund_holder=?,
-        credit_score=?, credit_status=?, total_debt=?, existing_loans=?, db_source=?,
-        assigned_to=?, status=?, memo=? WHERE id=?`,
-      [name, ssn||'', phone, phone2||'', email||'', address||'', residenceAddress||'',
-       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', workYears||'',
-       courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'',
-       creditScore||0, creditStatus||'정상', totalDebt||'0', existingLoans||'', dbSource||'',
-       assignedTo||'', status||'리드', memo||'', req.params.id]
+      `UPDATE customers SET name=?, ssn=?, phone=?, carrier=?, phone2=?, email=?, address=?, residence_address=?,
+        housing_type=?, housing_ownership=?,
+        company=?, company_addr=?, company_phone=?, salary=?, employment_type=?, has_4_insurance=?, work_years=?,
+        vehicle_no=?, vehicle_name=?, vehicle_year=?, vehicle_km=?, vehicle_ownership=?, vehicle_co_owner=?,
+        recovery_type=?, recovery_paid_count=?, recovery_total_count=?,
+        court_name=?, case_no=?, refund_bank=?, refund_account=?, refund_holder=?, monthly_payment=?,
+        credit_score=?, credit_status=?, existing_loans=?, db_source=?,
+        assigned_to=? WHERE id=?`,
+      [name, ssn||'', phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
+       housingType||'', housingOwnership||'',
+       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', workYears||'',
+       vehicleNo||'', vehicleName||'', vehicleYear||'', vehicleKm||'', vehicleOwnership||'', vehicleCoOwner||'',
+       recoveryType||'', recoveryPaidCount||'', recoveryTotalCount||'',
+       courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'', monthlyPayment||'',
+       creditScore||0, creditStatus||'', existingLoans||'', dbSource||'',
+       assignedTo||'', req.params.id]
     );
 
     await logAudit({ eventType: 'customer_edit', targetType: 'customer', targetId: req.params.id, targetName: name, afterValue: '고객 정보 수정', performedBy: req.user?.name || 'admin' });
