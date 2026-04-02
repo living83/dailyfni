@@ -8,7 +8,7 @@ const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 router.post('/customers', async (req, res) => {
   try {
     const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, company, companyAddr, companyPhone,
-      salary, employmentType, workYears, courtName, caseNo, refundBank, refundAccount, refundHolder,
+      salary, employmentType, has4Insurance, workYears, courtName, caseNo, refundBank, refundAccount, refundHolder,
       creditScore, creditStatus, totalDebt, existingLoans, dbSource, assignedTo, status, memo, loanDate, loanAmount } = req.body;
 
     if (!name || !phone) {
@@ -25,13 +25,13 @@ router.post('/customers', async (req, res) => {
 
     const result = await query(
       `INSERT INTO customers (name, ssn, age, phone, carrier, phone2, email, address, residence_address,
-        company, company_addr, company_phone, salary, employment_type, work_years,
+        company, company_addr, company_phone, salary, employment_type, has_4_insurance, work_years,
         court_name, case_no, refund_bank, refund_account, refund_holder,
         credit_score, credit_status, total_debt, existing_loans, db_source,
         assigned_to, status, memo, loan_date, loan_amount, reg_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
       [name, ssn||'', age, phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
-       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', workYears||'',
+       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', workYears||'',
        courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'',
        creditScore||0, creditStatus||'정상', totalDebt||'0', existingLoans||'', dbSource||'',
        assignedTo||'', status||'리드', memo||'', loanDate||null, loanAmount||'']

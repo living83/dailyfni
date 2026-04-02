@@ -2514,9 +2514,12 @@ async function processIntake(id, name, phone, content, source) {
     // 고객등록 화면에 데이터 전달
     // content에서 통신사 파싱 (예: "통신사: LGU+ / 직업: 직장인")
     let carrierFromContent = '';
+    let insuranceFromContent = '';
     const carrierMatch = (content||'').match(/통신사:\s*([^\s/]+)/);
     if (carrierMatch) carrierFromContent = carrierMatch[1];
-    intakePrefill = { name: name, phone: phone, carrier: carrierFromContent, memo: content || '', dbSource: source || '홈페이지' };
+    const insMatch = (content||'').match(/4대보험:\s*([^\s/]+)/);
+    if (insMatch) insuranceFromContent = translateContent(insMatch[1]);
+    intakePrefill = { name: name, phone: phone, carrier: carrierFromContent, has4Insurance: insuranceFromContent, memo: content || '', dbSource: source || '홈페이지' };
     intakeData = [];
     navigate('customer-register');
   } catch (e) { alert('오류: ' + e.message); }
@@ -2553,7 +2556,7 @@ async function submitCustomerRegister() {
     carrier: v('reg-carrier'), email: v('reg-email'), dbSource: v('reg-dbsource'),
     address: (v('reg-addr1') + ' ' + v('reg-addr1-detail')).trim(),
     residenceAddress: (v('reg-addr2') + ' ' + v('reg-addr2-detail')).trim(),
-    company: v('reg-company'), employmentType: v('reg-emptype'),
+    company: v('reg-company'), employmentType: v('reg-emptype'), has4Insurance: v('reg-insurance'),
     companyAddr: (v('reg-compaddr') + ' ' + v('reg-compaddr-detail')).trim(),
     companyPhone: v('reg-compphone'), workYears: v('reg-workyears'), salary: parseInt(v('reg-salary')) || 0,
     courtName: v('reg-court'), caseNo: v('reg-caseno'),
@@ -2625,6 +2628,7 @@ function renderCustomerRegister() {
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
+            <tr><th>4대보험</th><td><select id="reg-insurance">${selDb(['선택','가입','미가입','모름'], pf.has4Insurance||'선택')}</select></td><th></th><td></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">검색</button><input type="text" id="reg-compaddr-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
             <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" id="reg-workyears" placeholder="예: 3년 2개월"></td></tr>
             <tr><th>연봉</th><td><input type="text" id="reg-salary" placeholder="만원 단위" oninput="calcMonthly()"></td><th>월 환산</th><td><input type="text" id="reg-monthly" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
