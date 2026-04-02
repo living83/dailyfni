@@ -2433,8 +2433,10 @@ async function submitCustomerRegister() {
   const data = {
     name: v('reg-name'), ssn: v('reg-ssn'), phone: v('reg-phone'), phone2: v('reg-phone2'),
     email: v('reg-email'), dbSource: v('reg-dbsource'),
-    address: v('reg-addr1'), residenceAddress: v('reg-addr2'),
-    company: v('reg-company'), employmentType: v('reg-emptype'), companyAddr: v('reg-compaddr'),
+    address: (v('reg-addr1') + ' ' + v('reg-addr1-detail')).trim(),
+    residenceAddress: (v('reg-addr2') + ' ' + v('reg-addr2-detail')).trim(),
+    company: v('reg-company'), employmentType: v('reg-emptype'),
+    companyAddr: (v('reg-compaddr') + ' ' + v('reg-compaddr-detail')).trim(),
     companyPhone: v('reg-compphone'), workYears: v('reg-workyears'), salary: parseInt(v('reg-salary')) || 0,
     courtName: v('reg-court'), caseNo: v('reg-caseno'),
     refundBank: v('reg-bank'), refundHolder: v('reg-holder'), refundAccount: v('reg-account'),
@@ -2496,15 +2498,15 @@ function renderCustomerRegister() {
             <tr><th>만 나이</th><td><input type="text" id="reg-age" placeholder="주민번호 입력 시 자동" readonly style="background:#f1f5f9;"></td><th>성별</th><td><select id="reg-gender"><option>선택</option><option>남</option><option>여</option></select></td></tr>
             <tr><th>휴대전화 <span class="required">*</span></th><td><input type="text" id="reg-phone" placeholder="010-0000-0000" value="${phoneFormatted}" oninput="this.value=formatPhone(this.value)"></td><th>보조 연락처</th><td><input type="text" id="reg-phone2" placeholder="연락처"></td></tr>
             <tr><th>이메일</th><td><input type="text" id="reg-email" placeholder="이메일"></td><th>DB 유입출처 <span class="required">*</span></th><td><select id="reg-dbsource">${selDb(dbOpts, pf.dbSource||'선택하세요')}</select></td></tr>
-            <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr1" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr1')">주소 검색</button></div></td></tr>
-            <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr2" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr2')">주소 검색</button></div></td></tr>
+            <tr><th>초본 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr1" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr1')">검색</button><input type="text" id="reg-addr1-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
+            <tr><th>실거주 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-addr2" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-addr2')">검색</button><input type="text" id="reg-addr2-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
           </tbody></table>
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
-            <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색 버튼 클릭" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">주소 검색</button></div></td></tr>
+            <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">검색</button><input type="text" id="reg-compaddr-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
             <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" id="reg-workyears" placeholder="예: 3년 2개월"></td></tr>
             <tr><th>연봉</th><td><input type="text" id="reg-salary" placeholder="만원 단위" oninput="calcMonthly()"></td><th>월 환산</th><td><input type="text" id="reg-monthly" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
           </tbody></table>
