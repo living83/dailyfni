@@ -24,6 +24,9 @@ function delay(min, max) {
 // Chrome 경로 자동 탐색
 function getChromePath() {
   const paths = [
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     process.env.CHROME_PATH || ''
@@ -44,11 +47,13 @@ async function launchBrowser() {
     throw new Error('Chrome 브라우저를 찾을 수 없습니다. CHROME_PATH 환경변수를 설정하세요.');
   }
 
+  const isLinux = process.platform === 'linux';
+
   browser = await puppeteer.launch({
     executablePath: chromePath,
-    headless: false,
-    defaultViewport: null,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    headless: isLinux ? 'new' : false,
+    defaultViewport: isLinux ? { width: 1280, height: 800 } : null,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
 
   page = (await browser.pages())[0] || await browser.newPage();
