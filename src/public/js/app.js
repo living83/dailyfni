@@ -2468,17 +2468,49 @@ function toggleLedgerEdit() {
   document.getElementById('ledgerCancelBtn').style.display = ledgerEditMode ? '' : 'none';
 }
 
-function saveLedger() {
+async function saveLedger() {
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+
+  // 폼에서 수정된 값 수집 (ledgerForm 내 모든 input)
+  const inputs = document.querySelectorAll('#ledgerForm input:not([data-always-readonly])');
+  const values = [...inputs].map(i => i.value.trim());
+
+  // MySQL API로 고객 정보 업데이트
+  try {
+    const res = await fetch(`/api/customers/${currentLedgerId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: values[0] || '', ssn: values[1] || '',
+        phone: values[4] || '', phone2: values[5] || '',
+        email: values[8] || '',
+        assignedTo: user.name || ''
+      })
+    });
+    const result = await res.json();
+    if (!result.success) {
+      alert('저장 실패: ' + (result.message || ''));
+      return;
+    }
+  } catch (e) {
+    alert('저장 오류: ' + e.message);
+    return;
+  }
+
+  // 변경이력 추가
   const now = new Date();
   const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   const histDiv = document.getElementById('ledgerChangeHistory');
   if (histDiv) {
     const newItem = document.createElement('div');
     newItem.className = 'timeline-item';
-    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
     newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">고객 원장 정보 수정</div><div class="tl-user">처리: ${user.name||'-'}</div>`;
     histDiv.insertBefore(newItem, histDiv.firstChild);
   }
+
+  // ledgerCustomer 캐시 초기화 → 다시 로드
+  ledgerCustomer = null;
+
   // 읽기 전용으로 복원
   ledgerEditMode = true;
   toggleLedgerEdit();
@@ -2706,10 +2738,19 @@ function renderCustomerLedger() {
           </tbody></table>
         </div></div>
 
-        <div class="panel"><div class="panel-header"><h2>법원 사건 정보</h2></div><div class="panel-body" style="padding:0;">
+        <div class="panel"><div class="panel-header"><h2>차량 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>회파복 구분</th><td><input type="text" value="${c.recovery_type||'-'}" ${ro}></td><th>총회차/납입회차</th><td><input type="text" value="${(c.recovery_total_count||'') && (c.recovery_paid_count||'') ? c.recovery_total_count+'/'+c.recovery_paid_count : '-'}" ${ro}></td></tr>
+            <tr><th>차량번호</th><td><input type="text" value="${c.vehicle_no||'-'}" ${ro}></td><th>차량명</th><td><input type="text" value="${c.vehicle_name||'-'}" ${ro}></td></tr>
+            <tr><th>차량연식</th><td><input type="text" value="${c.vehicle_year||'-'}" ${ro}></td><th>주행거리</th><td><input type="text" value="${c.vehicle_km ? c.vehicle_km+'km' : '-'}" ${ro}></td></tr>
+            <tr><th>차량소유구분</th><td><input type="text" value="${c.vehicle_ownership||'-'}" ${ro}></td><th>공동명의자</th><td><input type="text" value="${c.vehicle_co_owner||'-'}" ${ro}></td></tr>
+          </tbody></table>
+        </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>회파복 / 법원 정보</h2></div><div class="panel-body" style="padding:0;">
+          <table class="info-table"><tbody>
+            <tr><th>회파복 구분</th><td><input type="text" value="${c.recovery_type||'-'}" ${ro}></td><th>총회차/납입회차</th><td><input type="text" value="${(c.recovery_total_count && c.recovery_paid_count) ? c.recovery_total_count+'/'+c.recovery_paid_count : '-'}" ${ro}></td></tr>
             <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.case_no||c.caseNo||'-'}" ${ro}></td></tr>
+            <tr><th>월변제금액</th><td><input type="text" value="${c.monthly_payment ? c.monthly_payment+'만원' : '-'}" ${ro}></td><th></th><td></td></tr>
           </tbody></table>
         </div></div>
 
