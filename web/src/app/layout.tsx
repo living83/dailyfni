@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     siteName: "DAILY F&I",
     images: [
       {
-        url: "/og-image.png",
+        url: "/logo.png",
         width: 1200,
         height: 630,
         alt: "DAILY F&I - 대부중개업 정식 등록 (2024-금감원-2626)",
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "DAILY F&I - 신뢰할 수 있는 대출 중개 서비스",
     description: "(주)데일리에프앤아이대부 | 대부중개업 정식 등록 | 중개수수료 0%",
-    images: ["/og-image.png"],
+    images: ["/logo.png"],
   },
 };
 
