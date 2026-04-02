@@ -32,8 +32,8 @@ const PORT = process.env.PORT || 3000;
 
 // --- 미들웨어 ---
 app.use(cors({
-  origin: ['https://home.dailyfni.co.kr', 'https://dailyfni.co.kr', 'http://localhost:3001', 'http://localhost:3000'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: ['https://home.dailyfni.co.kr', 'https://dailyfni.co.kr', 'https://dailyfni.vercel.app', 'http://localhost:3001', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true
 }));
 app.use(express.json());
