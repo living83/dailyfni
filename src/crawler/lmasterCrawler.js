@@ -297,171 +297,118 @@ async function submitLoanApplication(agentNo, upw, formData) {
     }
   }
 
-  // 2단계: 폼 필드 일괄 입력
+  // 2단계: 폼 필드 일괄 입력 (론앤마스터 실제 필드명 기반)
   const fillResult = await page.evaluate((data) => {
     const filled = [];
     const notFound = [];
 
-    // 필드명 매핑: formData 키 → 론앤마스터 폼의 name/id 패턴
-    const fieldMap = {
-      // 고객 기본정보
-      name: ['name', 'u_name', 's_name', 'cust_name', 'customer_name', 'uname'],
-      birth: ['birth', 'u_birth', 'birthday', 'jumin1', 'ssn1', 'birth_date'],
-      gender: ['gender', 'u_gender', 'sex', 'u_sex'],
-      phone1: ['phone1', 'hp1', 'u_hp1', 'tel1', 'mobile1', 'u_phone1'],
-      phone2: ['phone2', 'hp2', 'u_hp2', 'tel2', 'mobile2', 'u_phone2'],
-      phone3: ['phone3', 'hp3', 'u_hp3', 'tel3', 'mobile3', 'u_phone3'],
-      carrier: ['carrier', 'telecom', 'u_telecom', 'phone_co', 'u_carrier'],
-      // 대출 정보
-      loanAmount: ['loan_amount', 'hope_amount', 'req_amount', 'amount', 'u_amount', 'hope_money'],
-      // 직업 정보
-      jobType: ['job_type', 'u_job', 'job', 'occupation', 'u_jobtype', 'job_kind'],
-      company: ['company', 'u_company', 'comp_name', 'workplace', 'u_comp'],
-      salary: ['salary', 'income', 'u_salary', 'year_income', 'u_income', 'annual_income'],
-      monthlySalary: ['month_salary', 'month_income', 'u_month_salary', 'monthly_income'],
-      joinDate: ['join_date', 'enter_date', 'u_joindate', 'work_start', 'u_enter_date'],
-      insurance4: ['insurance', 'u_insurance', 'ins_4', '4dae', 'u_4dae', 'insurance_yn'],
-      bizNo1: ['biz_no1', 'saup1', 'u_saup1', 'business_no1'],
-      bizNo2: ['biz_no2', 'saup2', 'u_saup2', 'business_no2'],
-      bizNo3: ['biz_no3', 'saup3', 'u_saup3', 'business_no3'],
-      // 주소
-      zipcode: ['zipcode', 'zip', 'u_zip', 'zonecode', 'post'],
-      address: ['address', 'addr', 'u_addr', 'u_address', 'road_addr'],
-      addressDetail: ['addr_detail', 'u_addr2', 'addr2', 'detail_addr', 'address_detail'],
-      // 주거
-      housingType: ['house_type', 'u_house', 'housing', 'u_housing', 'home_type'],
-      housingOwnership: ['house_own', 'u_houseown', 'own_house', 'u_own_house', 'property'],
-      // 차량
-      vehicleNo: ['car_no', 'u_carno', 'vehicle_no', 'u_car_no', 'carnum'],
-      vehicleName: ['car_name', 'u_carname', 'vehicle_name', 'u_car_name'],
-      vehicleYear: ['car_year', 'u_caryear', 'vehicle_year', 'u_car_year'],
-      vehicleKm: ['car_km', 'u_carkm', 'mileage', 'u_mileage', 'car_distance'],
-      vehicleOwnership: ['car_own', 'u_carown', 'car_owner', 'u_car_owner', 'vehicle_own'],
-      vehicleCoOwner: ['co_owner', 'u_coowner', 'car_coowner', 'u_car_coowner'],
-      // 회파복
-      recoveryType: ['recovery', 'u_recovery', 'hoe_type', 'u_hoetype', 'hoepabog'],
-      courtName: ['court', 'u_court', 'court_name', 'u_court_name'],
-      caseNo: ['case_no', 'u_caseno', 'case_num', 'u_case_no', 'sageonno'],
-      refundBank: ['refund_bank', 'u_bank', 'bank', 'u_refundbank', 'return_bank'],
-      refundAccount: ['refund_account', 'u_account', 'account', 'u_refundaccount', 'bank_account'],
-      monthlyPayment: ['monthly_pay', 'u_monthlypay', 'month_pay', 'u_month_pay', 'byunje'],
-      // 직장 주소
-      workZipcode: ['w_zip', 'u_wzip', 'comp_zip', 'work_zip', 'u_work_zip'],
-      workAddress: ['w_addr', 'u_waddr', 'comp_addr', 'work_addr', 'u_work_addr'],
-      workAddressDetail: ['w_addr2', 'u_waddr2', 'comp_addr2', 'work_addr2', 'u_work_addr2'],
-      // 기타
-      memo: ['memo', 'u_memo', 'etc', 'remark', 'u_remark', 'note', 'u_note', 'bigo'],
-      healthInsurance: ['health_ins', 'u_health', 'health_amount', 'u_health_ins'],
-      creditScore: ['credit_score', 'u_credit', 'nice_score', 'u_score'],
-      dbSource: ['db_source', 'u_dbsource', 'route', 'u_route', 'inflow'],
-    };
-
-    // input/textarea 채우기
-    function fillInput(fieldKey, value) {
+    function setInput(name, value, label) {
       if (!value && value !== 0) return;
-      const patterns = fieldMap[fieldKey] || [fieldKey];
-      for (const pat of patterns) {
-        const el = document.querySelector(`input[name="${pat}"], input[id="${pat}"], textarea[name="${pat}"], textarea[id="${pat}"]`);
-        if (el) {
-          el.value = String(value);
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          filled.push({ field: fieldKey, target: pat, value: String(value) });
-          return true;
-        }
-      }
-      // 패턴 부분 일치 시도
-      for (const pat of patterns) {
-        const el = document.querySelector(`input[name*="${pat}"], textarea[name*="${pat}"]`);
-        if (el && el.type !== 'hidden') {
-          el.value = String(value);
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          filled.push({ field: fieldKey, target: el.name || el.id, value: String(value) });
-          return true;
-        }
-      }
-      notFound.push(fieldKey);
-      return false;
+      const el = document.querySelector(`input[name="${name}"], textarea[name="${name}"]`);
+      if (el) {
+        el.value = String(value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push({ field: label || name, target: name, value: String(value) });
+      } else { notFound.push(label || name); }
     }
 
-    // select 채우기
-    function fillSelect(fieldKey, value) {
-      if (!value) return;
-      const patterns = fieldMap[fieldKey] || [fieldKey];
-      for (const pat of patterns) {
-        const el = document.querySelector(`select[name="${pat}"], select[id="${pat}"]`);
-        if (el) {
-          // value 일치
-          for (const opt of el.options) {
-            if (opt.value === String(value) || opt.text.trim() === String(value) || opt.text.includes(String(value))) {
-              el.value = opt.value;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              filled.push({ field: fieldKey, target: pat, value: opt.text.trim() });
-              return true;
-            }
+    function setSelect(name, value, label) {
+      if (!value && value !== 0) return;
+      const el = document.querySelector(`select[name="${name}"]`);
+      if (el) {
+        // 정확한 value 매칭
+        for (const opt of el.options) {
+          if (opt.value === String(value)) {
+            el.value = opt.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: label || name, target: name, value: opt.text.trim() });
+            return;
           }
         }
-      }
-      // 부분 일치
-      for (const pat of patterns) {
-        const el = document.querySelector(`select[name*="${pat}"]`);
-        if (el) {
-          for (const opt of el.options) {
-            if (opt.text.includes(String(value))) {
-              el.value = opt.value;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              filled.push({ field: fieldKey, target: el.name, value: opt.text.trim() });
-              return true;
-            }
+        // 텍스트 포함 매칭
+        for (const opt of el.options) {
+          if (opt.text.includes(String(value)) || String(value).includes(opt.text.trim())) {
+            el.value = opt.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: label || name, target: name, value: opt.text.trim() });
+            return;
           }
         }
-      }
-      notFound.push(fieldKey);
-      return false;
+        notFound.push(label || name);
+      } else { notFound.push(label || name); }
     }
 
-    // 필드 채우기 실행
-    fillInput('name', data.name);
-    fillInput('birth', data.birth);
-    fillSelect('gender', data.gender);
-    fillSelect('carrier', data.carrier);
-    fillInput('phone1', data.phone1);
-    fillInput('phone2', data.phone2);
-    fillInput('phone3', data.phone3);
-    fillInput('loanAmount', data.loanAmount);
-    fillSelect('jobType', data.jobType);
-    fillInput('company', data.company);
-    fillInput('salary', data.salary);
-    fillInput('monthlySalary', data.monthlySalary);
-    fillInput('joinDate', data.joinDate);
-    fillSelect('insurance4', data.insurance4);
-    fillInput('bizNo1', data.bizNo1);
-    fillInput('bizNo2', data.bizNo2);
-    fillInput('bizNo3', data.bizNo3);
-    fillInput('zipcode', data.zipcode);
-    fillInput('address', data.address);
-    fillInput('addressDetail', data.addressDetail);
-    fillSelect('housingType', data.housingType);
-    fillSelect('housingOwnership', data.housingOwnership);
-    fillInput('vehicleNo', data.vehicleNo);
-    fillInput('vehicleName', data.vehicleName);
-    fillSelect('vehicleYear', data.vehicleYear);
-    fillInput('vehicleKm', data.vehicleKm);
-    fillSelect('vehicleOwnership', data.vehicleOwnership);
-    fillInput('vehicleCoOwner', data.vehicleCoOwner);
-    fillSelect('recoveryType', data.recoveryType);
-    fillInput('courtName', data.courtName);
-    fillInput('caseNo', data.caseNo);
-    fillSelect('refundBank', data.refundBank);
-    fillInput('refundAccount', data.refundAccount);
-    fillInput('monthlyPayment', data.monthlyPayment);
-    fillInput('workZipcode', data.workZipcode);
-    fillInput('workAddress', data.workAddress);
-    fillInput('workAddressDetail', data.workAddressDetail);
-    fillInput('memo', data.memo);
-    fillInput('healthInsurance', data.healthInsurance);
-    fillInput('creditScore', data.creditScore);
+    // === 고객 기본정보 ===
+    setInput('name', data.name, '이름');
+    setInput('jumin1', data.birth, '생년월일');
+    // 성별: 남(1)→1, 여(2)→2, 남(3)→3, 여(4)→4
+    const genderMap = {'남(1)':'1','여(2)':'2','남(3)':'3','여(4)':'4'};
+    setSelect('sex', genderMap[data.gender] || data.gender, '성별');
+    // 통신사: SK→S, KT→K, LGU+→L, 알뜰→T, SK알뜰→TS, KT알뜰→TK, LG알뜰→TL
+    const carrierMap = {'SK':'S','KT':'K','LGU+':'L','알뜰':'T','SK알뜰':'TS','KT알뜰':'TK','LG알뜰':'TL','기타':'E'};
+    setSelect('hpon_company', carrierMap[data.carrier] || data.carrier, '통신사');
+    setInput('hpon1', data.phone1, '전화1');
+    setInput('hpon2', data.phone2, '전화2');
+    setInput('hpon3', data.phone3, '전화3');
+    setInput('p_pay', data.loanAmount, '대출요청액');
+
+    // === 주소 ===
+    setInput('ZoneCode', data.zipcode, '우편번호');
+    setInput('addr1', data.address, '주소');
+    setInput('addr2', data.addressDetail, '상세주소');
+    // 주거종류: 아파트→1, 빌라→2, 연립→3, 다세대→4, 단독주택→5, 상가→6, 오피스텔→7, 관사→8
+    const housingMap = {'아파트':'1','빌라':'2','연립':'3','다세대':'4','단독주택':'5','상가':'6','오피스텔':'7','관사':'8','기타':'99'};
+    setSelect('h_kind', housingMap[data.housingType] || data.housingType, '주거종류');
+    // 주택소유: 소유→11, 미소유→12
+    const ownMap = {'부동산 소유중':'11','부동산 없음':'12','기타':'99'};
+    setSelect('h_sel', ownMap[data.housingOwnership] || data.housingOwnership, '주택소유');
+
+    // === 직장 정보 ===
+    // 직업구분: 직장인(4대가입)→1, 직장인(미가입)→2, 개인사업자→3, 프리랜서→4, 무직→7, 주부→8, 학생→9
+    const jobMap = {'직장인(4대가입)':'1','직장인(미가입)':'2','개인사업자':'3','프리랜서':'4','무직':'7','주부':'8','학생':'9'};
+    setSelect('j_sel', jobMap[data.jobType] || data.jobType, '직업구분');
+    // 4대보험: 가입→Y, 미가입→N
+    const insuMap = {'가입':'Y','미가입':'N'};
+    setSelect('j_IsInsu', insuMap[data.insurance4] || data.insurance4, '4대보험');
+    setInput('j_name', data.company, '직장명');
+    setInput('j_date', data.joinDate, '입사일자');
+    setInput('j_no1', data.bizNo1, '사업자번호1');
+    setInput('j_no2', data.bizNo2, '사업자번호2');
+    setInput('j_no3', data.bizNo3, '사업자번호3');
+    setInput('j_pay1', data.salary, '연소득');
+    setInput('j_pay2', data.monthlySalary, '월소득');
+    setInput('j_insu_money', data.healthInsurance, '건강보험납부금');
+    // 직장 주소
+    setInput('j_zonecode', data.workZipcode, '직장우편번호');
+    setInput('j_addr1', data.workAddress, '직장주소');
+    setInput('j_addr2', data.workAddressDetail, '직장상세주소');
+
+    // === 차량 정보 ===
+    setInput('car_no', data.vehicleNo, '차량번호');
+    setInput('car_name', data.vehicleName, '차량명');
+    setSelect('car_year', data.vehicleYear, '차량연식');
+    setInput('car_distance', data.vehicleKm, '주행거리');
+    // 차량소유: 소유(본인명의)→1, 소유(공동명의 대표)→2, 소유(공동명의)→3, 미소유→4
+    const carOwnMap = {'소유(본인명의)':'1','소유(공동명의 대표)':'2','소유(공동명의)':'3','미소유':'4'};
+    setSelect('car_sel', carOwnMap[data.vehicleOwnership] || data.vehicleOwnership, '차량소유');
+    setInput('car_joinown_name', data.vehicleCoOwner, '공동명의자');
+
+    // === 회파복 ===
+    // 회파복: 회생→1, 파산→2, 회복→3, 무→99
+    const brtMap = {'회생':'1','파산':'2','회복':'3','무':'99','==선택==':'','선택':''};
+    setSelect('brt_tp', brtMap[data.recoveryType] || data.recoveryType, '회파복구분');
+    setInput('brt_court_name', data.courtName, '법원명');
+    // 사건번호: 연도/종류/번호 분리
+    if (data.caseNoYear) setSelect('brt_no1', data.caseNoYear, '사건연도');
+    if (data.caseNoType) setSelect('brt_no2', data.caseNoType, '사건종류');
+    if (data.caseNoNum) setInput('brt_no3', data.caseNoNum, '사건번호');
+    setSelect('brt_bank', data.refundBankCode || data.refundBank, '환급은행');
+    setInput('brt_bank_addr', data.refundAccount, '환급계좌');
+    setInput('brt_month_repay_amt', data.monthlyPayment, '월변제금');
+
+    // === 기타 (메모 → call_memo1) ===
+    setInput('call_memo1', data.memo, '메모');
 
     return { filled, notFound };
   }, formData);

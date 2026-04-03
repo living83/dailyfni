@@ -938,7 +938,9 @@ async function submitLoanRegister() {
   const recoveryType = rc0[0]?.tagName === 'SELECT' ? rc0[0].options[rc0[0].selectedIndex]?.text : '';
   const rc1 = getInputsInRow(recRows[1]);
   const courtName = rc1[0]?.value || '';
-  const caseNo = (rc1[1]?.value || '') + (rc1[2]?.tagName === 'SELECT' ? rc1[2].options[rc1[2].selectedIndex]?.text : '') + (rc1[3]?.value || '');
+  const caseNoYear = rc1[1]?.value || '';
+  const caseNoType = rc1[2]?.tagName === 'SELECT' ? rc1[2].options[rc1[2].selectedIndex]?.text : '';
+  const caseNoNum = rc1[3]?.value || '';
   const rc2 = getInputsInRow(recRows[2]);
   const refundBank = rc2[0]?.tagName === 'SELECT' ? rc2[0].options[rc2[0].selectedIndex]?.text : '';
   const refundAccount = rc2[1]?.value || '';
@@ -958,7 +960,7 @@ async function submitLoanRegister() {
     zipcode, address, addressDetail,
     housingType, housingOwnership,
     vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
-    recoveryType, courtName, caseNo, refundBank, refundAccount, monthlyPayment,
+    recoveryType, courtName, caseNoYear, caseNoType, caseNoNum, refundBank, refundAccount, monthlyPayment,
     workZipcode, workAddress, workAddressDetail,
     memo, dbSource
   };
