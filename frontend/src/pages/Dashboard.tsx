@@ -87,9 +87,8 @@ const tierBarColor: Record<number, string> = {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { isDemo } = useAuth()
   const { addToast } = useToast()
-  const isDemo = !user
 
   const { data: dashboard, loading: dashLoading } = useFetch<DashboardData>(
     isDemo ? null : '/stats/dashboard'
