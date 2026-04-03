@@ -12,6 +12,7 @@ const reviewerRoutes = require('./routes/reviewerRoutes');
 const publisherRoutes = require('./routes/publisherRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const accountRoutes = require('./routes/accountRoutes');
+const contentRoutes = require('./routes/contentRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,7 @@ app.use('/api', reviewerRoutes);
 app.use('/api', publisherRoutes);
 app.use('/api', settingsRoutes);
 app.use('/api', accountRoutes);
+app.use('/api', contentRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
