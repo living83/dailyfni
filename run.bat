@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title DailyFNI
+title DailyFNI - 네이버 블로그 자동화 솔루션
 
 :MENU
 cls
@@ -23,36 +23,47 @@ goto MENU
 
 :START
 cls
-echo 서버 시작 중...
-start "DailyFNI-Backend" /min cmd /k "cd /d "%~dp0" && node src/index.js"
-timeout /t 2 /nobreak >nul
-start "DailyFNI-Python" /min cmd /k "cd /d "%~dp0blog-generator\backend" && uvicorn main:app --host 0.0.0.0 --port 8000"
-timeout /t 2 /nobreak >nul
-start "DailyFNI-Frontend" /min cmd /k "cd /d "%~dp0frontend" && npm run dev"
-timeout /t 3 /nobreak >nul
+echo [시작] 서버를 실행합니다...
 echo.
+
+echo [1/3] Node.js 백엔드 (포트 3000)...
+start /b cmd /c "cd /d "%~dp0" && node src/index.js > nul 2>&1"
+timeout /t 2 /nobreak >nul
+echo       OK
+
+echo [2/3] Python FastAPI (포트 8000)...
+start /b cmd /c "cd /d "%~dp0blog-generator\backend" && uvicorn main:app --host 0.0.0.0 --port 8000 > nul 2>&1"
+timeout /t 2 /nobreak >nul
+echo       OK
+
+echo [3/3] 프론트엔드 (포트 5173)...
+start /b cmd /c "cd /d "%~dp0frontend" && npx vite --host 0.0.0.0 --port 5173 > nul 2>&1"
+timeout /t 3 /nobreak >nul
+echo       OK
+
+echo.
+echo ================================================
+echo   서버가 실행되었습니다!
 echo   대시보드:  http://localhost:5173
-echo   백엔드:    http://localhost:3000
-echo   Python:    http://localhost:8000
+echo ================================================
 echo.
 pause
 goto MENU
 
 :STOP
 cls
-echo 서버 중지 중...
-taskkill /fi "WINDOWTITLE eq DailyFNI-Backend*" /f >nul 2>&1
-taskkill /fi "WINDOWTITLE eq DailyFNI-Python*" /f >nul 2>&1
-taskkill /fi "WINDOWTITLE eq DailyFNI-Frontend*" /f >nul 2>&1
+echo [정지] 서버를 중지합니다...
+taskkill /f /im node.exe >nul 2>&1
+taskkill /f /im python.exe >nul 2>&1
 echo 완료.
+echo.
 pause
 goto MENU
 
 :RESTART
 cls
-echo 재시작 중...
-taskkill /fi "WINDOWTITLE eq DailyFNI-Backend*" /f >nul 2>&1
-taskkill /fi "WINDOWTITLE eq DailyFNI-Python*" /f >nul 2>&1
-taskkill /fi "WINDOWTITLE eq DailyFNI-Frontend*" /f >nul 2>&1
+echo [재시작] 서버를 중지 후 재실행합니다...
+taskkill /f /im node.exe >nul 2>&1
+taskkill /f /im python.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
 goto START
