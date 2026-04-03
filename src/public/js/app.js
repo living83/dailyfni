@@ -3381,6 +3381,7 @@ function renderRecommendations() {
     recoveryType: (recoveryForm === '==선택==' || recoveryForm === '선택') ? '무' : (recoveryForm || '무'),
     recoveryPaid: parseInt(c.recovery_paid_count || c.recoveryPaidCount || 0) || 0,
     recoveryTotal: parseInt(c.recovery_total_count || c.recoveryTotalCount || 0) || 0,
+    hasProperty: (c.housing_ownership || '').includes('소유'),
     loanAmount: loanAmountForm
   };
 

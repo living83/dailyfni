@@ -13,9 +13,9 @@ const productConditions = {
     ageMin: 19, ageMax: 70,
     loanMin: 100, loanMax: 10000,
     vehicle: false,
-    recovery: ['무','회생','파산'],
-    insurance4: null, // 제한 없음
-    notes: '신용,대환,사잇돌,햇살론 조회가능'
+    recovery: ['무'],
+    insurance4: null,
+    notes: '신용,대환,사잇돌,햇살론 조회가능 (일반 전용)'
   },
   1535: { // 웰컴저축은행
     name: '웰컴저축은행', category: '저축은행',
@@ -501,16 +501,39 @@ function matchOneProduct(fidx, cond, customer) {
     match.failReasons.push(`연령 부적합 (${cond.ageMin}~${cond.ageMax}세)`);
   }
 
-  // 3. 회파복 매칭 (필수)
+  // 3. 회파복 매칭 (필수 - 엄격 매칭)
   match.maxScore += 3;
-  if (cond.recovery.includes(recoveryType)) {
-    match.score += 3;
-    match.reasons.push('회파복 적합');
+  if (recoveryType === '무') {
+    // 일반 고객: recovery에 '무'가 포함된 상품만
+    if (cond.recovery.includes('무')) {
+      match.score += 3;
+      match.reasons.push('일반(회파복 없음)');
+    } else {
+      // 회파복 전용 상품은 일반 고객에게 추천 불가
+      match.score = 0;
+      match.failReasons = ['회파복 전용 상품 (일반 고객 불가)'];
+      match.matchRate = 0;
+      match.status = 'unsuitable';
+      return match;
+    }
   } else {
-    match.failReasons.push(`회파복 부적합 (${cond.recovery.join('/')} 만 가능)`);
+    // 회파복 고객: 정확한 회파복 구분이 포함된 상품만
+    if (cond.recovery.includes(recoveryType)) {
+      match.score += 3;
+      match.reasons.push(`${recoveryType} 적합`);
+    } else if (cond.recovery.length === 1 && cond.recovery[0] === '무') {
+      // 일반 전용 상품은 회파복 고객에게 절대 추천 불가
+      match.score = 0;
+      match.failReasons = ['일반 전용 상품 (회파복 고객 불가)'];
+      match.matchRate = 0;
+      match.status = 'unsuitable';
+      return match;
+    } else {
+      match.failReasons.push(`회파복 불일치 (${cond.recovery.join('/')} 만 가능, 고객:${recoveryType})`);
+    }
   }
 
-  // 4. 차량 조건 (해당 시)
+  // 4. 차량 조건 (필수 - 차량 미소유 시 즉시 부적합)
   if (cond.vehicle) {
     match.maxScore += 2;
     if (hasVehicle) {
@@ -525,7 +548,12 @@ function matchOneProduct(fidx, cond, customer) {
         match.failReasons.push(`주행거리 초과 (${(cond.vehicleKm/10000).toFixed(0)}만km 이하)`);
       }
     } else {
-      match.failReasons.push('차량 필요 상품');
+      // 차량 필수 상품인데 차량 미소유 → 즉시 부적합
+      match.score = 0;
+      match.failReasons = ['차량 미소유 (오토론/차량담보 불가)'];
+      match.matchRate = 0;
+      match.status = 'unsuitable';
+      return match;
     }
   }
 
@@ -546,10 +574,18 @@ function matchOneProduct(fidx, cond, customer) {
     match.score = 0;
   }
 
-  // 7. 부동산 담보 체크
+  // 7. 부동산 담보 체크 (부동산 없으면 즉시 부적합)
   if (cond.requireProperty) {
-    match.maxScore += 1;
-    match.failReasons.push('부동산 보유 확인 필요');
+    if (customer.hasProperty === false) {
+      match.score = 0;
+      match.failReasons = ['부동산 미보유 (담보대출 불가)'];
+      match.matchRate = 0;
+      match.status = 'unsuitable';
+      return match;
+    } else {
+      match.maxScore += 1;
+      match.reasons.push('부동산 담보 확인 필요');
+    }
   }
 
   // 8. 4대보험 가입 기간 체크
@@ -567,11 +603,7 @@ function matchOneProduct(fidx, cond, customer) {
     });
   }
 
-  // 10. 회파복 고객에게 일반 상품 추천 금지 (핵심 불가사항)
-  if (recoveryType !== '무' && cond.recovery.length === 1 && cond.recovery[0] === '무') {
-    match.score = 0;
-    match.failReasons = ['회파복 고객에게 일반 상품 추천 불가'];
-  }
+  // 10. (3번에서 이미 처리됨 - 회파복 엄격 매칭)
 
   // 11. 회생 납입 회차 체크 (desc에서 파싱)
   if (recoveryType === '회생' && customer.recoveryPaid > 0 && cond.notes) {
