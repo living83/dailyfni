@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw,
   Calendar,
@@ -9,26 +8,34 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import api from '../lib/api'
+import { useToast } from '../contexts/ToastContext'
+import { useFetch } from '../hooks/useApi'
+import StatusBadge from '../components/StatusBadge'
+import { PageSkeleton } from '../components/LoadingSkeleton'
 
 /* ── Types ── */
 type PostStatus = '발행완료' | '저품질' | '실패'
 type Grade = 'A' | 'B' | 'C' | 'D'
 
-interface AccountPerformance {
-  name: string
-  tier: number
-  posts: number
+interface MonitoringStats {
+  total: number
   success: number
-  fail: number
-  rate: number
+  failed: number
+  successRate: number
 }
 
-interface TierStat {
+interface AccountPerformance {
+  accountName: string
+  tier: number
+  totalPosts: number
+  success: number
+  failed: number
+  successRate: number
+}
+
+interface TierPosting {
   tier: number
   label: string
-  color: string
-  barColor: string
   general: number
   ad: number
 }
@@ -44,26 +51,37 @@ interface PostingRecord {
   link: string | null
 }
 
-/* ── Mock data ── */
-const accountPerformance: AccountPerformance[] = [
-  { name: '블로그계정1', tier: 3, posts: 32, success: 32, fail: 0, rate: 100 },
-  { name: '마케팅02', tier: 4, posts: 28, success: 27, fail: 1, rate: 96.4 },
-  { name: '대출전문03', tier: 5, posts: 30, success: 29, fail: 1, rate: 96.7 },
-  { name: '재테크블로그', tier: 2, posts: 25, success: 24, fail: 1, rate: 96.0 },
-  { name: '금융정보센터', tier: 3, posts: 22, success: 20, fail: 2, rate: 90.9 },
-  { name: '생활경제팁', tier: 1, posts: 19, success: 17, fail: 2, rate: 89.5 },
-]
-  .sort((a, b) => b.rate - a.rate)
+interface PostingRecordsResponse {
+  records: PostingRecord[]
+  total: number
+}
 
-const tierStats: TierStat[] = [
-  { tier: 1, label: '신규', color: 'bg-muted-foreground', barColor: 'bg-muted-foreground', general: 15, ad: 0 },
-  { tier: 2, label: '성장', color: 'bg-primary', barColor: 'bg-primary', general: 30, ad: 10 },
-  { tier: 3, label: '중급', color: 'bg-violet-500', barColor: 'bg-violet-500', general: 20, ad: 20 },
-  { tier: 4, label: '고수익', color: 'bg-amber', barColor: 'bg-amber', general: 8, ad: 24 },
-  { tier: 5, label: '최상위', color: 'bg-emerald', barColor: 'bg-emerald', general: 5, ad: 24 },
+/* ── Demo data (fallback when API unavailable) ── */
+const demoMonitoring: MonitoringStats = {
+  total: 156,
+  success: 149,
+  failed: 7,
+  successRate: 95.5,
+}
+
+const demoAccountPerformance: AccountPerformance[] = [
+  { accountName: '블로그계정1', tier: 3, totalPosts: 32, success: 32, failed: 0, successRate: 100 },
+  { accountName: '마케팅02', tier: 4, totalPosts: 28, success: 27, failed: 1, successRate: 96.4 },
+  { accountName: '대출전문03', tier: 5, totalPosts: 30, success: 29, failed: 1, successRate: 96.7 },
+  { accountName: '재테크블로그', tier: 2, totalPosts: 25, success: 24, failed: 1, successRate: 96.0 },
+  { accountName: '금융정보센터', tier: 3, totalPosts: 22, success: 20, failed: 2, successRate: 90.9 },
+  { accountName: '생활경제팁', tier: 1, totalPosts: 19, success: 17, failed: 2, successRate: 89.5 },
+].sort((a, b) => b.successRate - a.successRate)
+
+const demoTierStats: TierPosting[] = [
+  { tier: 1, label: '신규', general: 15, ad: 0 },
+  { tier: 2, label: '성장', general: 30, ad: 10 },
+  { tier: 3, label: '중급', general: 20, ad: 20 },
+  { tier: 4, label: '고수익', general: 8, ad: 24 },
+  { tier: 5, label: '최상위', general: 5, ad: 24 },
 ]
 
-const postingRecords: PostingRecord[] = [
+const demoPostingRecords: PostingRecord[] = [
   { date: '04-02 10:32', account: '블로그계정1', keyword: '청년도약계좌', title: '청년도약계좌 가입조건 총정리 (2026년 최신)', tone: '친근톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example1' },
   { date: '04-02 10:28', account: '마케팅02', keyword: '신용대출 비교', title: '신용대출 금리 비교, 은행별 최저금리 TOP5', tone: '전문톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example2' },
   { date: '04-02 10:15', account: '대출전문03', keyword: '전세자금대출', title: '전세자금대출 조건부터 신청방법까지 한눈에', tone: '리뷰톤', status: '발행완료', quality: 'B', link: 'https://blog.naver.com/example3' },
@@ -83,13 +101,23 @@ function rateColor(rate: number) {
   return 'text-destructive'
 }
 
-const statusStyle: Record<PostStatus, string> = {
-  발행완료: 'bg-emerald/15 text-emerald',
-  저품질: 'bg-amber/15 text-amber',
-  실패: 'bg-destructive/15 text-destructive',
+const tierBarColor: Record<number, string> = {
+  1: 'bg-muted-foreground',
+  2: 'bg-primary',
+  3: 'bg-violet-500',
+  4: 'bg-amber',
+  5: 'bg-emerald',
 }
 
-const gradeStyle: Record<Grade, string> = {
+const tierDotColor: Record<number, string> = {
+  1: 'bg-muted-foreground',
+  2: 'bg-primary',
+  3: 'bg-violet-500',
+  4: 'bg-amber',
+  5: 'bg-emerald',
+}
+
+const gradeStyle: Record<string, string> = {
   A: 'bg-emerald/15 text-emerald',
   B: 'bg-primary/15 text-primary',
   C: 'bg-amber/15 text-amber',
@@ -99,17 +127,37 @@ const gradeStyle: Record<Grade, string> = {
 /* ── Component ── */
 export default function Monitoring() {
   const { isDemo } = useAuth()
-  const [refreshing, setRefreshing] = useState(false)
+  const { addToast } = useToast()
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    if (!isDemo) {
-      try {
-        // Future: refetch from API
-      } catch { /* silent */ }
-    }
-    setTimeout(() => setRefreshing(false), 800)
+  const { data: monitoringData, loading: monLoading, refetch: refetchMon } = useFetch<MonitoringStats>(
+    isDemo ? null : '/stats/monitoring'
+  )
+  const { data: accountData, loading: accLoading, refetch: refetchAcc } = useFetch<AccountPerformance[]>(
+    isDemo ? null : '/stats/account-performance'
+  )
+  const { data: tierData, loading: tierLoading, refetch: refetchTier } = useFetch<TierPosting[]>(
+    isDemo ? null : '/stats/tier-posting'
+  )
+  const { data: recordsData, loading: recLoading, refetch: refetchRec } = useFetch<PostingRecordsResponse>(
+    isDemo ? null : '/stats/posting-records'
+  )
+
+  const stats = monitoringData || demoMonitoring
+  const accountPerformance = accountData || demoAccountPerformance
+  const tierStats = tierData || demoTierStats
+  const postingRecords = recordsData?.records || demoPostingRecords
+
+  const isLoading = !isDemo && (monLoading || accLoading || tierLoading || recLoading)
+
+  const handleRefresh = () => {
+    refetchMon()
+    refetchAcc()
+    refetchTier()
+    refetchRec()
+    addToast('데이터를 새로고침합니다', 'info')
   }
+
+  if (isLoading) return <PageSkeleton />
 
   return (
     <div className="space-y-6">
@@ -120,7 +168,10 @@ export default function Monitoring() {
           <p className="text-sm text-muted-foreground">포스팅 성과와 계정 현황을 한눈에 확인합니다</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-foreground hover:bg-white/[0.03] transition-colors">
+          <button
+            onClick={handleRefresh}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-foreground hover:bg-white/[0.03] transition-colors"
+          >
             <RefreshCw className="w-4 h-4" />
             새로고침
           </button>
@@ -139,28 +190,28 @@ export default function Monitoring() {
               <FileText className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">전체 포스팅</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">156건</p>
+            <p className="text-2xl font-bold text-foreground">{stats.total}건</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <CheckCircle2 className="w-4 h-4 text-emerald" />
               <span className="text-sm text-muted-foreground">성공</span>
             </div>
-            <p className="text-2xl font-bold text-emerald">149건</p>
+            <p className="text-2xl font-bold text-emerald">{stats.success}건</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <XCircle className="w-4 h-4 text-destructive" />
               <span className="text-sm text-muted-foreground">실패</span>
             </div>
-            <p className="text-2xl font-bold text-destructive">7건</p>
+            <p className="text-2xl font-bold text-destructive">{stats.failed}건</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-primary" />
               <span className="text-sm text-muted-foreground">성공률</span>
             </div>
-            <p className="text-2xl font-bold text-primary">95.5%</p>
+            <p className="text-2xl font-bold text-primary">{stats.successRate}%</p>
           </div>
         </div>
       </div>
@@ -184,14 +235,14 @@ export default function Monitoring() {
               </thead>
               <tbody className="divide-y divide-border">
                 {accountPerformance.map((row) => (
-                  <tr key={row.name} className="text-foreground">
-                    <td className="py-3 font-medium">{row.name}</td>
+                  <tr key={row.accountName} className="text-foreground">
+                    <td className="py-3 font-medium">{row.accountName}</td>
                     <td className="py-3 text-muted-foreground">Tier {row.tier}</td>
-                    <td className="py-3 text-muted-foreground">{row.posts}</td>
+                    <td className="py-3 text-muted-foreground">{row.totalPosts}</td>
                     <td className="py-3 text-emerald">{row.success}</td>
-                    <td className="py-3 text-destructive">{row.fail}</td>
-                    <td className={`py-3 font-medium ${rateColor(row.rate)}`}>
-                      {row.rate}%
+                    <td className="py-3 text-destructive">{row.failed}</td>
+                    <td className={`py-3 font-medium ${rateColor(row.successRate)}`}>
+                      {row.successRate}%
                     </td>
                   </tr>
                 ))}
@@ -211,7 +262,7 @@ export default function Monitoring() {
                 <li key={t.tier}>
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${t.color}`} />
+                      <span className={`w-2.5 h-2.5 rounded-full ${tierDotColor[t.tier] || 'bg-primary'}`} />
                       <span className="text-sm text-foreground">
                         Tier {t.tier} &mdash; {t.label}
                       </span>
@@ -223,11 +274,11 @@ export default function Monitoring() {
                   </div>
                   <div className="w-full h-2.5 rounded-full bg-muted flex overflow-hidden">
                     <div
-                      className={`h-full ${t.barColor} transition-all duration-500`}
+                      className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
                       style={{ width: `${(t.general / maxTotal) * 100}%` }}
                     />
                     <div
-                      className={`h-full ${t.barColor} opacity-40 transition-all duration-500`}
+                      className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} opacity-40 transition-all duration-500`}
                       style={{ width: `${(t.ad / maxTotal) * 100}%` }}
                     />
                   </div>
@@ -271,21 +322,13 @@ export default function Monitoring() {
                   <td className="py-3 text-muted-foreground whitespace-nowrap">{row.keyword}</td>
                   <td className="py-3 max-w-[260px] truncate" title={row.title}>{row.title}</td>
                   <td className="py-3 whitespace-nowrap">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      row.tone === '친근톤' ? 'bg-emerald/15 text-emerald'
-                        : row.tone === '전문톤' ? 'bg-primary/15 text-primary'
-                        : 'bg-amber/15 text-amber'
-                    }`}>
-                      {row.tone}
-                    </span>
+                    <StatusBadge label={row.tone} />
                   </td>
                   <td className="py-3 whitespace-nowrap">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[row.status]}`}>
-                      {row.status}
-                    </span>
+                    <StatusBadge label={row.status} />
                   </td>
                   <td className="py-3">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${gradeStyle[row.quality]}`}>
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${gradeStyle[row.quality] || 'bg-muted text-muted-foreground'}`}>
                       {row.quality}
                     </span>
                   </td>
