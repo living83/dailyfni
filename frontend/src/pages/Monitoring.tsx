@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from 'react'
 import {
   RefreshCw,
   Calendar,
@@ -7,6 +8,8 @@ import {
   TrendingUp,
   ExternalLink,
 } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import api from '../lib/api'
 
 /* ── Types ── */
 type PostStatus = '발행완료' | '저품질' | '실패'
@@ -95,6 +98,19 @@ const gradeStyle: Record<Grade, string> = {
 
 /* ── Component ── */
 export default function Monitoring() {
+  const { isDemo } = useAuth()
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    if (!isDemo) {
+      try {
+        // Future: refetch from API
+      } catch { /* silent */ }
+    }
+    setTimeout(() => setRefreshing(false), 800)
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}

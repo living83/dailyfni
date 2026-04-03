@@ -1,4 +1,60 @@
 import { Users, Send, FileText, TrendingUp } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
+import { useFetch } from '../hooks/useApi'
+import StatusBadge from '../components/StatusBadge'
+import { PageSkeleton } from '../components/LoadingSkeleton'
+
+/* ── Types ── */
+interface DashboardData {
+  activeAccounts: number
+  todayPosts: number
+  todaySuccess: number
+  todayFailed: number
+  pendingContent: number
+  successRate: number
+}
+
+interface PostingLive {
+  time: string
+  accountName: string
+  keyword: string
+  tone: string
+  status: string
+}
+
+interface TierData {
+  tier: number
+  label: string
+  count: number
+}
+
+/* ── Demo data (fallback when API unavailable) ── */
+const demoDashboard: DashboardData = {
+  activeAccounts: 12,
+  todayPosts: 24,
+  todaySuccess: 22,
+  todayFailed: 2,
+  pendingContent: 8,
+  successRate: 96.5,
+}
+
+const demoPostings: PostingLive[] = [
+  { time: '10:32', accountName: '블로그계정1', keyword: '청년도약계좌', tone: '친근톤', status: '발행완료' },
+  { time: '10:28', accountName: '마케팅02', keyword: '신용대출 비교', tone: '전문톤', status: '발행중' },
+  { time: '10:15', accountName: '대출전문03', keyword: '전세자금대출', tone: '리뷰톤', status: '생성중' },
+  { time: '10:05', accountName: '재테크블로그', keyword: '주택담보대출', tone: '친근톤', status: '발행완료' },
+  { time: '09:52', accountName: '금융정보센터', keyword: '적금 추천', tone: '전문톤', status: '대기' },
+  { time: '09:40', accountName: '생활경제팁', keyword: '카드 혜택 비교', tone: '리뷰톤', status: '실패' },
+]
+
+const demoTiers: TierData[] = [
+  { tier: 1, label: '신규', count: 3 },
+  { tier: 2, label: '성장', count: 4 },
+  { tier: 3, label: '중급', count: 3 },
+  { tier: 4, label: '고수익', count: 1 },
+  { tier: 5, label: '최상위', count: 1 },
+]
 
 /* ── Stat Card ── */
 interface StatCardProps {
@@ -21,26 +77,39 @@ function StatCard({ title, value, subtext, icon }: StatCardProps) {
   )
 }
 
-/* ── Mock posting data ── */
-const postingRows = [
-  { time: '10:32', account: '블로그계정1', keyword: '청년도약계좌', tone: '친근톤', toneColor: 'bg-emerald/15 text-emerald', status: '발행완료', statusColor: 'bg-emerald/15 text-emerald' },
-  { time: '10:28', account: '마케팅02', keyword: '신용대출 비교', tone: '전문톤', toneColor: 'bg-primary/15 text-primary', status: '발행중', statusColor: 'bg-amber/15 text-amber animate-pulse' },
-  { time: '10:15', account: '대출전문03', keyword: '전세자금대출', tone: '리뷰톤', toneColor: 'bg-amber/15 text-amber', status: '생성중', statusColor: 'bg-primary/15 text-primary' },
-  { time: '10:05', account: '재테크블로그', keyword: '주택담보대출', tone: '친근톤', toneColor: 'bg-emerald/15 text-emerald', status: '발행완료', statusColor: 'bg-emerald/15 text-emerald' },
-  { time: '09:52', account: '금융정보센터', keyword: '적금 추천', tone: '전문톤', toneColor: 'bg-primary/15 text-primary', status: '대기', statusColor: 'bg-muted text-muted-foreground' },
-  { time: '09:40', account: '생활경제팁', keyword: '카드 혜택 비교', tone: '리뷰톤', toneColor: 'bg-amber/15 text-amber', status: '실패', statusColor: 'bg-destructive/15 text-destructive' },
-]
-
-/* ── Account tier data ── */
-const tiers = [
-  { tier: 1, label: '신규', count: 3, max: 12, barColor: 'bg-muted-foreground' },
-  { tier: 2, label: '성장', count: 4, max: 12, barColor: 'bg-primary' },
-  { tier: 3, label: '중급', count: 3, max: 12, barColor: 'bg-violet-500' },
-  { tier: 4, label: '고수익', count: 1, max: 12, barColor: 'bg-amber' },
-  { tier: 5, label: '최상위', count: 1, max: 12, barColor: 'bg-emerald' },
-]
+/* ── Tier bar colors ── */
+const tierBarColor: Record<number, string> = {
+  1: 'bg-muted-foreground',
+  2: 'bg-primary',
+  3: 'bg-violet-500',
+  4: 'bg-amber',
+  5: 'bg-emerald',
+}
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const { addToast } = useToast()
+  const isDemo = !user
+
+  const { data: dashboard, loading: dashLoading } = useFetch<DashboardData>(
+    isDemo ? null : '/stats/dashboard'
+  )
+  const { data: postings, loading: postLoading } = useFetch<PostingLive[]>(
+    isDemo ? null : '/stats/posting-live'
+  )
+  const { data: tiers, loading: tierLoading } = useFetch<TierData[]>(
+    isDemo ? null : '/stats/account-tiers'
+  )
+
+  const stats = dashboard || demoDashboard
+  const postingRows = postings || demoPostings
+  const tierData = tiers || demoTiers
+
+  const isLoading = !isDemo && (dashLoading || postLoading || tierLoading)
+  if (isLoading) return <PageSkeleton />
+
+  const maxCount = Math.max(...tierData.map((t) => t.count), 1)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -62,25 +131,25 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="활성 계정"
-          value={12}
+          value={stats.activeAccounts}
           subtext="Naver 계정"
           icon={<Users className="w-5 h-5 text-primary" />}
         />
         <StatCard
           title="오늘 포스팅"
-          value={24}
-          subtext="성공 22 / 실패 2"
+          value={stats.todayPosts}
+          subtext={`성공 ${stats.todaySuccess} / 실패 ${stats.todayFailed}`}
           icon={<Send className="w-5 h-5 text-emerald" />}
         />
         <StatCard
           title="대기중 콘텐츠"
-          value={8}
+          value={stats.pendingContent}
           subtext="예약 발행 대기"
           icon={<FileText className="w-5 h-5 text-amber" />}
         />
         <StatCard
           title="성공률"
-          value="96.5%"
+          value={`${stats.successRate}%`}
           subtext="최근 7일"
           icon={<TrendingUp className="w-5 h-5 text-secondary" />}
         />
@@ -106,17 +175,13 @@ export default function Dashboard() {
                 {postingRows.map((row, i) => (
                   <tr key={i} className="text-foreground">
                     <td className="py-3 text-muted-foreground">{row.time}</td>
-                    <td className="py-3 font-medium">{row.account}</td>
+                    <td className="py-3 font-medium">{row.accountName}</td>
                     <td className="py-3 text-muted-foreground">{row.keyword}</td>
                     <td className="py-3">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${row.toneColor}`}>
-                        {row.tone}
-                      </span>
+                      <StatusBadge label={row.tone} />
                     </td>
                     <td className="py-3">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${row.statusColor}`}>
-                        {row.status}
-                      </span>
+                      <StatusBadge label={row.status} />
                     </td>
                   </tr>
                 ))}
@@ -129,7 +194,7 @@ export default function Dashboard() {
         <div className="glass-panel rounded-xl p-5">
           <h2 className="text-lg font-semibold text-foreground mb-4">계정 티어 분포</h2>
           <ul className="space-y-4">
-            {tiers.map((t) => (
+            {tierData.map((t) => (
               <li key={t.tier}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-sm text-foreground">
@@ -139,8 +204,8 @@ export default function Dashboard() {
                 </div>
                 <div className="w-full h-2 rounded-full bg-muted">
                   <div
-                    className={`h-full rounded-full ${t.barColor} transition-all duration-500`}
-                    style={{ width: `${(t.count / t.max) * 100}%` }}
+                    className={`h-full rounded-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
+                    style={{ width: `${(t.count / maxCount) * 100}%` }}
                   />
                 </div>
               </li>
