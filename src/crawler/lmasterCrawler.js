@@ -50,10 +50,12 @@ async function launchBrowser() {
 
   const isLinux = process.platform === 'linux';
 
+  const isLinux = process.platform === 'linux';
+
   browser = await puppeteer.launch({
     executablePath: chromePath,
-    headless: 'new',
-    defaultViewport: { width: 1280, height: 900 },
+    headless: isLinux ? 'new' : false, // 서버(Linux): headless, 로컬(Windows): 브라우저 표시
+    defaultViewport: isLinux ? { width: 1280, height: 900 } : null,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
 
