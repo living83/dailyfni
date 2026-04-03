@@ -466,7 +466,8 @@ async function submitLoanApplication(agentNo, upw, formData) {
     return { filled, notFound };
   }, formData);
 
-  // 현재 페이지 스크린샷 정보 (디버깅용)
+  // 폼 입력 후 스크린샷 캡처
+  const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
   const pageUrl = page.url();
 
   return {
@@ -475,7 +476,8 @@ async function submitLoanApplication(agentNo, upw, formData) {
     filledCount: fillResult.filled.length,
     filledFields: fillResult.filled,
     notFoundFields: fillResult.notFound,
-    pageUrl
+    pageUrl,
+    screenshot
   };
 }
 

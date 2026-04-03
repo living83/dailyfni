@@ -976,7 +976,9 @@ async function submitLoanRegister() {
     const data = await res.json();
     if (data.success) {
       const result = data.data;
-      alert(`론앤마스터 폼 입력 완료!\n\n입력된 필드: ${result.filledCount}개\n미매칭 필드: ${result.notFoundFields?.length || 0}개\n\n※ 론앤마스터에서 내용 확인 후 직접 제출해주세요.`);
+
+      // 스크린샷을 모달로 표시
+      showLoanScreenshot(result);
 
       // 고객 상태를 '접수'로 변경
       if (loanRegisterCustomerId) {
@@ -992,6 +994,44 @@ async function submitLoanRegister() {
   } catch (e) {
     alert('서버 연결 실패: ' + e.message);
   }
+}
+
+// 론앤마스터 폼 입력 결과 스크린샷 모달
+function showLoanScreenshot(result) {
+  const existing = document.getElementById('loanScreenshotModal');
+  if (existing) existing.remove();
+
+  const filledList = (result.filledFields || []).map(f => `<span style="background:#dcfce7;padding:1px 6px;border-radius:3px;font-size:10px;color:#166534;">${f.field}</span>`).join(' ');
+  const notFoundList = (result.notFoundFields || []).map(f => `<span style="background:#fef2f2;padding:1px 6px;border-radius:3px;font-size:10px;color:#991b1b;">${f}</span>`).join(' ');
+
+  const modal = document.createElement('div');
+  modal.id = 'loanScreenshotModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:8px;max-width:900px;width:95%;max-height:90vh;display:flex;flex-direction:column;">
+      <div style="padding:12px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <strong style="font-size:14px;">론앤마스터 폼 입력 결과</strong>
+          <span style="font-size:11px;color:#64748b;margin-left:8px;">입력: ${result.filledCount}개 | 미매칭: ${(result.notFoundFields||[]).length}개</span>
+        </div>
+        <button onclick="document.getElementById('loanScreenshotModal').remove()" style="border:none;background:none;font-size:18px;cursor:pointer;color:#64748b;">&times;</button>
+      </div>
+      <div style="padding:8px 16px;border-bottom:1px solid #f1f5f9;">
+        <div style="margin-bottom:4px;font-size:11px;color:#166534;font-weight:600;">입력 완료 필드:</div>
+        <div style="line-height:1.8;">${filledList || '<span style="font-size:11px;color:#94a3b8;">없음</span>'}</div>
+        ${notFoundList ? `<div style="margin-top:6px;font-size:11px;color:#991b1b;font-weight:600;">미매칭 필드:</div><div style="line-height:1.8;">${notFoundList}</div>` : ''}
+      </div>
+      <div style="flex:1;overflow:auto;padding:12px;text-align:center;">
+        ${result.screenshot ? `<img src="data:image/png;base64,${result.screenshot}" style="max-width:100%;border:1px solid #e2e8f0;border-radius:4px;">` : '<div style="padding:40px;color:#94a3b8;">스크린샷을 불러올 수 없습니다.</div>'}
+      </div>
+      <div style="padding:12px 16px;border-top:1px solid #e2e8f0;text-align:right;">
+        <span style="font-size:11px;color:#ef4444;margin-right:12px;">※ 론앤마스터에서 내용 확인 후 직접 제출해주세요</span>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('loanScreenshotModal').remove()">닫기</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
 }
 
 // ========================================
