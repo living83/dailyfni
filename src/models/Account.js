@@ -1,64 +1,70 @@
 const { v4: uuid } = require('uuid');
+const db = require('../db/sqlite');
 
-/** @type {Map<string, object>} */
-const accounts = new Map();
+const insert = db.prepare(`INSERT INTO accounts (id, accountName, naverId, naverPassword, tier, isActive, autoPublish, neighborEngage, proxyId, proxyServer)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const selectAll = db.prepare(`SELECT * FROM accounts ORDER BY createdAt DESC`);
+const selectById = db.prepare(`SELECT * FROM accounts WHERE id = ?`);
+const deleteById = db.prepare(`DELETE FROM accounts WHERE id = ?`);
+
+function boolToInt(v) { return v ? 1 : 0; }
+function row2obj(r) {
+  if (!r) return null;
+  return { ...r, isActive: !!r.isActive, autoPublish: !!r.autoPublish, neighborEngage: !!r.neighborEngage };
+}
 
 function createAccount(data) {
   const id = uuid();
-  const account = {
-    id,
-    accountName: data.accountName,
-    naverId: data.naverId,
-    naverPassword: data.naverPassword || '', // TODO: encrypt
-    tier: data.tier || 1,
-    isActive: data.isActive !== false,
-    autoPublish: data.autoPublish !== false,
-    neighborEngage: data.neighborEngage !== false,
-    proxyId: data.proxyId || null,
-    proxyServer: data.proxyServer || null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  accounts.set(id, account);
-  return sanitize(account);
+  insert.run(id, data.accountName, data.naverId, data.naverPassword || '',
+    data.tier || 1, boolToInt(data.isActive !== false), boolToInt(data.autoPublish !== false),
+    boolToInt(data.neighborEngage !== false), data.proxyId || null, data.proxyServer || null);
+  return sanitize(row2obj(selectById.get(id)));
 }
 
 function listAccounts() {
-  return [...accounts.values()].map(sanitize);
+  return selectAll.all().map(r => sanitize(row2obj(r)));
 }
 
 function getAccount(id) {
-  const a = accounts.get(id);
-  return a ? sanitize(a) : null;
+  const r = row2obj(selectById.get(id));
+  return r ? sanitize(r) : null;
+}
+
+function getAccountRaw(id) {
+  return row2obj(selectById.get(id));
 }
 
 function updateAccount(id, data) {
-  const a = accounts.get(id);
+  const a = selectById.get(id);
   if (!a) return null;
+  const fields = { accountName: data.accountName, naverId: data.naverId, tier: data.tier,
+    isActive: data.isActive !== undefined ? boolToInt(data.isActive) : undefined,
+    autoPublish: data.autoPublish !== undefined ? boolToInt(data.autoPublish) : undefined,
+    neighborEngage: data.neighborEngage !== undefined ? boolToInt(data.neighborEngage) : undefined,
+    proxyId: data.proxyId, proxyServer: data.proxyServer };
+  if (data.naverPassword) fields.naverPassword = data.naverPassword;
 
-  const fields = ['accountName', 'naverId', 'tier', 'isActive', 'autoPublish',
-    'neighborEngage', 'proxyId', 'proxyServer'];
-  for (const k of fields) {
-    if (data[k] !== undefined) a[k] = data[k];
+  const sets = [];
+  const vals = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v !== undefined) { sets.push(`${k} = ?`); vals.push(v); }
   }
-  if (data.naverPassword) a.naverPassword = data.naverPassword;
-  a.updatedAt = new Date().toISOString();
-  return sanitize(a);
+  if (sets.length === 0) return sanitize(row2obj(a));
+  sets.push(`updatedAt = datetime('now')`);
+  vals.push(id);
+  db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  return sanitize(row2obj(selectById.get(id)));
 }
 
 function deleteAccount(id) {
-  return accounts.delete(id);
+  const r = deleteById.run(id);
+  return r.changes > 0;
 }
 
-/** Hide password from API response */
 function sanitize(a) {
+  if (!a) return null;
   const { naverPassword, ...rest } = a;
   return rest;
-}
-
-/** Get account with password (internal use only — for Playwright) */
-function getAccountRaw(id) {
-  return accounts.get(id) || null;
 }
 
 module.exports = { createAccount, listAccounts, getAccount, getAccountRaw, updateAccount, deleteAccount };

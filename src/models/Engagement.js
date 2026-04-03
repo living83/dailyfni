@@ -1,19 +1,10 @@
 const { v4: uuid } = require('uuid');
+const db = require('../db/sqlite');
 
-/** @type {Map<string, object>} */
+/** Feed: in-memory (세션마다 갱신) */
 const neighborPosts = new Map();
 
-/** @type {Array<object>} */
-const activities = [];
-
-const stats = {
-  todayLikes: 0,
-  todayComments: 0,
-  activeAccounts: 8,
-  totalAccounts: 12,
-};
-
-/* ── Mock neighbor posts seed data ── */
+/* ── Mock posts ── */
 const mockPosts = [
   { blogName: '여행매니아', title: '제주도 3박4일 가성비 여행 코스 추천', timeAgo: '32분 전', liked: false, commented: false },
   { blogName: '맛집탐험가', title: '강남역 숨은 맛집 TOP 5', timeAgo: '1시간 전', liked: false, commented: false },
@@ -84,7 +75,7 @@ function getStats() {
 }
 
 function listActivities() {
-  return activities.slice(-20).reverse();
+  return db.prepare(`SELECT * FROM engagement_activities ORDER BY id DESC LIMIT 20`).all();
 }
 
 function generateComment(postTitle) {
@@ -95,12 +86,8 @@ function generateComment(postTitle) {
 function addActivity(entry) {
   const now = new Date();
   const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  activities.push({
-    time,
-    accountName: entry.accountName || '블로그마스터',
-    action: entry.action,
-    target: entry.target,
-  });
+  db.prepare(`INSERT INTO engagement_activities (time, accountName, action, target) VALUES (?, ?, ?, ?)`)
+    .run(time, entry.accountName || '블로그마스터', entry.action, entry.target);
 }
 
 module.exports = {

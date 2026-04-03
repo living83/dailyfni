@@ -1,70 +1,57 @@
 const { v4: uuid } = require('uuid');
+const db = require('../db/sqlite');
 
-/** @type {Map<string, object>} */
-const proxies = new Map();
+const insert = db.prepare(`INSERT INTO proxies (id, ip, port, username, password) VALUES (?, ?, ?, ?, ?)`);
+const selectAll = db.prepare(`SELECT * FROM proxies ORDER BY createdAt DESC`);
+const selectById = db.prepare(`SELECT * FROM proxies WHERE id = ?`);
+const deleteById = db.prepare(`DELETE FROM proxies WHERE id = ?`);
+
+function sanitize(p) {
+  if (!p) return null;
+  const { password, ...rest } = p;
+  return rest;
+}
 
 function createProxy(data) {
   const id = uuid();
-  const proxy = {
-    id,
-    ip: data.ip,
-    port: Number(data.port),
-    username: data.username || '',
-    password: data.password || '',
-    status: 'normal',     // normal | slow | error
-    speed: null,
-    assignedAccountId: null,
-    assignedAccountName: null,
-    createdAt: new Date().toISOString(),
-  };
-  proxies.set(id, proxy);
-  return sanitize(proxy);
+  insert.run(id, data.ip, Number(data.port), data.username || '', data.password || '');
+  return sanitize(selectById.get(id));
 }
 
 function listProxies() {
-  return [...proxies.values()].map(sanitize);
+  return selectAll.all().map(sanitize);
 }
 
 function getProxy(id) {
-  const p = proxies.get(id);
-  return p ? sanitize(p) : null;
+  return sanitize(selectById.get(id));
 }
 
 function updateProxy(id, data) {
-  const p = proxies.get(id);
+  const p = selectById.get(id);
   if (!p) return null;
-  for (const k of ['ip', 'port', 'username', 'password', 'status', 'speed',
-    'assignedAccountId', 'assignedAccountName']) {
-    if (data[k] !== undefined) p[k] = data[k];
+  const sets = []; const vals = [];
+  for (const k of ['ip', 'port', 'username', 'password', 'status', 'speed', 'assignedAccountId', 'assignedAccountName']) {
+    if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]); }
   }
-  return sanitize(p);
+  if (sets.length) { vals.push(id); db.prepare(`UPDATE proxies SET ${sets.join(', ')} WHERE id = ?`).run(...vals); }
+  return sanitize(selectById.get(id));
 }
 
 function deleteProxy(id) {
-  return proxies.delete(id);
+  return deleteById.run(id).changes > 0;
 }
 
 function assignProxy(proxyId, accountId, accountName) {
-  const p = proxies.get(proxyId);
-  if (!p) return null;
-  p.assignedAccountId = accountId;
-  p.assignedAccountName = accountName;
-  return sanitize(p);
+  return updateProxy(proxyId, { assignedAccountId: accountId, assignedAccountName: accountName });
 }
 
-/** Simulate connection test */
 function testProxy(id) {
-  const p = proxies.get(id);
+  const p = selectById.get(id);
   if (!p) return null;
   const speed = Math.floor(Math.random() * 300) + 20;
-  p.speed = speed;
-  p.status = speed < 150 ? 'normal' : speed < 500 ? 'slow' : 'error';
-  return { status: p.status, speed };
-}
-
-function sanitize(p) {
-  const { password, ...rest } = p;
-  return rest;
+  const status = speed < 150 ? 'normal' : speed < 500 ? 'slow' : 'error';
+  db.prepare(`UPDATE proxies SET speed = ?, status = ? WHERE id = ?`).run(speed, status, id);
+  return { status, speed };
 }
 
 module.exports = { createProxy, listProxies, getProxy, updateProxy, deleteProxy, assignProxy, testProxy };

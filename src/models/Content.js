@@ -1,51 +1,45 @@
 const { v4: uuid } = require('uuid');
+const db = require('../db/sqlite');
 
-/** @type {Map<string, object>} */
-const contents = new Map();
+const insert = db.prepare(`INSERT INTO contents (id, keyword, title, body, tone, contentType, productInfo, grade, status, accountId)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const selectAll = db.prepare(`SELECT * FROM contents ORDER BY createdAt DESC`);
+const selectById = db.prepare(`SELECT * FROM contents WHERE id = ?`);
+const deleteById = db.prepare(`DELETE FROM contents WHERE id = ?`);
 
 function createContent(data) {
   const id = uuid();
-  const item = {
-    id,
-    keyword: data.keyword,
-    title: data.title || `${data.keyword} 관련 블로그 글`,
-    body: data.body || '',
-    tone: data.tone || '친근톤',
-    contentType: data.contentType || '일반 정보성',
-    productInfo: data.productInfo || '',
-    grade: data.grade || null,
-    status: data.status || '대기',   // 대기 | 생성중 | 검수완료 | 저품질
-    accountId: data.accountId || null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  contents.set(id, item);
-  return item;
+  insert.run(id, data.keyword, data.title || `${data.keyword} 관련 블로그 글`, data.body || '',
+    data.tone || '친근톤', data.contentType || '일반 정보성', data.productInfo || '',
+    data.grade || null, data.status || '대기', data.accountId || null);
+  return selectById.get(id);
 }
 
 function listContents() {
-  return [...contents.values()].sort((a, b) =>
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  return selectAll.all();
 }
 
 function getContent(id) {
-  return contents.get(id) || null;
+  return selectById.get(id) || null;
 }
 
 function updateContent(id, data) {
-  const item = contents.get(id);
+  const item = selectById.get(id);
   if (!item) return null;
-  for (const k of ['title', 'body', 'tone', 'contentType', 'productInfo',
-    'grade', 'status', 'accountId']) {
-    if (data[k] !== undefined) item[k] = data[k];
+  const sets = []; const vals = [];
+  for (const k of ['title', 'body', 'tone', 'contentType', 'productInfo', 'grade', 'status', 'accountId']) {
+    if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]); }
   }
-  item.updatedAt = new Date().toISOString();
-  return item;
+  if (sets.length) {
+    sets.push(`updatedAt = datetime('now')`);
+    vals.push(id);
+    db.prepare(`UPDATE contents SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  }
+  return selectById.get(id);
 }
 
 function deleteContent(id) {
-  return contents.delete(id);
+  return deleteById.run(id).changes > 0;
 }
 
 module.exports = { createContent, listContents, getContent, updateContent, deleteContent };
