@@ -3395,14 +3395,34 @@ function renderRecommendations() {
     return;
   }
 
+  // 카테고리별 분류
+  const allRec = [...result.recommended, ...result.conditional];
+  const categories = {
+    '전체': allRec,
+    '신용': allRec.filter(r => !r.category?.includes('오토') && !r.category?.includes('부동산') && !r.name?.includes('오토') && !r.name?.includes('차량')),
+    '오토론': allRec.filter(r => r.category?.includes('오토') || r.name?.includes('오토') || r.name?.includes('차량')),
+    '부동산': allRec.filter(r => r.category?.includes('부동산') || r.name?.includes('부동산') || r.name?.includes('담보')),
+    '회파복': allRec.filter(r => r.category?.includes('회복') || r.category?.includes('회생') || r.category?.includes('파산') || r.name?.includes('회생') || r.name?.includes('파산') || r.name?.includes('회복')),
+    '햇살론': allRec.filter(r => r.category?.includes('햇살') || r.name?.includes('햇살') || r.name?.includes('사잇돌')),
+  };
+  // 비어있는 카테고리 제거
+  const activeCats = Object.entries(categories).filter(([k,v]) => v.length > 0);
+
   let html = `<div style="margin-bottom:8px;padding:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
     <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;">
       ★ ${c.name}님 추천 상품 (${totalRec}개)
       <span style="font-size:10px;font-weight:400;color:#64748b;margin-left:8px;">${customer.jobType} | ${customer.age}세 | 회파복:${customer.recoveryType}${customer.recoveryPaid ? '('+customer.recoveryPaid+'/'+customer.recoveryTotal+'회차)' : ''}${customer.vehicleNo ? ' | 차량보유' : ''}${customer.loanAmount ? ' | '+customer.loanAmount+'만' : ''}</span>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;">
+      ${activeCats.map(([cat, items]) => `<button onclick="window._recCat='${cat}';renderRecommendations();" style="padding:2px 8px;border:1px solid ${(window._recCat||'전체')===cat?'#16a34a':'#d1d5db'};background:${(window._recCat||'전체')===cat?'#dcfce7':'#fff'};border-radius:12px;font-size:10px;cursor:pointer;color:${(window._recCat||'전체')===cat?'#166534':'#64748b'};">${cat} (${items.length})</button>`).join('')}
     </div>`;
 
+  const selectedCat = window._recCat || '전체';
+  const filteredRec = (categories[selectedCat] || allRec).filter(r => result.recommended.includes(r));
+  const filteredCond = (categories[selectedCat] || allRec).filter(r => result.conditional.includes(r));
+
   // 추천 상품 (★)
-  result.recommended.slice(0, 10).forEach(r => {
+  filteredRec.slice(0, 10).forEach(r => {
     html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #16a34a;margin-bottom:3px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <span class="product-name" style="margin:0;">${r.name}</span>
@@ -3414,7 +3434,7 @@ function renderRecommendations() {
   });
 
   // 조건부 상품 (△)
-  result.conditional.slice(0, 5).forEach(r => {
+  filteredCond.slice(0, 5).forEach(r => {
     html += `<div class="product-item" onclick="selectProduct(this)" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드" style="border-left:3px solid #d97706;margin-bottom:3px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <span class="product-name" style="margin:0;">${r.name}</span>
