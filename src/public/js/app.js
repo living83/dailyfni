@@ -2741,9 +2741,71 @@ let ledgerEditPrefill = null;
 async function saveLedger() {
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
 
-  // 폼에서 수정된 값 수집 (ledgerForm 내 모든 input)
-  const inputs = document.querySelectorAll('#ledgerForm input:not([data-always-readonly])');
-  const values = [...inputs].map(i => i.value.trim());
+  // 각 info-table에서 필드값 수집
+  const tables = document.querySelectorAll('#ledgerForm .info-table');
+  const getVal = (tableIdx, rowIdx, colIdx) => {
+    try {
+      const row = tables[tableIdx]?.querySelectorAll('tr')[rowIdx];
+      const tds = row?.querySelectorAll('td');
+      const td = tds?.[colIdx];
+      const input = td?.querySelector('input');
+      return input?.value?.trim() || '';
+    } catch { return ''; }
+  };
+
+  // 인적 사항 (table 0)
+  const name = getVal(0, 0, 0);
+  const ssn = getVal(0, 0, 1);
+  const carrier = getVal(0, 2, 0);
+  const phone2 = getVal(0, 2, 1);
+  const phone = getVal(0, 3, 0);
+  const has4Insurance = getVal(0, 3, 1);
+  const email = getVal(0, 4, 0);
+  const dbSource = getVal(0, 4, 1);
+  const address = getVal(0, 5, 0); // 초본 주소 (colspan=3, td index 0)
+  const residenceAddress = getVal(0, 6, 0); // 실거주 주소
+
+  // 직장 정보 (table 1)
+  const company = getVal(1, 0, 0);
+  const employmentType = getVal(1, 0, 1);
+  const companyAddr = getVal(1, 1, 0); // colspan=3
+  const companyPhone = getVal(1, 2, 0);
+  const joinDate = getVal(1, 2, 1);
+  const salaryRaw = getVal(1, 3, 0).replace(/[^0-9]/g, '');
+  const salary = parseInt(salaryRaw) || 0;
+
+  // 차량 정보 (table 2)
+  const vehicleNo = getVal(2, 0, 0).replace(/^-$/, '');
+  const vehicleName = getVal(2, 0, 1).replace(/^-$/, '');
+  const vehicleYear = getVal(2, 1, 0).replace(/^-$/, '').replace(/[^0-9]/g, '');
+  const vehicleKm = getVal(2, 1, 1).replace(/^-$/, '').replace(/[^0-9]/g, '');
+  const vehicleOwnership = getVal(2, 2, 0).replace(/^-$/, '');
+  const vehicleCoOwner = getVal(2, 2, 1).replace(/^-$/, '');
+
+  // 회파복 (table 3)
+  const recoveryType = getVal(3, 0, 0).replace(/^-$/, '');
+  const recCountRaw = getVal(3, 0, 1);
+  let recoveryTotalCount = '', recoveryPaidCount = '';
+  if (recCountRaw && recCountRaw !== '-') {
+    const parts = recCountRaw.split('/');
+    recoveryTotalCount = parts[0] || '';
+    recoveryPaidCount = parts[1] || '';
+  }
+  const courtName = getVal(3, 1, 0).replace(/^-$/, '');
+  const caseNo = getVal(3, 1, 1).replace(/^-$/, '');
+  const monthlyPaymentRaw = getVal(3, 2, 0).replace(/^-$/, '').replace(/[^0-9]/g, '');
+  const monthlyPayment = monthlyPaymentRaw || '';
+
+  // 환급계좌 (table 4)
+  const refundBank = getVal(4, 0, 0);
+  const refundHolder = getVal(4, 0, 1);
+  const refundAccount = getVal(4, 1, 0); // colspan=3
+
+  // 신용 (table 5)
+  const creditScoreRaw = getVal(5, 0, 0).replace(/[^0-9]/g, '');
+  const creditScore = parseInt(creditScoreRaw) || 0;
+  const creditStatus = getVal(5, 0, 1).replace(/^-$/, '');
+  const existingLoans = getVal(5, 1, 0);
 
   // MySQL API로 고객 정보 업데이트
   try {
@@ -2751,10 +2813,17 @@ async function saveLedger() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: values[0] || '', ssn: values[1] || '',
-        phone: values[4] || '', phone2: values[5] || '',
-        email: values[8] || '',
-        assignedTo: user.name || ''
+        name, ssn, phone, carrier, phone2, email,
+        address, residenceAddress,
+        housingType: ledgerCustomer?.housing_type || '',
+        housingOwnership: ledgerCustomer?.housing_ownership || '',
+        company, companyAddr, companyPhone, salary, employmentType,
+        has4Insurance, joinDate,
+        vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
+        recoveryType, recoveryPaidCount, recoveryTotalCount,
+        courtName, caseNo, refundBank, refundAccount, refundHolder, monthlyPayment,
+        creditScore, creditStatus, existingLoans,
+        dbSource, assignedTo: ledgerCustomer?.assigned_to || user.name || ''
       })
     });
     const result = await res.json();
