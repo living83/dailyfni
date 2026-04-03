@@ -538,7 +538,7 @@ async function goLoanRegister(customerId) {
   loanRegisterCustomerId = customerId;
   // MySQL에서 고객 데이터 로드
   try {
-    const res = await fetch(`/api/customers/${customerId}`);
+    const res = await fetch(`/api/customers/${customerId}?raw=1`);
     const data = await res.json();
     if (data.success) {
       loanRegisterCustomerDB = data.data;

@@ -84,7 +84,8 @@ router.get('/customers/:id', async (req, res) => {
   try {
     const rows = await query('SELECT * FROM customers WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ success: false, message: '고객을 찾을 수 없습니다.' });
-    res.json({ success: true, data: maskCustomer(rows[0]) });
+    const raw = req.query.raw === '1';
+    res.json({ success: true, data: raw ? rows[0] : maskCustomer(rows[0]) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
