@@ -52,8 +52,8 @@ async function launchBrowser() {
 
   browser = await puppeteer.launch({
     executablePath: chromePath,
-    headless: false, // 테스트용: 브라우저 표시. 확인 후 headless: 'new'로 변경
-    defaultViewport: null,
+    headless: 'new',
+    defaultViewport: { width: 1280, height: 900 },
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
 
