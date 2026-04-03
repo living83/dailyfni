@@ -612,8 +612,9 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   gap: 16px;
   padding: 16px;
-  overflow-y: auto;
+  overflow: hidden;
   flex: 1;
+  min-height: 0;
 }
 .modal-left {
   flex: 1;
@@ -621,6 +622,7 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 .modal-right {
   width: 380px;
@@ -628,7 +630,6 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 85vh;
   overflow-y: auto;
 }
 .modal-left .panel,
