@@ -829,6 +829,10 @@ function renderLoanRegister() {
           </div>
         </div>
         <div class="panel-body" style="padding:8px;">
+          <div id="submitLog" style="display:none;margin-bottom:6px;padding:6px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">
+            <div style="font-size:11px;font-weight:700;color:#15803d;margin-bottom:4px;">접수 이력</div>
+            <div id="submitLogList" style="font-size:10px;color:#334155;"></div>
+          </div>
           <div class="product-filters" id="productFilters">
             ${productFilters.map(f => `<label class="product-filter-tag"><input type="checkbox" value="${f}" onchange="filterProducts()"> ${f}</label>`).join('')}
           </div>
@@ -976,7 +980,7 @@ async function submitLoanRegister() {
     memo, dbSource
   };
 
-  if (!confirm(`[${productName}] 상품으로 접수를 진행합니다.\n\n고객명: ${name}\n대출요청액: ${loanAmount}만원\n\n론앤마스터에 폼을 자동 입력합니다. (제출은 별도 확인 필요)\n\n진행하시겠습니까?`)) {
+  if (!confirm(`[${productName}] 상품으로 접수를 진행합니다.\n\n고객명: ${name}\n대출요청액: ${loanAmount}만원\n\n론앤마스터에 자동 접수됩니다.\n\n진행하시겠습니까?`)) {
     return;
   }
 
@@ -1002,6 +1006,9 @@ async function submitLoanRegister() {
         if (sr?.isError) msg += `\n✗ 접수 오류 발생`;
         msg += `\n\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
         alert(msg);
+
+        // 접수 완료 표시: 상품에 체크 + 로그 추가
+        addSubmitLog(productName, fidx, result.filledCount);
       } else {
         alert(`폼 입력은 완료했으나 제출 버튼을 찾지 못했습니다.\n미매칭: ${(result.notFoundFields||[]).join(', ')}`);
       }
@@ -1019,6 +1026,39 @@ async function submitLoanRegister() {
     }
   } catch (e) {
     alert('서버 연결 실패: ' + e.message);
+  }
+}
+
+// 접수 완료 로그 추가 + 상품 체크 표시
+function addSubmitLog(productName, fidx, filledCount) {
+  const now = new Date();
+  const time = now.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // 상품 아이템에 접수완료 표시
+  document.querySelectorAll('.product-item').forEach(el => {
+    if (el.getAttribute('data-product-name') === productName || el.getAttribute('data-fidx') === String(fidx)) {
+      if (!el.querySelector('.submit-badge')) {
+        el.style.background = '#f0fdf4';
+        el.style.borderLeftColor = '#16a34a';
+        const badge = document.createElement('span');
+        badge.className = 'submit-badge';
+        badge.style.cssText = 'display:inline-block;background:#16a34a;color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:6px;';
+        badge.textContent = '접수완료';
+        const nameEl = el.querySelector('.product-name');
+        if (nameEl) nameEl.appendChild(badge);
+      }
+    }
+  });
+
+  // 로그 영역에 기록 추가
+  const logWrap = document.getElementById('submitLog');
+  const logList = document.getElementById('submitLogList');
+  if (logWrap && logList) {
+    logWrap.style.display = 'block';
+    const entry = document.createElement('div');
+    entry.style.cssText = 'padding:3px 0;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;';
+    entry.innerHTML = `<span><span style="color:#16a34a;font-weight:700;">✓</span> ${productName}</span><span style="color:#94a3b8;font-size:9px;">${time} | ${filledCount}필드</span>`;
+    logList.prepend(entry);
   }
 }
 
