@@ -1,17 +1,19 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Lock, LogIn, Sparkles } from 'lucide-react'
+import { Mail, Lock, LogIn, Sparkles, UserPlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import api from '../lib/api'
 
 export default function Login() {
   const navigate = useNavigate()
   const { login, loginDemo, token } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState<'login' | 'register'>('login')
 
-  // Already logged in
   if (token) {
     navigate('/', { replace: true })
     return null
@@ -22,13 +24,19 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
-      navigate('/')
+      if (mode === 'register') {
+        const { data } = await api.post('/auth/register', { email, password, name: name || email.split('@')[0] })
+        localStorage.setItem('token', data.data.token)
+        window.location.href = '/'
+      } else {
+        await login(email, password)
+        navigate('/')
+      }
     } catch (err: any) {
-      const msg = err.response?.data?.message
+      const msg = err.response?.data?.error || err.response?.data?.message
       if (msg) setError(msg)
-      else if (err.code === 'ERR_NETWORK') setError('서버에 연결할 수 없습니다. Demo 모드를 이용하세요.')
-      else setError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.')
+      else if (err.code === 'ERR_NETWORK') setError('서버에 연결할 수 없습니다. 백엔드를 먼저 시작하세요.')
+      else setError(mode === 'register' ? '회원가입에 실패했습니다.' : '로그인에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -57,22 +65,30 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {mode === 'register' && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">이름</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="관리자" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors" />
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <label htmlFor="email" className="text-sm font-medium text-foreground">Email</label>
+            <label className="text-sm font-medium text-foreground">Email</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com" required
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors" />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="password" className="text-sm font-medium text-foreground">Password</label>
+            <label className="text-sm font-medium text-foreground">Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                placeholder="비밀번호를 입력하세요" required
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === 'register' ? '6자 이상 입력' : '비밀번호를 입력하세요'} required
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors" />
             </div>
           </div>
@@ -87,10 +103,17 @@ export default function Login() {
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-gradient-to-r from-primary to-secondary text-white font-medium hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 transition-opacity">
             {loading
               ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : <><LogIn className="w-4 h-4" />Sign In</>}
+              : mode === 'register'
+                ? <><UserPlus className="w-4 h-4" />회원가입</>
+                : <><LogIn className="w-4 h-4" />Sign In</>}
           </button>
 
-          <div className="relative my-4">
+          <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}
+            className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+            {mode === 'login' ? '계정이 없으신가요? 회원가입' : '이미 계정이 있으신가요? 로그인'}
+          </button>
+
+          <div className="relative my-2">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
             <div className="relative flex justify-center text-xs"><span className="bg-card px-3 text-muted-foreground">또는</span></div>
           </div>
@@ -98,7 +121,7 @@ export default function Login() {
           <button type="button" onClick={handleDemo}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-primary/30 text-primary font-medium hover:bg-primary/10 transition-colors">
             <Sparkles className="w-4 h-4" />
-            Demo 모드로 둘러보기
+            Demo 모드로 둘러보기 (저장 안됨)
           </button>
         </form>
       </div>
