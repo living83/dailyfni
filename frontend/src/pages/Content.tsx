@@ -84,10 +84,17 @@ export default function Content() {
     setSubmitting(true)
     try {
       const { data } = await api.post('/contents', { keywords, tone, contentType, productInfo })
-      toast('success', `${data.count}개 키워드가 대기열에 추가되었습니다.`)
+      toast('success', `${data.count}개 키워드가 대기열에 추가되었습니다. AI 생성이 백그라운드에서 진행됩니다.`)
       setKeywords([])
       setProductInfo('')
       fetchQueue()
+      // 폴링: AI 생성 진행 상태를 3초마다 갱신 (30초간)
+      let polls = 0
+      const pollId = setInterval(() => {
+        fetchQueue()
+        polls++
+        if (polls >= 10) clearInterval(pollId)
+      }, 3000)
     } catch { toast('error', '등록 실패') }
     setSubmitting(false)
   }

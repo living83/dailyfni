@@ -8,16 +8,40 @@ const axios = require('axios');
 const PYTHON_URL = process.env.PYTHON_API_URL || 'http://localhost:8000';
 
 /**
- * Python 서버에 콘텐츠 생성 요청
- * @param {object} params - { contentId, keyword, tone, contentType, productInfo, apiKey }
- * @returns {Promise<object>} - { success, article: { title, body, tags, review } }
+ * Python 서버에 콘텐츠 생성 요청 (SSE 스트림 소비)
+ * Python의 /api/dashboard/generate는 SSE를 반환하므로 스트림을 파싱하여 최종 complete 이벤트를 추출
  */
 async function requestGenerate(params) {
   try {
     const res = await axios.post(`${PYTHON_URL}/api/dashboard/generate`, params, {
-      timeout: 120000, // 2분 (AI 생성 시간 고려)
+      timeout: 180000,
+      responseType: 'text',
+      headers: { 'Accept': 'text/event-stream' },
     });
-    return res.data;
+
+    // SSE 텍스트에서 complete 이벤트 파싱
+    const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+    const lines = text.split('\n');
+    let eventType = '';
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.slice(7).trim();
+      } else if (line.startsWith('data: ') && eventType === 'complete') {
+        try {
+          return JSON.parse(line.slice(6));
+        } catch { /* continue */ }
+      } else if (line.startsWith('data: ') && eventType === 'error') {
+        try {
+          const err = JSON.parse(line.slice(6));
+          return { success: false, error: err.message || 'AI 생성 실패' };
+        } catch { /* continue */ }
+      }
+    }
+
+    // SSE가 아닌 일반 JSON 응답인 경우
+    try { return JSON.parse(text); } catch { /* ignore */ }
+    return { success: false, error: 'SSE 파싱 실패' };
   } catch (err) {
     console.error('[PythonBridge] Generate 요청 실패:', err.message);
     return { success: false, error: err.response?.data?.detail || err.message };
