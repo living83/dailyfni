@@ -170,12 +170,15 @@ export default function Posting() {
     setRunningAll(true)
     try {
       const { data } = await api.post('/posting/run-all')
-      toast('success', data.message || '발행이 시작되었습니다.')
-      // Poll for updates after a delay
-      setTimeout(() => {
+      toast('success', data.message || '발행이 시작되었습니다. Playwright로 실제 발행 중...')
+      // 발행 진행 폴링 (5초 간격, 60초간)
+      let polls = 0
+      const pollId = setInterval(() => {
         fetchQueue()
         fetchErrors()
-      }, 2000)
+        polls++
+        if (polls >= 12) clearInterval(pollId)
+      }, 5000)
     } catch {
       toast('error', '발행 실행에 실패했습니다.')
     }
@@ -191,16 +194,18 @@ export default function Posting() {
     setRunningIds((prev) => new Set(prev).add(id))
     try {
       const { data } = await api.post(`/posting/queue/${id}/run`)
-      toast('success', data.message || '발행이 시작되었습니다.')
-      setTimeout(() => {
+      toast('success', data.message || '발행이 시작되었습니다. Playwright 자동화 진행 중...')
+      // 발행 완료 대기 폴링
+      let polls = 0
+      const pollId = setInterval(() => {
         fetchQueue()
         fetchErrors()
-        setRunningIds((prev) => {
-          const next = new Set(prev)
-          next.delete(id)
-          return next
-        })
-      }, 2000)
+        polls++
+        if (polls >= 12) {
+          clearInterval(pollId)
+          setRunningIds((prev) => { const n = new Set(prev); n.delete(id); return n })
+        }
+      }, 5000)
     } catch {
       toast('error', '발행 실행에 실패했습니다.')
       setRunningIds((prev) => {

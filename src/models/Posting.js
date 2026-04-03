@@ -44,7 +44,7 @@ function getPosting(id) {
 function updatePosting(id, data) {
   const idx = queue.findIndex((p) => p.id === id);
   if (idx === -1) return null;
-  const allowed = ['status', 'error', 'keyword', 'accountName', 'accountId', 'tone', 'contentId', 'scheduledTime'];
+  const allowed = ['status', 'error', 'url', 'keyword', 'accountName', 'accountId', 'tone', 'contentId', 'scheduledTime'];
   for (const key of allowed) {
     if (data[key] !== undefined) queue[idx][key] = data[key];
   }

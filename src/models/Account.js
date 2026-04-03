@@ -56,4 +56,9 @@ function sanitize(a) {
   return rest;
 }
 
-module.exports = { createAccount, listAccounts, getAccount, updateAccount, deleteAccount };
+/** Get account with password (internal use only — for Playwright) */
+function getAccountRaw(id) {
+  return accounts.get(id) || null;
+}
+
+module.exports = { createAccount, listAccounts, getAccount, getAccountRaw, updateAccount, deleteAccount };
