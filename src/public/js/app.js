@@ -802,7 +802,7 @@ function renderLoanRegister() {
 
     <!-- 하단 버튼 -->
     <div style="display:flex;gap:8px;margin-top:16px;">
-      <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;">접수 등록</button>
+      <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;" onclick="submitLoanRegister()">접수 등록</button>
       <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
     </div>
     </div><!-- /loan-register-left -->
@@ -830,6 +830,168 @@ function renderLoanRegister() {
     </div><!-- /loan-register-right -->
     </div><!-- /loan-register-layout -->
   `;
+}
+
+// 접수 등록 (론앤마스터 자동 입력)
+async function submitLoanRegister() {
+  // 선택된 상품 확인
+  const selectedProduct = document.querySelector('.product-item.selected');
+  if (!selectedProduct) {
+    alert('상품을 선택해주세요.');
+    return;
+  }
+  const productName = selectedProduct.querySelector('.product-name')?.textContent || '';
+  const fidx = selectedProduct.getAttribute('data-fidx') || '';
+
+  // 론앤마스터 연동 확인
+  if (!crawlerLoggedIn) {
+    alert('론앤마스터 연동이 필요합니다. 헤더의 연동 버튼을 클릭하세요.');
+    return;
+  }
+
+  // 폼에서 데이터 수집
+  const tables = document.querySelectorAll('.form-table');
+  const getVal = (tableIdx, rowIdx, cellIdx) => {
+    try {
+      const row = tables[tableIdx]?.querySelectorAll('tr')[rowIdx];
+      const cells = row?.querySelectorAll('td');
+      const cell = cells?.[cellIdx] || cells?.[0];
+      const input = cell?.querySelector('input, select, textarea');
+      if (input?.tagName === 'SELECT') return input.options[input.selectedIndex]?.text || '';
+      return input?.value || '';
+    } catch { return ''; }
+  };
+
+  // 고객 정보 테이블 (index 1)
+  const custTable = tables[1];
+  const custRows = custTable?.querySelectorAll('tr') || [];
+  const getInputsInRow = (row) => row?.querySelectorAll('input, select, textarea') || [];
+
+  // Row 0: 이름, 생년월일, 성별
+  const r0 = getInputsInRow(custRows[0]);
+  const name = r0[0]?.value || '';
+  const birth = r0[1]?.value || '';
+  const genderSel = r0[2];
+  const gender = genderSel?.tagName === 'SELECT' ? genderSel.options[genderSel.selectedIndex]?.text : '';
+
+  // Row 1: 통신사, 전화번호
+  const r1 = getInputsInRow(custRows[1]);
+  const carrier = r1[0]?.tagName === 'SELECT' ? r1[0].options[r1[0].selectedIndex]?.text : '';
+  const phone1 = r1[1]?.value || '';
+  const phone2 = r1[2]?.value || '';
+  const phone3 = r1[3]?.value || '';
+
+  // Row 2: 대출요청액, DB출처
+  const r2 = getInputsInRow(custRows[2]);
+  const loanAmount = r2[0]?.value || '';
+  const dbSourceSel = r2[1];
+  const dbSource = dbSourceSel?.tagName === 'SELECT' ? dbSourceSel.options[dbSourceSel.selectedIndex]?.text : '';
+
+  // Row 3: 실거주지 주소
+  const zipcode = document.getElementById('lr-addr-zone')?.value || '';
+  const address = document.getElementById('lr-addr-road')?.value || '';
+  const addressDetail = document.getElementById('lr-addr-detail')?.value || '';
+
+  // Row 4: 주거종류, 주택소유구분
+  const r4 = getInputsInRow(custRows[4]);
+  const housingType = r4[0]?.tagName === 'SELECT' ? r4[0].options[r4[0].selectedIndex]?.text : '';
+  const housingOwnership = r4[1]?.tagName === 'SELECT' ? r4[1].options[r4[1].selectedIndex]?.text : '';
+
+  // 직장 정보 테이블 (index 2)
+  const jobTable = tables[2];
+  const jobRows = jobTable?.querySelectorAll('tr') || [];
+  const j0 = getInputsInRow(jobRows[0]);
+  const jobType = j0[0]?.tagName === 'SELECT' ? j0[0].options[j0[0].selectedIndex]?.text : '';
+  const j1 = getInputsInRow(jobRows[1]);
+  const company = j1[0]?.value || '';
+  const joinDate = j1[1]?.value || '';
+  const j2 = getInputsInRow(jobRows[2]);
+  const insurance4 = j2[0]?.tagName === 'SELECT' ? j2[0].options[j2[0].selectedIndex]?.text : '';
+  const bizNo1 = j2[1]?.value || '';
+  const bizNo2 = j2[2]?.value || '';
+  const bizNo3 = j2[3]?.value || '';
+  const j3 = getInputsInRow(jobRows[3]);
+  const salary = j3[0]?.value || '';
+  const monthlySalary = j3[1]?.value || '';
+  const healthInsurance = j3[2]?.value || '';
+  const workZipcode = document.getElementById('lr-waddr-zone')?.value || '';
+  const workAddress = document.getElementById('lr-waddr-road')?.value || '';
+  const workAddressDetail = document.getElementById('lr-waddr-detail')?.value || '';
+
+  // 차량 정보 테이블 (index 3)
+  const carTable = tables[3];
+  const carRows = carTable?.querySelectorAll('tr') || [];
+  const c0 = getInputsInRow(carRows[0]);
+  const vehicleNo = c0[0]?.value || '';
+  const vehicleName = c0[1]?.value || '';
+  const c1 = getInputsInRow(carRows[1]);
+  const vehicleYear = c1[0]?.tagName === 'SELECT' ? c1[0].options[c1[0].selectedIndex]?.text : '';
+  const vehicleKm = c1[1]?.value || '';
+  const c2 = getInputsInRow(carRows[2]);
+  const vehicleOwnership = c2[0]?.tagName === 'SELECT' ? c2[0].options[c2[0].selectedIndex]?.text : '';
+  const vehicleCoOwner = c2[1]?.value || '';
+
+  // 회파복 테이블 (index 4)
+  const recTable = tables[4];
+  const recRows = recTable?.querySelectorAll('tr') || [];
+  const rc0 = getInputsInRow(recRows[0]);
+  const recoveryType = rc0[0]?.tagName === 'SELECT' ? rc0[0].options[rc0[0].selectedIndex]?.text : '';
+  const rc1 = getInputsInRow(recRows[1]);
+  const courtName = rc1[0]?.value || '';
+  const caseNo = (rc1[1]?.value || '') + (rc1[2]?.tagName === 'SELECT' ? rc1[2].options[rc1[2].selectedIndex]?.text : '') + (rc1[3]?.value || '');
+  const rc2 = getInputsInRow(recRows[2]);
+  const refundBank = rc2[0]?.tagName === 'SELECT' ? rc2[0].options[rc2[0].selectedIndex]?.text : '';
+  const refundAccount = rc2[1]?.value || '';
+  const rc3 = getInputsInRow(recRows[3]);
+  const monthlyPayment = rc3[0]?.value?.replace(/,/g, '') || '';
+
+  // 기타사항 테이블 (index 5)
+  const memoTable = tables[5];
+  const memo = memoTable?.querySelector('textarea')?.value || '';
+
+  const formData = {
+    fidx, productName, name, birth, gender, carrier,
+    phone1, phone2, phone3, loanAmount,
+    jobType, company, joinDate, insurance4,
+    bizNo1, bizNo2, bizNo3,
+    salary, monthlySalary, healthInsurance,
+    zipcode, address, addressDetail,
+    housingType, housingOwnership,
+    vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
+    recoveryType, courtName, caseNo, refundBank, refundAccount, monthlyPayment,
+    workZipcode, workAddress, workAddressDetail,
+    memo, dbSource
+  };
+
+  if (!confirm(`[${productName}] 상품으로 접수를 진행합니다.\n\n고객명: ${name}\n대출요청액: ${loanAmount}만원\n\n론앤마스터에 폼을 자동 입력합니다. (제출은 별도 확인 필요)\n\n진행하시겠습니까?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/crawler/submit-loan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formData })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const result = data.data;
+      alert(`론앤마스터 폼 입력 완료!\n\n입력된 필드: ${result.filledCount}개\n미매칭 필드: ${result.notFoundFields?.length || 0}개\n\n※ 론앤마스터에서 내용 확인 후 직접 제출해주세요.`);
+
+      // 고객 상태를 '접수'로 변경
+      if (loanRegisterCustomerId) {
+        await fetch(`/api/customers/${loanRegisterCustomerId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...loanRegisterCustomerDB, status: '접수' })
+        });
+      }
+    } else {
+      alert('접수 실패: ' + (data.message || '알 수 없는 오류'));
+    }
+  } catch (e) {
+    alert('서버 연결 실패: ' + e.message);
+  }
 }
 
 // ========================================

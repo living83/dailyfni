@@ -216,55 +216,266 @@ async function getProductFidxMap(agentNo, upw) {
   return products;
 }
 
-// 대출 신청서 자동 입력 (1건, 사용자 행동 모방)
+// 론앤마스터 접수 폼 필드 스캔 (폼 구조 파악용)
+async function scanFormFields(agentNo, upw) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await delay(500, 1000);
+
+  const fields = await page.evaluate(() => {
+    const result = { inputs: [], selects: [], textareas: [] };
+
+    document.querySelectorAll('input').forEach(el => {
+      if (el.type === 'hidden' && !el.name) return;
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      result.inputs.push({
+        name: el.name || '', id: el.id || '', type: el.type || 'text',
+        value: el.value || '', placeholder: el.placeholder || '', label
+      });
+    });
+
+    document.querySelectorAll('select').forEach(el => {
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      const options = [...el.options].map(o => ({ value: o.value, text: o.text.trim() }));
+      result.selects.push({ name: el.name || '', id: el.id || '', label, options });
+    });
+
+    document.querySelectorAll('textarea').forEach(el => {
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      result.textareas.push({ name: el.name || '', id: el.id || '', label });
+    });
+
+    return result;
+  });
+
+  return fields;
+}
+
+// 대출 신청서 자동 입력 (제출 전까지만 - 폼 채우기)
 async function submitLoanApplication(agentNo, upw, formData) {
   if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
 
   const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
-
-  await delay(2000, 3500);
   await page.goto(url, { waitUntil: 'networkidle2' });
-  await delay(1500, 2500);
+  await delay(500, 1000);
 
-  // 폼 필드 자동 입력 (사람처럼 하나씩 딜레이)
-  const fillField = async (selector, value) => {
-    if (!value) return;
-    const el = await page.$(selector);
-    if (el) {
-      await el.click();
-      await delay(200, 500);
-      await el.evaluate((e, v) => { e.value = ''; }, null);
-      await page.type(selector, String(value), { delay: 50 + Math.random() * 100 });
-      await delay(300, 700);
+  // 1단계: 상품 선택 (fidx 기반)
+  if (formData.fidx) {
+    const productSelected = await page.evaluate((fidx) => {
+      // fidx로 상품 링크/버튼 찾아서 클릭
+      const allEls = document.querySelectorAll('a, input[type="button"], button, span, td');
+      for (const el of allEls) {
+        const onclick = el.getAttribute('onclick') || '';
+        const href = el.getAttribute('href') || '';
+        if (onclick.includes(`fidx=${fidx}`) || onclick.includes(`fidx:${fidx}`) ||
+            href.includes(`fidx=${fidx}`) || onclick.includes(`'${fidx}'`)) {
+          el.click();
+          return true;
+        }
+      }
+      // select 옵션에서 찾기
+      const selects = document.querySelectorAll('select');
+      for (const sel of selects) {
+        for (const opt of sel.options) {
+          if (opt.value == fidx || opt.getAttribute('data-fidx') == fidx) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          }
+        }
+      }
+      return false;
+    }, formData.fidx);
+
+    if (productSelected) {
+      await delay(500, 1000);
+      // 상품 선택 후 페이지 변경 대기
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {});
+      await delay(300, 500);
     }
-  };
+  }
 
-  const selectField = async (selector, value) => {
-    if (!value) return;
-    const el = await page.$(selector);
-    if (el) {
-      await el.select(value).catch(() => {
-        // option value가 아니면 텍스트로 매칭
-        el.evaluate((e, v) => {
-          for (const opt of e.options) {
-            if (opt.text.includes(v)) {
-              e.value = opt.value;
-              break;
+  // 2단계: 폼 필드 일괄 입력
+  const fillResult = await page.evaluate((data) => {
+    const filled = [];
+    const notFound = [];
+
+    // 필드명 매핑: formData 키 → 론앤마스터 폼의 name/id 패턴
+    const fieldMap = {
+      // 고객 기본정보
+      name: ['name', 'u_name', 's_name', 'cust_name', 'customer_name', 'uname'],
+      birth: ['birth', 'u_birth', 'birthday', 'jumin1', 'ssn1', 'birth_date'],
+      gender: ['gender', 'u_gender', 'sex', 'u_sex'],
+      phone1: ['phone1', 'hp1', 'u_hp1', 'tel1', 'mobile1', 'u_phone1'],
+      phone2: ['phone2', 'hp2', 'u_hp2', 'tel2', 'mobile2', 'u_phone2'],
+      phone3: ['phone3', 'hp3', 'u_hp3', 'tel3', 'mobile3', 'u_phone3'],
+      carrier: ['carrier', 'telecom', 'u_telecom', 'phone_co', 'u_carrier'],
+      // 대출 정보
+      loanAmount: ['loan_amount', 'hope_amount', 'req_amount', 'amount', 'u_amount', 'hope_money'],
+      // 직업 정보
+      jobType: ['job_type', 'u_job', 'job', 'occupation', 'u_jobtype', 'job_kind'],
+      company: ['company', 'u_company', 'comp_name', 'workplace', 'u_comp'],
+      salary: ['salary', 'income', 'u_salary', 'year_income', 'u_income', 'annual_income'],
+      monthlySalary: ['month_salary', 'month_income', 'u_month_salary', 'monthly_income'],
+      joinDate: ['join_date', 'enter_date', 'u_joindate', 'work_start', 'u_enter_date'],
+      insurance4: ['insurance', 'u_insurance', 'ins_4', '4dae', 'u_4dae', 'insurance_yn'],
+      bizNo1: ['biz_no1', 'saup1', 'u_saup1', 'business_no1'],
+      bizNo2: ['biz_no2', 'saup2', 'u_saup2', 'business_no2'],
+      bizNo3: ['biz_no3', 'saup3', 'u_saup3', 'business_no3'],
+      // 주소
+      zipcode: ['zipcode', 'zip', 'u_zip', 'zonecode', 'post'],
+      address: ['address', 'addr', 'u_addr', 'u_address', 'road_addr'],
+      addressDetail: ['addr_detail', 'u_addr2', 'addr2', 'detail_addr', 'address_detail'],
+      // 주거
+      housingType: ['house_type', 'u_house', 'housing', 'u_housing', 'home_type'],
+      housingOwnership: ['house_own', 'u_houseown', 'own_house', 'u_own_house', 'property'],
+      // 차량
+      vehicleNo: ['car_no', 'u_carno', 'vehicle_no', 'u_car_no', 'carnum'],
+      vehicleName: ['car_name', 'u_carname', 'vehicle_name', 'u_car_name'],
+      vehicleYear: ['car_year', 'u_caryear', 'vehicle_year', 'u_car_year'],
+      vehicleKm: ['car_km', 'u_carkm', 'mileage', 'u_mileage', 'car_distance'],
+      vehicleOwnership: ['car_own', 'u_carown', 'car_owner', 'u_car_owner', 'vehicle_own'],
+      vehicleCoOwner: ['co_owner', 'u_coowner', 'car_coowner', 'u_car_coowner'],
+      // 회파복
+      recoveryType: ['recovery', 'u_recovery', 'hoe_type', 'u_hoetype', 'hoepabog'],
+      courtName: ['court', 'u_court', 'court_name', 'u_court_name'],
+      caseNo: ['case_no', 'u_caseno', 'case_num', 'u_case_no', 'sageonno'],
+      refundBank: ['refund_bank', 'u_bank', 'bank', 'u_refundbank', 'return_bank'],
+      refundAccount: ['refund_account', 'u_account', 'account', 'u_refundaccount', 'bank_account'],
+      monthlyPayment: ['monthly_pay', 'u_monthlypay', 'month_pay', 'u_month_pay', 'byunje'],
+      // 직장 주소
+      workZipcode: ['w_zip', 'u_wzip', 'comp_zip', 'work_zip', 'u_work_zip'],
+      workAddress: ['w_addr', 'u_waddr', 'comp_addr', 'work_addr', 'u_work_addr'],
+      workAddressDetail: ['w_addr2', 'u_waddr2', 'comp_addr2', 'work_addr2', 'u_work_addr2'],
+      // 기타
+      memo: ['memo', 'u_memo', 'etc', 'remark', 'u_remark', 'note', 'u_note', 'bigo'],
+      healthInsurance: ['health_ins', 'u_health', 'health_amount', 'u_health_ins'],
+      creditScore: ['credit_score', 'u_credit', 'nice_score', 'u_score'],
+      dbSource: ['db_source', 'u_dbsource', 'route', 'u_route', 'inflow'],
+    };
+
+    // input/textarea 채우기
+    function fillInput(fieldKey, value) {
+      if (!value && value !== 0) return;
+      const patterns = fieldMap[fieldKey] || [fieldKey];
+      for (const pat of patterns) {
+        const el = document.querySelector(`input[name="${pat}"], input[id="${pat}"], textarea[name="${pat}"], textarea[id="${pat}"]`);
+        if (el) {
+          el.value = String(value);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: fieldKey, target: pat, value: String(value) });
+          return true;
+        }
+      }
+      // 패턴 부분 일치 시도
+      for (const pat of patterns) {
+        const el = document.querySelector(`input[name*="${pat}"], textarea[name*="${pat}"]`);
+        if (el && el.type !== 'hidden') {
+          el.value = String(value);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: fieldKey, target: el.name || el.id, value: String(value) });
+          return true;
+        }
+      }
+      notFound.push(fieldKey);
+      return false;
+    }
+
+    // select 채우기
+    function fillSelect(fieldKey, value) {
+      if (!value) return;
+      const patterns = fieldMap[fieldKey] || [fieldKey];
+      for (const pat of patterns) {
+        const el = document.querySelector(`select[name="${pat}"], select[id="${pat}"]`);
+        if (el) {
+          // value 일치
+          for (const opt of el.options) {
+            if (opt.value === String(value) || opt.text.trim() === String(value) || opt.text.includes(String(value))) {
+              el.value = opt.value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              filled.push({ field: fieldKey, target: pat, value: opt.text.trim() });
+              return true;
             }
           }
-        }, value);
-      });
-      await delay(300, 600);
+        }
+      }
+      // 부분 일치
+      for (const pat of patterns) {
+        const el = document.querySelector(`select[name*="${pat}"]`);
+        if (el) {
+          for (const opt of el.options) {
+            if (opt.text.includes(String(value))) {
+              el.value = opt.value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              filled.push({ field: fieldKey, target: el.name, value: opt.text.trim() });
+              return true;
+            }
+          }
+        }
+      }
+      notFound.push(fieldKey);
+      return false;
     }
-  };
 
-  // 실제 폼 필드 매핑은 론앤마스터 HTML 구조에 따라 조정 필요
-  // 아래는 기본 구조이며, 실제 name/id는 크롤링 후 확인 필요
+    // 필드 채우기 실행
+    fillInput('name', data.name);
+    fillInput('birth', data.birth);
+    fillSelect('gender', data.gender);
+    fillSelect('carrier', data.carrier);
+    fillInput('phone1', data.phone1);
+    fillInput('phone2', data.phone2);
+    fillInput('phone3', data.phone3);
+    fillInput('loanAmount', data.loanAmount);
+    fillSelect('jobType', data.jobType);
+    fillInput('company', data.company);
+    fillInput('salary', data.salary);
+    fillInput('monthlySalary', data.monthlySalary);
+    fillInput('joinDate', data.joinDate);
+    fillSelect('insurance4', data.insurance4);
+    fillInput('bizNo1', data.bizNo1);
+    fillInput('bizNo2', data.bizNo2);
+    fillInput('bizNo3', data.bizNo3);
+    fillInput('zipcode', data.zipcode);
+    fillInput('address', data.address);
+    fillInput('addressDetail', data.addressDetail);
+    fillSelect('housingType', data.housingType);
+    fillSelect('housingOwnership', data.housingOwnership);
+    fillInput('vehicleNo', data.vehicleNo);
+    fillInput('vehicleName', data.vehicleName);
+    fillSelect('vehicleYear', data.vehicleYear);
+    fillInput('vehicleKm', data.vehicleKm);
+    fillSelect('vehicleOwnership', data.vehicleOwnership);
+    fillInput('vehicleCoOwner', data.vehicleCoOwner);
+    fillSelect('recoveryType', data.recoveryType);
+    fillInput('courtName', data.courtName);
+    fillInput('caseNo', data.caseNo);
+    fillSelect('refundBank', data.refundBank);
+    fillInput('refundAccount', data.refundAccount);
+    fillInput('monthlyPayment', data.monthlyPayment);
+    fillInput('workZipcode', data.workZipcode);
+    fillInput('workAddress', data.workAddress);
+    fillInput('workAddressDetail', data.workAddressDetail);
+    fillInput('memo', data.memo);
+    fillInput('healthInsurance', data.healthInsurance);
+    fillInput('creditScore', data.creditScore);
+
+    return { filled, notFound };
+  }, formData);
+
+  // 현재 페이지 스크린샷 정보 (디버깅용)
+  const pageUrl = page.url();
 
   return {
     success: true,
-    message: '폼 데이터가 준비되었습니다. 실제 제출은 매핑 완료 후 활성화됩니다.',
-    formData
+    message: `폼 입력 완료 (${fillResult.filled.length}개 필드). 제출 대기 중.`,
+    filledCount: fillResult.filled.length,
+    filledFields: fillResult.filled,
+    notFoundFields: fillResult.notFound,
+    pageUrl
   };
 }
 
@@ -389,6 +600,7 @@ module.exports = {
   login,
   getProductGuide,
   getProductFidxMap,
+  scanFormFields,
   submitLoanApplication,
   getLoanList,
   getLoanDetail,

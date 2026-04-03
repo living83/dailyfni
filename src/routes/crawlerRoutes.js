@@ -54,6 +54,31 @@ router.get('/crawler/loan-list', async (req, res) => {
   }
 });
 
+// 접수 폼 필드 스캔 (론앤마스터 폼 구조 파악)
+router.post('/crawler/scan-form', async (req, res) => {
+  try {
+    const { agentNo, upw } = req.body;
+    const data = await crawler.scanFormFields(agentNo || '12', upw || '1');
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 대출 접수 폼 자동 입력 (제출 전까지)
+router.post('/crawler/submit-loan', async (req, res) => {
+  try {
+    const { agentNo, upw, formData } = req.body;
+    if (!formData) {
+      return res.status(400).json({ success: false, message: 'formData가 필요합니다.' });
+    }
+    const result = await crawler.submitLoanApplication(agentNo || '12', upw || '1', formData);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 브라우저 종료
 router.post('/crawler/close', async (req, res) => {
   try {
