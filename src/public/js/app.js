@@ -564,9 +564,20 @@ function renderLoanRegister() {
   const salaryMonth = c ? Math.round((c.salary || 0) / 12) : '';
   const assignedTo = c ? (c.assigned_to || c.assignedTo || '') : '';
   const dbSource = c ? (c.db_source || c.dbSource || '') : '';
-  const companyAddr = c ? (c.company_addr || c.companyAddr || '') : '';
+  const companyAddrFull = c ? (c.company_addr || c.companyAddr || '') : '';
   const creditScore = c ? (c.credit_score || c.creditScore || 0) : 0;
-  const residenceAddr = c ? (c.residence_address || c.residenceAddress || c.address || '') : '';
+  const residenceAddrFull = c ? (c.residence_address || c.residenceAddress || c.address || '') : '';
+
+  // 주소 분리: "서울 금천구 서부샛길 606 비동" → 도로명 "서울 금천구 서부샛길 606" + 상세 "비동"
+  function splitAddress(addr) {
+    if (!addr) return { road: '', detail: '' };
+    // 숫자 뒤 공백 이후를 상세주소로 분리 (예: "서부샛길 606 비동" → "서부샛길 606" + "비동")
+    const match = addr.match(/^(.+\d+(?:-\d+)?)\s+(.+)$/);
+    if (match) return { road: match[1], detail: match[2] };
+    return { road: addr, detail: '' };
+  }
+  const residenceSplit = splitAddress(residenceAddrFull);
+  const companySplit = splitAddress(companyAddrFull);
   const housingType = c ? (c.housing_type || '') : '';
   const housingOwn = c ? (c.housing_ownership || '') : '';
   const vehicleNo = c ? (c.vehicle_no || '') : '';
@@ -652,8 +663,8 @@ function renderLoanRegister() {
                 <div style="display:flex;gap:4px;align-items:center;">
                   <input type="text" id="lr-addr-zone" style="width:60px;" placeholder="우편번호" readonly>
                   <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-addr')">주소 검색</button>
-                  <input type="text" id="lr-addr-road" style="flex:1;" placeholder="도로명주소" value="${c ? residenceAddr : ''}" readonly>
-                  <input type="text" id="lr-addr-detail" style="width:150px;" placeholder="상세주소">
+                  <input type="text" id="lr-addr-road" style="flex:1;" placeholder="도로명주소" value="${c ? residenceSplit.road : ''}" readonly>
+                  <input type="text" id="lr-addr-detail" style="width:150px;" placeholder="상세주소" value="${c ? residenceSplit.detail : ''}">
                 </div>
               </td>
             </tr>
@@ -678,7 +689,7 @@ function renderLoanRegister() {
               <th>직장명 <span class="required">*</span></th>
               <td colspan="2"><input type="text" placeholder="직장명" value="${c ? c.company : ''}" ${ro}></td>
               <th>입사(설립)일자</th>
-              <td colspan="2"><input type="text" placeholder="입사일자" value="${c ? '' : ''}"></td>
+              <td colspan="2"><input type="text" placeholder="2020-01-15" value="${c ? (c.join_date||c.joinDate||'') : ''}"></td>
             </tr>
             <tr>
               <th>4대보험 여부</th>
@@ -713,8 +724,8 @@ function renderLoanRegister() {
                 <div style="display:flex;gap:4px;align-items:center;">
                   <input type="text" id="lr-waddr-zone" style="width:60px;" placeholder="우편번호" readonly>
                   <button class="btn btn-sm btn-primary" onclick="openAddrSearch('lr-waddr')">주소 검색</button>
-                  <input type="text" id="lr-waddr-road" style="flex:1;" placeholder="도로명주소" value="${c ? companyAddr : ''}" readonly>
-                  <input type="text" id="lr-waddr-detail" style="width:150px;" placeholder="상세주소">
+                  <input type="text" id="lr-waddr-road" style="flex:1;" placeholder="도로명주소" value="${c ? companySplit.road : ''}" readonly>
+                  <input type="text" id="lr-waddr-detail" style="width:150px;" placeholder="상세주소" value="${c ? companySplit.detail : ''}">
                 </div>
               </td>
             </tr>
@@ -2396,7 +2407,7 @@ function viewCustomer(id) {
                 <tbody>
                   <tr><th>직장명</th><td>${c.company}</td><th>고용형태</th><td>${c.employmentType}</td></tr>
                   <tr><th>직장 주소</th><td colspan="3">${c.companyAddr}</td></tr>
-                  <tr><th>직장 전화</th><td>${c.companyPhone}</td><th>재직기간</th><td>${c.workYears}</td></tr>
+                  <tr><th>직장 전화</th><td>${c.companyPhone}</td><th>입사일자</th><td>${c.join_date||c.joinDate||''}</td></tr>
                   <tr><th>연봉</th><td>${c.salary.toLocaleString()}만원</td><th>월 환산</th><td>${Math.round(c.salary/12).toLocaleString()}만원</td></tr>
                 </tbody>
               </table>
@@ -2952,7 +2963,7 @@ function renderCustomerLedger() {
           <table class="info-table"><tbody>
             <tr><th>직장명</th><td><input type="text" value="${c.company||''}" ${ro}></td><th>고용형태</th><td><input type="text" value="${c.employment_type||c.employmentType||''}" ${ro}></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><input type="text" value="${c.company_addr||c.companyAddr||''}" ${ro} style="width:100%;background:#f8fafc;border-color:#e2e8f0;"></td></tr>
-            <tr><th>직장 전화</th><td><input type="text" value="${c.company_phone||c.companyPhone||''}" ${ro}></td><th>재직기간</th><td><input type="text" value="${c.work_years||c.workYears||''}" ${ro}></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" value="${c.company_phone||c.companyPhone||''}" ${ro}></td><th>입사일자</th><td><input type="text" value="${c.join_date||c.joinDate||''}" ${ro}></td></tr>
             <tr><th>연봉</th><td><input type="text" value="${(c.salary||0)}만원" ${ro}></td><th>월 환산</th><td><input type="text" value="${c.salary ? Math.round(c.salary/12)+'만원' : ''}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
           </tbody></table>
         </div></div>
@@ -3224,7 +3235,7 @@ function renderCustomerEdit() {
           <table class="info-table"><tbody>
             <tr><th>직장명</th><td><input type="text" id="edit-company" value="${c.company||''}"></td><th>고용형태</th><td><select id="edit-emptype">${selDb(['선택','정규직','계약직','프리랜서','자영업','무직'], c.employment_type||'선택')}</select></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="edit-compaddr" style="flex:1;" value="${c.company_addr||''}" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('edit-compaddr')">검색</button><input type="text" id="edit-compaddr-detail" style="width:200px;" placeholder="상세주소"></div></td></tr>
-            <tr><th>직장 전화</th><td><input type="text" id="edit-compphone" value="${c.company_phone||''}"></td><th>재직기간</th><td><input type="text" id="edit-workyears" value="${c.work_years||''}"></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" id="edit-compphone" value="${c.company_phone||''}"></td><th>입사일자</th><td><input type="text" id="edit-joindate" value="${c.join_date||''}" placeholder="2020-01-15"></td></tr>
             <tr><th>연봉</th><td><input type="text" id="edit-salary" value="${c.salary||''}"></td><th>월 환산</th><td><input type="text" value="${c.salary ? Math.round(c.salary/12)+'만원' : ''}" readonly style="background:#f1f5f9;"></td></tr>
           </tbody></table>
         </div></div>
@@ -3285,7 +3296,7 @@ async function submitCustomerEdit() {
     housingType: v('edit-housing'), housingOwnership: v('edit-housing-own'),
     company: v('edit-company'), employmentType: v('edit-emptype'), has4Insurance: v('edit-insurance'),
     companyAddr: (v('edit-compaddr') + ' ' + v('edit-compaddr-detail')).trim(),
-    companyPhone: v('edit-compphone'), workYears: v('edit-workyears'), salary: parseInt(v('edit-salary')) || 0,
+    companyPhone: v('edit-compphone'), joinDate: v('edit-joindate'), salary: parseInt(v('edit-salary')) || 0,
     vehicleNo: v('edit-vno'), vehicleName: v('edit-vname'), vehicleYear: v('edit-vyear'),
     vehicleKm: v('edit-vkm'), vehicleOwnership: v('edit-vown'), vehicleCoOwner: v('edit-vcoowner'),
     recoveryType: v('edit-recovery'), recoveryTotalCount: v('edit-recovery-total'), recoveryPaidCount: v('edit-recovery-paid'),
@@ -3325,7 +3336,7 @@ async function submitCustomerRegister() {
     housingType: v('reg-housing'), housingOwnership: v('reg-housing-own'),
     company: v('reg-company'), employmentType: v('reg-emptype'), has4Insurance: v('reg-insurance'),
     companyAddr: (v('reg-compaddr') + ' ' + v('reg-compaddr-detail')).trim(),
-    companyPhone: v('reg-compphone'), workYears: v('reg-workyears'), salary: parseInt(v('reg-salary')) || 0,
+    companyPhone: v('reg-compphone'), joinDate: v('reg-joindate'), salary: parseInt(v('reg-salary')) || 0,
     vehicleNo: v('reg-vno'), vehicleName: v('reg-vname'), vehicleYear: v('reg-vyear'),
     vehicleKm: v('reg-vkm'), vehicleOwnership: v('reg-vown'), vehicleCoOwner: v('reg-vcoowner'),
     recoveryType: v('reg-recovery'),
@@ -3403,7 +3414,7 @@ function renderCustomerRegister() {
             <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
             <tr><th>4대보험</th><td><select id="reg-insurance">${selDb(['선택','가입','미가입','모름'], pf.has4Insurance||'선택')}</select></td><th></th><td></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">검색</button><input type="text" id="reg-compaddr-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
-            <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>재직기간</th><td><input type="text" id="reg-workyears" placeholder="예: 3년 2개월"></td></tr>
+            <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>입사일자</th><td><input type="text" id="reg-joindate" placeholder="2020-01-15"></td></tr>
             <tr><th>연봉</th><td><input type="text" id="reg-salary" placeholder="만원 단위" oninput="calcMonthly()"></td><th>월 환산</th><td><input type="text" id="reg-monthly" placeholder="자동계산" readonly style="background:#f1f5f9;"></td></tr>
           </tbody></table>
         </div></div>

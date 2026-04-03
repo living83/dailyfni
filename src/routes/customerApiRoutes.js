@@ -8,7 +8,7 @@ const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 router.post('/customers', async (req, res) => {
   try {
     const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, housingType, housingOwnership,
-      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, workYears,
+      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, joinDate, workYears,
       vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
       recoveryType, recoveryPaidCount, recoveryTotalCount, courtName, caseNo, refundBank, refundAccount, refundHolder, monthlyPayment,
       creditScore, creditStatus, totalDebt, existingLoans, dbSource, assignedTo, status, memo, loanDate, loanAmount } = req.body;
@@ -36,15 +36,15 @@ router.post('/customers', async (req, res) => {
     const result = await query(
       `INSERT INTO customers (name, ssn, age, phone, carrier, phone2, email, address, residence_address,
         housing_type, housing_ownership, company, company_addr, company_phone,
-        salary, employment_type, has_4_insurance, work_years,
+        salary, employment_type, has_4_insurance, join_date, work_years,
         vehicle_no, vehicle_name, vehicle_year, vehicle_km, vehicle_ownership, vehicle_co_owner,
         recovery_type, recovery_paid_count, recovery_total_count, court_name, case_no, refund_bank, refund_account, refund_holder, monthly_payment,
         credit_score, credit_status, total_debt, existing_loans, db_source,
         assigned_to, status, memo, loan_date, loan_amount, reg_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE())`,
       [name, ssn||'', age, phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
        housingType||'', housingOwnership||'', company||'', companyAddr||'', companyPhone||'',
-       salary||0, employmentType||'', has4Insurance||'', workYears||'',
+       salary||0, employmentType||'', has4Insurance||'', joinDate||null, workYears||'',
        vehicleNo||'', vehicleName||'', vehicleYear||'', vehicleKm||'', vehicleOwnership||'', vehicleCoOwner||'',
        recoveryType||'', recoveryPaidCount||'', recoveryTotalCount||'', courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'', monthlyPayment||'',
        creditScore||0, creditStatus||'정상', totalDebt||'0', existingLoans||'', dbSource||'',
@@ -94,7 +94,7 @@ router.get('/customers/:id', async (req, res) => {
 router.put('/customers/:id', async (req, res) => {
   try {
     const { name, ssn, phone, carrier, phone2, email, address, residenceAddress, housingType, housingOwnership,
-      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, workYears,
+      company, companyAddr, companyPhone, salary, employmentType, has4Insurance, joinDate, workYears,
       vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
       recoveryType, recoveryPaidCount, recoveryTotalCount, courtName, caseNo,
       refundBank, refundAccount, refundHolder, monthlyPayment,
@@ -103,7 +103,7 @@ router.put('/customers/:id', async (req, res) => {
     await query(
       `UPDATE customers SET name=?, ssn=?, phone=?, carrier=?, phone2=?, email=?, address=?, residence_address=?,
         housing_type=?, housing_ownership=?,
-        company=?, company_addr=?, company_phone=?, salary=?, employment_type=?, has_4_insurance=?, work_years=?,
+        company=?, company_addr=?, company_phone=?, salary=?, employment_type=?, has_4_insurance=?, join_date=?, work_years=?,
         vehicle_no=?, vehicle_name=?, vehicle_year=?, vehicle_km=?, vehicle_ownership=?, vehicle_co_owner=?,
         recovery_type=?, recovery_paid_count=?, recovery_total_count=?,
         court_name=?, case_no=?, refund_bank=?, refund_account=?, refund_holder=?, monthly_payment=?,
@@ -111,7 +111,7 @@ router.put('/customers/:id', async (req, res) => {
         assigned_to=? WHERE id=?`,
       [name, ssn||'', phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
        housingType||'', housingOwnership||'',
-       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', workYears||'',
+       company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', joinDate||null, workYears||'',
        vehicleNo||'', vehicleName||'', vehicleYear||'', vehicleKm||'', vehicleOwnership||'', vehicleCoOwner||'',
        recoveryType||'', recoveryPaidCount||'', recoveryTotalCount||'',
        courtName||'', caseNo||'', refundBank||'', refundAccount||'', refundHolder||'', monthlyPayment||'',
