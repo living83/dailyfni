@@ -12,7 +12,7 @@ const isToday = (dateStr) => dateStr && dateStr.slice(0, 10) === todayStr();
 const tierLabels = { 1: '신규', 2: '성장', 3: '중급', 4: '고수익', 5: '최상위' };
 
 /* ── GET /stats/dashboard ── */
-router.get('/stats/dashboard', authenticate, (_req, res) => {
+router.get('/stats/dashboard', (_req, res) => {
   const accounts = Account.listAccounts();
   const contents = Content.listContents();
   const postings = Posting.listPostings();
@@ -49,7 +49,7 @@ router.get('/stats/dashboard', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/posting-live ── */
-router.get('/stats/posting-live', authenticate, (_req, res) => {
+router.get('/stats/posting-live', (_req, res) => {
   const postings = Posting.listPostings();
 
   if (postings.length === 0) {
@@ -83,7 +83,7 @@ router.get('/stats/posting-live', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/account-tiers ── */
-router.get('/stats/account-tiers', authenticate, (_req, res) => {
+router.get('/stats/account-tiers', (_req, res) => {
   const accounts = Account.listAccounts();
 
   if (accounts.length === 0) {
@@ -112,7 +112,7 @@ router.get('/stats/account-tiers', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/monitoring ── */
-router.get('/stats/monitoring', authenticate, (_req, res) => {
+router.get('/stats/monitoring', (_req, res) => {
   const postings = Posting.listPostings();
 
   if (postings.length === 0) {
@@ -128,7 +128,7 @@ router.get('/stats/monitoring', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/account-performance ── */
-router.get('/stats/account-performance', authenticate, (_req, res) => {
+router.get('/stats/account-performance', (_req, res) => {
   const accounts = Account.listAccounts();
   const postings = Posting.listPostings();
 
@@ -173,7 +173,7 @@ router.get('/stats/account-performance', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/tier-posting ── */
-router.get('/stats/tier-posting', authenticate, (_req, res) => {
+router.get('/stats/tier-posting', (_req, res) => {
   const accounts = Account.listAccounts();
   const postings = Posting.listPostings();
   const contents = Content.listContents();
@@ -227,7 +227,7 @@ router.get('/stats/tier-posting', authenticate, (_req, res) => {
 });
 
 /* ── GET /stats/posting-records ── */
-router.get('/stats/posting-records', authenticate, (req, res) => {
+router.get('/stats/posting-records', (req, res) => {
   const postings = Posting.listPostings();
   const contents = Content.listContents();
 

@@ -7,13 +7,13 @@ const { requestEngage, requestCommentPreview, requestFeed } = require('../servic
 const router = Router();
 
 // GET /engagement/feed — 이웃 피드 (mock + Python 크롤링)
-router.get('/engagement/feed', authenticate, async (req, res) => {
+router.get('/engagement/feed', async (req, res) => {
   // 인메모리 mock 피드 반환 (Python 크롤러는 백그라운드 갱신용)
   res.json({ success: true, feed: Engagement.listFeed() });
 });
 
 // POST /engagement/feed/refresh — Python으로 실제 피드 크롤링
-router.post('/engagement/feed/refresh', authenticate, async (req, res) => {
+router.post('/engagement/feed/refresh', async (req, res) => {
   const accounts = listAccounts().filter(a => a.isActive && a.neighborEngage);
   if (accounts.length === 0) {
     return res.json({ success: false, message: '참여 활성 계정이 없습니다.' });
@@ -38,7 +38,7 @@ router.post('/engagement/feed/refresh', authenticate, async (req, res) => {
 });
 
 // POST /engagement/like/:postId — 공감 (인메모리 + Python Playwright)
-router.post('/engagement/like/:postId', authenticate, async (req, res) => {
+router.post('/engagement/like/:postId', async (req, res) => {
   const post = Engagement.likePost(req.params.postId);
   if (!post) return res.status(404).json({ success: false, message: '포스트를 찾을 수 없습니다.' });
   res.json({ success: true, post });
@@ -58,7 +58,7 @@ router.post('/engagement/like/:postId', authenticate, async (req, res) => {
 });
 
 // POST /engagement/comment/preview — AI 댓글 미리보기 (Python Claude)
-router.post('/engagement/comment/preview', authenticate, async (req, res) => {
+router.post('/engagement/comment/preview', async (req, res) => {
   const { postTitle, postSummary } = req.body;
   if (!postTitle) return res.status(400).json({ success: false, message: '포스트 제목이 필요합니다.' });
 
@@ -75,7 +75,7 @@ router.post('/engagement/comment/preview', authenticate, async (req, res) => {
 });
 
 // POST /engagement/comment/:postId — 댓글 작성
-router.post('/engagement/comment/:postId', authenticate, async (req, res) => {
+router.post('/engagement/comment/:postId', async (req, res) => {
   const { comment } = req.body;
   if (!comment) return res.status(400).json({ success: false, message: '댓글 내용이 필요합니다.' });
 
@@ -99,7 +99,7 @@ router.post('/engagement/comment/:postId', authenticate, async (req, res) => {
 });
 
 // POST /engagement/run — 일괄 참여 (Python Playwright)
-router.post('/engagement/run', authenticate, async (req, res) => {
+router.post('/engagement/run', async (req, res) => {
   const feed = Engagement.listFeed();
   const accounts = listAccounts().filter(a => a.isActive && a.neighborEngage);
 
@@ -146,12 +146,12 @@ router.post('/engagement/run', authenticate, async (req, res) => {
 });
 
 // GET /engagement/stats
-router.get('/engagement/stats', authenticate, (req, res) => {
+router.get('/engagement/stats', (req, res) => {
   res.json({ success: true, stats: Engagement.getStats() });
 });
 
 // GET /engagement/activity
-router.get('/engagement/activity', authenticate, (req, res) => {
+router.get('/engagement/activity', (req, res) => {
   res.json({ success: true, activities: Engagement.listActivities() });
 });
 

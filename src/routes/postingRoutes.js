@@ -8,12 +8,12 @@ const { requestPublish } = require('../services/pythonBridge');
 const router = Router();
 
 // GET /api/posting/queue
-router.get('/posting/queue', authenticate, (req, res) => {
+router.get('/posting/queue', (req, res) => {
   res.json({ success: true, queue: Posting.listPostings() });
 });
 
 // POST /api/posting/queue — add to queue
-router.post('/posting/queue', authenticate, (req, res) => {
+router.post('/posting/queue', (req, res) => {
   const { keyword, accountName, accountId, tone, scheduledTime, contentId } = req.body;
   if (!keyword) {
     return res.status(400).json({ success: false, message: '키워드를 입력하세요.' });
@@ -23,21 +23,21 @@ router.post('/posting/queue', authenticate, (req, res) => {
 });
 
 // PATCH /api/posting/queue/:id
-router.patch('/posting/queue/:id', authenticate, (req, res) => {
+router.patch('/posting/queue/:id', (req, res) => {
   const item = Posting.updatePosting(req.params.id, req.body);
   if (!item) return res.status(404).json({ success: false, message: '항목을 찾을 수 없습니다.' });
   res.json({ success: true, item });
 });
 
 // DELETE /api/posting/queue/:id
-router.delete('/posting/queue/:id', authenticate, (req, res) => {
+router.delete('/posting/queue/:id', (req, res) => {
   const ok = Posting.deletePosting(req.params.id);
   if (!ok) return res.status(404).json({ success: false, message: '항목을 찾을 수 없습니다.' });
   res.json({ success: true, message: '삭제되었습니다.' });
 });
 
 // POST /api/posting/queue/:id/run — 실제 Playwright 발행
-router.post('/posting/queue/:id/run', authenticate, async (req, res) => {
+router.post('/posting/queue/:id/run', async (req, res) => {
   const posting = Posting.updatePosting(req.params.id, { status: '발행중' });
   if (!posting) return res.status(404).json({ success: false, message: '항목을 찾을 수 없습니다.' });
 
@@ -113,7 +113,7 @@ router.post('/posting/queue/:id/run', authenticate, async (req, res) => {
 });
 
 // POST /api/posting/run-all — 전체 대기중 발행
-router.post('/posting/run-all', authenticate, async (req, res) => {
+router.post('/posting/run-all', async (req, res) => {
   const all = Posting.listPostings();
   const pending = all.filter((p) => p.status === '대기중');
 
@@ -177,18 +177,18 @@ router.post('/posting/run-all', authenticate, async (req, res) => {
 });
 
 // GET /api/posting/settings
-router.get('/posting/settings', authenticate, (req, res) => {
+router.get('/posting/settings', (req, res) => {
   res.json({ success: true, settings: Posting.getSettings() });
 });
 
 // PUT /api/posting/settings
-router.put('/posting/settings', authenticate, (req, res) => {
+router.put('/posting/settings', (req, res) => {
   const settings = Posting.updateSettings(req.body);
   res.json({ success: true, settings });
 });
 
 // GET /api/posting/errors
-router.get('/posting/errors', authenticate, (req, res) => {
+router.get('/posting/errors', (req, res) => {
   res.json({ success: true, errors: Posting.listErrors() });
 });
 

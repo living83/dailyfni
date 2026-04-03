@@ -1,7 +1,7 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PenTool, Send, BarChart3, Heart,
-  Settings as SettingsIcon, LogOut
+  Settings as SettingsIcon
 } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -10,9 +10,7 @@ import Posting from './pages/Posting'
 import Monitoring from './pages/Monitoring'
 import Engagement from './pages/Engagement'
 import SettingsPage from './pages/Settings'
-import Login from './pages/Login'
 import { type ReactNode } from 'react'
-import { useAuth } from './contexts/AuthContext'
 
 /* ── Navigation items ── */
 const navItems = [
@@ -47,7 +45,6 @@ function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: stri
 
 /* ── Sidebar ── */
 function Sidebar() {
-  const { logout } = useAuth()
   const systemActive = true
 
   return (
@@ -72,17 +69,6 @@ function Sidebar() {
         ))}
       </div>
 
-      {/* Logout */}
-      <div className="px-3 mt-4">
-        <button
-          onClick={logout}
-          className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all duration-200 w-full"
-        >
-          <LogOut size={20} className="opacity-70" />
-          Logout
-        </button>
-      </div>
-
       {/* System Status */}
       <div className="px-6 pt-6 border-t border-border mt-2">
         <div className="flex items-center gap-3">
@@ -105,11 +91,8 @@ function Sidebar() {
   )
 }
 
-/* ── Protected layout ── */
+/* ── Main layout ── */
 function ProtectedLayout() {
-  const { token, isLoading } = useAuth()
-  if (isLoading) return null
-  if (!token) return <Navigate to="/login" replace />
 
   return (
     <div className="flex h-screen bg-background overflow-hidden selection:bg-primary/30">
@@ -140,7 +123,6 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={<Login />} />
         <Route path="/*" element={<ProtectedLayout />} />
       </Routes>
     </Router>

@@ -1,78 +1,23 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
-import api from '../lib/api'
-import type { User } from '../types'
+import { createContext, useContext, type ReactNode } from 'react'
 
+/**
+ * 단일 사용자 — 인증 불필요
+ * isDemo는 항상 false (모든 데이터가 백엔드 SQLite에 저장됨)
+ */
 interface AuthState {
-  user: User | null
-  token: string | null
   isDemo: boolean
-  isLoading: boolean
-  login: (email: string, password: string) => Promise<void>
-  loginDemo: () => void
-  logout: () => void
 }
 
-const AuthContext = createContext<AuthState | null>(null)
-
-const DEMO_USER: User = {
-  id: 'demo',
-  email: 'demo@dailyfni.com',
-  name: 'Demo User',
-  role: 'admin',
-}
+const AuthContext = createContext<AuthState>({ isDemo: false })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
-  const [isLoading, setIsLoading] = useState(true)
-
-  const isDemo = token === 'demo-token'
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('token')
-    setToken(null)
-    setUser(null)
-  }, [])
-
-  // Verify token on mount
-  useEffect(() => {
-    if (!token) {
-      setIsLoading(false)
-      return
-    }
-    if (token === 'demo-token') {
-      setUser(DEMO_USER)
-      setIsLoading(false)
-      return
-    }
-    api.get('/auth/me')
-      .then(({ data }) => setUser(data.user ?? data))
-      .catch(() => logout())
-      .finally(() => setIsLoading(false))
-  }, [token, logout])
-
-  const login = async (email: string, password: string) => {
-    const { data } = await api.post('/auth/login', { email, password })
-    localStorage.setItem('token', data.token)
-    setToken(data.token)
-    setUser(data.user ?? { id: '', email, name: email, role: 'user' as const })
-  }
-
-  const loginDemo = () => {
-    localStorage.setItem('token', 'demo-token')
-    setToken('demo-token')
-    setUser(DEMO_USER)
-  }
-
   return (
-    <AuthContext.Provider value={{ user, token, isDemo, isLoading, login, loginDemo, logout }}>
+    <AuthContext.Provider value={{ isDemo: false }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
+  return useContext(AuthContext)
 }

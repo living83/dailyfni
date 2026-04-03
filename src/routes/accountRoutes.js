@@ -7,7 +7,7 @@ const router = Router();
 
 // ── Accounts ──
 
-router.post('/accounts', authenticate, (req, res) => {
+router.post('/accounts', (req, res) => {
   const { accountName, naverId, naverPassword, tier, proxyId } = req.body;
   if (!accountName || !naverId) {
     return res.status(400).json({ success: false, message: '계정명과 네이버 ID는 필수입니다.' });
@@ -16,29 +16,29 @@ router.post('/accounts', authenticate, (req, res) => {
   res.status(201).json({ success: true, account });
 });
 
-router.get('/accounts', authenticate, (req, res) => {
+router.get('/accounts', (req, res) => {
   res.json({ success: true, accounts: Account.listAccounts() });
 });
 
-router.get('/accounts/:id', authenticate, (req, res) => {
+router.get('/accounts/:id', (req, res) => {
   const account = Account.getAccount(req.params.id);
   if (!account) return res.status(404).json({ success: false, message: '계정을 찾을 수 없습니다.' });
   res.json({ success: true, account });
 });
 
-router.patch('/accounts/:id', authenticate, (req, res) => {
+router.patch('/accounts/:id', (req, res) => {
   const account = Account.updateAccount(req.params.id, req.body);
   if (!account) return res.status(404).json({ success: false, message: '계정을 찾을 수 없습니다.' });
   res.json({ success: true, account });
 });
 
-router.delete('/accounts/:id', authenticate, (req, res) => {
+router.delete('/accounts/:id', (req, res) => {
   const ok = Account.deleteAccount(req.params.id);
   if (!ok) return res.status(404).json({ success: false, message: '계정을 찾을 수 없습니다.' });
   res.json({ success: true, message: '계정이 삭제되었습니다.' });
 });
 
-router.post('/accounts/:id/test', authenticate, (req, res) => {
+router.post('/accounts/:id/test', (req, res) => {
   const account = Account.getAccount(req.params.id);
   if (!account) return res.status(404).json({ success: false, message: '계정을 찾을 수 없습니다.' });
   // Simulate login test
@@ -48,7 +48,7 @@ router.post('/accounts/:id/test', authenticate, (req, res) => {
 
 // ── Proxies ──
 
-router.post('/proxies', authenticate, (req, res) => {
+router.post('/proxies', (req, res) => {
   const { ip, port, username, password } = req.body;
   if (!ip || !port) {
     return res.status(400).json({ success: false, message: 'IP와 포트는 필수입니다.' });
@@ -57,29 +57,29 @@ router.post('/proxies', authenticate, (req, res) => {
   res.status(201).json({ success: true, proxy });
 });
 
-router.get('/proxies', authenticate, (req, res) => {
+router.get('/proxies', (req, res) => {
   res.json({ success: true, proxies: Proxy.listProxies() });
 });
 
-router.patch('/proxies/:id', authenticate, (req, res) => {
+router.patch('/proxies/:id', (req, res) => {
   const proxy = Proxy.updateProxy(req.params.id, req.body);
   if (!proxy) return res.status(404).json({ success: false, message: '프록시를 찾을 수 없습니다.' });
   res.json({ success: true, proxy });
 });
 
-router.delete('/proxies/:id', authenticate, (req, res) => {
+router.delete('/proxies/:id', (req, res) => {
   const ok = Proxy.deleteProxy(req.params.id);
   if (!ok) return res.status(404).json({ success: false, message: '프록시를 찾을 수 없습니다.' });
   res.json({ success: true, message: '프록시가 삭제되었습니다.' });
 });
 
-router.post('/proxies/:id/test', authenticate, (req, res) => {
+router.post('/proxies/:id/test', (req, res) => {
   const result = Proxy.testProxy(req.params.id);
   if (!result) return res.status(404).json({ success: false, message: '프록시를 찾을 수 없습니다.' });
   res.json({ success: true, result });
 });
 
-router.post('/proxies/:id/assign', authenticate, (req, res) => {
+router.post('/proxies/:id/assign', (req, res) => {
   const { accountId, accountName } = req.body;
   const proxy = Proxy.assignProxy(req.params.id, accountId, accountName);
   if (!proxy) return res.status(404).json({ success: false, message: '프록시를 찾을 수 없습니다.' });

@@ -7,7 +7,7 @@ const { getSettingsRaw } = require('../models/Settings');
 const router = Router();
 
 // POST /api/contents — 키워드를 큐에 추가 + Python AI 생성 요청
-router.post('/contents', authenticate, async (req, res) => {
+router.post('/contents', async (req, res) => {
   const { keywords, tone, contentType, productInfo } = req.body;
 
   const kwList = Array.isArray(keywords) ? keywords : [keywords];
@@ -81,33 +81,33 @@ router.post('/contents/:id/callback', (req, res) => {
 });
 
 // GET /api/contents — 대기열 조회
-router.get('/contents', authenticate, (req, res) => {
+router.get('/contents', (req, res) => {
   res.json({ success: true, contents: Content.listContents() });
 });
 
 // GET /api/contents/:id — 상세 조회
-router.get('/contents/:id', authenticate, (req, res) => {
+router.get('/contents/:id', (req, res) => {
   const item = Content.getContent(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '콘텐츠를 찾을 수 없습니다.' });
   res.json({ success: true, content: item });
 });
 
 // PATCH /api/contents/:id — 수정
-router.patch('/contents/:id', authenticate, (req, res) => {
+router.patch('/contents/:id', (req, res) => {
   const item = Content.updateContent(req.params.id, req.body);
   if (!item) return res.status(404).json({ success: false, message: '콘텐츠를 찾을 수 없습니다.' });
   res.json({ success: true, content: item });
 });
 
 // DELETE /api/contents/:id — 삭제
-router.delete('/contents/:id', authenticate, (req, res) => {
+router.delete('/contents/:id', (req, res) => {
   const ok = Content.deleteContent(req.params.id);
   if (!ok) return res.status(404).json({ success: false, message: '콘텐츠를 찾을 수 없습니다.' });
   res.json({ success: true, message: '삭제되었습니다.' });
 });
 
 // POST /api/contents/:id/regenerate — 재생성
-router.post('/contents/:id/regenerate', authenticate, async (req, res) => {
+router.post('/contents/:id/regenerate', async (req, res) => {
   const item = Content.getContent(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '콘텐츠를 찾을 수 없습니다.' });
 
