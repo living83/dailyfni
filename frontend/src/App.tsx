@@ -11,7 +11,8 @@ import Monitoring from './pages/Monitoring'
 import Engagement from './pages/Engagement'
 import SettingsPage from './pages/Settings'
 import Login from './pages/Login'
-import { useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
+import { useAuth } from './contexts/AuthContext'
 
 /* ── Navigation items ── */
 const navItems = [
@@ -46,12 +47,8 @@ function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: stri
 
 /* ── Sidebar ── */
 function Sidebar() {
-  const [systemActive] = useState(true)
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    window.location.href = '/login'
-  }
+  const { logout } = useAuth()
+  const systemActive = true
 
   return (
     <nav className="w-64 bg-card border-r border-border flex flex-col pt-8 pb-4">
@@ -78,7 +75,7 @@ function Sidebar() {
       {/* Logout */}
       <div className="px-3 mt-4">
         <button
-          onClick={handleLogout}
+          onClick={logout}
           className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all duration-200 w-full"
         >
           <LogOut size={20} className="opacity-70" />
@@ -110,7 +107,8 @@ function Sidebar() {
 
 /* ── Protected layout ── */
 function ProtectedLayout() {
-  const token = localStorage.getItem('token')
+  const { token, isLoading } = useAuth()
+  if (isLoading) return null
   if (!token) return <Navigate to="/login" replace />
 
   return (
