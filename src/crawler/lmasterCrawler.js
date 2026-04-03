@@ -50,8 +50,6 @@ async function launchBrowser() {
 
   const isLinux = process.platform === 'linux';
 
-  const isLinux = process.platform === 'linux';
-
   browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: isLinux ? 'new' : false, // 서버(Linux): headless, 로컬(Windows): 브라우저 표시
