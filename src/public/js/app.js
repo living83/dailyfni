@@ -3023,7 +3023,7 @@ function renderCustomerLedger() {
         </div>
 
         <div class="panel"><div class="panel-header"><h2>변경 이력</h2></div>
-          <div class="panel-body" style="padding:8px 12px;">
+          <div class="panel-body" style="padding:8px 12px;max-height:400px;overflow-y:auto;">
             <div class="timeline" id="ledgerChangeHistory">
               <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
             </div>
