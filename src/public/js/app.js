@@ -37,6 +37,13 @@ function addModalClose(modal, closeFn) {
   });
 }
 
+// 금액 콤마 포맷 (원 단위)
+function formatWon(val) {
+  const num = String(val).replace(/[^0-9]/g, '');
+  if (!num) return '';
+  return Number(num).toLocaleString();
+}
+
 // 주민번호 하이픈 자동 포맷
 function formatSsn(val) {
   const num = val.replace(/[^0-9]/g, '');
@@ -772,7 +779,7 @@ function renderLoanRegister() {
             </tr>
             <tr>
               <th>월변제금액</th>
-              <td colspan="3"><div style="display:flex;align-items:center;gap:4px;"><input type="text" placeholder="" style="width:200px;"> <span style="font-size:12px;color:#64748b;">만원</span></div></td>
+              <td colspan="3"><div style="display:flex;align-items:center;gap:4px;"><input type="text" placeholder="251,252" value="${monthlyPayment ? formatWon(monthlyPayment) : ''}" oninput="this.value=formatWon(this.value)" style="width:200px;"> <span style="font-size:12px;color:#64748b;">원</span></div></td>
               <td colspan="2"></td>
             </tr>
           </tbody>
@@ -2745,7 +2752,7 @@ function renderCustomerLedger() {
           <table class="info-table"><tbody>
             <tr><th>회파복 구분</th><td><input type="text" value="${c.recovery_type||'-'}" ${ro}></td><th>총회차/납입회차</th><td><input type="text" value="${(c.recovery_total_count && c.recovery_paid_count) ? c.recovery_total_count+'/'+c.recovery_paid_count : '-'}" ${ro}></td></tr>
             <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.case_no||c.caseNo||'-'}" ${ro}></td></tr>
-            <tr><th>월변제금액</th><td><input type="text" value="${c.monthly_payment ? c.monthly_payment+'만원' : '-'}" ${ro}></td><th></th><td></td></tr>
+            <tr><th>월변제금액</th><td><input type="text" value="${c.monthly_payment ? formatWon(c.monthly_payment)+'원' : '-'}" ${ro}></td><th></th><td></td></tr>
           </tbody></table>
         </div></div>
 
@@ -3023,7 +3030,7 @@ function renderCustomerEdit() {
         <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>은행명</th><td><select id="edit-bank">${selDb(['선택하세요','국민은행','신한은행','우리은행','하나은행','농협은행','카카오뱅크','토스뱅크','기업은행','SC제일','기타'], c.refund_bank||'선택하세요')}</select></td><th>예금주</th><td><input type="text" id="edit-holder" value="${c.refund_holder||''}"></td></tr>
-            <tr><th>계좌번호</th><td><input type="text" id="edit-account" value="${c.refund_account||''}"></td><th>월변제금액</th><td><input type="text" id="edit-monthly-pay" value="${c.monthly_payment||''}"></td></tr>
+            <tr><th>계좌번호</th><td><input type="text" id="edit-account" value="${c.refund_account||''}"></td><th>월변제금액</th><td><div style="display:flex;align-items:center;gap:4px;"><input type="text" id="edit-monthly-pay" value="${c.monthly_payment ? formatWon(c.monthly_payment) : ''}" oninput="this.value=formatWon(this.value)" style="flex:1;"><span style="font-size:11px;">원</span></div></td></tr>
           </tbody></table>
         </div></div>
 
@@ -3202,7 +3209,7 @@ function renderCustomerRegister() {
         <div class="panel"><div class="panel-header"><h2>개인회생 법원환급계좌</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>은행명</th><td><select id="reg-bank"><option>선택하세요</option><option>국민은행</option><option>신한은행</option><option>우리은행</option><option>하나은행</option><option>농협은행</option><option>카카오뱅크</option><option>토스뱅크</option><option>기업은행</option><option>SC제일</option><option>기타</option></select></td><th>예금주</th><td><input type="text" id="reg-holder" placeholder="예금주"></td></tr>
-            <tr><th>계좌번호</th><td><input type="text" id="reg-account" placeholder="계좌번호 입력"></td><th>월변제금액</th><td><div style="display:flex;align-items:center;gap:4px;"><input type="text" id="reg-monthly-pay" placeholder="" style="flex:1;"><span style="font-size:11px;">만원</span></div></td></tr>
+            <tr><th>계좌번호</th><td><input type="text" id="reg-account" placeholder="계좌번호 입력"></td><th>월변제금액</th><td><div style="display:flex;align-items:center;gap:4px;"><input type="text" id="reg-monthly-pay" placeholder="251,252" oninput="this.value=formatWon(this.value)" style="flex:1;"><span style="font-size:11px;">원</span></div></td></tr>
           </tbody></table>
         </div></div>
 
