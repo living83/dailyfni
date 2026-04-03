@@ -66,8 +66,15 @@ export default function Accounts() {
   const handleAddAccount = async () => {
     if (!form.accountName || !form.naverId) return toast('error', '계정명과 네이버 ID를 입력하세요.')
     if (isDemo) {
-      toast('info', '데모 모드에서는 계정을 추가할 수 없습니다.')
+      const newAcc: Account = {
+        id: `demo-${Date.now()}`, accountName: form.accountName, naverId: form.naverId,
+        tier: (form.tier || 1) as Account['tier'], isActive: true, autoPublish: true, neighborEngage: true,
+        proxyId: null, proxyServer: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      }
+      setAccounts([newAcc, ...accounts])
       setShowAddModal(false)
+      setForm({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' })
+      toast('success', '계정이 추가되었습니다.')
       return
     }
     setSaving(true)
@@ -82,7 +89,10 @@ export default function Accounts() {
   }
 
   const handleToggle = async (id: string, field: string, value: boolean) => {
-    if (isDemo) return
+    if (isDemo) {
+      setAccounts(accounts.map(a => a.id === id ? { ...a, [field]: value } : a))
+      return
+    }
     try {
       await api.patch(`/accounts/${id}`, { [field]: value })
       fetchData()
@@ -90,8 +100,12 @@ export default function Accounts() {
   }
 
   const handleDelete = async (id: string) => {
-    if (isDemo) return toast('info', '데모 모드에서는 삭제할 수 없습니다.')
     if (!confirm('정말로 이 계정을 삭제하시겠습니까?')) return
+    if (isDemo) {
+      setAccounts(accounts.filter(a => a.id !== id))
+      toast('success', '계정이 삭제되었습니다.')
+      return
+    }
     try {
       await api.delete(`/accounts/${id}`)
       toast('success', '계정이 삭제되었습니다.')
@@ -110,8 +124,12 @@ export default function Accounts() {
   }
 
   const handleDeleteProxy = async (id: string) => {
-    if (isDemo) return toast('info', '데모 모드에서는 삭제할 수 없습니다.')
     if (!confirm('프록시를 삭제하시겠습니까?')) return
+    if (isDemo) {
+      setProxies(proxies.filter(p => p.id !== id))
+      toast('success', '프록시가 삭제되었습니다.')
+      return
+    }
     try {
       await api.delete(`/proxies/${id}`)
       toast('success', '프록시가 삭제되었습니다.')
