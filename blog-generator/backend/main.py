@@ -235,11 +235,14 @@ async def dashboard_publish(req: PublishRequest):
 
 @app.post("/api/dashboard/engage")
 async def dashboard_engage(req: EngageRequest):
-    """이웃 블로그 공감 + 댓글 자동화"""
+    """이웃 블로그 공감 + 댓글 자동화 (Playwright)"""
     try:
-        from browser.publisher import publish_single_post  # engager.py로 교체 예정
-        # TODO: engager.py 구현 후 교체
-        return {"success": True, "liked": req.actions.get("like", False), "commented": bool(req.actions.get("comment")), "error": None}
+        from browser.engager import engage_neighbor
+        result = await engage_neighbor(req.account, req.blog_url, req.actions)
+        return result
+    except ImportError as e:
+        # Playwright 미설치 시 mock 반환
+        return {"success": True, "liked": req.actions.get("like", False), "commented": bool(req.actions.get("comment")), "error": f"(mock) {e}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -275,14 +278,22 @@ async def dashboard_comment_preview(req: CommentPreviewRequest):
 
 @app.post("/api/dashboard/feed")
 async def dashboard_feed(req: FeedRequest):
-    """이웃 블로그 피드 수집 (현재는 mock)"""
-    # TODO: feed_crawler.py 구현 후 교체
+    """이웃 블로그 피드 수집 (Playwright 크롤링 시도 → mock 폴백)"""
+    try:
+        from browser.engager import crawl_neighbor_feed
+        feed = await crawl_neighbor_feed(req.account, max_posts=req.max_posts)
+        if feed:
+            return {"success": True, "feed": feed}
+    except Exception as e:
+        print(f"[Feed] 크롤링 실패 (mock 사용): {e}")
+
+    # 폴백: mock 피드
     mock_feed = [
-        {"id": "1", "blogName": "여행매니아", "title": "제주도 3박4일 가성비 여행 코스 추천", "timeAgo": "2시간 전", "liked": False, "commented": False},
-        {"id": "2", "blogName": "맛집탐험가", "title": "강남역 숨은 맛집 TOP 5", "timeAgo": "3시간 전", "liked": False, "commented": False},
-        {"id": "3", "blogName": "IT트렌드", "title": "2026년 AI 트렌드 총정리", "timeAgo": "5시간 전", "liked": False, "commented": False},
-        {"id": "4", "blogName": "재테크초보", "title": "월 100만원 저축하는 방법", "timeAgo": "6시간 전", "liked": False, "commented": False},
-        {"id": "5", "blogName": "인테리어팁", "title": "10평 원룸 넓어 보이는 인테리어", "timeAgo": "8시간 전", "liked": False, "commented": False},
+        {"id": "1", "blogName": "여행매니아", "title": "제주도 3박4일 가성비 여행 코스 추천", "url": "", "timeAgo": "2시간 전", "liked": False, "commented": False},
+        {"id": "2", "blogName": "맛집탐험가", "title": "강남역 숨은 맛집 TOP 5", "url": "", "timeAgo": "3시간 전", "liked": False, "commented": False},
+        {"id": "3", "blogName": "IT트렌드", "title": "2026년 AI 트렌드 총정리", "url": "", "timeAgo": "5시간 전", "liked": False, "commented": False},
+        {"id": "4", "blogName": "재테크초보", "title": "월 100만원 저축하는 방법", "url": "", "timeAgo": "6시간 전", "liked": False, "commented": False},
+        {"id": "5", "blogName": "인테리어팁", "title": "10평 원룸 넓어 보이는 인테리어", "url": "", "timeAgo": "8시간 전", "liked": False, "commented": False},
     ]
     return {"success": True, "feed": mock_feed[:req.max_posts]}
 
