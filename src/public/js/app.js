@@ -976,12 +976,25 @@ async function submitLoanRegister() {
     const data = await res.json();
     if (data.success) {
       const result = data.data;
+      const sr = result.submitResponse;
 
-      // 스크린샷을 모달로 표시
-      showLoanScreenshot(result);
+      if (result.submitResult?.clicked) {
+        // 제출까지 완료
+        let msg = `론앤마스터 접수 완료!\n\n`;
+        msg += `입력 필드: ${result.filledCount}개\n`;
+        msg += `미매칭 필드: ${(result.notFoundFields||[]).length}개\n`;
+        msg += `제출 버튼: ${result.submitResult.buttonText}\n`;
+        if (sr?.alertMessage) msg += `\n응답: ${sr.alertMessage}`;
+        if (sr?.isSuccess) msg += `\n✓ 접수 성공`;
+        if (sr?.isError) msg += `\n✗ 접수 오류 발생`;
+        msg += `\n\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
+        alert(msg);
+      } else {
+        alert(`폼 입력은 완료했으나 제출 버튼을 찾지 못했습니다.\n미매칭: ${(result.notFoundFields||[]).join(', ')}`);
+      }
 
       // 고객 상태를 '접수'로 변경
-      if (loanRegisterCustomerId) {
+      if (loanRegisterCustomerId && result.submitResult?.clicked) {
         await fetch(`/api/customers/${loanRegisterCustomerId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

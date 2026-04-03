@@ -52,8 +52,8 @@ async function launchBrowser() {
 
   browser = await puppeteer.launch({
     executablePath: chromePath,
-    headless: isLinux ? 'new' : false,
-    defaultViewport: isLinux ? { width: 1280, height: 800 } : null,
+    headless: false, // 테스트용: 브라우저 표시. 확인 후 headless: 'new'로 변경
+    defaultViewport: null,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
 
@@ -466,18 +466,82 @@ async function submitLoanApplication(agentNo, upw, formData) {
     return { filled, notFound };
   }, formData);
 
-  // 폼 입력 후 스크린샷 캡처
-  const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
+  // 3단계: alert 다이얼로그 핸들러 (제출 전에 등록)
+  let alertMessage = '';
+  const dialogHandler = async dialog => {
+    alertMessage = dialog.message();
+    await dialog.accept();
+  };
+  page.on('dialog', dialogHandler);
+
+  // 제출 버튼 클릭
+  const submitResult = await page.evaluate(() => {
+    // 제출/등록/저장 버튼 찾기
+    const allBtns = document.querySelectorAll('input[type="submit"], input[type="button"], button, a');
+    for (const btn of allBtns) {
+      const text = (btn.value || btn.textContent || '').trim();
+      if (text.includes('등록') || text.includes('접수') || text.includes('저장') || text.includes('신청')) {
+        // "초기화", "취소" 등 제외
+        if (text.includes('초기화') || text.includes('취소') || text.includes('삭제')) continue;
+        btn.click();
+        return { clicked: true, buttonText: text };
+      }
+    }
+    // form submit 시도
+    const form = document.querySelector('form');
+    if (form) {
+      form.submit();
+      return { clicked: true, buttonText: 'form.submit()' };
+    }
+    return { clicked: false, buttonText: '' };
+  });
+
+  // 제출 후 페이지 이동/응답 대기
+  let submitResponse = null;
+  if (submitResult.clicked) {
+    try {
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+      await delay(500, 1000);
+
+      // 제출 결과 확인 (성공/실패 메시지 추출)
+      submitResponse = await page.evaluate(() => {
+        const body = document.body.innerText;
+        // alert 팝업이 뜬 경우 body에 포함될 수 있음
+        const isSuccess = body.includes('완료') || body.includes('성공') || body.includes('접수되었습니다') || body.includes('등록되었습니다');
+        const isError = body.includes('실패') || body.includes('오류') || body.includes('에러') || body.includes('ERROR');
+        return {
+          pageText: body.substring(0, 500),
+          isSuccess,
+          isError,
+          url: location.href
+        };
+      });
+    } catch (e) {
+      // 네비게이션 안 되면 alert 팝업일 수 있음
+      submitResponse = { pageText: '페이지 이동 없음 (alert 팝업 가능)', isSuccess: false, isError: false };
+    }
+  }
+
+  // 핸들러 해제
+  page.off('dialog', dialogHandler);
+  if (alertMessage) {
+    submitResponse = submitResponse || {};
+    submitResponse.alertMessage = alertMessage;
+  }
+
   const pageUrl = page.url();
 
   return {
-    success: true,
-    message: `폼 입력 완료 (${fillResult.filled.length}개 필드). 제출 대기 중.`,
+    success: submitResult.clicked,
+    message: submitResult.clicked
+      ? `폼 입력 (${fillResult.filled.length}개) + 제출 완료 [${submitResult.buttonText}]`
+      : `폼 입력 완료 (${fillResult.filled.length}개). 제출 버튼을 찾지 못했습니다.`,
     filledCount: fillResult.filled.length,
     filledFields: fillResult.filled,
     notFoundFields: fillResult.notFound,
-    pageUrl,
-    screenshot
+    submitResult,
+    submitResponse,
+    pageUrl
   };
 }
 
