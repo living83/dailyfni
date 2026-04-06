@@ -32,7 +32,7 @@ router.post('/contents', async (req, res) => {
 
   // 백그라운드에서 Python AI 생성 요청 (fire-and-forget)
   const settings = getSettingsRaw();
-  const apiKey = settings.claudeApiKey || process.env.AI_API_KEY || '';
+  const apiKey = settings.claudeApiKey || process.env.ANTHROPIC_API_KEY || process.env.AI_API_KEY || '';
 
   for (const item of created) {
     Content.updateContent(item.id, { status: '생성중' });
@@ -124,7 +124,7 @@ router.post('/contents/:id/regenerate', async (req, res) => {
 
   // 백그라운드 AI 재생성
   const settings = getSettingsRaw();
-  const apiKey = settings.claudeApiKey || process.env.AI_API_KEY || '';
+  const apiKey = settings.claudeApiKey || process.env.ANTHROPIC_API_KEY || process.env.AI_API_KEY || '';
 
   requestGenerate({
     content_id: item.id,
