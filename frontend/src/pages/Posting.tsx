@@ -72,6 +72,8 @@ export default function Posting() {
   const [accountMax, setAccountMax] = useState(3)
   const [distribution, setDistribution] = useState<PostingSettings['distribution']>('tier')
   const [autoTierUpgrade, setAutoTierUpgrade] = useState(true)
+  const [footerLink, setFooterLink] = useState('http://home.dailyfni.co.kr')
+  const [footerText, setFooterText] = useState('')
 
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
   const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
@@ -100,6 +102,8 @@ export default function Posting() {
       if (s.accountMax) setAccountMax(s.accountMax)
       if (s.distribution) setDistribution(s.distribution)
       if (s.autoTierUpgrade !== undefined) setAutoTierUpgrade(s.autoTierUpgrade)
+      if (s.footerLink !== undefined) setFooterLink(s.footerLink)
+      if (s.footerText !== undefined) setFooterText(s.footerText)
     } catch {}
   }, [])
 
@@ -142,6 +146,7 @@ export default function Posting() {
       await api.put('/posting/settings', {
         autoEngine, startHour, startMin, endHour, endMin, selectedDays,
         intervalMin, intervalMax, randomRest, dailyMax, accountMax, distribution, autoTierUpgrade,
+        footerLink, footerText,
       })
       toast('success', '포스팅 스케줄이 저장되었습니다.')
     } catch { toast('error', '설정 저장에 실패했습니다.') }
@@ -322,6 +327,24 @@ export default function Posting() {
                 <p className="text-xs text-muted-foreground mt-0.5">티어가 올라가면 광고 포스팅 비중이 자동으로 증가합니다</p>
               </div>
             </label>
+
+            {/* 하단 링크 설정 */}
+            <div className="p-3 rounded-lg border border-border bg-background/40 space-y-3">
+              <div className="text-sm font-medium text-foreground">포스팅 하단 문구</div>
+              <p className="text-xs text-muted-foreground">모든 포스팅 본문 하단에 자동으로 삽입됩니다.</p>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">하단 문구 (선택)</label>
+                <input type="text" value={footerText} onChange={e => setFooterText(e.target.value)}
+                  placeholder="예: 유익한 정보였길 바랍니다 :)"
+                  className={`${selectClass} w-full`} />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">하단 링크</label>
+                <input type="text" value={footerLink} onChange={e => setFooterLink(e.target.value)}
+                  placeholder="http://home.dailyfni.co.kr"
+                  className={`${selectClass} w-full`} />
+              </div>
+            </div>
 
             <button onClick={handleSaveSettings} disabled={savingSettings}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">

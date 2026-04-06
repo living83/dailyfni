@@ -35,7 +35,14 @@ function updatePosting(id, data) {
 function deletePosting(id) { return deleteById.run(id).changes > 0; }
 
 // ── Settings (key-value in settings table) ──
-const defaultSettings = { distribution: 'sequential', interval: '10분', dailyMax: 10, accountMax: 3 };
+const defaultSettings = {
+  distribution: 'sequential',
+  interval: '10분',
+  dailyMax: 10,
+  accountMax: 3,
+  footerLink: 'http://home.dailyfni.co.kr',
+  footerText: '',
+};
 
 function getSettings() {
   const row = db.prepare(`SELECT value FROM settings WHERE key = 'posting'`).get();
