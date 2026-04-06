@@ -6,6 +6,7 @@ const { getSettingsRaw } = require('../models/Settings');
 const { listAccounts, getAccountRaw } = require('../models/Account');
 const Engagement = require('../models/Engagement');
 const { requestEngage, requestCommentPreview } = require('./pythonBridge');
+const telegram = require('./telegram');
 
 let intervalId = null;
 let lastRunDate = '';
@@ -160,6 +161,11 @@ async function checkAndRunEngagement() {
       }
 
       console.log(`[EngScheduler] ${accountRaw.accountName}: ${visitCount}건 참여 완료`);
+      if (visitCount > 0) {
+        const likes = feed.filter(p => p.liked).length;
+        const comments = feed.filter(p => p.commented).length;
+        telegram.notifyEngagementDone(accountRaw.accountName, likes, comments);
+      }
 
       // 계정 간 간격 (30~60초)
       if (engageAccounts.indexOf(acc) < engageAccounts.length - 1) {

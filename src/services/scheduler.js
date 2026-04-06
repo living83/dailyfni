@@ -7,6 +7,7 @@ const Posting = require('../models/Posting');
 const Content = require('../models/Content');
 const { listAccounts, getAccountRaw, updateAccount } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
+const telegram = require('../services/telegram');
 
 // ── 상태 ──
 let intervalHandle = null;
@@ -121,6 +122,7 @@ function checkTierUpgrades() {
         const newTier = currentTier + 1;
         updateAccount(account.id, { tier: newTier });
         console.log(`[Scheduler] 티어 업그레이드: ${account.accountName} (Tier ${currentTier} → ${newTier}, ${days}일 경과)`);
+        telegram.notifyTierUpgrade(account.accountName, currentTier, newTier);
       }
     }
   } catch (err) {
@@ -277,6 +279,7 @@ async function checkAndRun() {
           Content.updateContent(pendingContent.id, { status: '발행완료' });
           todayPostedAccounts.add(account.id);
           console.log(`[Scheduler] 발행 성공: ${account.accountName} → ${result.url}`);
+          telegram.notifyPublishSuccess(account.accountName, pendingContent.keyword, result.url);
 
           // 키워드 자동 재활용 — 다음 발행을 위해 같은 키워드로 새 콘텐츠 등록
           const recycled = Content.recycleKeyword(pendingContent.id);
@@ -292,6 +295,7 @@ async function checkAndRun() {
             severity: '오류',
           });
           console.error(`[Scheduler] 발행 실패: ${account.accountName} — ${result.error}`);
+          telegram.notifyPublishFail(account.accountName, pendingContent.keyword, result.error);
         }
       } catch (err) {
         Posting.addError({

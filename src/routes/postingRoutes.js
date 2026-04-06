@@ -4,6 +4,7 @@ const Posting = require('../models/Posting');
 const Content = require('../models/Content');
 const { listAccounts, getAccountRaw } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
+const telegram = require('../services/telegram');
 const { getSchedulerStatus, restartScheduler } = require('../services/scheduler');
 
 const router = Router();
@@ -94,6 +95,7 @@ router.post('/posting/queue/:id/run', async (req, res) => {
         error: null,
       });
       console.log(`[Posting] 발행 성공: ${posting.keyword} → ${result.url}`);
+      telegram.notifyPublishSuccess(posting.accountName, posting.keyword, result.url);
     } else {
       Posting.updatePosting(req.params.id, {
         status: '실패',
@@ -105,6 +107,7 @@ router.post('/posting/queue/:id/run', async (req, res) => {
         severity: '오류',
       });
       console.error(`[Posting] 발행 실패: ${posting.keyword} — ${result.error}`);
+      telegram.notifyPublishFail(posting.accountName, posting.keyword, result.error);
     }
   } catch (err) {
     Posting.updatePosting(req.params.id, { status: '실패', error: err.message });
