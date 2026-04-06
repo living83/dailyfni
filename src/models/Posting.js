@@ -40,8 +40,10 @@ const defaultSettings = {
   interval: '10분',
   dailyMax: 10,
   accountMax: 3,
+  footerText: '홈페이지에서 등록 하거나',
   footerLink: 'http://home.dailyfni.co.kr',
-  footerText: '',
+  footerText2: '카카오톡으로 문의주셔도 됩니다.',
+  footerLink2: 'http://pf.kakao.com/',
 };
 
 function getSettings() {

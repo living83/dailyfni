@@ -72,8 +72,10 @@ export default function Posting() {
   const [accountMax, setAccountMax] = useState(3)
   const [distribution, setDistribution] = useState<PostingSettings['distribution']>('tier')
   const [autoTierUpgrade, setAutoTierUpgrade] = useState(true)
+  const [footerText, setFooterText] = useState('홈페이지에서 등록 하거나')
   const [footerLink, setFooterLink] = useState('http://home.dailyfni.co.kr')
-  const [footerText, setFooterText] = useState('')
+  const [footerText2, setFooterText2] = useState('카카오톡으로 문의주셔도 됩니다.')
+  const [footerLink2, setFooterLink2] = useState('http://pf.kakao.com/')
 
   const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
   const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
@@ -104,6 +106,8 @@ export default function Posting() {
       if (s.autoTierUpgrade !== undefined) setAutoTierUpgrade(s.autoTierUpgrade)
       if (s.footerLink !== undefined) setFooterLink(s.footerLink)
       if (s.footerText !== undefined) setFooterText(s.footerText)
+      if (s.footerLink2 !== undefined) setFooterLink2(s.footerLink2)
+      if (s.footerText2 !== undefined) setFooterText2(s.footerText2)
     } catch {}
   }, [])
 
@@ -146,7 +150,7 @@ export default function Posting() {
       await api.put('/posting/settings', {
         autoEngine, startHour, startMin, endHour, endMin, selectedDays,
         intervalMin, intervalMax, randomRest, dailyMax, accountMax, distribution, autoTierUpgrade,
-        footerLink, footerText,
+        footerLink, footerText, footerLink2, footerText2,
       })
       toast('success', '포스팅 스케줄이 저장되었습니다.')
     } catch { toast('error', '설정 저장에 실패했습니다.') }
@@ -328,21 +332,39 @@ export default function Posting() {
               </div>
             </label>
 
-            {/* 하단 링크 설정 */}
-            <div className="p-3 rounded-lg border border-border bg-background/40 space-y-3">
-              <div className="text-sm font-medium text-foreground">포스팅 하단 문구</div>
-              <p className="text-xs text-muted-foreground">모든 포스팅 본문 하단에 자동으로 삽입됩니다.</p>
+            {/* 하단 링크 설정 — 2개 슬롯 */}
+            <div className="p-3 rounded-lg border border-border bg-background/40 space-y-4">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">하단 문구 (선택)</label>
-                <input type="text" value={footerText} onChange={e => setFooterText(e.target.value)}
-                  placeholder="예: 유익한 정보였길 바랍니다 :)"
-                  className={`${selectClass} w-full`} />
+                <div className="text-sm font-medium text-foreground">포스팅 하단 문구 / 링크</div>
+                <p className="text-xs text-muted-foreground">모든 포스팅 본문 하단에 자동으로 삽입됩니다. (최대 2개)</p>
               </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">하단 링크</label>
+
+              {/* 링크 1 (홈페이지) */}
+              <div className="space-y-2 p-3 rounded-lg bg-background/40 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold grid place-items-center">1</span>
+                  <span className="text-xs font-medium text-foreground">홈페이지 / 메인 링크</span>
+                </div>
+                <input type="text" value={footerText} onChange={e => setFooterText(e.target.value)}
+                  placeholder="예: 홈페이지에서 등록 하거나"
+                  className={`${selectClass} w-full text-sm`} />
                 <input type="text" value={footerLink} onChange={e => setFooterLink(e.target.value)}
                   placeholder="http://home.dailyfni.co.kr"
-                  className={`${selectClass} w-full`} />
+                  className={`${selectClass} w-full text-sm`} />
+              </div>
+
+              {/* 링크 2 (카카오채널) */}
+              <div className="space-y-2 p-3 rounded-lg bg-background/40 border border-border/50">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber/15 text-amber text-[10px] font-bold grid place-items-center">2</span>
+                  <span className="text-xs font-medium text-foreground">카카오채널 / 보조 링크</span>
+                </div>
+                <input type="text" value={footerText2} onChange={e => setFooterText2(e.target.value)}
+                  placeholder="예: 카카오톡으로 문의주셔도 됩니다."
+                  className={`${selectClass} w-full text-sm`} />
+                <input type="text" value={footerLink2} onChange={e => setFooterLink2(e.target.value)}
+                  placeholder="http://pf.kakao.com/..."
+                  className={`${selectClass} w-full text-sm`} />
               </div>
             </div>
 
