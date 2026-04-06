@@ -56,12 +56,18 @@ async function requestGenerate(params) {
 async function requestPublish(params) {
   try {
     const res = await axios.post(`${PYTHON_URL}/api/dashboard/publish`, params, {
-      timeout: 300000, // 5분 (브라우저 자동화 시간 고려)
+      timeout: 900000, // 15분 (이미지 생성 + 로그인 + 본문 입력 + 발행 고려)
     });
     return res.data;
   } catch (err) {
     console.error('[PythonBridge] Publish 요청 실패:', err.message);
-    return { success: false, error: err.response?.data?.detail || err.message };
+    // 타임아웃 에러는 success 대신 특수 플래그로 반환 — 실제 발행 성공일 수 있음
+    const isTimeout = err.code === 'ECONNABORTED' || err.message.includes('timeout');
+    return {
+      success: false,
+      error: err.response?.data?.detail || err.message,
+      timedOut: isTimeout,
+    };
   }
 }
 

@@ -287,6 +287,12 @@ async function checkAndRun() {
           if (recycled) {
             console.log(`[Scheduler] 키워드 자동 재활용: "${pendingContent.keyword}" → ${recycled.id}`);
           }
+        } else if (result.timedOut) {
+          // 타임아웃: 실제로는 성공했을 수 있음 — 알림 보내지 않고 확인필요 상태
+          Posting.updatePosting(posting.id, { status: '확인필요', error: '타임아웃 — 실제 발행 여부 확인 필요' });
+          Content.updateContent(pendingContent.id, { status: '발행완료' });
+          todayPostedAccounts.add(account.id);
+          console.warn(`[Scheduler] 발행 타임아웃 (확인필요): ${account.accountName}`);
         } else {
           Posting.updatePosting(posting.id, { status: '실패', error: result.error || '발행 실패' });
           Content.updateContent(pendingContent.id, { status: '대기' }); // 실패 시 콘텐츠 복원

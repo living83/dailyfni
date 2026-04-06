@@ -108,8 +108,14 @@ router.post('/posting/queue/:id/run', async (req, res) => {
         message: result.error || '발행 실패',
         severity: '오류',
       });
-      console.error(`[Posting] 발행 실패: ${posting.keyword} — ${result.error}`);
-      telegram.notifyPublishFail(posting.accountName, posting.keyword, result.error);
+      if (result.timedOut) {
+        // 타임아웃: 실제로는 성공했을 수 있으므로 "확인 필요" 상태로 남김
+        Posting.updatePosting(posting.id, { status: '확인필요', error: '타임아웃 — 실제 발행 여부 확인 필요' });
+        console.warn(`[Posting] 발행 타임아웃 (확인필요): ${posting.keyword}`);
+      } else {
+        console.error(`[Posting] 발행 실패: ${posting.keyword} — ${result.error}`);
+        telegram.notifyPublishFail(posting.accountName, posting.keyword, result.error);
+      }
     }
   } catch (err) {
     Posting.updatePosting(req.params.id, { status: '실패', error: err.message });

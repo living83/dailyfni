@@ -345,8 +345,19 @@ async def _input_title(page, editor, title: str) -> bool:
         return False
 
 
+def _split_sentences(text: str) -> list[str]:
+    """문장 단위로 분리 — 모바일 가독성 향상"""
+    # 한국어 문장 종결 패턴 (~요., ~다., ~죠., ~니다., ?, !, ~~ 등) 뒤에 줄바꿈
+    # 각 문장 끝 마침표/물음표/느낌표 뒤에 split
+    import re as _re
+    # 문장 끝 패턴: (요|다|죠|니다|네|요|음|임|까|래)? + (\.|!|\?|~) + (공백 또는 끝)
+    # 간단하게: 문장부호(.!?) 뒤에 공백이나 줄끝이면 분리
+    sentences = _re.split(r'(?<=[.!?~])\s+', text.strip())
+    return [s.strip() for s in sentences if s.strip()]
+
+
 async def _input_body(page, editor, content: str):
-    """본문 입력 — keyboard.type() 줄 단위 (소제목 볼드 처리)"""
+    """본문 입력 — 문장별 줄바꿈 + 가운데 정렬 (모바일 가독성)"""
     # HTML 콘텐츠인 경우 변환
     plain_content = _html_to_text(content)
     # 전체 텍스트에서 ~~취소선~~ 등 마크다운 효과 일괄 제거 (멀티라인 패턴 포함)
@@ -366,8 +377,13 @@ async def _input_body(page, editor, content: str):
         await body_el.click()
         await random_delay(0.5, 1.0)
 
-    # ❌ Control+e(가운데 정렬) 제거 — 에디터 포맷 효과 트리거 방지
-    # 기본 왼쪽 정렬 유지
+    # 가운데 정렬 적용 (SE 에디터 단축키 Ctrl+Shift+E)
+    try:
+        await page.keyboard.press("Control+Shift+e")
+        await asyncio.sleep(0.3)
+        logger.info("가운데 정렬 적용")
+    except Exception as e:
+        logger.debug(f"가운데 정렬 단축키 실패 (계속): {e}")
 
     base_delay = random.randint(25, 45)
     for line in plain_content.split("\n"):
@@ -407,9 +423,19 @@ async def _input_body(page, editor, content: str):
                 await page.keyboard.press("Enter")
                 await page.keyboard.press("Control+b")
             else:
-                await page.keyboard.type(clean, delay=delay)
-                await page.keyboard.press("Enter")
-                await page.keyboard.press("Enter")
+                # 문장 단위로 분리해서 각 문장마다 줄바꿈 (모바일 가독성)
+                sentences = _split_sentences(clean)
+                if len(sentences) > 1:
+                    for i, sentence in enumerate(sentences):
+                        await page.keyboard.type(sentence, delay=delay)
+                        await page.keyboard.press("Enter")
+                        # 마지막 문장 뒤에는 추가 빈 줄 (문단 구분)
+                        if i == len(sentences) - 1:
+                            await page.keyboard.press("Enter")
+                else:
+                    await page.keyboard.type(clean, delay=delay)
+                    await page.keyboard.press("Enter")
+                    await page.keyboard.press("Enter")
         else:
             await page.keyboard.press("Enter")
 

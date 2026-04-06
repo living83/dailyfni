@@ -46,7 +46,8 @@ const defaultSettings = {
 
 function getSettings() {
   const row = db.prepare(`SELECT value FROM settings WHERE key = 'posting'`).get();
-  return row ? JSON.parse(row.value) : { ...defaultSettings };
+  // 기본값에 저장된 값 병합 — 새 필드(footerLink 등) 추가 시 하위 호환
+  return row ? { ...defaultSettings, ...JSON.parse(row.value) } : { ...defaultSettings };
 }
 
 function updateSettings(data) {
