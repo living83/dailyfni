@@ -37,10 +37,21 @@ router.get('/notifications/unread-count', async (req, res) => {
   }
 });
 
-// 읽음 처리
+// 읽음 처리 (같은 group_key 전체를 읽음으로)
 router.put('/notifications/:id/read', async (req, res) => {
   try {
-    await query('UPDATE notifications SET is_read = 1 WHERE id = ?', [req.params.id]);
+    // 대상 알림의 group_key 조회
+    const rows = await query('SELECT group_key FROM notifications WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) return res.json({ success: true });
+
+    const gk = rows[0].group_key;
+    if (gk) {
+      // 같은 그룹 전체 읽음 처리
+      await query('UPDATE notifications SET is_read = 1 WHERE group_key = ?', [gk]);
+    } else {
+      // group_key 없는 알림은 개별 처리
+      await query('UPDATE notifications SET is_read = 1 WHERE id = ?', [req.params.id]);
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -84,24 +95,30 @@ router.post('/notifications', async (req, res) => {
 // 알림 트리거 (이벤트 발생 시 호출)
 // ========================================
 
+// group_key 생성 헬퍼
+function makeGroupKey(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2,8)}`;
+}
+
 // 1. 고객 접수 알림 (홈페이지/DB유입)
 router.post('/notifications/trigger/customer-received', async (req, res) => {
   try {
     const { customerName, dbSource, assignedTo, assignedToId } = req.body;
+    const gk = makeGroupKey('customer_received');
     await query(
-      'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+      'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
       ['system', `[고객 접수] ${customerName} 고객이 접수되었습니다.`,
        `DB출처: ${dbSource || '미지정'} | 담당자: ${assignedTo || '미배정'}`,
-       assignedToId || 0]
+       assignedToId || 0, gk]
     );
-    // 관리자에게도 알림
+    // 관리자에게도 알림 (같은 group_key)
     const admins = await query('SELECT id FROM employees WHERE role = "admin"');
     for (const admin of admins) {
       if (admin.id !== assignedToId) {
         await query(
-          'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+          'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
           ['system', `[신규 고객] ${customerName} 고객이 ${dbSource || 'DB'}에서 접수되었습니다.`,
-           `담당자: ${assignedTo || '미배정'}`, admin.id]
+           `담당자: ${assignedTo || '미배정'}`, admin.id, gk]
         );
       }
     }
@@ -115,10 +132,11 @@ router.post('/notifications/trigger/customer-received', async (req, res) => {
 router.post('/notifications/trigger/consultation-reminder', async (req, res) => {
   try {
     const { customerName, nextActionDate, nextActionContent, assignedToId } = req.body;
+    const gk = makeGroupKey('consultation_reminder');
     await query(
-      'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+      'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
       ['reminder', `[상담 리마인더] ${customerName} 고객 - ${nextActionContent}`,
-       `예정일: ${nextActionDate}`, assignedToId || 0]
+       `예정일: ${nextActionDate}`, assignedToId || 0, gk]
     );
     res.json({ success: true });
   } catch (err) {
@@ -130,10 +148,11 @@ router.post('/notifications/trigger/consultation-reminder', async (req, res) => 
 router.post('/notifications/trigger/status-change', async (req, res) => {
   try {
     const { customerName, beforeStatus, afterStatus, changedBy, assignedToId } = req.body;
+    const gk = makeGroupKey('status_change');
     await query(
-      'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+      'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
       ['system', `[상태 변경] ${customerName} 고객 - ${beforeStatus} → ${afterStatus}`,
-       `처리자: ${changedBy}`, assignedToId || 0]
+       `처리자: ${changedBy}`, assignedToId || 0, gk]
     );
     res.json({ success: true });
   } catch (err) {
@@ -146,11 +165,12 @@ router.post('/notifications/trigger/loan-result', async (req, res) => {
   try {
     const { customerName, productName, result, amount, assignedToId } = req.body;
     const icon = result === '승인' ? '승인' : '부결';
+    const gk = makeGroupKey('loan_result');
     await query(
-      'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+      'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
       ['system', `[대출 ${icon}] ${customerName} 고객 - ${productName}`,
        `결과: ${result}${amount ? ' | 금액: ' + amount + '만' : ''}`,
-       assignedToId || 0]
+       assignedToId || 0, gk]
     );
     res.json({ success: true });
   } catch (err) {
@@ -162,13 +182,14 @@ router.post('/notifications/trigger/loan-result', async (req, res) => {
 router.post('/notifications/trigger/monthly-close', async (req, res) => {
   try {
     const { targetMonth, daysLeft } = req.body;
-    // 모든 직원에게 알림
+    const gk = makeGroupKey('monthly_close');
+    // 모든 직원에게 알림 (같은 group_key)
     const employees = await query('SELECT id FROM employees WHERE is_active = 1');
     for (const emp of employees) {
       await query(
-        'INSERT INTO notifications (type, title, content, target_user_id) VALUES (?, ?, ?, ?)',
+        'INSERT INTO notifications (type, title, content, target_user_id, group_key) VALUES (?, ?, ?, ?, ?)',
         ['system', `[월 마감 안내] ${targetMonth} 정산 마감 D-${daysLeft}`,
-         '정산 내역을 확인하고 마감 전 수정사항을 처리하세요.', emp.id]
+         '정산 내역을 확인하고 마감 전 수정사항을 처리하세요.', emp.id, gk]
       );
     }
     res.json({ success: true });
