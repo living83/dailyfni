@@ -3,7 +3,6 @@ const { authenticate } = require('../middleware/auth');
 const Content = require('../models/Content');
 const { requestGenerate, checkDuplicate } = require('../services/pythonBridge');
 const { getSettingsRaw } = require('../models/Settings');
-const telegram = require('../services/telegram');
 
 const router = Router();
 
@@ -55,7 +54,6 @@ router.post('/contents', async (req, res) => {
           status: result.grade === 'D' ? '저품질' : '검수완료',
         });
         console.log(`[Content] AI 생성 완료: ${item.keyword} → ${result.title}`);
-        telegram.notifyContentGenerated(item.keyword, result.title);
       } else {
         // API 키 없거나 실패 시 대기 상태 유지
         Content.updateContent(item.id, { status: '대기' });
@@ -145,7 +143,6 @@ router.post('/contents/generate-all', async (req, res) => {
           status: result.grade === 'D' ? '저품질' : '검수완료',
         });
         console.log(`[Content] AI 생성 완료: ${item.keyword} → ${result.title}`);
-        telegram.notifyContentGenerated(item.keyword, result.title);
       } else {
         Content.updateContent(item.id, { status: '대기' });
         console.log(`[Content] AI 생성 실패: ${item.keyword} — ${result?.error || 'unknown'}`);
