@@ -37,13 +37,13 @@ function SeverityIcon({ severity }: { severity: Severity }) {
   }
 }
 
-/* Tier rules from PRD */
+/* Tier rules from PRD — 1계정 1일 1포스팅, N일 주기 중 일반/광고 비율 */
 const tierRules = [
-  { tier: 1, label: '신규', general: 1, ad: 0, color: 'bg-muted-foreground' },
-  { tier: 2, label: '성장', general: 3, ad: 1, color: 'bg-primary' },
-  { tier: 3, label: '중급', general: 2, ad: 2, color: 'bg-violet-500' },
-  { tier: 4, label: '고수익', general: 1, ad: 3, color: 'bg-amber' },
-  { tier: 5, label: '최상위', general: 1, ad: 4, color: 'bg-emerald' },
+  { tier: 1, label: '신규', cycle: '매일', general: 1, ad: 0, desc: '매일 일반글 1건', color: 'bg-muted-foreground' },
+  { tier: 2, label: '성장', cycle: '4일', general: 3, ad: 1, desc: '3일 일반 → 1일 광고', color: 'bg-primary' },
+  { tier: 3, label: '중급', cycle: '4일', general: 2, ad: 2, desc: '2일 일반 → 2일 광고', color: 'bg-violet-500' },
+  { tier: 4, label: '고수익', cycle: '4일', general: 1, ad: 3, desc: '1일 일반 → 3일 광고', color: 'bg-amber' },
+  { tier: 5, label: '최상위', cycle: '5일', general: 1, ad: 4, desc: '1일 일반 → 4일 광고', color: 'bg-emerald' },
 ]
 
 const dayLabels = ['월', '화', '수', '목', '금', '토', '일']
@@ -243,17 +243,11 @@ export default function Posting() {
               </div>
             </label>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-muted-foreground mb-1.5">일일 최대</label>
-                <input type="number" value={dailyMax} onChange={e => setDailyMax(Number(e.target.value))} min={1}
-                  className={`${selectClass} w-full`} />
-              </div>
-              <div>
-                <label className="block text-sm text-muted-foreground mb-1.5">계정당 최대</label>
-                <input type="number" value={accountMax} onChange={e => setAccountMax(Number(e.target.value))} min={1}
-                  className={`${selectClass} w-full`} />
-              </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1.5">일일 포스팅 계정 수</label>
+              <input type="number" value={dailyMax} onChange={e => setDailyMax(Number(e.target.value))} min={1}
+                className={`${selectClass} w-full`} />
+              <p className="text-xs text-muted-foreground mt-1">하루에 포스팅할 계정 수 (1계정 = 1포스팅)</p>
             </div>
 
             <div>
@@ -285,29 +279,36 @@ export default function Posting() {
                 const total = t.general + t.ad
                 return (
                   <div key={t.tier} className="p-3 rounded-lg border border-border bg-background/40">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <span className={`w-2.5 h-2.5 rounded-full ${t.color}`} />
                         <span className="text-sm font-medium text-foreground">Tier {t.tier} — {t.label}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">일 {total}건</span>
+                      <span className="text-xs text-muted-foreground">{t.cycle} 주기</span>
                     </div>
+                    <p className="text-xs text-muted-foreground mb-2">{t.desc}</p>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden flex">
+                      <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden flex">
                         {t.general > 0 && (
-                          <div className="h-full bg-primary/60" style={{ width: `${(t.general / total) * 100}%` }} />
+                          <div className="h-full bg-primary/60 rounded-l-full" style={{ width: `${(t.general / total) * 100}%` }} />
                         )}
                         {t.ad > 0 && (
-                          <div className="h-full bg-amber/60" style={{ width: `${(t.ad / total) * 100}%` }} />
+                          <div className="h-full bg-amber/60 rounded-r-full" style={{ width: `${(t.ad / total) * 100}%` }} />
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground w-24 text-right">
-                        일반 {t.general} / 광고 {t.ad}
-                      </span>
+                      <div className="flex gap-3 text-[10px] shrink-0">
+                        <span className="text-primary">일반 {t.general}일</span>
+                        <span className="text-amber">광고 {t.ad}일</span>
+                      </div>
                     </div>
                   </div>
                 )
               })}
+            </div>
+
+            <div className="flex items-center gap-3 p-2 rounded-lg bg-primary/5 border border-primary/10">
+              <Info className="w-4 h-4 text-primary shrink-0" />
+              <p className="text-xs text-muted-foreground">1계정 1일 1포스팅 원칙. 티어 비율에 따라 오늘 일반/광고를 자동 결정합니다.</p>
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-border bg-background/40">
