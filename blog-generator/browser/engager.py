@@ -132,42 +132,66 @@ async def run_engagement(account: dict, config: dict) -> dict:
                 result_base["error"] = "로그인 실패"
                 return result_base
 
-            page = await context.new_page()
-
+            # 포스트 수집용 페이지 (끝나면 닫음)
+            collect_page = await context.new_page()
             max_posts = config.get("engagement_max_posts", 10)
-            post_items = await collect_blog_posts(page, max_posts=max_posts)
+            post_items = await collect_blog_posts(collect_page, max_posts=max_posts)
+            await collect_page.close()
+
             result_base["total_posts"] = len(post_items)
 
             if not post_items:
                 result_base["error"] = "참여할 포스팅을 수집하지 못했습니다."
                 return result_base
 
-            logger.info(f"[계정 {account_id}] {len(post_items)}개 포스팅 순회 시작")
+            logger.info(f"[계정 {account_id}] {len(post_items)}개 포스팅 병렬 처리 시작 (최대 3개 동시)")
 
             api_key = os.getenv("ANTHROPIC_API_KEY", "") or getattr(settings, "ANTHROPIC_API_KEY", "")
+            do_like = config.get("engagement_do_like", True)
+            do_comment = config.get("engagement_do_comment", True)
 
-            for i, item in enumerate(post_items):
-                post_url = item.get("url") if isinstance(item, dict) else str(item)
-                post_title = item.get("title", "") if isinstance(item, dict) else ""
+            # 병렬 처리 — 동시 실행 수 제한 (3개)
+            CONCURRENCY = 3
+            semaphore = asyncio.Semaphore(CONCURRENCY)
 
-                logger.info(f"[{i+1}/{len(post_items)}] {post_title[:30]}")
+            async def process_one(idx, item):
+                async with semaphore:
+                    post_url = item.get("url") if isinstance(item, dict) else str(item)
+                    post_title = item.get("title", "") if isinstance(item, dict) else ""
+                    logger.info(f"[{idx+1}/{len(post_items)}] 시작: {post_title[:30]}")
 
-                post_result = await engage_single_post(
-                    page=page,
-                    post_url=post_url,
-                    do_like=config.get("engagement_do_like", True),
-                    do_comment=config.get("engagement_do_comment", True),
-                    api_key=api_key,
-                )
+                    # 각 포스트마다 독립된 페이지 (같은 context 공유 → 쿠키 유지)
+                    page = await context.new_page()
+                    try:
+                        # 동시 시작 시 네이버가 감지할 수 있으므로 작은 지연
+                        await asyncio.sleep(random.uniform(0.5, 2.0))
+                        return await engage_single_post(
+                            page=page,
+                            post_url=post_url,
+                            do_like=do_like,
+                            do_comment=do_comment,
+                            api_key=api_key,
+                        )
+                    finally:
+                        try:
+                            await page.close()
+                        except Exception:
+                            pass
 
-                result_base["results"].append(post_result)
-                if post_result.get("like_success"):
+            # 모든 포스트 병렬 실행
+            tasks = [process_one(i, item) for i, item in enumerate(post_items)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 결과 집계
+            for r in results:
+                if isinstance(r, Exception):
+                    logger.error(f"포스트 처리 예외: {r}")
+                    continue
+                result_base["results"].append(r)
+                if r.get("like_success"):
                     result_base["like_count"] += 1
-                if post_result.get("comment_success"):
+                if r.get("comment_success"):
                     result_base["comment_count"] += 1
-
-                if i < len(post_items) - 1:
-                    await random_delay(8, 15)
 
             logger.info(f"[계정 {account_id}] 완료 — 공감 {result_base['like_count']}, 댓글 {result_base['comment_count']}")
 
