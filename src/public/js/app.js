@@ -589,6 +589,16 @@ function renderLoanRegister() {
   const recoveryType = c ? (c.recovery_type || '') : '';
   const courtName = c ? (c.court_name || c.courtName || '') : '';
   const caseNo = c ? (c.case_no || c.caseNo || '') : '';
+  // 사건번호 파싱: "2026개회223522" → { year: "2026", type: "개회", num: "223522" }
+  function parseCaseNo(cn) {
+    if (!cn) return { year: '', type: '', num: '' };
+    const m = cn.match(/^(\d{4})(가단|가합|개회|개파|회단|신회|간회단|하단|하면|기타)(.*)$/);
+    if (m) return { year: m[1], type: m[2], num: m[3] };
+    // 숫자만 있는 경우: 앞 4자리 연도, 나머지 번호
+    const nums = cn.replace(/[^0-9]/g, '');
+    return { year: nums.substring(0, 4), type: '', num: nums.substring(4) };
+  }
+  const caseParsed = parseCaseNo(caseNo);
   const refundBank = c ? (c.refund_bank || c.refundBank || '') : '';
   const refundAccount = c ? (c.refund_account || c.refundAccount || '') : '';
   const monthlyPayment = c ? (c.monthly_payment || '') : '';
@@ -776,9 +786,9 @@ function renderLoanRegister() {
               <th>사건번호</th>
               <td colspan="2">
                 <div style="display:flex;gap:4px;align-items:center;">
-                  <input type="text" style="width:60px;" placeholder="0000" value="${caseNo ? caseNo.substring(0,4) : ''}">
-                  <select style="width:70px;">${sel(['선택','가단','가합','개회','개파','기타'], c&&c.caseNo ? '' : '선택')}</select>
-                  <input type="text" style="width:80px;" placeholder="" value="${caseNo ? caseNo.replace(/[^0-9]/g,'').substring(4) : ''}">
+                  <input type="text" style="width:60px;" placeholder="0000" value="${caseParsed.year}">
+                  <select style="width:70px;">${sel(['선택','가단','가합','개회','개파','회단','신회','간회단','하단','하면','기타'], caseParsed.type || '선택')}</select>
+                  <input type="text" style="width:80px;" placeholder="" value="${caseParsed.num}">
                 </div>
               </td>
             </tr>
