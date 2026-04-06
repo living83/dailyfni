@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { UserPlus, Pencil, Trash2, Shield, Wifi, X, Plus } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import Toggle from '../components/Toggle'
@@ -17,25 +16,7 @@ const tierConfig: Record<number, { label: string; color: string }> = {
   5: { label: 'Tier 5', color: 'bg-emerald/15 text-emerald' },
 }
 
-/* ── Demo fallback data ── */
-const demoAccounts: Account[] = [
-  { id: '1', accountName: '블로그마스터', naverId: 'blog_master99', tier: 5, isActive: true, autoPublish: true, neighborEngage: true, proxyId: '1', proxyServer: '103.15.22.41:8080', createdAt: '', updatedAt: '' },
-  { id: '2', accountName: '대출전문블로그', naverId: 'loan_expert01', tier: 4, isActive: true, autoPublish: true, neighborEngage: false, proxyId: '2', proxyServer: '198.44.67.12:3128', createdAt: '', updatedAt: '' },
-  { id: '3', accountName: '마케팅신입01', naverId: 'mkt_newbie01', tier: 1, isActive: true, autoPublish: false, neighborEngage: false, proxyId: null, proxyServer: null, createdAt: '', updatedAt: '' },
-  { id: '4', accountName: '금융정보센터', naverId: 'fin_info_center', tier: 3, isActive: true, autoPublish: true, neighborEngage: true, proxyId: '3', proxyServer: '45.77.123.88:1080', createdAt: '', updatedAt: '' },
-  { id: '5', accountName: '생활꿀팁모음', naverId: 'life_tips_kr', tier: 2, isActive: true, autoPublish: true, neighborEngage: true, proxyId: '4', proxyServer: '72.11.198.33:8888', createdAt: '', updatedAt: '' },
-  { id: '6', accountName: '재테크달인', naverId: 'invest_pro77', tier: 2, isActive: false, autoPublish: false, neighborEngage: false, proxyId: null, proxyServer: null, createdAt: '', updatedAt: '' },
-]
-
-const demoProxies: Proxy[] = [
-  { id: '1', ip: '103.15.22.41', port: 8080, username: 'user1', status: 'normal', speed: 45, assignedAccountId: '1', assignedAccountName: '블로그마스터' },
-  { id: '2', ip: '198.44.67.12', port: 3128, username: 'proxy_user', status: 'normal', speed: 120, assignedAccountId: '2', assignedAccountName: '대출전문블로그' },
-  { id: '3', ip: '45.77.123.88', port: 1080, username: 'admin', status: 'slow', speed: 350, assignedAccountId: '4', assignedAccountName: '금융정보센터' },
-  { id: '4', ip: '72.11.198.33', port: 8888, username: '', status: 'error', speed: null, assignedAccountId: '5', assignedAccountName: '생활꿀팁모음' },
-]
-
 export default function Accounts() {
-  const { isDemo } = useAuth()
   const { toast } = useToast()
   const [tab, setTab] = useState<'accounts' | 'proxies'>('accounts')
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -49,12 +30,6 @@ export default function Accounts() {
   const [proxyForm, setProxyForm] = useState({ ip: '', port: '', username: '', password: '' })
 
   const fetchData = useCallback(async () => {
-    if (isDemo) {
-      setAccounts(demoAccounts)
-      setProxies(demoProxies)
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
       const [accRes, proxyRes] = await Promise.all([api.get('/accounts'), api.get('/proxies')])
@@ -62,24 +37,12 @@ export default function Accounts() {
       setProxies(proxyRes.data.proxies || [])
     } catch { /* silently fail */ }
     setLoading(false)
-  }, [isDemo])
+  }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   const handleAddAccount = async () => {
     if (!form.accountName || !form.naverId) return toast('error', '계정명과 네이버 ID를 입력하세요.')
-    if (isDemo) {
-      const newAcc: Account = {
-        id: `demo-${Date.now()}`, accountName: form.accountName, naverId: form.naverId,
-        tier: (form.tier || 1) as Account['tier'], isActive: true, autoPublish: true, neighborEngage: true,
-        proxyId: null, proxyServer: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      }
-      setAccounts([newAcc, ...accounts])
-      setShowAddModal(false)
-      setForm({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' })
-      toast('success', '계정이 추가되었습니다.')
-      return
-    }
     setSaving(true)
     try {
       await api.post('/accounts', form)
@@ -104,12 +67,6 @@ export default function Accounts() {
 
   const handleEditAccount = async () => {
     if (!editingAccount) return
-    if (isDemo) {
-      setAccounts(accounts.map(a => a.id === editingAccount.id ? { ...a, accountName: form.accountName, naverId: form.naverId, tier: form.tier as Account['tier'] } : a))
-      setEditingAccount(null)
-      toast('success', '계정이 수정되었습니다.')
-      return
-    }
     setSaving(true)
     try {
       await api.patch(`/accounts/${editingAccount.id}`, form)
@@ -121,10 +78,6 @@ export default function Accounts() {
   }
 
   const handleToggle = async (id: string, field: string, value: boolean) => {
-    if (isDemo) {
-      setAccounts(accounts.map(a => a.id === id ? { ...a, [field]: value } : a))
-      return
-    }
     try {
       await api.patch(`/accounts/${id}`, { [field]: value })
       fetchData()
@@ -133,11 +86,6 @@ export default function Accounts() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('정말로 이 계정을 삭제하시겠습니까?')) return
-    if (isDemo) {
-      setAccounts(accounts.filter(a => a.id !== id))
-      toast('success', '계정이 삭제되었습니다.')
-      return
-    }
     try {
       await api.delete(`/accounts/${id}`)
       toast('success', '계정이 삭제되었습니다.')
@@ -147,18 +95,6 @@ export default function Accounts() {
 
   const handleAddProxy = async () => {
     if (!proxyForm.ip || !proxyForm.port) return toast('error', 'IP와 포트를 입력하세요.')
-    if (isDemo) {
-      const newProxy: Proxy = {
-        id: `demo-${Date.now()}`, ip: proxyForm.ip, port: Number(proxyForm.port),
-        username: proxyForm.username, status: 'normal', speed: null,
-        assignedAccountId: null, assignedAccountName: null,
-      }
-      setProxies([newProxy, ...proxies])
-      setShowProxyModal(false)
-      setProxyForm({ ip: '', port: '', username: '', password: '' })
-      toast('success', '프록시가 추가되었습니다.')
-      return
-    }
     setSaving(true)
     try {
       await api.post('/proxies', proxyForm)
@@ -171,7 +107,6 @@ export default function Accounts() {
   }
 
   const handleProxyTest = async (id: string) => {
-    if (isDemo) return toast('info', `프록시 연결 테스트 완료 (${Math.floor(Math.random() * 200 + 30)}ms)`)
     try {
       const { data } = await api.post(`/proxies/${id}/test`)
       toast(data.result.status === 'error' ? 'error' : 'success',
@@ -182,11 +117,6 @@ export default function Accounts() {
 
   const handleDeleteProxy = async (id: string) => {
     if (!confirm('프록시를 삭제하시겠습니까?')) return
-    if (isDemo) {
-      setProxies(proxies.filter(p => p.id !== id))
-      toast('success', '프록시가 삭제되었습니다.')
-      return
-    }
     try {
       await api.delete(`/proxies/${id}`)
       toast('success', '프록시가 삭제되었습니다.')

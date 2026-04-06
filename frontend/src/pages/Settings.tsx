@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Save, Users, Shield, Download, Upload, Heart, MessageSquare, Clock, Sliders } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import Toggle from '../components/Toggle'
@@ -12,7 +11,7 @@ const accountList = [
   '금융정보센터', '생활경제팁', 'IT트렌드블로그',
 ]
 
-const demoSettings: SystemSettings = {
+const defaultSettings: SystemSettings = {
   claudeApiKey: '', naverClientId: '', naverClientSecret: '',
   engagementBot: true, engStartHour: '09', engStartMin: '00',
   engEndHour: '18', engEndMin: '00',
@@ -25,29 +24,27 @@ const demoSettings: SystemSettings = {
 }
 
 export default function Settings() {
-  const { isDemo } = useAuth()
   const { toast } = useToast()
 
   const { data: serverData, loading: fetchLoading } = useFetch<{ settings: SystemSettings }>(
-    isDemo ? null : '/settings'
+    '/settings'
   )
   const { mutate: saveSettings, loading: saving } = useMutation('/settings', 'put')
 
-  const [form, setForm] = useState<SystemSettings>(demoSettings)
+  const [form, setForm] = useState<SystemSettings>(defaultSettings)
   const [allAccounts, setAllAccounts] = useState(false)
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, boolean>>(
     Object.fromEntries(accountList.map((a, i) => [a, i < 4]))
   )
 
   useEffect(() => {
-    if (serverData?.settings) setForm({ ...demoSettings, ...serverData.settings })
+    if (serverData?.settings) setForm({ ...defaultSettings, ...serverData.settings })
   }, [serverData])
 
   const set = <K extends keyof SystemSettings>(key: K, val: SystemSettings[K]) =>
     setForm((prev) => ({ ...prev, [key]: val }))
 
   const handleSave = async () => {
-    if (isDemo) { toast('info', '데모 모드에서는 설정이 저장되지 않습니다.'); return }
     const result = await saveSettings(form)
     if (result) toast('success', '설정이 저장되었습니다.')
     else toast('error', '설정 저장에 실패했습니다.')

@@ -12,7 +12,6 @@ import {
   Save,
   Send,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
@@ -27,25 +26,6 @@ import type {
 
 /* ── Types for local display ── */
 type Severity = '경고' | '오류' | '정보'
-
-/* ── Demo data ── */
-const demoQueue: PostingQueueItem[] = [
-  { id: '1', keyword: '청년도약계좌', accountName: '블로그계정1', tone: '친근톤', scheduledTime: '10:30', status: '발행완료' },
-  { id: '2', keyword: '신용대출 비교', accountName: '마케팅02', tone: '전문톤', scheduledTime: '11:00', status: '발행완료' },
-  { id: '3', keyword: '전세자금대출', accountName: '대출전문03', tone: '리뷰톤', scheduledTime: '11:30', status: '발행중' },
-  { id: '4', keyword: '개인회생 방법', accountName: '재테크블로그', tone: '전문톤', scheduledTime: '12:00', status: '대기중' },
-  { id: '5', keyword: '파킹통장 추천', accountName: '금융정보센터', tone: '친근톤', scheduledTime: '즉시', status: '대기중' },
-  { id: '6', keyword: '주택담보대출', accountName: '생활경제팁', tone: '리뷰톤', scheduledTime: '13:00', status: '대기중' },
-  { id: '7', keyword: '적금 금리 비교', accountName: '절약의달인', tone: '전문톤', scheduledTime: '13:30', status: '실패' },
-  { id: '8', keyword: 'DSR 계산법', accountName: '머니투데이K', tone: '친근톤', scheduledTime: '14:00', status: '대기중' },
-]
-
-const demoErrors: ErrorLogEntry[] = [
-  { id: 'e1', timestamp: '10:45:12', accountName: '마케팅02', message: '로그인 실패 - 캡챠 감지', severity: '오류' },
-  { id: 'e2', timestamp: '10:32:08', accountName: '절약의달인', message: '게시 제한 - 일일 한도 초과', severity: '경고' },
-  { id: 'e3', timestamp: '10:15:44', accountName: '생활경제팁', message: '프록시 연결 실패', severity: '오류' },
-  { id: 'e4', timestamp: '09:58:21', accountName: '대출전문03', message: '저품질 판정 - 재작성 필요', severity: '정보' },
-]
 
 const defaultSettings: PostingSettings = {
   distribution: 'sequential',
@@ -94,7 +74,6 @@ function SeverityIcon({ severity }: { severity: Severity }) {
 
 /* ── Component ── */
 export default function Posting() {
-  const { isDemo } = useAuth()
   const { toast } = useToast()
 
   const [queue, setQueue] = useState<PostingQueueItem[]>([])
@@ -112,39 +91,23 @@ export default function Posting() {
 
   /* ── Fetch queue ── */
   const fetchQueue = useCallback(async () => {
-    if (isDemo) {
-      setQueue(demoQueue)
-      setLoading(false)
-      return
-    }
     try {
       const { data } = await api.get('/posting/queue')
       setQueue(data.queue || [])
     } catch { /* silent */ }
     setLoading(false)
-  }, [isDemo])
+  }, [])
 
   /* ── Fetch errors ── */
   const fetchErrors = useCallback(async () => {
-    if (isDemo) {
-      setErrors(demoErrors)
-      return
-    }
     try {
       const { data } = await api.get('/posting/errors')
       setErrors(data.errors || [])
     } catch { /* silent */ }
-  }, [isDemo])
+  }, [])
 
   /* ── Fetch settings ── */
   const fetchSettings = useCallback(async () => {
-    if (isDemo) {
-      setDistribution(defaultSettings.distribution)
-      setInterval(defaultSettings.interval)
-      setDailyMax(defaultSettings.dailyMax)
-      setAccountMax(defaultSettings.accountMax)
-      return
-    }
     try {
       const { data } = await api.get('/posting/settings')
       const s = data.settings as PostingSettings
@@ -153,7 +116,7 @@ export default function Posting() {
       setDailyMax(s.dailyMax)
       setAccountMax(s.accountMax)
     } catch { /* silent */ }
-  }, [isDemo])
+  }, [])
 
   useEffect(() => {
     fetchQueue()
@@ -163,10 +126,6 @@ export default function Posting() {
 
   /* ── Run all ── */
   const handleRunAll = async () => {
-    if (isDemo) {
-      toast('info', '데모 모드에서는 실제 발행이 실행되지 않습니다.')
-      return
-    }
     setRunningAll(true)
     try {
       const { data } = await api.post('/posting/run-all')
@@ -187,10 +146,6 @@ export default function Posting() {
 
   /* ── Run single ── */
   const handleRunOne = async (id: string) => {
-    if (isDemo) {
-      toast('info', '데모 모드에서는 실제 발행이 실행되지 않습니다.')
-      return
-    }
     setRunningIds((prev) => new Set(prev).add(id))
     try {
       const { data } = await api.post(`/posting/queue/${id}/run`)
@@ -218,11 +173,6 @@ export default function Posting() {
 
   /* ── Delete ── */
   const handleDelete = async (id: string) => {
-    if (isDemo) {
-      setQueue((prev) => prev.filter((r) => r.id !== id))
-      toast('success', '항목이 삭제되었습니다.')
-      return
-    }
     try {
       await api.delete(`/posting/queue/${id}`)
       setQueue((prev) => prev.filter((r) => r.id !== id))
@@ -234,10 +184,6 @@ export default function Posting() {
 
   /* ── Save settings ── */
   const handleSaveSettings = async () => {
-    if (isDemo) {
-      toast('success', '설정이 저장되었습니다. (데모)')
-      return
-    }
     setSavingSettings(true)
     try {
       await api.put('/posting/settings', { distribution, interval, dailyMax, accountMax })

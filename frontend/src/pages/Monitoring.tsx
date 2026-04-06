@@ -7,7 +7,6 @@ import {
   TrendingUp,
   ExternalLink,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch } from '../hooks/useApi'
 import StatusBadge from '../components/StatusBadge'
@@ -56,44 +55,6 @@ interface PostingRecordsResponse {
   total: number
 }
 
-/* ── Demo data (fallback when API unavailable) ── */
-const demoMonitoring: MonitoringStats = {
-  total: 156,
-  success: 149,
-  failed: 7,
-  successRate: 95.5,
-}
-
-const demoAccountPerformance: AccountPerformance[] = [
-  { accountName: '블로그계정1', tier: 3, totalPosts: 32, success: 32, failed: 0, successRate: 100 },
-  { accountName: '마케팅02', tier: 4, totalPosts: 28, success: 27, failed: 1, successRate: 96.4 },
-  { accountName: '대출전문03', tier: 5, totalPosts: 30, success: 29, failed: 1, successRate: 96.7 },
-  { accountName: '재테크블로그', tier: 2, totalPosts: 25, success: 24, failed: 1, successRate: 96.0 },
-  { accountName: '금융정보센터', tier: 3, totalPosts: 22, success: 20, failed: 2, successRate: 90.9 },
-  { accountName: '생활경제팁', tier: 1, totalPosts: 19, success: 17, failed: 2, successRate: 89.5 },
-].sort((a, b) => b.successRate - a.successRate)
-
-const demoTierStats: TierPosting[] = [
-  { tier: 1, label: '신규', general: 15, ad: 0 },
-  { tier: 2, label: '성장', general: 30, ad: 10 },
-  { tier: 3, label: '중급', general: 20, ad: 20 },
-  { tier: 4, label: '고수익', general: 8, ad: 24 },
-  { tier: 5, label: '최상위', general: 5, ad: 24 },
-]
-
-const demoPostingRecords: PostingRecord[] = [
-  { date: '04-02 10:32', account: '블로그계정1', keyword: '청년도약계좌', title: '청년도약계좌 가입조건 총정리 (2026년 최신)', tone: '친근톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example1' },
-  { date: '04-02 10:28', account: '마케팅02', keyword: '신용대출 비교', title: '신용대출 금리 비교, 은행별 최저금리 TOP5', tone: '전문톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example2' },
-  { date: '04-02 10:15', account: '대출전문03', keyword: '전세자금대출', title: '전세자금대출 조건부터 신청방법까지 한눈에', tone: '리뷰톤', status: '발행완료', quality: 'B', link: 'https://blog.naver.com/example3' },
-  { date: '04-02 10:05', account: '재테크블로그', keyword: '개인회생 방법', title: '개인회생 신청 절차와 비용, 실제 후기 공유', tone: '전문톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example4' },
-  { date: '04-01 16:20', account: '금융정보센터', keyword: '파킹통장 추천', title: '파킹통장 금리 비교 2026, 어디가 제일 높을까?', tone: '친근톤', status: '저품질', quality: 'C', link: 'https://blog.naver.com/example5' },
-  { date: '04-01 15:45', account: '생활경제팁', keyword: '주택담보대출', title: '주택담보대출 LTV DSR 한도 계산기 완벽 가이드', tone: '리뷰톤', status: '발행완료', quality: 'B', link: 'https://blog.naver.com/example6' },
-  { date: '04-01 14:30', account: '절약의달인', keyword: '적금 금리 비교', title: '2026 적금 금리 비교, 연 5% 넘는 상품은?', tone: '전문톤', status: '실패', quality: 'D', link: null },
-  { date: '04-01 13:10', account: '머니투데이K', keyword: 'DSR 계산법', title: 'DSR 계산법 쉽게 이해하기, 대출 한도 늘리는 팁', tone: '친근톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example8' },
-  { date: '04-01 11:50', account: '블로그계정1', keyword: '카드 혜택 비교', title: '신용카드 혜택 비교, 2026 상반기 추천 카드 BEST', tone: '리뷰톤', status: '발행완료', quality: 'B', link: 'https://blog.naver.com/example9' },
-  { date: '04-01 10:25', account: '마케팅02', keyword: '비상금 대출', title: '비상금 대출 앱 3곳 비교, 금리·한도·속도 총정리', tone: '전문톤', status: '발행완료', quality: 'A', link: 'https://blog.naver.com/example10' },
-]
-
 /* ── Helpers ── */
 function rateColor(rate: number) {
   if (rate >= 95) return 'text-emerald'
@@ -124,30 +85,23 @@ const gradeStyle: Record<string, string> = {
   D: 'bg-destructive/15 text-destructive',
 }
 
+const defaultStats: MonitoringStats = { total: 0, success: 0, failed: 0, successRate: 0 }
+
 /* ── Component ── */
 export default function Monitoring() {
-  const { isDemo } = useAuth()
   const { addToast } = useToast()
 
-  const { data: monitoringData, loading: monLoading, refetch: refetchMon } = useFetch<MonitoringStats>(
-    isDemo ? null : '/stats/monitoring'
-  )
-  const { data: accountData, loading: accLoading, refetch: refetchAcc } = useFetch<AccountPerformance[]>(
-    isDemo ? null : '/stats/account-performance'
-  )
-  const { data: tierData, loading: tierLoading, refetch: refetchTier } = useFetch<TierPosting[]>(
-    isDemo ? null : '/stats/tier-posting'
-  )
-  const { data: recordsData, loading: recLoading, refetch: refetchRec } = useFetch<PostingRecordsResponse>(
-    isDemo ? null : '/stats/posting-records'
-  )
+  const { data: monitoringData, loading: monLoading, refetch: refetchMon } = useFetch<MonitoringStats>('/stats/monitoring')
+  const { data: accountData, loading: accLoading, refetch: refetchAcc } = useFetch<AccountPerformance[]>('/stats/account-performance')
+  const { data: tierData, loading: tierLoading, refetch: refetchTier } = useFetch<TierPosting[]>('/stats/tier-posting')
+  const { data: recordsData, loading: recLoading, refetch: refetchRec } = useFetch<PostingRecordsResponse>('/stats/posting-records')
 
-  const stats = monitoringData || demoMonitoring
-  const accountPerformance = accountData || demoAccountPerformance
-  const tierStats = tierData || demoTierStats
-  const postingRecords = recordsData?.records || demoPostingRecords
+  const stats = monitoringData || defaultStats
+  const accountPerformance = accountData || []
+  const tierStats = tierData || []
+  const postingRecords = recordsData?.records || []
 
-  const isLoading = !isDemo && (monLoading || accLoading || tierLoading || recLoading)
+  const isLoading = monLoading || accLoading || tierLoading || recLoading
 
   const handleRefresh = () => {
     refetchMon()
@@ -234,18 +188,26 @@ export default function Monitoring() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {accountPerformance.map((row) => (
-                  <tr key={row.accountName} className="text-foreground">
-                    <td className="py-3 font-medium">{row.accountName}</td>
-                    <td className="py-3 text-muted-foreground">Tier {row.tier}</td>
-                    <td className="py-3 text-muted-foreground">{row.totalPosts}</td>
-                    <td className="py-3 text-emerald">{row.success}</td>
-                    <td className="py-3 text-destructive">{row.failed}</td>
-                    <td className={`py-3 font-medium ${rateColor(row.successRate)}`}>
-                      {row.successRate}%
+                {accountPerformance.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                      계정 성과 데이터가 없습니다
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  accountPerformance.map((row) => (
+                    <tr key={row.accountName} className="text-foreground">
+                      <td className="py-3 font-medium">{row.accountName}</td>
+                      <td className="py-3 text-muted-foreground">Tier {row.tier}</td>
+                      <td className="py-3 text-muted-foreground">{row.totalPosts}</td>
+                      <td className="py-3 text-emerald">{row.success}</td>
+                      <td className="py-3 text-destructive">{row.failed}</td>
+                      <td className={`py-3 font-medium ${rateColor(row.successRate)}`}>
+                        {row.successRate}%
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -254,46 +216,52 @@ export default function Monitoring() {
         {/* Tier Posting Stats */}
         <div className="glass-panel rounded-xl p-5">
           <h2 className="text-lg font-semibold text-foreground mb-4">티어별 포스팅 현황</h2>
-          <ul className="space-y-4">
-            {tierStats.map((t) => {
-              const total = t.general + t.ad
-              const maxTotal = 54 // max for bar scaling
-              return (
-                <li key={t.tier}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${tierDotColor[t.tier] || 'bg-primary'}`} />
-                      <span className="text-sm text-foreground">
-                        Tier {t.tier} &mdash; {t.label}
-                      </span>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{total}건</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground mb-1.5">
-                    일반 {t.general}건 / 광고 {t.ad}건
-                  </div>
-                  <div className="w-full h-2.5 rounded-full bg-muted flex overflow-hidden">
-                    <div
-                      className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
-                      style={{ width: `${(t.general / maxTotal) * 100}%` }}
-                    />
-                    <div
-                      className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} opacity-40 transition-all duration-500`}
-                      style={{ width: `${(t.ad / maxTotal) * 100}%` }}
-                    />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-          <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-2 rounded-sm bg-primary" /> 일반
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-2 rounded-sm bg-primary opacity-40" /> 광고
-            </span>
-          </div>
+          {tierStats.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">티어별 포스팅 데이터가 없습니다</p>
+          ) : (
+            <>
+              <ul className="space-y-4">
+                {tierStats.map((t) => {
+                  const total = t.general + t.ad
+                  const maxTotal = 54 // max for bar scaling
+                  return (
+                    <li key={t.tier}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${tierDotColor[t.tier] || 'bg-primary'}`} />
+                          <span className="text-sm text-foreground">
+                            Tier {t.tier} &mdash; {t.label}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{total}건</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-1.5">
+                        일반 {t.general}건 / 광고 {t.ad}건
+                      </div>
+                      <div className="w-full h-2.5 rounded-full bg-muted flex overflow-hidden">
+                        <div
+                          className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
+                          style={{ width: `${(t.general / maxTotal) * 100}%` }}
+                        />
+                        <div
+                          className={`h-full ${tierBarColor[t.tier] || 'bg-primary'} opacity-40 transition-all duration-500`}
+                          style={{ width: `${(t.ad / maxTotal) * 100}%` }}
+                        />
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+              <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-2 rounded-sm bg-primary" /> 일반
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-2 rounded-sm bg-primary opacity-40" /> 광고
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -315,40 +283,48 @@ export default function Monitoring() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {postingRecords.map((row, i) => (
-                <tr key={i} className="text-foreground hover:bg-white/[0.03] transition-colors">
-                  <td className="py-3 text-muted-foreground whitespace-nowrap">{row.date}</td>
-                  <td className="py-3 font-medium whitespace-nowrap">{row.account}</td>
-                  <td className="py-3 text-muted-foreground whitespace-nowrap">{row.keyword}</td>
-                  <td className="py-3 max-w-[260px] truncate" title={row.title}>{row.title}</td>
-                  <td className="py-3 whitespace-nowrap">
-                    <StatusBadge label={row.tone} />
-                  </td>
-                  <td className="py-3 whitespace-nowrap">
-                    <StatusBadge label={row.status} />
-                  </td>
-                  <td className="py-3">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${gradeStyle[row.quality] || 'bg-muted text-muted-foreground'}`}>
-                      {row.quality}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    {row.link ? (
-                      <a
-                        href={row.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-primary hover:text-secondary text-xs transition-colors"
-                      >
-                        보기
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground">&mdash;</span>
-                    )}
+              {postingRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                    포스팅 기록이 없습니다
                   </td>
                 </tr>
-              ))}
+              ) : (
+                postingRecords.map((row, i) => (
+                  <tr key={i} className="text-foreground hover:bg-white/[0.03] transition-colors">
+                    <td className="py-3 text-muted-foreground whitespace-nowrap">{row.date}</td>
+                    <td className="py-3 font-medium whitespace-nowrap">{row.account}</td>
+                    <td className="py-3 text-muted-foreground whitespace-nowrap">{row.keyword}</td>
+                    <td className="py-3 max-w-[260px] truncate" title={row.title}>{row.title}</td>
+                    <td className="py-3 whitespace-nowrap">
+                      <StatusBadge label={row.tone} />
+                    </td>
+                    <td className="py-3 whitespace-nowrap">
+                      <StatusBadge label={row.status} />
+                    </td>
+                    <td className="py-3">
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${gradeStyle[row.quality] || 'bg-muted text-muted-foreground'}`}>
+                        {row.quality}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      {row.link ? (
+                        <a
+                          href={row.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:text-secondary text-xs transition-colors"
+                        >
+                          보기
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">&mdash;</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

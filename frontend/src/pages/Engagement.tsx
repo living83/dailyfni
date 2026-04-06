@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Heart, MessageSquare, Users, Play, Clock, RefreshCw, Edit3 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import { PageSkeleton } from '../components/LoadingSkeleton'
@@ -29,32 +28,13 @@ interface Activity {
   target: string
 }
 
-/* ── Demo fallback data ── */
-const demoFeed: FeedPost[] = [
-  { id: '1', blogName: '여행매니아', title: '제주도 3박4일 가성비 여행 코스 추천', timeAgo: '32분 전', liked: true, commented: true },
-  { id: '2', blogName: '맛집탐험가', title: '강남역 숨은 맛집 TOP 5', timeAgo: '1시간 전', liked: true, commented: false },
-  { id: '3', blogName: 'IT트렌드', title: '2026년 AI 트렌드 총정리', timeAgo: '2시간 전', liked: false, commented: false },
-  { id: '4', blogName: '재테크초보', title: '월 100만원 저축하는 방법', timeAgo: '3시간 전', liked: true, commented: true },
-  { id: '5', blogName: '인테리어팁', title: '10평 원룸 넓어 보이는 인테리어', timeAgo: '4시간 전', liked: false, commented: false },
-  { id: '6', blogName: '건강생활', title: '아침 루틴으로 하루를 바꾸는 법', timeAgo: '5시간 전', liked: true, commented: false },
-]
-
-const demoStats: Stats = { todayLikes: 47, todayComments: 23, activeAccounts: 8, totalAccounts: 12 }
-
-const demoActivities: Activity[] = [
-  { time: '10:32', accountName: '블로그마스터', action: '♥ 공감', target: '제주도 3박4일...' },
-  { time: '10:30', accountName: '블로그마스터', action: '💬 댓글', target: '강남역 숨은 맛집...' },
-  { time: '10:28', accountName: '대출전문블로그', action: '♥ 공감', target: 'AI 트렌드 총정리' },
-  { time: '10:25', accountName: '재테크블로그', action: '♥ 공감', target: '월 100만원 저축...' },
-  { time: '10:22', accountName: '재테크블로그', action: '💬 댓글', target: '원룸 인테리어...' },
-]
+const defaultStats: Stats = { todayLikes: 0, todayComments: 0, activeAccounts: 0, totalAccounts: 0 }
 
 export default function Engagement() {
-  const { isDemo } = useAuth()
   const { toast } = useToast()
 
   const [feed, setFeed] = useState<FeedPost[]>([])
-  const [stats, setStats] = useState<Stats>(demoStats)
+  const [stats, setStats] = useState<Stats>(defaultStats)
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -67,28 +47,25 @@ export default function Engagement() {
 
   /* ── Fetch helpers ── */
   const fetchFeed = useCallback(async () => {
-    if (isDemo) { setFeed(demoFeed); return }
     try {
       const { data } = await api.get('/engagement/feed')
       setFeed(data.feed || [])
     } catch { /* silent */ }
-  }, [isDemo])
+  }, [])
 
   const fetchStats = useCallback(async () => {
-    if (isDemo) { setStats(demoStats); return }
     try {
       const { data } = await api.get('/engagement/stats')
-      setStats(data.stats || demoStats)
+      setStats(data.stats || defaultStats)
     } catch { /* silent */ }
-  }, [isDemo])
+  }, [])
 
   const fetchActivities = useCallback(async () => {
-    if (isDemo) { setActivities(demoActivities); return }
     try {
       const { data } = await api.get('/engagement/activity')
       setActivities(data.activities || [])
     } catch { /* silent */ }
-  }, [isDemo])
+  }, [])
 
   const fetchAll = useCallback(async () => {
     await Promise.all([fetchFeed(), fetchStats(), fetchActivities()])
@@ -99,11 +76,6 @@ export default function Engagement() {
 
   /* ── Actions ── */
   const handleLike = async (post: FeedPost) => {
-    if (isDemo) {
-      setFeed((prev) => prev.map((p) => p.id === post.id ? { ...p, liked: !p.liked } : p))
-      toast('success', `${post.blogName} 공감 완료`)
-      return
-    }
     try {
       await api.post(`/engagement/like/${post.id}`)
       toast('success', `${post.blogName} 공감 완료`)
@@ -115,11 +87,6 @@ export default function Engagement() {
   const handleCommentPreview = async (post: FeedPost) => {
     setPreviewPost(post)
     setPreviewLoading(true)
-    if (isDemo) {
-      setPreviewComment(`와 정말 알찬 내용이네요! "${post.title}" 관련해서 저도 관심이 많았는데, 덕분에 좋은 정보 얻어갑니다 😊`)
-      setPreviewLoading(false)
-      return
-    }
     try {
       const { data } = await api.post('/engagement/comment/preview', { postTitle: post.title })
       setPreviewComment(data.comment || '')
@@ -135,14 +102,6 @@ export default function Engagement() {
   const handleSubmitComment = async () => {
     if (!previewPost || !previewComment) return
     setCommentSubmitting(true)
-    if (isDemo) {
-      setFeed((prev) => prev.map((p) => p.id === previewPost.id ? { ...p, commented: true } : p))
-      toast('success', '댓글이 게시되었습니다')
-      setPreviewPost(null)
-      setPreviewComment('')
-      setCommentSubmitting(false)
-      return
-    }
     try {
       await api.post(`/engagement/comment/${previewPost.id}`, { comment: previewComment })
       toast('success', '댓글이 게시되었습니다')
@@ -157,13 +116,6 @@ export default function Engagement() {
 
   const handleBatchRun = async () => {
     setRunningBatch(true)
-    if (isDemo) {
-      setFeed((prev) => prev.map((p) => ({ ...p, liked: true, commented: true })))
-      setStats({ ...stats, todayLikes: stats.todayLikes + 3, todayComments: stats.todayComments + 4 })
-      toast('success', '공감 3건, 댓글 4건 완료')
-      setRunningBatch(false)
-      return
-    }
     try {
       const { data } = await api.post('/engagement/run')
       toast('success', data.message || '참여 실행 완료')
@@ -232,7 +184,9 @@ export default function Engagement() {
         <div className="glass-panel rounded-xl p-5">
           <h2 className="text-lg font-semibold text-foreground mb-4">이웃 포스팅 피드</h2>
           <div className="space-y-3">
-            {feed.map((post) => (
+            {feed.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">이웃 포스팅 피드가 없습니다</p>
+            ) : feed.map((post) => (
               <div
                 key={post.id}
                 className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card/50 px-4 py-3"
@@ -285,6 +239,7 @@ export default function Engagement() {
             ))}
           </div>
         </div>
+
 
         {/* Right column */}
         <div className="space-y-4">
@@ -358,7 +313,13 @@ export default function Engagement() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {(activities.length > 0 ? activities : demoActivities).map((row, i) => (
+                  {activities.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-muted-foreground">
+                        참여 활동 기록이 없습니다
+                      </td>
+                    </tr>
+                  ) : activities.map((row, i) => (
                     <tr key={i} className="text-foreground">
                       <td className="py-2 text-muted-foreground">{row.time}</td>
                       <td className="py-2 font-medium">{row.accountName}</td>

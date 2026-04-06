@@ -1,21 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Sparkles, Trash2, FileText, Clock, Plus, X, Tag } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
 import { PageSkeleton } from '../components/LoadingSkeleton'
 import type { Tone, ContentType, ContentItem } from '../types'
-
-/* ── Demo data ── */
-const demoQueue: ContentItem[] = [
-  { id: '1', keyword: '청년도약계좌', title: '청년도약계좌, 2026년 달라진 점 총정리!', body: '', tone: '친근톤', contentType: '일반 정보성', productInfo: '', grade: 'A', status: '검수완료', createdAt: '' },
-  { id: '2', keyword: '신용대출 비교', title: '2026 신용대출 금리 비교, 어디가 유리할까?', body: '', tone: '전문톤', contentType: '광고(대출)', productInfo: '', grade: 'A', status: '검수완료', createdAt: '' },
-  { id: '3', keyword: '전세자금대출', title: '전세자금대출 조건 완벽 가이드', body: '', tone: '전문톤', contentType: '광고(대출)', productInfo: '', grade: 'B', status: '생성중', createdAt: '' },
-  { id: '4', keyword: '카드 혜택', title: '2026 신용카드 혜택 총정리 리뷰', body: '', tone: '리뷰톤', contentType: '일반 정보성', productInfo: '', grade: 'C', status: '저품질', createdAt: '' },
-  { id: '5', keyword: '적금 추천', title: '직장인 적금 추천 TOP 5', body: '', tone: '친근톤', contentType: '일반 정보성', productInfo: '', grade: null, status: '대기', createdAt: '' },
-]
 
 /* ── Radio ── */
 function Radio({ name, value, label, checked, onChange }: {
@@ -35,7 +25,6 @@ function Radio({ name, value, label, checked, onChange }: {
 }
 
 export default function Content() {
-  const { isDemo } = useAuth()
   const { toast } = useToast()
 
   const [tone, setTone] = useState<Tone>('친근톤')
@@ -48,13 +37,12 @@ export default function Content() {
   const [submitting, setSubmitting] = useState(false)
 
   const fetchQueue = useCallback(async () => {
-    if (isDemo) { setQueue(demoQueue); setLoading(false); return }
     try {
       const { data } = await api.get('/contents')
       setQueue(data.contents || [])
     } catch { /* silent */ }
     setLoading(false)
-  }, [isDemo])
+  }, [])
 
   useEffect(() => { fetchQueue() }, [fetchQueue])
 
@@ -70,17 +58,6 @@ export default function Content() {
 
   const handleSubmit = async () => {
     if (keywords.length === 0) return
-    if (isDemo) {
-      const newItems = keywords.map((kw, i) => ({
-        id: `demo-${Date.now()}-${i}`, keyword: kw, title: `${kw} 관련 블로그 글`,
-        body: '', tone, contentType, productInfo, grade: null, status: '대기' as const, createdAt: new Date().toISOString(),
-      }))
-      setQueue([...newItems, ...queue])
-      setKeywords([])
-      setProductInfo('')
-      toast('success', `${newItems.length}개 키워드가 대기열에 추가되었습니다.`)
-      return
-    }
     setSubmitting(true)
     try {
       const { data } = await api.post('/contents', { keywords, tone, contentType, productInfo })
@@ -100,7 +77,6 @@ export default function Content() {
   }
 
   const handleDelete = async (id: string) => {
-    if (isDemo) { setQueue(queue.filter((q) => q.id !== id)); return }
     try {
       await api.delete(`/contents/${id}`)
       fetchQueue()

@@ -1,6 +1,4 @@
 import { Users, Send, FileText, TrendingUp } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
-import { useToast } from '../contexts/ToastContext'
 import { useFetch } from '../hooks/useApi'
 import StatusBadge from '../components/StatusBadge'
 import { PageSkeleton } from '../components/LoadingSkeleton'
@@ -28,33 +26,6 @@ interface TierData {
   label: string
   count: number
 }
-
-/* ── Demo data (fallback when API unavailable) ── */
-const demoDashboard: DashboardData = {
-  activeAccounts: 12,
-  todayPosts: 24,
-  todaySuccess: 22,
-  todayFailed: 2,
-  pendingContent: 8,
-  successRate: 96.5,
-}
-
-const demoPostings: PostingLive[] = [
-  { time: '10:32', accountName: '블로그계정1', keyword: '청년도약계좌', tone: '친근톤', status: '발행완료' },
-  { time: '10:28', accountName: '마케팅02', keyword: '신용대출 비교', tone: '전문톤', status: '발행중' },
-  { time: '10:15', accountName: '대출전문03', keyword: '전세자금대출', tone: '리뷰톤', status: '생성중' },
-  { time: '10:05', accountName: '재테크블로그', keyword: '주택담보대출', tone: '친근톤', status: '발행완료' },
-  { time: '09:52', accountName: '금융정보센터', keyword: '적금 추천', tone: '전문톤', status: '대기' },
-  { time: '09:40', accountName: '생활경제팁', keyword: '카드 혜택 비교', tone: '리뷰톤', status: '실패' },
-]
-
-const demoTiers: TierData[] = [
-  { tier: 1, label: '신규', count: 3 },
-  { tier: 2, label: '성장', count: 4 },
-  { tier: 3, label: '중급', count: 3 },
-  { tier: 4, label: '고수익', count: 1 },
-  { tier: 5, label: '최상위', count: 1 },
-]
 
 /* ── Stat Card ── */
 interface StatCardProps {
@@ -86,25 +57,25 @@ const tierBarColor: Record<number, string> = {
   5: 'bg-emerald',
 }
 
+const defaultStats: DashboardData = {
+  activeAccounts: 0,
+  todayPosts: 0,
+  todaySuccess: 0,
+  todayFailed: 0,
+  pendingContent: 0,
+  successRate: 0,
+}
+
 export default function Dashboard() {
-  const { isDemo } = useAuth()
-  const { addToast } = useToast()
+  const { data: dashboard, loading: dashLoading } = useFetch<DashboardData>('/stats/dashboard')
+  const { data: postings, loading: postLoading } = useFetch<PostingLive[]>('/stats/posting-live')
+  const { data: tiers, loading: tierLoading } = useFetch<TierData[]>('/stats/account-tiers')
 
-  const { data: dashboard, loading: dashLoading } = useFetch<DashboardData>(
-    isDemo ? null : '/stats/dashboard'
-  )
-  const { data: postings, loading: postLoading } = useFetch<PostingLive[]>(
-    isDemo ? null : '/stats/posting-live'
-  )
-  const { data: tiers, loading: tierLoading } = useFetch<TierData[]>(
-    isDemo ? null : '/stats/account-tiers'
-  )
+  const stats = dashboard || defaultStats
+  const postingRows = postings || []
+  const tierData = tiers || []
 
-  const stats = dashboard || demoDashboard
-  const postingRows = postings || demoPostings
-  const tierData = tiers || demoTiers
-
-  const isLoading = !isDemo && (dashLoading || postLoading || tierLoading)
+  const isLoading = dashLoading || postLoading || tierLoading
   if (isLoading) return <PageSkeleton />
 
   const maxCount = Math.max(...tierData.map((t) => t.count), 1)
@@ -171,19 +142,27 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {postingRows.map((row, i) => (
-                  <tr key={i} className="text-foreground">
-                    <td className="py-3 text-muted-foreground">{row.time}</td>
-                    <td className="py-3 font-medium">{row.accountName}</td>
-                    <td className="py-3 text-muted-foreground">{row.keyword}</td>
-                    <td className="py-3">
-                      <StatusBadge label={row.tone} />
-                    </td>
-                    <td className="py-3">
-                      <StatusBadge label={row.status} />
+                {postingRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                      포스팅 기록이 없습니다
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  postingRows.map((row, i) => (
+                    <tr key={i} className="text-foreground">
+                      <td className="py-3 text-muted-foreground">{row.time}</td>
+                      <td className="py-3 font-medium">{row.accountName}</td>
+                      <td className="py-3 text-muted-foreground">{row.keyword}</td>
+                      <td className="py-3">
+                        <StatusBadge label={row.tone} />
+                      </td>
+                      <td className="py-3">
+                        <StatusBadge label={row.status} />
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -192,24 +171,28 @@ export default function Dashboard() {
         {/* Account Tier Distribution */}
         <div className="glass-panel rounded-xl p-5">
           <h2 className="text-lg font-semibold text-foreground mb-4">계정 티어 분포</h2>
-          <ul className="space-y-4">
-            {tierData.map((t) => (
-              <li key={t.tier}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm text-foreground">
-                    Tier {t.tier} &mdash; {t.label}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{t.count}개</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-muted">
-                  <div
-                    className={`h-full rounded-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
-                    style={{ width: `${(t.count / maxCount) * 100}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
+          {tierData.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">티어 데이터가 없습니다</p>
+          ) : (
+            <ul className="space-y-4">
+              {tierData.map((t) => (
+                <li key={t.tier}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm text-foreground">
+                      Tier {t.tier} &mdash; {t.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{t.count}개</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${tierBarColor[t.tier] || 'bg-primary'} transition-all duration-500`}
+                      style={{ width: `${(t.count / maxCount) * 100}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </div>
