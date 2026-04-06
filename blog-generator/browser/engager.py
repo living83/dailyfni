@@ -324,68 +324,133 @@ async def collect_blog_posts(page: Page, max_posts: int = 10) -> list:
 
 
 async def click_like(page: Page) -> dict:
-    """공감(좋아요) 클릭 — mainFrame + 리액션 피커 대응"""
+    """공감(좋아요) 클릭 — JS 기반 완전 우회 방식 (v11)"""
     result = {"success": False, "error": ""}
     try:
         main_frame = next((f for f in page.frames if f.name == 'mainFrame'), page)
 
-        like_btn_selectors = [
-            '.area_sympathy .u_likeit_btn',
-            '.u_likeit_btn',
-            'a[role="button"][class*="like"]',
-            'button[class*="like"]',
-        ]
+        # 초기 상태 저장 → 클릭 후 비교
+        initial_state = await main_frame.evaluate('''() => {
+            const sels = [
+                '.area_sympathy .u_likeit_btn',
+                '.u_likeit_btn',
+                'a[role="button"][class*="like"]',
+                'button[class*="like"]',
+            ];
+            for (const sel of sels) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    return {
+                        found: true,
+                        isOn: el.classList.contains('on') || el.getAttribute('aria-pressed') === 'true',
+                        count: el.querySelector('.u_cnt, [class*="count"], em')?.innerText || '0',
+                        html: el.outerHTML.substring(0, 200),
+                    };
+                }
+            }
+            return { found: false };
+        }''')
 
-        like_btn = None
-        for sel in like_btn_selectors:
-            like_btn = await main_frame.query_selector(sel)
-            if like_btn and await like_btn.is_visible():
-                break
+        if not initial_state.get('found'):
+            # 아래로 스크롤해서 지연 로드된 버튼 찾기
+            await main_frame.evaluate('window.scrollTo(0, document.body.scrollHeight * 0.8)')
+            await random_delay(1.5, 2.5)
+            initial_state = await main_frame.evaluate('''() => {
+                const sels = ['.area_sympathy .u_likeit_btn', '.u_likeit_btn', 'a[role="button"][class*="like"]', 'button[class*="like"]'];
+                for (const sel of sels) {
+                    const el = document.querySelector(sel);
+                    if (el) return { found: true, isOn: el.classList.contains('on'), count: '0' };
+                }
+                return { found: false };
+            }''')
 
-        if not like_btn:
-            await main_frame.evaluate('window.scrollBy(0, 3000)')
-            await random_delay(1, 1.5)
-            for sel in like_btn_selectors:
-                like_btn = await main_frame.query_selector(sel)
-                if like_btn and await like_btn.is_visible():
-                    break
-
-        if not like_btn:
+        if not initial_state.get('found'):
             return {"success": False, "error": "좋아요 버튼 미발견"}
 
-        is_on = await like_btn.evaluate('el => el.classList.contains("on")')
-        if is_on:
+        if initial_state.get('isOn'):
             logger.info("이미 공감된 포스팅")
             return {"success": True, "already": True}
 
-        # 버튼을 화면 중앙으로 강제 스크롤 (하단 플로팅바 회피)
-        await like_btn.evaluate('''el => {
+        # 완전 JS 기반 클릭 — Playwright가 건드리지 않도록
+        click_result = await main_frame.evaluate('''async () => {
+            const sels = [
+                '.area_sympathy .u_likeit_btn',
+                '.u_likeit_btn',
+                'a[role="button"][class*="like"]',
+                'button[class*="like"]',
+            ];
+            let el = null;
+            for (const sel of sels) {
+                el = document.querySelector(sel);
+                if (el) break;
+            }
+            if (!el) return { success: false, error: 'no element' };
+
+            // 1) 강제 스크롤 — 중앙으로
             el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+            await new Promise(r => setTimeout(r, 300));
+
+            // 2) 실제 클릭 타겟 찾기 — a/button 안의 첫 번째 인터랙티브 요소
+            const target = el.querySelector('button, a, span[role="button"]') || el;
+
+            // 3) 다중 이벤트 디스패치 (mousedown + mouseup + click)
+            const rect = target.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+            const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+
+            target.dispatchEvent(new MouseEvent('mousedown', opts));
+            await new Promise(r => setTimeout(r, 50));
+            target.dispatchEvent(new MouseEvent('mouseup', opts));
+            await new Promise(r => setTimeout(r, 50));
+            target.dispatchEvent(new MouseEvent('click', opts));
+
+            // 4) fallback: 직접 .click() 호출
+            try { target.click(); } catch (e) {}
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            return { success: true, clicked: target.outerHTML.substring(0, 150) };
         }''')
-        await random_delay(0.5, 1.0)
 
-        # JavaScript로 직접 클릭 (뷰포트 체크 우회)
-        try:
-            await like_btn.click(force=True, timeout=5000)
-        except Exception:
-            # force click도 실패하면 JS 이벤트 디스패치
-            logger.debug("force click 실패 → JS 클릭 시도")
-            await like_btn.evaluate('''el => {
-                el.click();
-                // 이벤트가 바인딩 안 되어있을 수 있으므로 dispatchEvent도 시도
-                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            }''')
-
+        logger.debug(f"클릭 결과: {click_result}")
         await random_delay(1, 2)
 
+        # 리액션 피커가 나타나면 처리 (네이버 2025.09+)
         await _handle_reaction_picker_v10(page, main_frame)
+        await random_delay(0.5, 1)
 
-        is_on_after = await like_btn.evaluate('el => el.classList.contains("on")')
-        if is_on_after:
+        # 여러 방법으로 상태 재검증
+        after_state = await main_frame.evaluate('''() => {
+            const sels = ['.area_sympathy .u_likeit_btn', '.u_likeit_btn', 'a[role="button"][class*="like"]', 'button[class*="like"]'];
+            for (const sel of sels) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    return {
+                        isOn: el.classList.contains('on'),
+                        isPressed: el.getAttribute('aria-pressed') === 'true',
+                        hasActive: el.classList.contains('is_on') || el.classList.contains('active'),
+                        count: el.querySelector('.u_cnt, [class*="count"], em')?.innerText || '0',
+                    };
+                }
+            }
+            return null;
+        }''')
+
+        if after_state and (after_state.get('isOn') or after_state.get('isPressed') or after_state.get('hasActive')):
             result["success"] = True
-            logger.info("공감 클릭 성공")
+            logger.info(f"공감 클릭 성공 (count: {after_state.get('count')})")
+        elif after_state and after_state.get('count') != initial_state.get('count'):
+            # 카운트가 증가했으면 성공으로 간주
+            result["success"] = True
+            logger.info(f"공감 성공 (카운트 변경: {initial_state.get('count')} → {after_state.get('count')})")
         else:
             result["error"] = "공감 상태 변경 실패"
+            # 디버그 스크린샷
+            try:
+                await capture_debug(page, f"like_fail_{int(asyncio.get_event_loop().time())}")
+            except Exception:
+                pass
 
     except Exception as e:
         result["error"] = str(e)
