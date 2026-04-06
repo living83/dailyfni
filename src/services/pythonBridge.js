@@ -123,6 +123,21 @@ async function requestFeed(params) {
 }
 
 /**
+ * 이웃참여 배치 실행 — Python engager.run_engagement 호출
+ */
+async function requestEngageBatch(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/engage/run`, params, {
+      timeout: 1800000, // 30분 (포스트 10개 순회 고려)
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] EngageBatch 실패:', err.message);
+    return { success: false, error: err.response?.data?.detail || err.message };
+  }
+}
+
+/**
  * 중복 체크 — 네이버 블로그 검색으로 유사 포스팅 탐지
  * @param {object} params - { title, keywords }
  * @returns {Promise<object>} - { max_similarity, results, warning, message }
@@ -158,6 +173,7 @@ module.exports = {
   requestEngage,
   requestCommentPreview,
   requestFeed,
+  requestEngageBatch,
   checkDuplicate,
   checkHealth,
   PYTHON_URL,

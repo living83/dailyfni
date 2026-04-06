@@ -235,16 +235,32 @@ async def dashboard_publish(req: PublishRequest):
 
 @app.post("/api/dashboard/engage")
 async def dashboard_engage(req: EngageRequest):
-    """이웃 블로그 공감 + 댓글 자동화 (Playwright)"""
+    """단일 포스트 공감 + 댓글 (수동 개별 실행)"""
     try:
         from browser.engager import engage_neighbor
         result = await engage_neighbor(req.account, req.blog_url, req.actions)
         return result
     except ImportError as e:
-        # Playwright 미설치 시 mock 반환
         return {"success": True, "liked": req.actions.get("like", False), "commented": bool(req.actions.get("comment")), "error": f"(mock) {e}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+class EngageBatchRequest(BaseModel):
+    account: dict
+    config: dict  # { engagement_max_posts, engagement_do_like, engagement_do_comment }
+
+@app.post("/api/dashboard/engage/run")
+async def dashboard_engage_run(req: EngageBatchRequest):
+    """배치 이웃참여 실행 — ThemePost 수집 후 순회하며 공감/댓글"""
+    try:
+        from browser.engager import run_engagement
+        result = await run_engagement(req.account, req.config)
+        return result
+    except ImportError as e:
+        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "comment_count": 0, "error": f"Playwright 미설치: {e}"}
+    except Exception as e:
+        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "comment_count": 0, "error": str(e)}
 
 
 @app.post("/api/dashboard/comment-preview")

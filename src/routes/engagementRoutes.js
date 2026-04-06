@@ -2,7 +2,8 @@ const { Router } = require('express');
 const { authenticate } = require('../middleware/auth');
 const Engagement = require('../models/Engagement');
 const { listAccounts, getAccountRaw } = require('../models/Account');
-const { requestEngage, requestCommentPreview, requestFeed } = require('../services/pythonBridge');
+const { requestEngage, requestCommentPreview, requestFeed, requestEngageBatch } = require('../services/pythonBridge');
+const { getSettingsRaw } = require('../models/Settings');
 
 const router = Router();
 
@@ -98,51 +99,84 @@ router.post('/engagement/comment/:postId', async (req, res) => {
   }
 });
 
-// POST /engagement/run — 일괄 참여 (Python Playwright)
+// POST /engagement/run — 배치 이웃참여 실행 (Python engager.run_engagement)
 router.post('/engagement/run', async (req, res) => {
-  const feed = Engagement.listFeed();
   const accounts = listAccounts().filter(a => a.isActive && a.neighborEngage);
 
-  // 인메모리 즉시 업데이트 (UI 반영용)
-  let liked = 0, commented = 0;
-  for (const post of feed) {
-    if (!post.liked) { Engagement.likePost(post.id); liked++; }
-    if (!post.commented) {
-      const commentText = Engagement.generateComment(post.title);
-      Engagement.commentPost(post.id, commentText);
-      commented++;
-    }
+  if (accounts.length === 0) {
+    return res.json({ success: false, message: '이웃참여 활성 계정이 없습니다.', liked: 0, commented: 0 });
   }
+
+  const settings = getSettingsRaw();
+  const maxPosts = settings.maxVisits || 10;
 
   res.json({
     success: true,
-    message: `공감 ${liked}건, 댓글 ${commented}건 처리 시작`,
-    liked, commented,
-    stats: Engagement.getStats(),
+    message: `${accounts.length}개 계정으로 참여 실행 시작 (계정당 최대 ${maxPosts}개 포스트)`,
+    accounts: accounts.length,
+    maxPosts,
   });
 
-  // 백그라운드: 실제 Playwright 참여 (순차 실행)
-  if (accounts.length > 0) {
-    const account = getAccountRaw(accounts[0].id);
-    if (account) {
-      for (const post of feed) {
-        if (post.url) {
-          try {
-            await requestEngage({
-              account: { id: account.id, naver_id: account.naverId, naver_password: account.naverPassword, account_name: account.accountName },
-              blog_url: post.url,
-              actions: { like: true, comment: Engagement.generateComment(post.title) },
-            });
-            console.log(`[Engagement] 참여 완료: ${post.blogName}`);
-          } catch (err) {
-            console.error(`[Engagement] 참여 실패: ${post.blogName}`, err.message);
-          }
-          // 다음 참여까지 3-8초 간격
-          await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
+  // 백그라운드: 계정별 순차 배치 실행
+  let totalLikes = 0, totalComments = 0;
+  for (const acc of accounts) {
+    const raw = getAccountRaw(acc.id);
+    if (!raw) continue;
+
+    try {
+      console.log(`[Engagement] ${raw.accountName} 참여 시작 (최대 ${maxPosts}건)`);
+      const result = await requestEngageBatch({
+        account: {
+          id: raw.id,
+          account_name: raw.accountName,
+          naver_id: raw.naverId,
+          naver_password: raw.naverPassword || '',
+        },
+        config: {
+          engagement_max_posts: maxPosts,
+          engagement_do_like: settings.heartLike !== false,
+          engagement_do_comment: settings.aiComment !== false,
+        },
+      });
+
+      const likes = result.like_count || 0;
+      const comments = result.comment_count || 0;
+      totalLikes += likes;
+      totalComments += comments;
+
+      // 활동 기록 저장
+      for (const r of result.results || []) {
+        if (r.like_success) {
+          Engagement.addActivity({
+            accountName: raw.accountName,
+            action: '♥ 공감',
+            target: (r.post_title || '').substring(0, 30),
+          });
+        }
+        if (r.comment_success) {
+          Engagement.addActivity({
+            accountName: raw.accountName,
+            action: '💬 댓글',
+            target: (r.post_title || '').substring(0, 30),
+          });
         }
       }
+
+      console.log(`[Engagement] ${raw.accountName} 완료 — 공감 ${likes}, 댓글 ${comments}`);
+      if (result.error) {
+        console.error(`[Engagement] ${raw.accountName} 오류: ${result.error}`);
+      }
+    } catch (err) {
+      console.error(`[Engagement] ${raw.accountName} 예외:`, err.message);
+    }
+
+    // 다음 계정까지 30~60초 대기
+    if (accounts.indexOf(acc) < accounts.length - 1) {
+      await new Promise(r => setTimeout(r, 30000 + Math.random() * 30000));
     }
   }
+
+  console.log(`[Engagement] 전체 완료 — 총 공감 ${totalLikes}, 총 댓글 ${totalComments}`);
 });
 
 // GET /engagement/stats
