@@ -42,4 +42,27 @@ function deleteContent(id) {
   return deleteById.run(id).changes > 0;
 }
 
-module.exports = { createContent, listContents, getContent, updateContent, deleteContent };
+/**
+ * 키워드 재활용 — 발행 완료된 콘텐츠와 같은 키워드+타입으로 새 콘텐츠 생성
+ * AI가 매번 다른 글을 생성하므로 동일 키워드 재사용 가능
+ */
+function recycleKeyword(contentId) {
+  const original = selectById.get(contentId);
+  if (!original) return null;
+  return createContent({
+    keyword: original.keyword,
+    tone: original.tone,
+    contentType: original.contentType,
+    productInfo: original.productInfo,
+    status: '대기',
+  });
+}
+
+/**
+ * 사용 가능한 키워드 목록 (고유 키워드 기준)
+ */
+function getUniqueKeywords() {
+  return db.prepare(`SELECT DISTINCT keyword, contentType, tone, productInfo FROM contents`).all();
+}
+
+module.exports = { createContent, listContents, getContent, updateContent, deleteContent, recycleKeyword, getUniqueKeywords };

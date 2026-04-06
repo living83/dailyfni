@@ -217,12 +217,23 @@ async function checkAndRun() {
 
         // 2. 매칭되는 대기 콘텐츠 찾기
         const contents = Content.listContents();
-        const pendingContent = contents.find(c =>
+        let pendingContent = contents.find(c =>
           c.status === '대기' && c.contentType === postType
         );
 
+        // 대기 콘텐츠 없으면 → 기존 키워드에서 자동 재활용
         if (!pendingContent) {
-          console.log(`[Scheduler] ${account.accountName}: '${postType}' 대기 콘텐츠가 없습니다. 건너뜁니다.`);
+          const usedContent = contents.find(c =>
+            (c.status === '발행완료' || c.status === '검수완료') && c.contentType === postType
+          );
+          if (usedContent) {
+            pendingContent = Content.recycleKeyword(usedContent.id);
+            console.log(`[Scheduler] 키워드 재활용: "${usedContent.keyword}" → 새 콘텐츠 ${pendingContent.id}`);
+          }
+        }
+
+        if (!pendingContent) {
+          console.log(`[Scheduler] ${account.accountName}: '${postType}' 콘텐츠가 없습니다. 건너뜁니다.`);
           continue;
         }
 
@@ -266,6 +277,12 @@ async function checkAndRun() {
           Content.updateContent(pendingContent.id, { status: '발행완료' });
           todayPostedAccounts.add(account.id);
           console.log(`[Scheduler] 발행 성공: ${account.accountName} → ${result.url}`);
+
+          // 키워드 자동 재활용 — 다음 발행을 위해 같은 키워드로 새 콘텐츠 등록
+          const recycled = Content.recycleKeyword(pendingContent.id);
+          if (recycled) {
+            console.log(`[Scheduler] 키워드 자동 재활용: "${pendingContent.keyword}" → ${recycled.id}`);
+          }
         } else {
           Posting.updatePosting(posting.id, { status: '실패', error: result.error || '발행 실패' });
           Content.updateContent(pendingContent.id, { status: '대기' }); // 실패 시 콘텐츠 복원
