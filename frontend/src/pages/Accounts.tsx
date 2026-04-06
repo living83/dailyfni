@@ -325,18 +325,18 @@ export default function Accounts() {
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1.5">별칭</label>
                 <input type="text" value={form.accountName} onChange={(e) => setForm({ ...form, accountName: e.target.value })}
-                  placeholder="예: 블로그마스터" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                  placeholder="예: 블로그마스터" autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">Naver ID</label>
                   <input type="text" value={form.naverId} onChange={(e) => setForm({ ...form, naverId: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
+                    autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">비밀번호</label>
                   <input type="password" value={form.naverPassword} onChange={(e) => setForm({ ...form, naverPassword: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
+                    autoComplete="new-password" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -384,24 +384,24 @@ export default function Accounts() {
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">IP 주소</label>
                   <input type="text" value={proxyForm.ip} onChange={(e) => setProxyForm({ ...proxyForm, ip: e.target.value })}
-                    placeholder="예: 103.15.22.41" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                    placeholder="예: 103.15.22.41" autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">포트</label>
                   <input type="text" value={proxyForm.port} onChange={(e) => setProxyForm({ ...proxyForm, port: e.target.value })}
-                    placeholder="예: 8080" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                    placeholder="예: 8080" autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">사용자명 (선택)</label>
                   <input type="text" value={proxyForm.username} onChange={(e) => setProxyForm({ ...proxyForm, username: e.target.value })}
-                    placeholder="username" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                    placeholder="username" autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">비밀번호 (선택)</label>
                   <input type="password" value={proxyForm.password} onChange={(e) => setProxyForm({ ...proxyForm, password: e.target.value })}
-                    placeholder="password" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                    placeholder="password" autoComplete="new-password" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
             </div>
