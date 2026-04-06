@@ -47,6 +47,14 @@ app.use('/api', statsRoutes);
 // --- 에러 핸들링 ---
 app.use(errorHandler);
 
+// --- 자동 포스팅 스케줄러 ---
+const { startScheduler } = require('./services/scheduler');
+startScheduler();
+
+// --- 이웃참여 스케줄러 ---
+const { startEngagementScheduler } = require('./services/engagementScheduler');
+startEngagementScheduler();
+
 app.listen(PORT, () => {
   console.log(`\n=== DailyFNI Agency System ===`);
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);

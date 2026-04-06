@@ -7,6 +7,8 @@ const {
   restoreSettings,
 } = require('../models/Settings');
 
+const { restartEngagementScheduler, getEngagementSchedulerStatus } = require('../services/engagementScheduler');
+
 const router = Router();
 
 // GET /api/settings — 설정 조회
@@ -17,7 +19,13 @@ router.get('/settings', (req, res) => {
 // PUT /api/settings — 설정 저장
 router.put('/settings', (req, res) => {
   const updated = updateSettings(req.body);
+  restartEngagementScheduler();
   res.json({ success: true, message: '설정이 저장되었습니다.', settings: updated });
+});
+
+// GET /api/settings/engagement-status — 이웃참여 스케줄러 상태
+router.get('/settings/engagement-status', (req, res) => {
+  res.json({ success: true, ...getEngagementSchedulerStatus() });
 });
 
 // POST /api/settings/backup — 설정 백업 (JSON 다운로드)

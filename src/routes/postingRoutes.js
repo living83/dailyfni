@@ -4,6 +4,7 @@ const Posting = require('../models/Posting');
 const Content = require('../models/Content');
 const { listAccounts, getAccountRaw } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
+const { getSchedulerStatus, restartScheduler } = require('../services/scheduler');
 
 const router = Router();
 
@@ -176,6 +177,11 @@ router.post('/posting/run-all', async (req, res) => {
   }
 });
 
+// GET /api/posting/scheduler-status
+router.get('/posting/scheduler-status', (req, res) => {
+  res.json({ success: true, ...getSchedulerStatus() });
+});
+
 // GET /api/posting/settings
 router.get('/posting/settings', (req, res) => {
   res.json({ success: true, settings: Posting.getSettings() });
@@ -184,6 +190,8 @@ router.get('/posting/settings', (req, res) => {
 // PUT /api/posting/settings
 router.put('/posting/settings', (req, res) => {
   const settings = Posting.updateSettings(req.body);
+  // 설정 변경 시 스케줄러 재시작
+  restartScheduler();
   res.json({ success: true, settings });
 });
 
