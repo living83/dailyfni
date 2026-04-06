@@ -116,10 +116,41 @@ router.post('/posting/queue/:id/run', async (req, res) => {
   }
 });
 
-// POST /api/posting/run-all — 전체 대기중 발행
+// POST /api/posting/run-all — 전체 대기중 발행 (없으면 검수완료 콘텐츠로 자동 큐 생성)
 router.post('/posting/run-all', async (req, res) => {
-  const all = Posting.listPostings();
-  const pending = all.filter((p) => p.status === '대기중');
+  let all = Posting.listPostings();
+  let pending = all.filter((p) => p.status === '대기중');
+
+  // 큐에 대기중 항목이 없으면 → 검수완료 콘텐츠 + 활성 계정으로 자동 매칭
+  if (pending.length === 0) {
+    const readyContents = Content.listContents().filter(c => c.status === '검수완료');
+    const activeAccounts = listAccounts().filter(a => a.isActive && a.autoPublish);
+
+    if (readyContents.length === 0) {
+      return res.json({ success: true, message: '검수완료된 콘텐츠가 없습니다. 콘텐츠를 먼저 생성하세요.', count: 0 });
+    }
+    if (activeAccounts.length === 0) {
+      return res.json({ success: true, message: '활성 계정이 없습니다. 계정을 먼저 등록하세요.', count: 0 });
+    }
+
+    // 콘텐츠와 계정을 순차로 매칭 (계정 수 또는 콘텐츠 수 중 작은 것만큼)
+    const matchCount = Math.min(readyContents.length, activeAccounts.length);
+    for (let i = 0; i < matchCount; i++) {
+      const content = readyContents[i];
+      const account = activeAccounts[i];
+      const item = Posting.createPosting({
+        keyword: content.keyword,
+        accountName: account.accountName,
+        accountId: account.id,
+        tone: content.tone || '친근톤',
+        contentId: content.id,
+        scheduledTime: '즉시',
+      });
+      Content.updateContent(content.id, { status: '발행중', accountId: account.id });
+      pending.push(item);
+    }
+    console.log(`[Posting] 자동 큐 생성: ${pending.length}건`);
+  }
 
   if (pending.length === 0) {
     return res.json({ success: true, message: '대기 중인 항목이 없습니다.', count: 0 });
