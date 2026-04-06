@@ -8,7 +8,7 @@ const Content = require('../models/Content');
 const { listAccounts, getAccountRaw, updateAccount } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
-const { appendFooter } = require('../services/postingHelper');
+const { processBody } = require('../services/postingHelper');
 
 // ── 상태 ──
 let intervalHandle = null;
@@ -268,7 +268,7 @@ async function checkAndRun() {
           },
           post_data: {
             title: pendingContent.title || pendingContent.keyword,
-            content: appendFooter(pendingContent.body || ''),
+            content: processBody(pendingContent.body || '', pendingContent.contentType),
             keywords: JSON.stringify([pendingContent.keyword]),
             keyword: pendingContent.keyword,
             post_type: postType === '광고(대출)' ? 'ad' : 'general',

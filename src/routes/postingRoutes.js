@@ -5,7 +5,7 @@ const Content = require('../models/Content');
 const { listAccounts, getAccountRaw } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
-const { appendFooter } = require('../services/postingHelper');
+const { processBody } = require('../services/postingHelper');
 const { getPostTypeForTier, daysBetween } = require('../services/scheduler');
 const { getSchedulerStatus, restartScheduler } = require('../services/scheduler');
 
@@ -83,7 +83,7 @@ router.post('/posting/queue/:id/run', async (req, res) => {
       },
       post_data: {
         title,
-        content: appendFooter(body),
+        content: processBody(body, content?.contentType),
         keywords: JSON.stringify(Array.isArray(tags) ? tags : [posting.keyword]),
         keyword: posting.keyword,
         post_type: content?.contentType === '광고(대출)' ? 'ad' : 'general',
@@ -206,7 +206,7 @@ router.post('/posting/run-all', async (req, res) => {
         },
         post_data: {
           title: content?.title || p.keyword,
-          content: appendFooter(content?.body || ''),
+          content: processBody(content?.body || '', content?.contentType),
           keywords: JSON.stringify([p.keyword]),
           keyword: p.keyword,
           post_type: content?.contentType === '광고(대출)' ? 'ad' : 'general',

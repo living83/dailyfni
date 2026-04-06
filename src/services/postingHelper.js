@@ -1,8 +1,22 @@
 /**
- * 포스팅 본문에 하단 링크/문구 자동 삽입 (홈페이지 + 카카오채널 2개)
+ * 포스팅 본문 전처리 — 광고 고지 + 하단 링크 자동 삽입
  */
 const Posting = require('../models/Posting');
 
+const AD_DISCLOSURE = '본 포스팅은 소정의 금액을 받고 작성하게 됐습니다.';
+
+/**
+ * 광고 고지 문구를 본문 최상단에 삽입
+ */
+function prependAdDisclosure(body) {
+  // 이미 포함되어 있으면 중복 삽입 방지
+  if (body && body.includes(AD_DISCLOSURE)) return body;
+  return `${AD_DISCLOSURE}\n\n${body || ''}`;
+}
+
+/**
+ * 본문 하단에 링크/문구 추가
+ */
 function appendFooter(body) {
   const settings = Posting.getSettings();
   const text1 = settings.footerText || '';
@@ -27,4 +41,21 @@ function appendFooter(body) {
   return (body || '') + '\n\n' + parts.join('\n');
 }
 
-module.exports = { appendFooter };
+/**
+ * 본문 전체 처리 — 광고 고지(상단) + 하단 링크(하단)
+ * @param {string} body - 원본 본문
+ * @param {string} contentType - '일반 정보성' | '광고(대출)'
+ * @returns {string}
+ */
+function processBody(body, contentType) {
+  let processed = body || '';
+  // 광고글이면 최상단에 고지 삽입
+  if (contentType === '광고(대출)' || contentType === 'ad') {
+    processed = prependAdDisclosure(processed);
+  }
+  // 모든 글에 하단 링크 추가
+  processed = appendFooter(processed);
+  return processed;
+}
+
+module.exports = { appendFooter, prependAdDisclosure, processBody, AD_DISCLOSURE };
