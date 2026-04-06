@@ -106,6 +106,57 @@ router.delete('/contents/:id', (req, res) => {
   res.json({ success: true, message: '삭제되었습니다.' });
 });
 
+// POST /api/contents/generate-all — 대기 콘텐츠 일괄 AI 생성
+router.post('/contents/generate-all', async (req, res) => {
+  require('dotenv').config();
+  const settings = getSettingsRaw();
+  const apiKey = settings.claudeApiKey || process.env.ANTHROPIC_API_KEY || process.env.AI_API_KEY || '';
+
+  if (!apiKey) {
+    return res.status(400).json({ success: false, message: 'API 키가 설정되지 않았습니다.' });
+  }
+
+  const pending = Content.listContents().filter(c => c.status === '대기');
+  if (pending.length === 0) {
+    return res.json({ success: true, message: '대기 중인 콘텐츠가 없습니다.', count: 0 });
+  }
+
+  res.json({ success: true, message: `${pending.length}개 콘텐츠 AI 생성을 시작합니다.`, count: pending.length });
+
+  // 백그라운드 순차 생성
+  for (const item of pending) {
+    Content.updateContent(item.id, { status: '생성중' });
+    try {
+      const result = await requestGenerate({
+        content_id: item.id,
+        keyword: item.keyword,
+        tone: item.tone || '친근톤',
+        content_type: item.contentType || '일반 정보성',
+        product_info: item.productInfo || '',
+        api_key: apiKey,
+      });
+      if (result && result.title) {
+        Content.updateContent(item.id, {
+          title: result.title,
+          body: result.body || '',
+          grade: result.grade || 'B',
+          status: result.grade === 'D' ? '저품질' : '검수완료',
+        });
+        console.log(`[Content] AI 생성 완료: ${item.keyword} → ${result.title}`);
+      } else {
+        Content.updateContent(item.id, { status: '대기' });
+        console.log(`[Content] AI 생성 실패: ${item.keyword} — ${result?.error || 'unknown'}`);
+      }
+    } catch (err) {
+      Content.updateContent(item.id, { status: '대기' });
+      console.error(`[Content] AI 생성 에러: ${item.keyword}`, err.message);
+    }
+    // 다음 생성까지 2초 대기 (API 과부하 방지)
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  console.log(`[Content] 일괄 생성 완료`);
+});
+
 // POST /api/contents/check-duplicate — 중복 체크
 router.post('/contents/check-duplicate', async (req, res) => {
   const { title, keywords } = req.body;

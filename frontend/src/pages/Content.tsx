@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Sparkles, Trash2, FileText, Clock, Plus, X, Tag, Search, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Trash2, FileText, Clock, Plus, X, Tag, Search, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
@@ -101,8 +101,22 @@ export default function Content() {
     setDupChecking(false)
   }
 
+  const pendingCount = queue.filter((q) => q.status === '대기').length
   const readyCount = queue.filter((q) => q.status === '검수완료').length
   const lowCount = queue.filter((q) => q.status === '저품질').length
+  const [generating, setGenerating] = useState(false)
+
+  const handleGenerateAll = async () => {
+    if (pendingCount === 0) return toast('info', '대기 중인 콘텐츠가 없습니다.')
+    setGenerating(true)
+    try {
+      const { data } = await api.post('/contents/generate-all')
+      toast('success', data.message || 'AI 생성이 시작되었습니다.')
+      let polls = 0
+      const pid = window.setInterval(() => { fetchQueue(); polls++; if (polls >= 60) clearInterval(pid) }, 5000)
+    } catch { toast('error', 'AI 생성 실패') }
+    setGenerating(false)
+  }
 
   if (loading) return <PageSkeleton />
 
@@ -249,9 +263,18 @@ export default function Content() {
         {/* Right — Queue */}
         <div className="lg:col-span-2">
           <div className="glass-panel rounded-xl p-5">
-            <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-secondary" /> 콘텐츠 대기열
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <Clock className="w-5 h-5 text-secondary" /> 콘텐츠 대기열
+              </h2>
+              {pendingCount > 0 && (
+                <button onClick={handleGenerateAll} disabled={generating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 disabled:opacity-50">
+                  {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  대기 {pendingCount}건 일괄 생성
+                </button>
+              )}
+            </div>
 
             {queue.length === 0 ? (
               <EmptyState icon={<FileText className="w-12 h-12" />} title="대기 중인 콘텐츠가 없습니다" />
