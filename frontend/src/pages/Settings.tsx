@@ -4,12 +4,7 @@ import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import Toggle from '../components/Toggle'
 import { PageSkeleton } from '../components/LoadingSkeleton'
-import type { SystemSettings } from '../types'
-
-const accountList = [
-  '블로그마스터', '대출전문블로그', '재테크블로그',
-  '금융정보센터', '생활경제팁', 'IT트렌드블로그',
-]
+import type { SystemSettings, Account } from '../types'
 
 const defaultSettings: SystemSettings = {
   claudeApiKey: '', naverClientId: '', naverClientSecret: '',
@@ -29,17 +24,24 @@ export default function Settings() {
   const { data: serverData, loading: fetchLoading } = useFetch<{ settings: SystemSettings }>(
     '/settings'
   )
+  const { data: accountsData } = useFetch<{ accounts: Account[] }>('/accounts')
   const { mutate: saveSettings, loading: saving } = useMutation('/settings', 'put')
 
+  const accountList = (accountsData?.accounts || []).map(a => a.accountName)
   const [form, setForm] = useState<SystemSettings>(defaultSettings)
   const [allAccounts, setAllAccounts] = useState(false)
-  const [selectedAccounts, setSelectedAccounts] = useState<Record<string, boolean>>(
-    Object.fromEntries(accountList.map((a, i) => [a, i < 4]))
-  )
+  const [selectedAccounts, setSelectedAccounts] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (serverData?.settings) setForm({ ...defaultSettings, ...serverData.settings })
   }, [serverData])
+
+  useEffect(() => {
+    if (accountList.length > 0 && Object.keys(selectedAccounts).length === 0) {
+      setSelectedAccounts(Object.fromEntries(accountList.map(a => [a, true])))
+      setAllAccounts(true)
+    }
+  }, [accountList.length])
 
   const set = <K extends keyof SystemSettings>(key: K, val: SystemSettings[K]) =>
     setForm((prev) => ({ ...prev, [key]: val }))
