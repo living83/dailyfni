@@ -2223,28 +2223,50 @@ async function loadNotifications() {
   } catch (e) { console.error(e); }
 }
 
-// 알림 소리
+// 알림 소리 (부드러운 차임벨)
 function playNotiSound() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 800;
-    gain.gain.value = 0.3;
-    osc.start();
-    osc.stop(ctx.currentTime + 0.2);
-    setTimeout(() => {
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.frequency.value = 1000;
-      gain2.gain.value = 0.3;
-      osc2.start();
-      osc2.stop(ctx.currentTime + 0.3);
-    }, 250);
+    const now = ctx.currentTime;
+
+    // 1음: 부드러운 시작
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.value = 523; // C5
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(0.15, now + 0.05);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+    osc1.start(now);
+    osc1.stop(now + 0.5);
+
+    // 2음: 높은 음
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.value = 659; // E5
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    gain2.gain.setValueAtTime(0, now + 0.2);
+    gain2.gain.linearRampToValueAtTime(0.15, now + 0.25);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+    osc2.start(now + 0.2);
+    osc2.stop(now + 0.8);
+
+    // 3음: 마무리
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.type = 'sine';
+    osc3.frequency.value = 784; // G5
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    gain3.gain.setValueAtTime(0, now + 0.45);
+    gain3.gain.linearRampToValueAtTime(0.12, now + 0.5);
+    gain3.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+    osc3.start(now + 0.45);
+    osc3.stop(now + 1.2);
   } catch (e) {}
 }
 
