@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Sparkles, Trash2, FileText, Clock, Plus, X, Tag } from 'lucide-react'
+import { Sparkles, Trash2, FileText, Clock, Plus, X, Tag, Search, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import StatusBadge from '../components/StatusBadge'
@@ -32,6 +32,8 @@ export default function Content() {
   const [keywordInput, setKeywordInput] = useState('')
   const [keywords, setKeywords] = useState<string[]>([])
   const [productInfo, setProductInfo] = useState('')
+  const [dupChecking, setDupChecking] = useState(false)
+  const [dupResult, setDupResult] = useState<any>(null)
   const [queue, setQueue] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -81,6 +83,22 @@ export default function Content() {
       await api.delete(`/contents/${id}`)
       fetchQueue()
     } catch { toast('error', '삭제 실패') }
+  }
+
+  const handleDuplicateCheck = async () => {
+    if (keywords.length === 0) return toast('error', '키워드를 먼저 입력하세요.')
+    setDupChecking(true)
+    setDupResult(null)
+    try {
+      const { data } = await api.post('/contents/check-duplicate', {
+        title: keywords.join(' '),
+        keywords,
+      })
+      setDupResult(data)
+      if (data.warning) toast('error', data.message)
+      else toast('success', data.message)
+    } catch { toast('error', '중복 체크 실패') }
+    setDupChecking(false)
   }
 
   const readyCount = queue.filter((q) => q.status === '검수완료').length
@@ -167,14 +185,64 @@ export default function Content() {
               </div>
             )}
 
-            {/* Submit */}
-            <button onClick={handleSubmit} disabled={keywords.length === 0 || submitting}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
-              {submitting
-                ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <Sparkles className="w-4 h-4" />}
-              {keywords.length > 0 ? `${keywords.length}개 키워드 대기열에 추가` : '키워드를 입력하세요'}
-            </button>
+            {/* Buttons */}
+            <div className="flex items-center gap-3">
+              <button onClick={handleDuplicateCheck} disabled={keywords.length === 0 || dupChecking}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border border-border text-muted-foreground hover:text-foreground hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {dupChecking
+                  ? <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                  : <Search className="w-4 h-4" />}
+                중복 체크
+              </button>
+              <button onClick={handleSubmit} disabled={keywords.length === 0 || submitting}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
+                {submitting
+                  ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Sparkles className="w-4 h-4" />}
+                {keywords.length > 0 ? `${keywords.length}개 키워드 대기열에 추가` : '키워드를 입력하세요'}
+              </button>
+            </div>
+
+            {/* Duplicate Check Result */}
+            {dupResult && (
+              <div className={`mt-4 p-4 rounded-lg border ${
+                dupResult.warning
+                  ? 'border-destructive/30 bg-destructive/5'
+                  : dupResult.max_similarity >= 50
+                    ? 'border-amber/30 bg-amber/5'
+                    : 'border-emerald/30 bg-emerald/5'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  {dupResult.warning
+                    ? <AlertTriangle className="w-4 h-4 text-destructive" />
+                    : <CheckCircle2 className="w-4 h-4 text-emerald" />}
+                  <span className={`text-sm font-medium ${dupResult.warning ? 'text-destructive' : 'text-emerald'}`}>
+                    최대 유사도: {dupResult.max_similarity}%
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">{dupResult.message}</p>
+
+                {dupResult.results && dupResult.results.length > 0 && (
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {dupResult.results.slice(0, 5).map((r: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs p-2 rounded bg-background/50">
+                        <a href={r.link} target="_blank" rel="noreferrer"
+                          className="text-foreground hover:text-primary truncate flex-1">
+                          {r.title}
+                        </a>
+                        <span className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${
+                          r.similarity >= 70 ? 'bg-destructive/15 text-destructive'
+                          : r.similarity >= 50 ? 'bg-amber/15 text-amber'
+                          : 'bg-emerald/15 text-emerald'
+                        }`}>
+                          {r.similarity}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

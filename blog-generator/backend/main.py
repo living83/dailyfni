@@ -298,6 +298,22 @@ async def dashboard_feed(req: FeedRequest):
     return {"success": True, "feed": mock_feed[:req.max_posts]}
 
 
+# ═══════════════════════════════════════════════════════
+# 중복 체크 API
+# ═══════════════════════════════════════════════════════
+
+class DuplicateCheckRequest(BaseModel):
+    title: str
+    keywords: Optional[list[str]] = None
+
+@app.post("/api/dashboard/check-duplicate")
+async def check_duplicate_endpoint(req: DuplicateCheckRequest):
+    """포스팅 발행 전 네이버 블로그 검색으로 중복 체크"""
+    from duplicate_checker import check_duplicate
+    result = await check_duplicate(req.title, req.keywords)
+    return result
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "server": "python-fastapi", "port": 8000}

@@ -117,6 +117,23 @@ async function requestFeed(params) {
 }
 
 /**
+ * 중복 체크 — 네이버 블로그 검색으로 유사 포스팅 탐지
+ * @param {object} params - { title, keywords }
+ * @returns {Promise<object>} - { max_similarity, results, warning, message }
+ */
+async function checkDuplicate(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/check-duplicate`, params, {
+      timeout: 15000,
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] Duplicate check 실패:', err.message);
+    return { max_similarity: 0, results: [], warning: false, message: err.message };
+  }
+}
+
+/**
  * Python 서버 상태 확인
  * @returns {Promise<boolean>}
  */
@@ -135,6 +152,7 @@ module.exports = {
   requestEngage,
   requestCommentPreview,
   requestFeed,
+  checkDuplicate,
   checkHealth,
   PYTHON_URL,
 };

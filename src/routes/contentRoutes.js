@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { authenticate } = require('../middleware/auth');
 const Content = require('../models/Content');
-const { requestGenerate } = require('../services/pythonBridge');
+const { requestGenerate, checkDuplicate } = require('../services/pythonBridge');
 const { getSettingsRaw } = require('../models/Settings');
 
 const router = Router();
@@ -104,6 +104,14 @@ router.delete('/contents/:id', (req, res) => {
   const ok = Content.deleteContent(req.params.id);
   if (!ok) return res.status(404).json({ success: false, message: '콘텐츠를 찾을 수 없습니다.' });
   res.json({ success: true, message: '삭제되었습니다.' });
+});
+
+// POST /api/contents/check-duplicate — 중복 체크
+router.post('/contents/check-duplicate', async (req, res) => {
+  const { title, keywords } = req.body;
+  if (!title) return res.status(400).json({ success: false, message: '제목을 입력하세요.' });
+  const result = await checkDuplicate({ title, keywords });
+  res.json({ success: true, ...result });
 });
 
 // POST /api/contents/:id/regenerate — 재생성
