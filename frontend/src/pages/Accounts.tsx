@@ -42,8 +42,10 @@ export default function Accounts() {
   const [proxies, setProxies] = useState<Proxy[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showProxyModal, setShowProxyModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' })
+  const [proxyForm, setProxyForm] = useState({ ip: '', port: '', username: '', password: '' })
 
   const fetchData = useCallback(async () => {
     if (isDemo) {
@@ -111,6 +113,31 @@ export default function Accounts() {
       toast('success', '계정이 삭제되었습니다.')
       fetchData()
     } catch { toast('error', '삭제 실패') }
+  }
+
+  const handleAddProxy = async () => {
+    if (!proxyForm.ip || !proxyForm.port) return toast('error', 'IP와 포트를 입력하세요.')
+    if (isDemo) {
+      const newProxy: Proxy = {
+        id: `demo-${Date.now()}`, ip: proxyForm.ip, port: Number(proxyForm.port),
+        username: proxyForm.username, status: 'normal', speed: null,
+        assignedAccountId: null, assignedAccountName: null,
+      }
+      setProxies([newProxy, ...proxies])
+      setShowProxyModal(false)
+      setProxyForm({ ip: '', port: '', username: '', password: '' })
+      toast('success', '프록시가 추가되었습니다.')
+      return
+    }
+    setSaving(true)
+    try {
+      await api.post('/proxies', proxyForm)
+      toast('success', '프록시가 추가되었습니다.')
+      setShowProxyModal(false)
+      setProxyForm({ ip: '', port: '', username: '', password: '' })
+      fetchData()
+    } catch { toast('error', '프록시 추가 실패') }
+    setSaving(false)
   }
 
   const handleProxyTest = async (id: string) => {
@@ -234,7 +261,8 @@ export default function Accounts() {
         <div className="glass-panel rounded-xl p-5">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-foreground">프록시 서버 목록</h2>
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary transition-colors">
+            <button onClick={() => setShowProxyModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary transition-colors">
               <Plus className="w-4 h-4" /> 프록시 추가
             </button>
           </div>
@@ -333,6 +361,54 @@ export default function Accounts() {
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
               <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
               <button onClick={handleAddAccount} disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Add Proxy Modal */}
+      {showProxyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-lg p-6 m-4 rounded-2xl relative">
+            <button onClick={() => setShowProxyModal(false)} className="absolute right-4 top-4 text-muted-foreground hover:text-foreground">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-xl font-bold mb-1">프록시 추가</h3>
+            <p className="text-sm text-muted-foreground mb-6">프록시 서버 정보를 입력하세요.</p>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">IP 주소</label>
+                  <input type="text" value={proxyForm.ip} onChange={(e) => setProxyForm({ ...proxyForm, ip: e.target.value })}
+                    placeholder="예: 103.15.22.41" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">포트</label>
+                  <input type="text" value={proxyForm.port} onChange={(e) => setProxyForm({ ...proxyForm, port: e.target.value })}
+                    placeholder="예: 8080" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">사용자명 (선택)</label>
+                  <input type="text" value={proxyForm.username} onChange={(e) => setProxyForm({ ...proxyForm, username: e.target.value })}
+                    placeholder="username" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">비밀번호 (선택)</label>
+                  <input type="password" value={proxyForm.password} onChange={(e) => setProxyForm({ ...proxyForm, password: e.target.value })}
+                    placeholder="password" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
+              <button onClick={() => setShowProxyModal(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+              <button onClick={handleAddProxy} disabled={saving}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
                 {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
                 저장
