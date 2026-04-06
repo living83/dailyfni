@@ -1,18 +1,14 @@
 const { v4: uuid } = require('uuid');
 const db = require('../db/sqlite');
+const Account = require('./Account');
 
-/** Feed: in-memory (세션마다 갱신) */
+/** Feed: in-memory (세션마다 갱신, Playwright 크롤링으로 교체 예정) */
 const neighborPosts = new Map();
 
-/* ── Mock posts ── */
-const mockPosts = [
-  { blogName: '여행매니아', title: '제주도 3박4일 가성비 여행 코스 추천', timeAgo: '32분 전', liked: false, commented: false },
-  { blogName: '맛집탐험가', title: '강남역 숨은 맛집 TOP 5', timeAgo: '1시간 전', liked: false, commented: false },
-  { blogName: 'IT트렌드', title: '2026년 AI 트렌드 총정리', timeAgo: '2시간 전', liked: false, commented: false },
-  { blogName: '재테크초보', title: '월 100만원 저축하는 방법', timeAgo: '3시간 전', liked: false, commented: false },
-  { blogName: '인테리어팁', title: '10평 원룸 넓어 보이는 인테리어', timeAgo: '4시간 전', liked: false, commented: false },
-  { blogName: '건강생활', title: '아침 루틴으로 하루를 바꾸는 법', timeAgo: '5시간 전', liked: false, commented: false },
-];
+const stats = {
+  todayLikes: 0,
+  todayComments: 0,
+};
 
 /* ── AI comment templates ── */
 const commentTemplates = [
@@ -24,29 +20,18 @@ const commentTemplates = [
   (title) => `와 대박! ${title} 이렇게 깔끔하게 정리된 글은 처음이에요. 앞으로도 좋은 글 부탁드려요~`,
 ];
 
-function ensureMockPosts() {
-  if (neighborPosts.size === 0) {
-    for (const mock of mockPosts) {
-      const id = uuid();
-      neighborPosts.set(id, { id, ...mock });
-    }
-  }
-}
-
 function listFeed() {
-  ensureMockPosts();
   return [...neighborPosts.values()];
 }
 
 function likePost(postId) {
-  ensureMockPosts();
   const post = neighborPosts.get(postId);
   if (!post) return null;
   post.liked = !post.liked;
   if (post.liked) {
     stats.todayLikes++;
     addActivity({
-      accountName: '블로그마스터',
+      accountName: '시스템',
       action: '♥ 공감',
       target: post.title.length > 20 ? post.title.slice(0, 20) + '...' : post.title,
     });
@@ -57,13 +42,12 @@ function likePost(postId) {
 }
 
 function commentPost(postId, commentText) {
-  ensureMockPosts();
   const post = neighborPosts.get(postId);
   if (!post) return null;
   post.commented = true;
   stats.todayComments++;
   addActivity({
-    accountName: '블로그마스터',
+    accountName: '시스템',
     action: '💬 댓글',
     target: post.title.length > 20 ? post.title.slice(0, 20) + '...' : post.title,
   });
@@ -71,7 +55,10 @@ function commentPost(postId, commentText) {
 }
 
 function getStats() {
-  return { ...stats };
+  const accounts = Account.listAccounts();
+  const activeAccounts = accounts.filter(a => a.isActive && a.neighborEngage).length;
+  const totalAccounts = accounts.length;
+  return { ...stats, activeAccounts, totalAccounts };
 }
 
 function listActivities() {
@@ -87,7 +74,7 @@ function addActivity(entry) {
   const now = new Date();
   const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   db.prepare(`INSERT INTO engagement_activities (time, accountName, action, target) VALUES (?, ?, ?, ?)`)
-    .run(time, entry.accountName || '블로그마스터', entry.action, entry.target);
+    .run(time, entry.accountName || '시스템', entry.action, entry.target);
 }
 
 module.exports = {
