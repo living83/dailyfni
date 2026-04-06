@@ -315,7 +315,8 @@ function renderDashboard() {
 
 async function loadDashboard() {
   try {
-    const res = await fetch('/api/dashboard/summary');
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+    const res = await fetch(`/api/dashboard/summary?userId=${user.id||0}`);
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { return; }
     if (data.success) {
