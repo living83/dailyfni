@@ -3410,7 +3410,7 @@ function renderCustomerEdit() {
       <div style="width:300px;flex-shrink:0;">
         <div class="panel"><div class="panel-header"><h2>담당자</h2></div>
           <div class="panel-body" style="padding:8px 10px;">
-            <select id="edit-assigned" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택하세요</option>${assignOptions}</select>
+            <input type="text" id="edit-assigned" value="${(() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}').name||''; } catch { return ''; } })()}" readonly style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;background:#f1f5f9;">
           </div>
         </div>
         <div style="display:flex;gap:6px;margin-top:8px;">
@@ -3591,7 +3591,7 @@ function renderCustomerRegister() {
           <div class="panel-body" style="padding:8px 10px;">
             <div class="form-group" style="margin-bottom:6px;">
               <label>담당자 <span class="required">*</span></label>
-              <select id="reg-assigned" style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;"><option>선택하세요</option>${assignOptions}</select>
+              <input type="text" id="reg-assigned" value="${(() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}').name||''; } catch { return ''; } })()}" readonly style="width:100%;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;background:#f1f5f9;">
             </div>
             <div class="form-group">
               <label>초기 상태</label>
