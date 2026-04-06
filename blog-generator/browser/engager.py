@@ -499,155 +499,196 @@ async def _handle_reaction_picker_v10(page, main_frame):
 
 
 async def write_comment_via_api(page: Page, comment_text: str) -> dict:
-    """cbox API 직접 호출 (credentials 포함, 여러 호스트 시도)"""
+    """
+    Playwright page.request를 사용 — 브라우저 CORS 우회
+    (context의 쿠키는 자동으로 포함됨)
+    """
     try:
-        # blogId/logNo 추출은 page(top)에서 수행해야 네이버 URL 매칭됨
-        meta = await page.evaluate(r'''() => {
-            const url = window.location.href;
-            const blogId = (url.match(/blog\.naver\.com\/([^\/\?#]+)/) || [])[1];
-            const logNo = (url.match(/\/(\d{8,})/) || url.match(/logNo=(\d+)/) || [])[1];
-            return { blogId, logNo };
-        }''')
+        # URL에서 blogId, logNo 추출
+        url = page.url or ""
+        m = re.search(r'blog\.naver\.com/([^/\?#]+)', url)
+        blog_id = m.group(1) if m else None
 
-        if not meta['blogId'] or not meta['logNo']:
-            return {"success": False, "error": "ID/번호 추출 실패"}
+        m2 = re.search(r'/(\d{8,})', url) or re.search(r'logNo=(\d+)', url)
+        log_no = m2.group(1) if m2 else None
 
-        # mainFrame 안에서 실행 (쿠키 컨텍스트 + same-origin 접근)
-        main_frame = next((f for f in page.frames if f.name == 'mainFrame'), page)
+        if not blog_id or not log_no:
+            return {"success": False, "error": f"URL 파싱 실패: {url}"}
 
-        payload = {"blogId": meta['blogId'], "logNo": meta['logNo'], "content": comment_text}
-        ok = await main_frame.evaluate('''async ({blogId, logNo, content}) => {
-            const objectId = `blog_${blogId}_${logNo}`;
-            // cbox5/cbox/cbox2 여러 풀 시도 — 네이버가 풀을 변경할 때 대비
-            const pools = ['cbox5', 'cbox', 'cbox2', 'cbox10'];
+        object_id = f"blog_{blog_id}_{log_no}"
 
-            const body = new URLSearchParams();
-            body.append('contents', content);
-            body.append('openType', 'on');
+        # 여러 pool/endpoint 조합 시도
+        pools = ['cbox5', 'cbox', 'cbox2', 'cbox10']
+        endpoints = [
+            'https://apis.naver.com/commentBox/cbox/web_naver_write_json.json',
+            'https://apis.naver.com/commentBox/cbox/web_naver_comment_write_json.json',
+        ]
 
-            for (const pool of pools) {
-                try {
-                    const url = `https://apis.naver.com/commentBox/cbox/web_naver_list_jsonp.json`
-                        + `?ticket=blog&pool=${pool}&lang=ko&country=KR&objectId=${objectId}`;
-                    // 먼저 write endpoint 시도
-                    const writeUrl = `https://apis.naver.com/commentBox/cbox/web_naver_write_json.json`
-                        + `?ticket=blog&pool=${pool}&lang=ko&country=KR&objectId=${objectId}`;
-                    const resp = await fetch(writeUrl, {
-                        method: 'POST',
-                        body: body,
-                        headers: {
-                            'Content-Type': 'application/x-www-form-urlencoded',
-                            'Accept': 'application/json',
+        last_error = "no attempt"
+        for endpoint in endpoints:
+            for pool in pools:
+                full_url = f"{endpoint}?ticket=blog&pool={pool}&lang=ko&country=KR&objectId={object_id}"
+                try:
+                    resp = await page.request.post(
+                        full_url,
+                        form={
+                            'contents': comment_text,
+                            'openType': 'on',
                         },
-                        credentials: 'include',
-                        mode: 'cors',
-                    });
-                    if (!resp.ok) continue;
-                    const data = await resp.json().catch(() => null);
-                    if (data && (data.success === true || data.result === 'success')) {
-                        return { success: true, pool, message: 'OK' };
-                    }
-                } catch (e) {
-                    // 다음 풀 시도
-                }
-            }
+                        headers={
+                            'Accept': 'application/json',
+                            'Referer': url,
+                            'Origin': 'https://blog.naver.com',
+                        },
+                    )
+                    status = resp.status
+                    if status == 200:
+                        try:
+                            data = await resp.json()
+                            if data.get('success') is True or data.get('result') == 'success':
+                                logger.info(f"댓글 API 성공: {pool}")
+                                return {"success": True, "error": ""}
+                            last_error = f"{pool} {endpoint.split('/')[-1]}: {data}"
+                        except Exception:
+                            body = await resp.text()
+                            last_error = f"{pool}: JSON parse fail, body={body[:100]}"
+                    else:
+                        last_error = f"{pool} HTTP {status}"
+                except Exception as e:
+                    last_error = f"{pool} exception: {e}"
 
-            // 폴백: 이전 cbox5 엔드포인트 직접 시도
-            try {
-                const legacy = `https://cbox5.apis.naver.com/comment/v1/write.json`
-                    + `?ticket=blog&pool=cbox5&lang=ko&country=KR&objectId=blog_${blogId}_${logNo}`;
-                const resp = await fetch(legacy, {
-                    method: 'POST',
-                    body: body,
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    credentials: 'include',
-                    mode: 'cors',
-                });
-                const data = await resp.json().catch(() => null);
-                if (data && data.success) return { success: true, pool: 'cbox5-legacy', message: 'OK' };
-                return { success: false, message: `legacy HTTP ${resp.status}` };
-            } catch (e) {
-                return { success: false, message: e.toString() };
-            }
-        }''', payload)
+        # 레거시 cbox5 엔드포인트 최종 시도
+        try:
+            legacy_url = f"https://cbox5.apis.naver.com/comment/v1/write.json?ticket=blog&pool=cbox5&lang=ko&country=KR&objectId={object_id}"
+            resp = await page.request.post(
+                legacy_url,
+                form={'contents': comment_text, 'openType': 'on'},
+                headers={'Referer': url, 'Origin': 'https://blog.naver.com'},
+            )
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get('success'):
+                    return {"success": True, "error": ""}
+        except Exception as e:
+            last_error = f"legacy: {e}"
 
-        return {"success": ok['success'], "error": ok.get('message', '')}
+        return {"success": False, "error": last_error}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 async def write_comment_ui(page: Page, comment_text: str) -> dict:
-    """UI 조작 댓글 (API 폴백) — iframe 탐색 강화"""
+    """UI 조작 댓글 (API 폴백) — 댓글 영역 로드 트리거 강화"""
     try:
         main_frame = next((f for f in page.frames if f.name == 'mainFrame'), page)
 
-        # 1) 하단으로 스크롤 → 댓글 영역 로드 트리거
-        await main_frame.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+        # 1) 댓글 영역으로 스크롤 + 댓글 카운트 버튼 클릭으로 로드 강제 트리거
+        await main_frame.evaluate('''() => {
+            // 댓글 영역이 있으면 거기로 스크롤
+            const area = document.querySelector('.area_comment, #cbox_module, .u_cbox_wrap, #commentArea');
+            if (area) {
+                area.scrollIntoView({ block: 'center' });
+            } else {
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+        }''')
         await random_delay(1.5, 2.5)
 
-        # 2) 댓글 펼치기 버튼 (있으면 클릭)
-        try:
-            expand_btn = await main_frame.query_selector('a.area_comment, button:has-text("댓글"), .btn_comment')
-            if expand_btn and await expand_btn.is_visible():
-                await expand_btn.click(force=True)
-                await random_delay(1, 2)
-        except Exception:
-            pass
+        # 2) 댓글 펼치기/로드 트리거 — 여러 셀렉터 시도
+        expand_selectors = [
+            'a.area_comment', '.area_comment > a',
+            'button:has-text("댓글")', 'a:has-text("댓글")',
+            '.btn_comment', 'a.link_cmt',
+            'em.u_cbox_count', '.u_cbox_count',
+            'a[href*="#comment"]', 'a[href*="cbox"]',
+        ]
+        for sel in expand_selectors:
+            try:
+                btn = await main_frame.query_selector(sel)
+                if btn:
+                    try:
+                        await btn.click(force=True, timeout=2000)
+                        await random_delay(1, 2)
+                        logger.debug(f"댓글 펼치기: {sel}")
+                        break
+                    except Exception:
+                        pass
+            except Exception:
+                continue
 
-        # 3) cbox iframe 여러 이름 체크
+        # 3) 댓글 iframe 대기 (최대 5초)
         cbox_frame = None
-        for f in page.frames:
-            name = (f.name or '').lower()
-            url = (f.url or '').lower()
-            if any(k in name for k in ['cbox', 'comment']) or any(k in url for k in ['cbox', 'comment']):
-                cbox_frame = f
+        for _ in range(10):
+            for f in page.frames:
+                name = (f.name or '').lower()
+                url = (f.url or '').lower()
+                if 'cbox' in name or 'comment' in name or 'cbox' in url or 'comment' in url:
+                    cbox_frame = f
+                    break
+            if cbox_frame:
                 break
+            await asyncio.sleep(0.5)
 
-        # iframe이 없으면 main_frame에서 직접 찾기
         targets = [cbox_frame, main_frame, page] if cbox_frame else [main_frame, page]
 
+        # 4) 다양한 셀렉터로 입력창 찾기
         textarea = None
+        found_target = None
+        textarea_selectors = [
+            '.u_cbox_text',
+            'textarea.u_cbox_text',
+            'textarea[class*="cbox"]',
+            '.u_cbox_write_textarea',
+            'textarea[placeholder*="댓글"]',
+            'div[contenteditable="true"][class*="comment"]',
+            'textarea[name="contents"]',
+            'textarea',
+        ]
         for target in targets:
             if not target:
                 continue
-            textarea = await try_selectors(target, [
-                '.u_cbox_text',
-                'textarea.u_cbox_text',
-                'textarea[class*="cbox"]',
-                '.u_cbox_write_textarea',
-                'textarea[placeholder*="댓글"]',
-                'div[contenteditable="true"][class*="comment"]',
-            ], timeout=5000)
+            for sel in textarea_selectors:
+                try:
+                    el = await target.query_selector(sel)
+                    if el and await el.is_visible():
+                        textarea = el
+                        found_target = target
+                        logger.debug(f"댓글 입력창 발견: {sel}")
+                        break
+                except Exception:
+                    continue
             if textarea:
                 break
 
         if not textarea:
-            return {"success": False, "error": "댓글 입력창 미발견"}
+            # 디버그: 현재 페이지의 프레임 상태 기록
+            frame_info = [f"{f.name or '?'}({f.url[:50]})" for f in page.frames]
+            return {"success": False, "error": f"댓글 입력창 미발견 (frames: {frame_info})"}
 
+        # 5) 입력
         await textarea.click(force=True)
         await random_delay(0.3, 0.6)
-        # contenteditable div는 fill 대신 type 사용
         try:
             await textarea.fill(comment_text)
         except Exception:
-            await textarea.evaluate(f'el => el.innerText = {comment_text!r}')
-            await textarea.type(' ', delay=50)  # 이벤트 트리거
+            try:
+                await textarea.evaluate(f'(el, text) => {{ el.innerText = text; el.value = text; el.dispatchEvent(new Event("input", {{bubbles: true}})); }}', comment_text)
+            except Exception as e:
+                return {"success": False, "error": f"입력 실패: {e}"}
         await random_delay(0.5, 1)
 
+        # 6) 등록 버튼
         submit = None
-        for target in targets:
-            if not target:
+        for sel in ['.u_cbox_btn_upload', 'button.u_cbox_btn_upload', 'button:has-text("등록")',
+                    'a:has-text("등록")', 'button[class*="upload"]', 'button[class*="submit"]',
+                    'input[type="submit"]']:
+            try:
+                el = await found_target.query_selector(sel)
+                if el and await el.is_visible():
+                    submit = el
+                    break
+            except Exception:
                 continue
-            submit = await try_selectors(target, [
-                '.u_cbox_btn_upload',
-                'button.u_cbox_btn_upload',
-                'button:has-text("등록")',
-                'a:has-text("등록")',
-                'button[class*="upload"]',
-                'button[class*="submit"]',
-            ], timeout=3000)
-            if submit:
-                break
 
         if not submit:
             return {"success": False, "error": "등록 버튼 미발견"}
