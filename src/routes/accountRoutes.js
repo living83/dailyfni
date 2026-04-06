@@ -36,6 +36,19 @@ router.get('/accounts/:id', (req, res) => {
 });
 
 router.patch('/accounts/:id', (req, res) => {
+  // proxyId 변경 시 proxyServer도 같이 업데이트
+  if (req.body.proxyId !== undefined) {
+    if (req.body.proxyId) {
+      const proxy = Proxy.getProxy(req.body.proxyId);
+      if (proxy) {
+        req.body.proxyServer = `${proxy.ip}:${proxy.port}`;
+        Proxy.assignProxy(req.body.proxyId, req.params.id, req.body.accountName || '');
+      }
+    } else {
+      req.body.proxyServer = null;
+      req.body.proxyId = null;
+    }
+  }
   const account = Account.updateAccount(req.params.id, req.body);
   if (!account) return res.status(404).json({ success: false, message: '계정을 찾을 수 없습니다.' });
   res.json({ success: true, account });
