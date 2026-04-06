@@ -6,6 +6,7 @@ const { listAccounts, getAccountRaw } = require('../models/Account');
 const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
 const { appendFooter } = require('../services/postingHelper');
+const { getPostTypeForTier, daysBetween } = require('../services/scheduler');
 const { getSchedulerStatus, restartScheduler } = require('../services/scheduler');
 
 const router = Router();
@@ -122,7 +123,7 @@ router.post('/posting/run-all', async (req, res) => {
   let all = Posting.listPostings();
   let pending = all.filter((p) => p.status === '대기중');
 
-  // 큐에 대기중 항목이 없으면 → 검수완료 콘텐츠 + 활성 계정으로 자동 매칭
+  // 큐에 대기중 항목이 없으면 → 검수완료 콘텐츠 + 활성 계정으로 티어 기반 자동 매칭
   if (pending.length === 0) {
     const readyContents = Content.listContents().filter(c => c.status === '검수완료');
     const activeAccounts = listAccounts().filter(a => a.isActive && a.autoPublish);
@@ -134,23 +135,36 @@ router.post('/posting/run-all', async (req, res) => {
       return res.json({ success: true, message: '활성 계정이 없습니다. 계정을 먼저 등록하세요.', count: 0 });
     }
 
-    // 콘텐츠와 계정을 순차로 매칭 (계정 수 또는 콘텐츠 수 중 작은 것만큼)
-    const matchCount = Math.min(readyContents.length, activeAccounts.length);
-    for (let i = 0; i < matchCount; i++) {
-      const content = readyContents[i];
-      const account = activeAccounts[i];
+    // 티어 기반 매칭: 각 계정의 티어와 오늘 위치에 따라 일반/광고 결정
+    const usedContentIds = new Set();
+    for (const account of activeAccounts) {
+      // 1계정 1일 1포스팅 원칙
+      const days = daysBetween(account.createdAt);
+      const postType = getPostTypeForTier(account.tier || 1, days);
+
+      // 해당 타입의 검수완료 콘텐츠 중 아직 안 쓴 것 선택
+      const matched = readyContents.find(c =>
+        c.contentType === postType && !usedContentIds.has(c.id)
+      );
+      if (!matched) {
+        console.log(`[Posting] ${account.accountName} (Tier ${account.tier}, ${postType}): 매칭 콘텐츠 없음`);
+        continue;
+      }
+      usedContentIds.add(matched.id);
+
       const item = Posting.createPosting({
-        keyword: content.keyword,
+        keyword: matched.keyword,
         accountName: account.accountName,
         accountId: account.id,
-        tone: content.tone || '친근톤',
-        contentId: content.id,
+        tone: matched.tone || '친근톤',
+        contentId: matched.id,
         scheduledTime: '즉시',
       });
-      Content.updateContent(content.id, { status: '발행중', accountId: account.id });
+      Content.updateContent(matched.id, { status: '발행중', accountId: account.id });
       pending.push(item);
+      console.log(`[Posting] 티어 매칭: ${account.accountName} (Tier ${account.tier}) → ${postType} "${matched.keyword}"`);
     }
-    console.log(`[Posting] 자동 큐 생성: ${pending.length}건`);
+    console.log(`[Posting] 자동 큐 생성: ${pending.length}건 (티어 기반)`);
   }
 
   if (pending.length === 0) {

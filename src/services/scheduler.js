@@ -399,5 +399,6 @@ module.exports = {
   getSchedulerStatus,
   checkAndRun,
   getPostTypeForTier,
+  daysBetween,
   checkTierUpgrades,
 };
