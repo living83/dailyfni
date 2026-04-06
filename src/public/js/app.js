@@ -44,6 +44,17 @@ function formatWon(val) {
   return Number(num).toLocaleString();
 }
 
+// 사건번호 파싱: "2026개회223522" → { year: "2026", type: "개회", num: "223522" }
+function parseCaseNo(cn) {
+  if (!cn || cn === '-') return { year: '', type: '', num: '' };
+  const m = cn.match(/^(\d{4})(가단|가합|개회|개파|회단|신회|간회단|하단|하면|기타)(.*)$/);
+  if (m) return { year: m[1], type: m[2], num: m[3] };
+  const nums = cn.replace(/[^0-9]/g, '');
+  return { year: nums.substring(0, 4), type: '', num: nums.substring(4) };
+}
+
+const caseNoTypes = ['선택','가단','가합','개회','개파','회단','신회','간회단','하단','하면','기타'];
+
 // 주민번호 하이픈 자동 포맷
 function formatSsn(val) {
   const num = val.replace(/[^0-9]/g, '');
@@ -589,15 +600,6 @@ function renderLoanRegister() {
   const recoveryType = c ? (c.recovery_type || '') : '';
   const courtName = c ? (c.court_name || c.courtName || '') : '';
   const caseNo = c ? (c.case_no || c.caseNo || '') : '';
-  // 사건번호 파싱: "2026개회223522" → { year: "2026", type: "개회", num: "223522" }
-  function parseCaseNo(cn) {
-    if (!cn) return { year: '', type: '', num: '' };
-    const m = cn.match(/^(\d{4})(가단|가합|개회|개파|회단|신회|간회단|하단|하면|기타)(.*)$/);
-    if (m) return { year: m[1], type: m[2], num: m[3] };
-    // 숫자만 있는 경우: 앞 4자리 연도, 나머지 번호
-    const nums = cn.replace(/[^0-9]/g, '');
-    return { year: nums.substring(0, 4), type: '', num: nums.substring(4) };
-  }
   const caseParsed = parseCaseNo(caseNo);
   const refundBank = c ? (c.refund_bank || c.refundBank || '') : '';
   const refundAccount = c ? (c.refund_account || c.refundAccount || '') : '';
@@ -787,7 +789,7 @@ function renderLoanRegister() {
               <td colspan="2">
                 <div style="display:flex;gap:4px;align-items:center;">
                   <input type="text" style="width:60px;" placeholder="0000" value="${caseParsed.year}">
-                  <select style="width:70px;">${sel(['선택','가단','가합','개회','개파','회단','신회','간회단','하단','하면','기타'], caseParsed.type || '선택')}</select>
+                  <select style="width:70px;">${sel(caseNoTypes, caseParsed.type || '선택')}</select>
                   <input type="text" style="width:80px;" placeholder="" value="${caseParsed.num}">
                 </div>
               </td>
@@ -2802,7 +2804,13 @@ async function saveLedger() {
     recoveryPaidCount = parts[1] || '';
   }
   const courtName = getVal(3, 1, 0).replace(/^-$/, '');
-  const caseNo = getVal(3, 1, 1).replace(/^-$/, '');
+  // 사건번호: 3개 필드(연도/종류/번호)에서 추출하여 합침
+  const caseNoTd = tables[3]?.querySelectorAll('tr')[1]?.querySelectorAll('td')[1];
+  const caseNoInputs = caseNoTd?.querySelectorAll('input, select') || [];
+  const caseYear = caseNoInputs[0]?.value || '';
+  const caseType = caseNoInputs[1]?.tagName === 'SELECT' ? (caseNoInputs[1].options[caseNoInputs[1].selectedIndex]?.text || '') : '';
+  const caseNum = caseNoInputs[2]?.value || '';
+  const caseNo = (caseYear + (caseType !== '선택' ? caseType : '') + caseNum).replace(/^-$/, '');
   const monthlyPaymentRaw = getVal(3, 2, 0).replace(/^-$/, '').replace(/[^0-9]/g, '');
   const monthlyPayment = monthlyPaymentRaw || '';
 
@@ -3009,7 +3017,7 @@ let ledgerCustomer = null;
 
 async function loadLedgerCustomer(id) {
   try {
-    const res = await fetch(`/api/customers/${id}`);
+    const res = await fetch(`/api/customers/${id}?raw=1`);
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { return null; }
     if (data.success) return data.data;
@@ -3098,7 +3106,13 @@ function renderCustomerLedger() {
         <div class="panel"><div class="panel-header"><h2>회파복 / 법원 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>회파복 구분</th><td><input type="text" value="${c.recovery_type||'-'}" ${ro}></td><th>총회차/납입회차</th><td><input type="text" value="${(c.recovery_total_count && c.recovery_paid_count) ? c.recovery_total_count+'/'+c.recovery_paid_count : '-'}" ${ro}></td></tr>
-            <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td><input type="text" value="${c.case_no||c.caseNo||'-'}" ${ro}></td></tr>
+            <tr><th>법원명</th><td><input type="text" value="${c.court_name||c.courtName||'-'}" ${ro}></td><th>사건번호</th><td>
+              <div style="display:flex;gap:4px;align-items:center;">
+                <input type="text" value="${parseCaseNo(c.case_no||c.caseNo||'').year}" ${ro} style="width:55px;background:#f8fafc;border-color:#e2e8f0;">
+                <select ${ro} style="width:70px;background:#f8fafc;border-color:#e2e8f0;">${sel(caseNoTypes, parseCaseNo(c.case_no||c.caseNo||'').type || '선택')}</select>
+                <input type="text" value="${parseCaseNo(c.case_no||c.caseNo||'').num}" ${ro} style="width:80px;background:#f8fafc;border-color:#e2e8f0;">
+              </div>
+            </td></tr>
             <tr><th>월변제금액</th><td><input type="text" value="${c.monthly_payment ? formatWon(c.monthly_payment)+'원' : '-'}" ${ro}></td><th></th><td></td></tr>
           </tbody></table>
         </div></div>
