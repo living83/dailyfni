@@ -43,6 +43,7 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showProxyModal, setShowProxyModal] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' })
   const [proxyForm, setProxyForm] = useState({ ip: '', port: '', username: '', password: '' })
@@ -87,6 +88,35 @@ export default function Accounts() {
       setForm({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' })
       fetchData()
     } catch { toast('error', '계정 추가에 실패했습니다.') }
+    setSaving(false)
+  }
+
+  const openEdit = (acc: Account) => {
+    setEditingAccount(acc)
+    setForm({
+      accountName: acc.accountName,
+      naverId: acc.naverId,
+      naverPassword: '',
+      tier: acc.tier,
+      proxyId: acc.proxyId || '',
+    })
+  }
+
+  const handleEditAccount = async () => {
+    if (!editingAccount) return
+    if (isDemo) {
+      setAccounts(accounts.map(a => a.id === editingAccount.id ? { ...a, accountName: form.accountName, naverId: form.naverId, tier: form.tier as Account['tier'] } : a))
+      setEditingAccount(null)
+      toast('success', '계정이 수정되었습니다.')
+      return
+    }
+    setSaving(true)
+    try {
+      await api.patch(`/accounts/${editingAccount.id}`, form)
+      toast('success', '계정이 수정되었습니다.')
+      setEditingAccount(null)
+      fetchData()
+    } catch { toast('error', '수정 실패') }
     setSaving(false)
   }
 
@@ -216,7 +246,7 @@ export default function Accounts() {
                         </div>
                       </div>
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors">
+                        <button onClick={() => openEdit(acc)} className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => handleDelete(acc.id)} className="p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
@@ -369,6 +399,65 @@ export default function Accounts() {
           </div>
         </div>
       )}
+      {/* Edit Account Modal */}
+      {editingAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-lg p-6 m-4 rounded-2xl relative">
+            <button onClick={() => setEditingAccount(null)} className="absolute right-4 top-4 text-muted-foreground hover:text-foreground">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-xl font-bold mb-1">계정 수정</h3>
+            <p className="text-sm text-muted-foreground mb-6">비밀번호를 비워두면 기존 값이 유지됩니다.</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">별칭</label>
+                <input type="text" value={form.accountName} onChange={(e) => setForm({ ...form, accountName: e.target.value })}
+                  autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Naver ID</label>
+                  <input type="text" value={form.naverId} onChange={(e) => setForm({ ...form, naverId: e.target.value })}
+                    autoComplete="off" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">비밀번호 (변경 시만)</label>
+                  <input type="password" value={form.naverPassword} onChange={(e) => setForm({ ...form, naverPassword: e.target.value })}
+                    placeholder="변경 시에만 입력" autoComplete="new-password" className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">티어</label>
+                  <select value={form.tier} onChange={(e) => setForm({ ...form, tier: Number(e.target.value) })}
+                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary appearance-none">
+                    {[1, 2, 3, 4, 5].map((t) => <option key={t} value={t}>Tier {t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">프록시</label>
+                  <select value={form.proxyId} onChange={(e) => setForm({ ...form, proxyId: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-lg bg-input border border-border text-foreground focus:outline-none focus:border-primary appearance-none">
+                    <option value="">없음</option>
+                    {proxies.map((p) => <option key={p.id} value={p.id}>{p.ip}:{p.port}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
+              <button onClick={() => setEditingAccount(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+              <button onClick={handleEditAccount} disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : null}
+                수정 완료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Proxy Modal */}
       {showProxyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">

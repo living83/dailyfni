@@ -12,7 +12,16 @@ router.post('/accounts', (req, res) => {
   if (!accountName || !naverId) {
     return res.status(400).json({ success: false, message: '계정명과 네이버 ID는 필수입니다.' });
   }
-  const account = Account.createAccount({ accountName, naverId, naverPassword, tier, proxyId });
+  let proxyServer = null;
+  if (proxyId) {
+    const proxy = Proxy.getProxy(proxyId);
+    if (proxy) {
+      proxyServer = `${proxy.ip}:${proxy.port}`;
+      Proxy.assignProxy(proxyId, null, accountName);
+    }
+  }
+  const account = Account.createAccount({ accountName, naverId, naverPassword, tier, proxyId, proxyServer });
+  if (proxyId && account) Proxy.assignProxy(proxyId, account.id, accountName);
   res.status(201).json({ success: true, account });
 });
 
