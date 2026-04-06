@@ -174,7 +174,7 @@ export default function Accounts() {
           <h1 className="text-2xl font-bold text-foreground">계정 및 프록시 관리</h1>
           <p className="text-sm text-muted-foreground">Naver 계정과 프록시를 등록하고 안전하게 관리합니다</p>
         </div>
-        <button onClick={() => setShowAddModal(true)}
+        <button onClick={() => { setForm({ accountName: '', naverId: '', naverPassword: '', tier: 1, proxyId: '' }); setShowAddModal(true) }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
           <UserPlus className="w-4 h-4" /> 계정 추가
         </button>
@@ -261,7 +261,7 @@ export default function Accounts() {
         <div className="glass-panel rounded-xl p-5">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-foreground">프록시 서버 목록</h2>
-            <button onClick={() => setShowProxyModal(true)}
+            <button onClick={() => { setProxyForm({ ip: '', port: '', username: '', password: '' }); setShowProxyModal(true) }}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary transition-colors">
               <Plus className="w-4 h-4" /> 프록시 추가
             </button>
