@@ -44,6 +44,10 @@ function formatWon(val) {
   return Number(num).toLocaleString();
 }
 
+// select 옵션 생성 (전역)
+const sel = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
+window._sel = sel;
+
 // 사건번호 파싱: "2026개회223522" → { year: "2026", type: "개회", num: "223522" }
 function parseCaseNo(cn) {
   if (!cn || cn === '-') return { year: '', type: '', num: '' };
@@ -606,7 +610,7 @@ function renderLoanRegister() {
   const monthlyPayment = c ? (c.monthly_payment || '') : '';
   const carrier = c ? (c.carrier || '') : '';
 
-  const sel = (opts, val) => opts.map(o => `<option${o===val?' selected':''}>${o}</option>`).join('');
+  const sel = window._sel;
   const ro = c ? 'readonly style="background:#f1f5f9;"' : '';
 
   return `
