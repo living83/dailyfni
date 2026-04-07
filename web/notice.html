@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="format-detection" content="telephone=no">
+  <title>공지사항 | 데일리에프앤아이대부</title>
+  <meta name="description" content="데일리에프앤아이대부의 공식 공지사항. 회사 소식, 정책 변경, 운영 일정 등을 안내합니다.">
+  <meta name="theme-color" content="#262b4d">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="공지사항 | 데일리에프앤아이대부">
+  <meta property="og:description" content="데일리에프앤아이대부 공식 공지사항.">
+  <meta property="og:locale" content="ko_KR">
+
+  <link rel="stylesheet" href="./assets/site.css">
+  <script src="./assets/tailwind-config.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+  <script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+</head>
+<body class="ko bg-ink-950 text-zinc-200 antialiased" data-page="notice">
+
+  <div class="grain" aria-hidden="true"></div>
+  <div data-site="nav"></div>
+
+  <main>
+    <!-- ============================================================
+         PAGE HERO
+         ============================================================ -->
+    <section class="relative overflow-hidden pt-36 sm:pt-40 lg:pt-48 pb-12">
+      <div class="mesh-bg"></div>
+      <div class="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <nav aria-label="페이지 위치" class="reveal text-xs text-zinc-500">
+          <a href="./index.html" class="hover:text-zinc-300">홈</a>
+          <span class="mx-1.5">/</span>
+          <span class="text-zinc-300">공지사항</span>
+        </nav>
+        <p class="reveal mt-6 text-xs tracking-[0.3em] text-accent-300 uppercase">Notice</p>
+        <h1 class="reveal mt-4 text-4xl md:text-5xl lg:text-[4rem] font-bold leading-[1.15] tracking-tightest-ko text-white">
+          공지사항.
+        </h1>
+        <p class="reveal mt-6 max-w-[58ch] text-base md:text-lg text-zinc-400 leading-relaxed">
+          회사의 최신 소식과 정책 변경 사항을 안내합니다.
+          중요 공지는 상단에 고정되며, 게시글은 시안용 placeholder입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         NOTICE LIST
+         ============================================================ -->
+    <section class="relative pb-20 lg:pb-28">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <!-- Search + filter (UI placeholder) -->
+        <div class="reveal flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div class="flex items-center gap-2 text-sm">
+            <button type="button" class="rounded-full bg-white/10 text-white px-4 py-1.5 ring-1 ring-white/15">전체</button>
+            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">중요</button>
+            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">공지</button>
+            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">정책</button>
+          </div>
+          <label class="relative w-full sm:w-72">
+            <iconify-icon icon="solar:magnifer-linear" class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" width="16" aria-hidden="true"></iconify-icon>
+            <input type="search" placeholder="공지사항 검색"
+                   class="w-full rounded-full border border-white/10 bg-white/[0.03] pl-9 pr-4 py-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent-400/60 focus:bg-white/[0.05]">
+          </label>
+        </div>
+
+        <ul class="reveal divide-y divide-white/[0.06] rounded-3xl border border-white/10 bg-white/[0.02]">
+          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
+            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30">
+              <iconify-icon icon="solar:bell-bing-bold" width="20" aria-hidden="true"></iconify-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="inline-flex items-center rounded-full bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30 px-2 py-0.5">중요</span>
+                <span class="text-zinc-500 tabular-nums">2026.04.02</span>
+              </div>
+              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
+                <a href="#" class="hover:text-accent-300 transition">개인정보처리방침 일부 개정 안내</a>
+              </h2>
+              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
+                개인정보보호법 개정에 따라 수집 항목과 보관 기간 일부가 변경됩니다. 시행일 이전에 반드시 확인 부탁드립니다.
+              </p>
+            </div>
+          </li>
+          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
+            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
+              <iconify-icon icon="solar:document-text-bold" width="20" aria-hidden="true"></iconify-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
+                <span class="text-zinc-500 tabular-nums">2026.03.21</span>
+              </div>
+              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
+                <a href="#" class="hover:text-accent-300 transition">민원 처리 절차 개선 안내</a>
+              </h2>
+              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
+                민원 응대 SLA를 7영업일에서 5영업일로 단축하였습니다. 처리 단계별 진행 상황도 안내해 드립니다.
+              </p>
+            </div>
+          </li>
+          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
+            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
+              <iconify-icon icon="solar:calendar-mark-bold" width="20" aria-hidden="true"></iconify-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
+                <span class="text-zinc-500 tabular-nums">2026.02.14</span>
+              </div>
+              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
+                <a href="#" class="hover:text-accent-300 transition">설 연휴 고객센터 운영 일정</a>
+              </h2>
+              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
+                설 연휴 기간(2026.02.16 ~ 2026.02.18) 고객센터 운영이 일시 중단됩니다. 이메일 접수는 정상적으로 가능합니다.
+              </p>
+            </div>
+          </li>
+          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
+            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
+              <iconify-icon icon="solar:shield-check-bold" width="20" aria-hidden="true"></iconify-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">정책</span>
+                <span class="text-zinc-500 tabular-nums">2026.01.08</span>
+              </div>
+              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
+                <a href="#" class="hover:text-accent-300 transition">2026년 채권추심 윤리 강령 갱신</a>
+              </h2>
+              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
+                전 임직원이 2026년 채권추심 윤리 강령에 서약하였습니다. 강령 전문은 본 사이트에서 열람 가능합니다.
+              </p>
+            </div>
+          </li>
+          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
+            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
+              <iconify-icon icon="solar:graph-up-bold" width="20" aria-hidden="true"></iconify-icon>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
+                <span class="text-zinc-500 tabular-nums">2025.12.05</span>
+              </div>
+              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
+                <a href="#" class="hover:text-accent-300 transition">2025년 외부 회계감사 결과 보고</a>
+              </h2>
+              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
+                독립 회계법인의 2025년 정기 감사가 종료되었습니다. 보고서 요약본을 확인할 수 있습니다.
+              </p>
+            </div>
+          </li>
+        </ul>
+
+        <!-- Pagination (UI placeholder) -->
+        <nav aria-label="페이지 이동" class="reveal mt-8 flex items-center justify-center gap-2 text-sm">
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-500 hover:text-white hover:bg-white/5" aria-label="이전 페이지">
+            <iconify-icon icon="solar:alt-arrow-left-linear" width="16"></iconify-icon>
+          </button>
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 tabular-nums">1</button>
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/5 tabular-nums">2</button>
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/5 tabular-nums">3</button>
+          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-500 hover:text-white hover:bg-white/5" aria-label="다음 페이지">
+            <iconify-icon icon="solar:alt-arrow-right-linear" width="16"></iconify-icon>
+          </button>
+        </nav>
+
+        <p class="reveal mt-6 text-center text-[11px] text-zinc-500">* 표시 내용은 시안용 placeholder입니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <div data-site="footer"></div>
+  <script src="./assets/layout.js"></script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+/* Daily F&I — shared layout (nav + footer) injection and behaviors.
+ * Each page must include placeholder elements:
+ *   <div data-site="nav"></div>
+ *   <div data-site="footer"></div>
+ * and on <body>: data-page="home|about|business|assets|protect|support|notice|privacy|terms"
+ */
+(function () {
+  'use strict';
+
+  /* ----------------------------------------------------------
+   * Brand monogram (inline SVG, currentColor)
+   * ---------------------------------------------------------- */
+  var BRAND_MARK = ''
+    + '<svg viewBox="0 0 28 28" class="h-7 w-7 text-accent-300" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    +   '<circle cx="9" cy="17.5" r="6.5"/>'
+    +   '<path d="M15.5 17.5 V4 H22.5"/>'
+    +   '<path d="M15.5 11 H20"/>'
+    + '</svg>';
+
+  var BRAND_MARK_LG = ''
+    + '<svg viewBox="0 0 28 28" class="h-9 w-9 text-accent-300" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    +   '<circle cx="9" cy="17.5" r="6.5"/>'
+    +   '<path d="M15.5 17.5 V4 H22.5"/>'
+    +   '<path d="M15.5 11 H20"/>'
+    + '</svg>';
+
+  /* ----------------------------------------------------------
+   * NAV
+   * ---------------------------------------------------------- */
+  var NAV_LINKS = [
+    { page: 'about',    href: './about.html',    label: '회사소개',     full: '회사소개' },
+    { page: 'business', href: './business.html', label: '사업영역',     full: '사업영역 · 매입채권추심' },
+    { page: 'assets',   href: './assets.html',   label: '자산현황',     full: '자산현황' },
+    { page: 'protect',  href: './protect.html',  label: '고객권리',     full: '고객권리 · 채무자보호' },
+    { page: 'support',  href: './support.html',  label: '고객센터',     full: '고객센터' },
+    { page: 'notice',   href: './notice.html',   label: '공지사항',     full: '공지사항' },
+  ];
+
+  function buildNav(currentPage) {
+    var desktopItems = NAV_LINKS.map(function (l) {
+      var isActive = l.page === currentPage;
+      var cls = isActive
+        ? 'px-3 py-2 rounded-full text-white bg-white/10 transition'
+        : 'px-3 py-2 rounded-full hover:text-white hover:bg-white/5 transition';
+      var current = isActive ? ' aria-current="page"' : '';
+      return '<li><a href="' + l.href + '" class="' + cls + '"' + current + '>' + l.label + '</a></li>';
+    }).join('');
+
+    var mobileItems = NAV_LINKS.map(function (l) {
+      var isActive = l.page === currentPage;
+      var cls = isActive
+        ? 'block px-4 py-3 rounded-2xl text-white bg-white/10'
+        : 'block px-4 py-3 rounded-2xl text-zinc-200 hover:bg-white/5';
+      var current = isActive ? ' aria-current="page"' : '';
+      return '<li><a href="' + l.href + '" class="' + cls + '"' + current + '>' + l.full + '</a></li>';
+    }).join('');
+
+    return ''
+      + '<header class="fixed top-4 sm:top-6 inset-x-0 z-40 px-4 sm:px-6">'
+      +   '<nav aria-label="주 메뉴" class="mx-auto max-w-6xl glass rounded-full px-4 sm:px-6 py-3 flex items-center justify-between">'
+      +     '<a href="./index.html" class="flex items-center gap-2.5 group" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
+      +       BRAND_MARK
+      +       '<span class="flex flex-col leading-none">'
+      +         '<span class="text-[10px] tracking-[0.2em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
+      +         '<span class="mt-1 text-[13px] sm:text-sm font-semibold tracking-tight text-white">데일리에프앤아이대부</span>'
+      +       '</span>'
+      +     '</a>'
+      +     '<ul class="hidden lg:flex items-center gap-1 text-sm text-zinc-300">' + desktopItems + '</ul>'
+      +     '<div class="flex items-center gap-2">'
+      +       '<a href="./support.html" class="hidden sm:inline-flex btn-magnet items-center gap-1.5 rounded-full bg-accent-400 text-white px-4 py-2 text-sm font-semibold shadow-brand-soft">'
+      +         '문의하기'
+      +         '<iconify-icon class="arrow" icon="solar:arrow-right-linear" width="16" aria-hidden="true"></iconify-icon>'
+      +       '</a>'
+      +       '<button id="navToggle" type="button" class="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-zinc-200 hover:bg-white/5" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mobileMenu">'
+      +         '<iconify-icon icon="solar:hamburger-menu-linear" width="20" aria-hidden="true"></iconify-icon>'
+      +       '</button>'
+      +     '</div>'
+      +   '</nav>'
+      +   '<div id="mobileMenu" class="lg:hidden hidden mx-auto mt-2 max-w-6xl glass rounded-3xl p-2">'
+      +     '<ul class="flex flex-col text-sm">' + mobileItems
+      +       '<li class="px-2 py-2">'
+      +         '<a href="./support.html" class="btn-magnet flex items-center justify-center gap-2 rounded-2xl bg-accent-400 text-white px-4 py-3 font-semibold">'
+      +           '문의하기'
+      +           '<iconify-icon class="arrow" icon="solar:arrow-right-linear" width="16" aria-hidden="true"></iconify-icon>'
+      +         '</a>'
+      +       '</li>'
+      +     '</ul>'
+      +   '</div>'
+      + '</header>';
+  }
+
+  /* ----------------------------------------------------------
+   * FOOTER
+   * ---------------------------------------------------------- */
+  function buildFooter() {
+    var year = new Date().getFullYear();
+    return ''
+      + '<footer class="relative border-t border-white/[0.06] bg-ink-900/40">'
+      +   '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">'
+      +     '<div class="grid grid-cols-1 lg:grid-cols-12 gap-10">'
+      +       '<div class="lg:col-span-5">'
+      +         '<a href="./index.html" class="flex items-center gap-3" aria-label="Daily F&amp;I · 데일리에프앤아이대부 주식회사">'
+      +           BRAND_MARK_LG
+      +           '<span class="flex flex-col leading-none">'
+      +             '<span class="text-[11px] tracking-[0.22em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
+      +             '<span class="mt-1.5 text-base font-semibold text-white tracking-tight">데일리에프앤아이대부 주식회사</span>'
+      +           '</span>'
+      +         '</a>'
+      +         '<p class="mt-5 text-sm text-zinc-400 leading-relaxed max-w-md">합법 등록 매입채권추심업체. 채무자의 권리를 존중하며, 대부업법·채권추심법·신용정보법을 엄격히 준수합니다.</p>'
+      +         '<dl class="mt-8 space-y-2.5 text-xs text-zinc-400">'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">상호</dt><dd>[필수입력: 데일리에프앤아이대부 주식회사]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대표자</dt><dd>[필수입력: 홍길동]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">사업자등록번호</dt><dd class="tabular-nums">[필수입력: 000-00-00000]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대부업 등록번호</dt><dd>[필수입력: 시·도 등록번호]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">매입채권추심업 등록</dt><dd>[필수입력: 금융위 등록번호]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">본점 주소</dt><dd>[필수입력: 서울특별시 OO구 OO대로 000]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대표전화 / 팩스</dt><dd class="tabular-nums">[필수입력] / [필수입력]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">이메일</dt><dd class="break-all">[필수입력: info@example.co.kr]</dd></div>'
+      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">개인정보보호책임자</dt><dd>[필수입력: 성명 / 직책]</dd></div>'
+      +         '</dl>'
+      +       '</div>'
+      +       '<div class="lg:col-span-3">'
+      +         '<p class="text-[11px] tracking-widest uppercase text-zinc-500">사이트맵</p>'
+      +         '<ul class="mt-4 space-y-2.5 text-sm text-zinc-300">'
+      +           '<li><a href="./about.html"    class="hover:text-white transition">회사소개</a></li>'
+      +           '<li><a href="./business.html" class="hover:text-white transition">사업영역 · 매입채권추심</a></li>'
+      +           '<li><a href="./assets.html"   class="hover:text-white transition">자산현황</a></li>'
+      +           '<li><a href="./protect.html"  class="hover:text-white transition">고객권리 · 채무자보호</a></li>'
+      +           '<li><a href="./support.html"  class="hover:text-white transition">고객센터</a></li>'
+      +           '<li><a href="./notice.html"   class="hover:text-white transition">공지사항</a></li>'
+      +         '</ul>'
+      +       '</div>'
+      +       '<div class="lg:col-span-4">'
+      +         '<p class="text-[11px] tracking-widest uppercase text-zinc-500">법적 고지</p>'
+      +         '<ul class="mt-4 space-y-2.5 text-sm text-zinc-300">'
+      +           '<li><a href="./terms.html"   class="hover:text-white transition">이용약관</a></li>'
+      +           '<li><a href="./privacy.html" class="hover:text-white transition">개인정보처리방침</a></li>'
+      +           '<li><a href="./protect.html" class="hover:text-white transition">채무자 보호 통지</a></li>'
+      +           '<li><a href="#" class="hover:text-white transition">채권 추심원 조회 (준비중)</a></li>'
+      +         '</ul>'
+      +         '<div class="mt-8 rounded-2xl border border-white/10 bg-white/[0.02] p-5">'
+      +           '<p class="text-[11px] tracking-widest uppercase text-zinc-500">불법추심 신고</p>'
+      +           '<ul class="mt-3 space-y-1.5 text-xs text-zinc-300">'
+      +             '<li class="flex items-center justify-between"><span>금융감독원</span><span class="tabular-nums text-zinc-400">국번없이 1332</span></li>'
+      +             '<li class="flex items-center justify-between"><span>경찰청</span><span class="tabular-nums text-zinc-400">112</span></li>'
+      +             '<li class="flex items-center justify-between"><span>대한법률구조공단</span><span class="tabular-nums text-zinc-400">132</span></li>'
+      +             '<li class="flex items-center justify-between"><span>한국대부금융협회</span><span class="tabular-nums text-zinc-400">[필수입력]</span></li>'
+      +           '</ul>'
+      +         '</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="mt-14 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">'
+      +       '<p class="text-xs text-zinc-500">&copy; <span class="tabular-nums">' + year + '</span> 데일리에프앤아이대부. All rights reserved.</p>'
+      +       '<p class="text-[11px] text-zinc-600">본 사이트의 모든 콘텐츠는 저작권법의 보호를 받습니다. 무단 복제 · 배포 · 전송을 금지합니다.</p>'
+      +     '</div>'
+      +   '</div>'
+      + '</footer>';
+  }
+
+  /* ----------------------------------------------------------
+   * INJECT
+   * ---------------------------------------------------------- */
+  function injectLayout() {
+    var page = (document.body && document.body.dataset && document.body.dataset.page) || '';
+    var navSlot    = document.querySelector('[data-site="nav"]');
+    var footerSlot = document.querySelector('[data-site="footer"]');
+    if (navSlot)    navSlot.outerHTML    = buildNav(page);
+    if (footerSlot) footerSlot.outerHTML = buildFooter();
+  }
+
+  /* ----------------------------------------------------------
+   * BEHAVIORS (mobile menu, scroll reveal)
+   * ---------------------------------------------------------- */
+  function bindBehaviors() {
+    // Mobile menu toggle
+    var btn  = document.getElementById('navToggle');
+    var menu = document.getElementById('mobileMenu');
+    if (btn && menu) {
+      btn.addEventListener('click', function () {
+        var isOpen = menu.classList.toggle('hidden') === false;
+        btn.setAttribute('aria-expanded', String(isOpen));
+        btn.setAttribute('aria-label', isOpen ? '메뉴 닫기' : '메뉴 열기');
+      });
+      menu.addEventListener('click', function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'A') {
+          menu.classList.add('hidden');
+          btn.setAttribute('aria-expanded', 'false');
+          btn.setAttribute('aria-label', '메뉴 열기');
+        }
+      });
+    }
+
+    // Reveal-on-scroll (IntersectionObserver, no scroll listeners)
+    var reveals = document.querySelectorAll('.reveal');
+    if ('IntersectionObserver' in window && reveals.length) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-in');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+      reveals.forEach(function (el) { io.observe(el); });
+    } else {
+      reveals.forEach(function (el) { el.classList.add('is-in'); });
+    }
+  }
+
+  function init() {
+    injectLayout();
+    // Defer behavior binding so the freshly injected DOM is queryable.
+    setTimeout(bindBehaviors, 0);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
