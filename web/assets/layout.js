@@ -325,6 +325,57 @@
     update();
   }
 
+  /* ----------------------------------------------------------
+   * MOTION: Letter-by-letter fly-in (right → target)
+   * ---------------------------------------------------------- */
+  function splitLetterFly(root) {
+    if (root.dataset.lfApplied) return;
+    root.dataset.lfApplied = '1';
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    var textNodes = [];
+    var node;
+    while ((node = walker.nextNode())) textNodes.push(node);
+    var idx = 0;
+    textNodes.forEach(function (textNode) {
+      var text = textNode.nodeValue;
+      if (!text || !text.trim()) return;
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        if (ch === ' ' || ch === '\u00a0') {
+          frag.appendChild(document.createTextNode(ch));
+          continue;
+        }
+        var span = document.createElement('span');
+        span.className = 'lf-char';
+        span.textContent = ch;
+        span.style.transitionDelay = (idx * 35) + 'ms';
+        frag.appendChild(span);
+        idx++;
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  }
+
+  function initLetterFly() {
+    var targets = document.querySelectorAll('[data-letter-fly]');
+    if (!targets.length) return;
+    targets.forEach(splitLetterFly);
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('lf-active');
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.25 });
+      targets.forEach(function (el) { io.observe(el); });
+    } else {
+      targets.forEach(function (el) { el.classList.add('lf-active'); });
+    }
+  }
+
   function init() {
     injectLayout();
     // Defer behavior binding so the freshly injected DOM is queryable.
@@ -333,6 +384,7 @@
       initTilt();
       initCountup();
       initPinSteps();
+      initLetterFly();
     }, 0);
   }
 
