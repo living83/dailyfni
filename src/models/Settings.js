@@ -9,7 +9,6 @@ const defaultSettings = {
   engStartMin: '00',
   maxVisits: 20,
   heartLike: true,
-  aiComment: true,
   engagementAccountIds: [],
   logLevel: '정보',
   logRetention: '30일',
@@ -45,7 +44,7 @@ function updateSettings(data) {
   if (data.claudeApiKey && data.claudeApiKey.startsWith('••')) delete data.claudeApiKey;
   if (data.naverClientSecret && data.naverClientSecret.startsWith('••')) delete data.naverClientSecret;
 
-  const boolFields = ['engagementBot', 'heartLike', 'aiComment', 'proxyAutoCheck'];
+  const boolFields = ['engagementBot', 'heartLike', 'proxyAutoCheck'];
   const strFields = ['claudeApiKey', 'naverClientId', 'naverClientSecret', 'engStartHour', 'engStartMin', 'logLevel', 'logRetention', 'proxyCheckInterval'];
   const numFields = ['maxVisits'];
 

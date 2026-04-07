@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, Users, Shield, Download, Upload, Heart, MessageSquare, Clock, Sliders } from 'lucide-react'
+import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import Toggle from '../components/Toggle'
@@ -10,8 +10,7 @@ const defaultSettings: SystemSettings = {
   claudeApiKey: '', naverClientId: '', naverClientSecret: '',
   engagementBot: true, engStartHour: '09', engStartMin: '00',
   engEndHour: '18', engEndMin: '00',
-  maxVisits: 20, heartLike: true, aiComment: true,
-  commentMinLen: 20, commentMaxLen: 80,
+  maxVisits: 20, heartLike: true,
   engagementAccountIds: [],
   visitInterval: 10, randomDelay: true,
   logLevel: '정보', logRetention: '30일',
@@ -179,35 +178,7 @@ export default function Settings() {
                 </div>
               </label>
 
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" checked={form.aiComment} onChange={() => set('aiComment', !form.aiComment)}
-                  className="w-4 h-4 rounded accent-primary" />
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-primary" />
-                  <span className="text-sm text-foreground">AI 자동 댓글</span>
-                </div>
-              </label>
             </div>
-
-            {form.aiComment && (
-              <div className="space-y-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
-                <p className="text-xs font-medium text-primary">AI 댓글 옵션</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">최소 글자수</label>
-                    <input type="number" min={10} max={100} value={form.commentMinLen || 20}
-                      onChange={(e) => set('commentMinLen' as any, Number(e.target.value))}
-                      className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">최대 글자수</label>
-                    <input type="number" min={20} max={200} value={form.commentMaxLen || 80}
-                      onChange={(e) => set('commentMaxLen' as any, Number(e.target.value))}
-                      className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none" />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* 참여 계정 선택 */}

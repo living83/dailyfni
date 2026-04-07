@@ -37,7 +37,6 @@ async def engage_neighbor(account: dict, blog_url: str, actions: dict, progress_
     result = {
         "success": False,
         "liked": False,
-        "commented": False,
         "error": None,
     }
 
@@ -65,26 +64,14 @@ async def engage_neighbor(account: dict, blog_url: str, actions: dict, progress_
                 result["error"] = "유효한 포스트 페이지가 아닙니다"
                 return result
 
-            # 좋아요
+            # 공감만 실행 (댓글 기능 제거됨)
             if actions.get("like"):
                 like_res = await click_like(page)
                 result["liked"] = like_res["success"]
                 if like_res.get("error"):
                     result["error"] = like_res["error"]
 
-            # 댓글
-            comment_text = actions.get("comment")
-            if comment_text:
-                api_result = await write_comment_via_api(page, comment_text)
-                if api_result["success"]:
-                    result["commented"] = True
-                else:
-                    ui_result = await write_comment_ui(page, comment_text)
-                    result["commented"] = ui_result["success"]
-                    if not ui_result["success"]:
-                        result["error"] = f"댓글 실패 (API: {api_result['error']}, UI: {ui_result['error']})"
-
-            result["success"] = result["liked"] or result["commented"]
+            result["success"] = result["liked"]
 
         except Exception as e:
             logger.exception(f"engage_neighbor 예외: {e}")
@@ -105,7 +92,7 @@ async def engage_neighbor(account: dict, blog_url: str, actions: dict, progress_
 async def run_engagement(account: dict, config: dict) -> dict:
     """
     단일 계정의 참여 활동(좋아요+댓글)을 배치 실행
-    config: { engagement_max_posts, engagement_do_like, engagement_do_comment }
+    config: { engagement_max_posts, engagement_do_like }
     """
     account_id = account.get("id", 0)
     proxy = await _get_proxy_for_account(account_id)
@@ -113,7 +100,6 @@ async def run_engagement(account: dict, config: dict) -> dict:
         "account_id": account_id,
         "total_posts": 0,
         "like_count": 0,
-        "comment_count": 0,
         "results": [],
         "error": None,
     }
@@ -146,9 +132,7 @@ async def run_engagement(account: dict, config: dict) -> dict:
 
             logger.info(f"[계정 {account_id}] {len(post_items)}개 포스팅 병렬 처리 시작 (최대 3개 동시)")
 
-            api_key = os.getenv("ANTHROPIC_API_KEY", "") or getattr(settings, "ANTHROPIC_API_KEY", "")
             do_like = config.get("engagement_do_like", True)
-            do_comment = config.get("engagement_do_comment", True)
 
             # 병렬 처리 — 동시 실행 수 제한 (3개)
             CONCURRENCY = 3
@@ -169,8 +153,6 @@ async def run_engagement(account: dict, config: dict) -> dict:
                             page=page,
                             post_url=post_url,
                             do_like=do_like,
-                            do_comment=do_comment,
-                            api_key=api_key,
                         )
                     finally:
                         try:
@@ -190,10 +172,8 @@ async def run_engagement(account: dict, config: dict) -> dict:
                 result_base["results"].append(r)
                 if r.get("like_success"):
                     result_base["like_count"] += 1
-                if r.get("comment_success"):
-                    result_base["comment_count"] += 1
 
-            logger.info(f"[계정 {account_id}] 완료 — 공감 {result_base['like_count']}, 댓글 {result_base['comment_count']}")
+            logger.info(f"[계정 {account_id}] 완료 — 공감 {result_base['like_count']}건")
 
         except Exception as e:
             logger.exception(f"[계정 {account_id}] 배치 참여 예외: {e}")
@@ -207,14 +187,12 @@ async def run_engagement(account: dict, config: dict) -> dict:
     return result_base
 
 
-async def engage_single_post(page: Page, post_url: str, do_like: bool, do_comment: bool, api_key: str) -> dict:
-    """단일 포스팅에 대해 공감 및 댓글 참여"""
+async def engage_single_post(page: Page, post_url: str, do_like: bool, do_comment: bool = False, api_key: str = '') -> dict:
+    """단일 포스팅에 대해 공감 (댓글 기능 제거)"""
     res = {
         "post_url": post_url,
         "post_title": "",
         "like_success": False,
-        "comment_success": False,
-        "comment_text": "",
         "error": None,
     }
 
@@ -226,46 +204,23 @@ async def engage_single_post(page: Page, post_url: str, do_like: bool, do_commen
             res["error"] = "유효한 포스트 페이지가 아닙니다 (스킵)"
             return res
 
-        # 본문/제목 추출 (mainFrame 내부)
+        # 제목 추출 (기록용)
         main_frame = next((f for f in page.frames if f.name == 'mainFrame'), page)
-        post_data = await main_frame.evaluate('''() => {
-            const titleEl = document.querySelector('.se-title-text, .pcol1, h3.se_textarea');
-            const contentEl = document.querySelector('.se-main-container, #postViewArea, #post-view');
-            return {
-                title: titleEl ? titleEl.innerText.trim() : '',
-                content: contentEl ? contentEl.innerText.substring(0, 1000).trim() : ''
-            };
-        }''')
-        res["post_title"] = post_data["title"]
+        try:
+            title = await main_frame.evaluate('''() => {
+                const el = document.querySelector('.se-title-text, .pcol1, h3.se_textarea');
+                return el ? el.innerText.trim() : '';
+            }''')
+            res["post_title"] = title
+        except Exception:
+            pass
 
-        # 공감
+        # 공감만 실행
         if do_like:
             like_res = await click_like(page)
             res["like_success"] = like_res["success"]
             if like_res.get("error"):
                 res["error"] = like_res["error"]
-
-        # 댓글
-        if do_comment:
-            if not api_key:
-                res["error"] = "AI API Key 미설정 (댓글 스킵)"
-            elif not post_data["content"]:
-                res["error"] = "본문 추출 실패 (댓글 스킵)"
-            else:
-                comment_text = await generate_engagement_comment(api_key, post_data["title"], post_data["content"])
-                res["comment_text"] = comment_text or ""
-
-                if comment_text:
-                    api_comment = await write_comment_via_api(page, comment_text)
-                    if api_comment["success"]:
-                        res["comment_success"] = True
-                    else:
-                        ui_comment = await write_comment_ui(page, comment_text)
-                        res["comment_success"] = ui_comment["success"]
-                        if not ui_comment["success"]:
-                            res["error"] = f"댓글 실패 (API: {api_comment['error']}, UI: {ui_comment['error']})"
-                else:
-                    res["error"] = "AI 댓글 생성 실패"
 
     except Exception as e:
         logger.error(f"포스팅 참여 중 오류 ({post_url}): {e}")
@@ -497,234 +452,6 @@ async def _handle_reaction_picker_v10(page, main_frame):
         pass
     return False
 
-
-async def write_comment_via_api(page: Page, comment_text: str) -> dict:
-    """
-    Playwright page.request를 사용 — 브라우저 CORS 우회
-    (context의 쿠키는 자동으로 포함됨)
-    """
-    try:
-        # URL에서 blogId, logNo 추출
-        url = page.url or ""
-        m = re.search(r'blog\.naver\.com/([^/\?#]+)', url)
-        blog_id = m.group(1) if m else None
-
-        m2 = re.search(r'/(\d{8,})', url) or re.search(r'logNo=(\d+)', url)
-        log_no = m2.group(1) if m2 else None
-
-        if not blog_id or not log_no:
-            return {"success": False, "error": f"URL 파싱 실패: {url}"}
-
-        object_id = f"blog_{blog_id}_{log_no}"
-
-        # 여러 pool/endpoint 조합 시도
-        pools = ['cbox5', 'cbox', 'cbox2', 'cbox10']
-        endpoints = [
-            'https://apis.naver.com/commentBox/cbox/web_naver_write_json.json',
-            'https://apis.naver.com/commentBox/cbox/web_naver_comment_write_json.json',
-        ]
-
-        last_error = "no attempt"
-        for endpoint in endpoints:
-            for pool in pools:
-                full_url = f"{endpoint}?ticket=blog&pool={pool}&lang=ko&country=KR&objectId={object_id}"
-                try:
-                    resp = await page.request.post(
-                        full_url,
-                        form={
-                            'contents': comment_text,
-                            'openType': 'on',
-                        },
-                        headers={
-                            'Accept': 'application/json',
-                            'Referer': url,
-                            'Origin': 'https://blog.naver.com',
-                        },
-                    )
-                    status = resp.status
-                    if status == 200:
-                        try:
-                            data = await resp.json()
-                            if data.get('success') is True or data.get('result') == 'success':
-                                logger.info(f"댓글 API 성공: {pool}")
-                                return {"success": True, "error": ""}
-                            last_error = f"{pool} {endpoint.split('/')[-1]}: {data}"
-                        except Exception:
-                            body = await resp.text()
-                            last_error = f"{pool}: JSON parse fail, body={body[:100]}"
-                    else:
-                        last_error = f"{pool} HTTP {status}"
-                except Exception as e:
-                    last_error = f"{pool} exception: {e}"
-
-        # 레거시 cbox5 엔드포인트 최종 시도
-        try:
-            legacy_url = f"https://cbox5.apis.naver.com/comment/v1/write.json?ticket=blog&pool=cbox5&lang=ko&country=KR&objectId={object_id}"
-            resp = await page.request.post(
-                legacy_url,
-                form={'contents': comment_text, 'openType': 'on'},
-                headers={'Referer': url, 'Origin': 'https://blog.naver.com'},
-            )
-            if resp.status == 200:
-                data = await resp.json()
-                if data.get('success'):
-                    return {"success": True, "error": ""}
-        except Exception as e:
-            last_error = f"legacy: {e}"
-
-        return {"success": False, "error": last_error}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-async def write_comment_ui(page: Page, comment_text: str) -> dict:
-    """UI 조작 댓글 (API 폴백) — 댓글 영역 로드 트리거 강화"""
-    try:
-        main_frame = next((f for f in page.frames if f.name == 'mainFrame'), page)
-
-        # 1) 댓글 영역으로 스크롤 + 댓글 카운트 버튼 클릭으로 로드 강제 트리거
-        await main_frame.evaluate('''() => {
-            // 댓글 영역이 있으면 거기로 스크롤
-            const area = document.querySelector('.area_comment, #cbox_module, .u_cbox_wrap, #commentArea');
-            if (area) {
-                area.scrollIntoView({ block: 'center' });
-            } else {
-                window.scrollTo(0, document.body.scrollHeight);
-            }
-        }''')
-        await random_delay(1.5, 2.5)
-
-        # 2) 댓글 펼치기/로드 트리거 — 여러 셀렉터 시도
-        expand_selectors = [
-            'a.area_comment', '.area_comment > a',
-            'button:has-text("댓글")', 'a:has-text("댓글")',
-            '.btn_comment', 'a.link_cmt',
-            'em.u_cbox_count', '.u_cbox_count',
-            'a[href*="#comment"]', 'a[href*="cbox"]',
-        ]
-        for sel in expand_selectors:
-            try:
-                btn = await main_frame.query_selector(sel)
-                if btn:
-                    try:
-                        await btn.click(force=True, timeout=2000)
-                        await random_delay(1, 2)
-                        logger.debug(f"댓글 펼치기: {sel}")
-                        break
-                    except Exception:
-                        pass
-            except Exception:
-                continue
-
-        # 3) 댓글 iframe 대기 (최대 5초)
-        cbox_frame = None
-        for _ in range(10):
-            for f in page.frames:
-                name = (f.name or '').lower()
-                url = (f.url or '').lower()
-                if 'cbox' in name or 'comment' in name or 'cbox' in url or 'comment' in url:
-                    cbox_frame = f
-                    break
-            if cbox_frame:
-                break
-            await asyncio.sleep(0.5)
-
-        targets = [cbox_frame, main_frame, page] if cbox_frame else [main_frame, page]
-
-        # 4) 다양한 셀렉터로 입력창 찾기
-        textarea = None
-        found_target = None
-        textarea_selectors = [
-            '.u_cbox_text',
-            'textarea.u_cbox_text',
-            'textarea[class*="cbox"]',
-            '.u_cbox_write_textarea',
-            'textarea[placeholder*="댓글"]',
-            'div[contenteditable="true"][class*="comment"]',
-            'textarea[name="contents"]',
-            'textarea',
-        ]
-        for target in targets:
-            if not target:
-                continue
-            for sel in textarea_selectors:
-                try:
-                    el = await target.query_selector(sel)
-                    if el and await el.is_visible():
-                        textarea = el
-                        found_target = target
-                        logger.debug(f"댓글 입력창 발견: {sel}")
-                        break
-                except Exception:
-                    continue
-            if textarea:
-                break
-
-        if not textarea:
-            # 디버그: 현재 페이지의 프레임 상태 기록
-            frame_info = [f"{f.name or '?'}({f.url[:50]})" for f in page.frames]
-            return {"success": False, "error": f"댓글 입력창 미발견 (frames: {frame_info})"}
-
-        # 5) 입력
-        await textarea.click(force=True)
-        await random_delay(0.3, 0.6)
-        try:
-            await textarea.fill(comment_text)
-        except Exception:
-            try:
-                await textarea.evaluate(f'(el, text) => {{ el.innerText = text; el.value = text; el.dispatchEvent(new Event("input", {{bubbles: true}})); }}', comment_text)
-            except Exception as e:
-                return {"success": False, "error": f"입력 실패: {e}"}
-        await random_delay(0.5, 1)
-
-        # 6) 등록 버튼
-        submit = None
-        for sel in ['.u_cbox_btn_upload', 'button.u_cbox_btn_upload', 'button:has-text("등록")',
-                    'a:has-text("등록")', 'button[class*="upload"]', 'button[class*="submit"]',
-                    'input[type="submit"]']:
-            try:
-                el = await found_target.query_selector(sel)
-                if el and await el.is_visible():
-                    submit = el
-                    break
-            except Exception:
-                continue
-
-        if not submit:
-            return {"success": False, "error": "등록 버튼 미발견"}
-
-        await submit.click(force=True)
-        await random_delay(2, 3)
-        return {"success": True}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-async def generate_engagement_comment(api_key: str, title: str, content: str) -> Optional[str]:
-    """Claude AI 이웃 댓글 생성"""
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        prompt = f"""
-다음 블로그 포스팅의 제목과 본문(일부)을 읽고, 이웃으로서 '공감하는 댓글'을 한 문장 또는 두 문장으로 짧고 자연스럽게 작성해줘.
-절대 취소선(~~)이나 특수 기호를 사용하지 말고, 평범한 구어체(~네요, ~예요 등)를 사용해줘. 광고 느낌이나 무성의한 복붙 느낌은 피해줘.
-
-제목: {title}
-본문: {content}
-
-댓글:
-"""
-        response = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=100,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        comment = response.content[0].text.strip()
-        comment = re.sub(r'["\']', '', comment).replace('댓글:', '').strip()
-        return comment
-    except Exception as e:
-        logger.error(f"AI 댓글 생성 오류: {e}")
-        return None
 
 
 # ──────────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 /**
- * 이웃참여 스케줄러 — 설정 시간에 자동으로 이웃 블로그 공감 + AI 댓글
+ * 이웃참여 스케줄러 — 설정 시간에 자동으로 이웃 블로그 공감
  */
 
 const { getSettingsRaw } = require('../models/Settings');
 const { listAccounts, getAccountRaw } = require('../models/Account');
 const Engagement = require('../models/Engagement');
-const { requestEngage, requestCommentPreview } = require('./pythonBridge');
+const { requestEngageBatch } = require('./pythonBridge');
 const telegram = require('./telegram');
 
 let intervalId = null;
@@ -18,7 +18,6 @@ function startEngagementScheduler() {
   stopEngagementScheduler();
   console.log('[EngScheduler] 이웃참여 스케줄러 시작');
   intervalId = setInterval(checkAndRunEngagement, 60 * 1000);
-  // 즉시 1회 체크
   setTimeout(checkAndRunEngagement, 5000);
 }
 
@@ -41,20 +40,17 @@ async function checkAndRunEngagement() {
   try {
     const settings = getSettingsRaw();
 
-    // 비활성화면 스킵
     if (!settings.engagementBot) return;
 
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
 
-    // 날짜 변경 → 리셋
     if (lastRunDate !== today) {
       lastRunDate = today;
       todayVisitedCount = 0;
       isRestDay = false;
     }
 
-    // 이미 오늘 실행 완료
     if (isRestDay) return;
 
     // 시간 체크
@@ -71,100 +67,56 @@ async function checkAndRunEngagement() {
 
     if (currentTime < startTime || currentTime > endTime) return;
 
-    // 참여 계정 가져오기
-    const allAccounts = listAccounts();
-    const engageAccounts = allAccounts.filter(a => a.isActive && a.neighborEngage);
-
+    // 참여 계정
+    const engageAccounts = listAccounts().filter(a => a.isActive && a.neighborEngage);
     if (engageAccounts.length === 0) return;
 
-    // maxVisits 체크
-    const maxVisits = settings.maxVisits || 20;
+    const maxVisits = settings.maxVisits || 10;
+    // 하루 1회 실행 조건 — 이미 실행했으면 스킵
     if (todayVisitedCount >= maxVisits * engageAccounts.length) return;
 
     isProcessing = true;
-    console.log(`[EngScheduler] 이웃참여 실행 — ${engageAccounts.length}개 계정, ${now.toLocaleTimeString()}`);
+    console.log(`[EngScheduler] 공감 실행 — ${engageAccounts.length}개 계정, ${now.toLocaleTimeString()}`);
 
-    // 이웃 피드 가져오기
-    const feed = Engagement.listFeed();
-    if (feed.length === 0) {
-      console.log('[EngScheduler] 이웃 피드가 비어있습니다.');
-      isProcessing = false;
-      return;
-    }
-
+    let totalLikes = 0;
     for (const acc of engageAccounts) {
-      const accountRaw = getAccountRaw(acc.id);
-      if (!accountRaw) continue;
+      const raw = getAccountRaw(acc.id);
+      if (!raw) continue;
 
-      let visitCount = 0;
+      try {
+        const result = await requestEngageBatch({
+          account: {
+            id: raw.id,
+            account_name: raw.accountName,
+            naver_id: raw.naverId,
+            naver_password: raw.naverPassword || '',
+          },
+          config: {
+            engagement_max_posts: maxVisits,
+            engagement_do_like: settings.heartLike !== false,
+          },
+        });
 
-      for (const post of feed) {
-        if (visitCount >= maxVisits) break;
+        const likes = result.like_count || 0;
+        totalLikes += likes;
+        todayVisitedCount += likes;
 
-        try {
-          // 공감
-          if (settings.heartLike && !post.liked) {
-            Engagement.likePost(post.id);
-
-            if (post.url) {
-              await requestEngage({
-                account: {
-                  id: accountRaw.id,
-                  naver_id: accountRaw.naverId,
-                  naver_password: accountRaw.naverPassword,
-                  account_name: accountRaw.accountName,
-                },
-                blog_url: post.url,
-                actions: { like: true, comment: null },
-              }).catch(err => console.error(`[EngScheduler] 공감 실패:`, err.message));
-            }
-          }
-
-          // AI 댓글
-          if (settings.aiComment && !post.commented) {
-            // AI 댓글 생성
-            const commentResult = await requestCommentPreview({
-              post_title: post.title,
-              post_summary: '',
+        for (const r of result.results || []) {
+          if (r.like_success) {
+            Engagement.addActivity({
+              accountName: raw.accountName,
+              action: '♥ 공감',
+              target: (r.post_title || '').substring(0, 30),
             });
-
-            const commentText = commentResult.comment || Engagement.generateComment(post.title);
-            Engagement.commentPost(post.id, commentText);
-
-            if (post.url) {
-              await requestEngage({
-                account: {
-                  id: accountRaw.id,
-                  naver_id: accountRaw.naverId,
-                  naver_password: accountRaw.naverPassword,
-                  account_name: accountRaw.accountName,
-                },
-                blog_url: post.url,
-                actions: { like: false, comment: commentText },
-              }).catch(err => console.error(`[EngScheduler] 댓글 실패:`, err.message));
-            }
           }
-
-          visitCount++;
-          todayVisitedCount++;
-
-          // 방문 간격 (visitInterval 기반, randomDelay 적용)
-          const baseInterval = (settings.visitInterval || 10) * 1000;
-          const delay = settings.randomDelay !== false
-            ? baseInterval * (0.5 + Math.random())
-            : baseInterval;
-          await new Promise(r => setTimeout(r, delay));
-
-        } catch (err) {
-          console.error(`[EngScheduler] 참여 오류 (${post.title}):`, err.message);
         }
-      }
 
-      console.log(`[EngScheduler] ${accountRaw.accountName}: ${visitCount}건 참여 완료`);
-      if (visitCount > 0) {
-        const likes = feed.filter(p => p.liked).length;
-        const comments = feed.filter(p => p.commented).length;
-        telegram.notifyEngagementDone(accountRaw.accountName, likes, comments);
+        console.log(`[EngScheduler] ${raw.accountName}: ${likes}건 공감 완료`);
+        if (likes > 0) {
+          telegram.notifyEngagementDone(raw.accountName, likes, 0).catch(() => {});
+        }
+      } catch (err) {
+        console.error(`[EngScheduler] ${raw.accountName} 예외:`, err.message);
       }
 
       // 계정 간 간격 (30~60초)
@@ -173,8 +125,8 @@ async function checkAndRunEngagement() {
       }
     }
 
-    console.log(`[EngScheduler] 오늘 총 ${todayVisitedCount}건 참여 완료`);
-
+    console.log(`[EngScheduler] 오늘 총 공감 ${totalLikes}건 완료`);
+    isRestDay = true; // 하루 1회만 실행
   } catch (err) {
     console.error('[EngScheduler] 오류:', err.message);
   } finally {

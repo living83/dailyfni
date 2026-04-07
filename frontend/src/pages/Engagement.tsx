@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Heart, MessageSquare, Users, Clock } from 'lucide-react'
+import { Heart, Users, Clock } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import { PageSkeleton } from '../components/LoadingSkeleton'
@@ -11,12 +11,10 @@ interface FeedPost {
   title: string
   timeAgo: string
   liked: boolean
-  commented: boolean
 }
 
 interface Stats {
   todayLikes: number
-  todayComments: number
   activeAccounts: number
   totalAccounts: number
 }
@@ -28,7 +26,7 @@ interface Activity {
   target: string
 }
 
-const defaultStats: Stats = { todayLikes: 0, todayComments: 0, activeAccounts: 0, totalAccounts: 0 }
+const defaultStats: Stats = { todayLikes: 0, activeAccounts: 0, totalAccounts: 0 }
 
 export default function Engagement() {
   const { toast } = useToast()
@@ -72,15 +70,14 @@ export default function Engagement() {
     setRunningBatch(true)
     try {
       const { data } = await api.post('/engagement/run')
-      toast('success', data.message || '참여 실행이 시작되었습니다')
-      // 폴링: 배치 실행은 수분~수십분 걸릴 수 있음
+      toast('success', data.message || '공감 실행이 시작되었습니다')
       let polls = 0
       const pid = window.setInterval(() => {
         fetchAll()
         polls++
-        if (polls >= 60) clearInterval(pid) // 5분 폴링
+        if (polls >= 60) clearInterval(pid)
       }, 5000)
-    } catch { toast('error', '참여 실행 실패') }
+    } catch { toast('error', '공감 실행 실패') }
     setRunningBatch(false)
   }
 
@@ -93,7 +90,7 @@ export default function Engagement() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">이웃참여 관리</h1>
           <p className="text-sm text-muted-foreground">
-            이웃 블로그 하트 공감과 AI 자동 댓글로 소통을 강화합니다
+            이웃 블로그 포스트에 자동으로 하트 공감을 보냅니다
           </p>
         </div>
         <button
@@ -104,12 +101,12 @@ export default function Engagement() {
           {runningBatch
             ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             : <Heart className="w-4 h-4" />}
-          참여 실행
+          공감 실행
         </button>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="glass-panel rounded-xl p-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-muted-foreground">오늘 공감</span>
@@ -117,15 +114,6 @@ export default function Engagement() {
           </div>
           <p className="text-3xl font-bold text-foreground">{stats.todayLikes}</p>
           <p className="text-xs text-muted-foreground mt-1">하트 공감 완료</p>
-        </div>
-
-        <div className="glass-panel rounded-xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-muted-foreground">오늘 댓글</span>
-            <MessageSquare className="w-5 h-5 text-primary" />
-          </div>
-          <p className="text-3xl font-bold text-foreground">{stats.todayComments}</p>
-          <p className="text-xs text-muted-foreground mt-1">AI 댓글 작성</p>
         </div>
 
         <div className="glass-panel rounded-xl p-5">
@@ -146,7 +134,7 @@ export default function Engagement() {
           {feed.length === 0 ? (
             <div className="text-sm text-muted-foreground text-center py-12">
               <p>이웃 포스팅 피드가 없습니다</p>
-              <p className="text-xs mt-2 opacity-70">"참여 실행"을 누르면 ThemePost에서 자동으로 수집합니다</p>
+              <p className="text-xs mt-2 opacity-70">"공감 실행"을 누르면 ThemePost에서 자동으로 수집합니다</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
@@ -169,7 +157,6 @@ export default function Engagement() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {post.liked && <span className="text-rose-400 text-sm" title="공감 완료">♥</span>}
-                    {post.commented && <span className="text-primary text-sm" title="댓글 완료">💬</span>}
                   </div>
                 </div>
               ))}

@@ -59,11 +59,6 @@ class EngageRequest(BaseModel):
     blog_url: str
     actions: dict  # {like: bool, comment: str | None}
 
-class CommentPreviewRequest(BaseModel):
-    post_title: str
-    post_summary: str = ""
-    api_key: str = ""
-
 class FeedRequest(BaseModel):
     account: dict
     max_posts: int = 20
@@ -235,61 +230,32 @@ async def dashboard_publish(req: PublishRequest):
 
 @app.post("/api/dashboard/engage")
 async def dashboard_engage(req: EngageRequest):
-    """단일 포스트 공감 + 댓글 (수동 개별 실행)"""
+    """단일 포스트 공감 (댓글 기능 제거됨)"""
     try:
         from browser.engager import engage_neighbor
         result = await engage_neighbor(req.account, req.blog_url, req.actions)
         return result
     except ImportError as e:
-        return {"success": True, "liked": req.actions.get("like", False), "commented": bool(req.actions.get("comment")), "error": f"(mock) {e}"}
+        return {"success": True, "liked": req.actions.get("like", False), "error": f"(mock) {e}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
 class EngageBatchRequest(BaseModel):
     account: dict
-    config: dict  # { engagement_max_posts, engagement_do_like, engagement_do_comment }
+    config: dict  # { engagement_max_posts, engagement_do_like }
 
 @app.post("/api/dashboard/engage/run")
 async def dashboard_engage_run(req: EngageBatchRequest):
-    """배치 이웃참여 실행 — ThemePost 수집 후 순회하며 공감/댓글"""
+    """배치 이웃참여 실행 — ThemePost 수집 후 순회하며 공감"""
     try:
         from browser.engager import run_engagement
         result = await run_engagement(req.account, req.config)
         return result
     except ImportError as e:
-        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "comment_count": 0, "error": f"Playwright 미설치: {e}"}
+        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "error": f"Playwright 미설치: {e}"}
     except Exception as e:
-        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "comment_count": 0, "error": str(e)}
-
-
-@app.post("/api/dashboard/comment-preview")
-async def dashboard_comment_preview(req: CommentPreviewRequest):
-    """AI 댓글 생성 (Claude API)"""
-    import os
-    api_key = req.api_key or os.getenv("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        # API 키 없으면 mock 댓글 반환
-        comments = [
-            f"와 {req.post_title} 정말 유익한 글이네요! 덕분에 좋은 정보 얻어갑니다 😊",
-            f"좋은 글 감사합니다! {req.post_title} 관련해서 알고 싶었는데 딱 필요한 내용이에요~",
-            f"정리가 정말 잘 되어있어서 읽기 편했어요! 앞으로도 좋은 글 부탁드려요 👍",
-        ]
-        import random
-        return {"success": True, "comment": random.choice(comments)}
-
-    try:
-        prompt = f"""다음 블로그 포스트에 대해 자연스럽고 긍정적인 짧은 댓글(1-2문장)을 한국어로 작성하세요.
-이모지를 1-2개 적절히 사용하세요. 블로그 이웃이 작성한 것처럼 자연스러워야 합니다.
-
-포스트 제목: {req.post_title}
-{f'내용 요약: {req.post_summary}' if req.post_summary else ''}
-
-댓글만 출력하세요 (따옴표 없이):"""
-        comment = await asyncio.to_thread(_call_claude, api_key, prompt, 200)
-        return {"success": True, "comment": comment.strip().strip('"').strip("'")}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"account_id": req.account.get("id"), "total_posts": 0, "like_count": 0, "error": str(e)}
 
 
 @app.post("/api/dashboard/feed")

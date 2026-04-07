@@ -129,7 +129,6 @@ export interface NeighborPost {
 
 export interface EngagementStats {
   todayLikes: number
-  todayComments: number
   activeAccounts: number
   totalAccounts: number
 }
@@ -152,7 +151,6 @@ export interface SystemSettings {
   engStartMin: string
   maxVisits: number
   heartLike: boolean
-  aiComment: boolean
   engagementAccountIds: string[]
   logLevel: string
   logRetention: string

@@ -89,23 +89,6 @@ async function requestEngage(params) {
 }
 
 /**
- * Python 서버에 AI 댓글 생성 요청
- * @param {object} params - { postTitle, postSummary, apiKey }
- * @returns {Promise<object>} - { success, comment }
- */
-async function requestCommentPreview(params) {
-  try {
-    const res = await axios.post(`${PYTHON_URL}/api/dashboard/comment-preview`, params, {
-      timeout: 30000,
-    });
-    return res.data;
-  } catch (err) {
-    console.error('[PythonBridge] Comment 요청 실패:', err.message);
-    return { success: false, error: err.response?.data?.detail || err.message };
-  }
-}
-
-/**
  * Python 서버에 이웃 피드 크롤링 요청
  * @param {object} params - { account, maxPosts }
  * @returns {Promise<object>} - { success, feed: [...] }
@@ -171,7 +154,6 @@ module.exports = {
   requestGenerate,
   requestPublish,
   requestEngage,
-  requestCommentPreview,
   requestFeed,
   requestEngageBatch,
   checkDuplicate,
