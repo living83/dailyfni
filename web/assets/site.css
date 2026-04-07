@@ -65,6 +65,27 @@ body {
 .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity 0.9s cubic-bezier(0.16,1,0.3,1), transform 0.9s cubic-bezier(0.16,1,0.3,1); }
 .reveal.is-in { opacity: 1; transform: translateY(0); }
 
+/* Pin-scroll stepper — desktop only */
+.step-item {
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.5s ease,
+    background-color 0.5s ease,
+    box-shadow 0.5s ease;
+}
+@media (min-width: 1024px) {
+  .step-item { opacity: 0.4; }
+  .step-item.is-past { opacity: 0.65; }
+  .step-item.is-active {
+    opacity: 1;
+    transform: translateY(-8px);
+    border-color: rgba(108, 165, 202, 0.55) !important;
+    background-color: rgba(39, 119, 176, 0.12) !important;
+    box-shadow: 0 18px 50px -22px rgba(39, 119, 176, 0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+}
+
 /* Hide scrollbar for marquee strips */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }

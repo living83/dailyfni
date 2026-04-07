@@ -208,10 +208,132 @@
     }
   }
 
+  /* ----------------------------------------------------------
+   * MOTION: 3D mouse tilt for cards
+   * ---------------------------------------------------------- */
+  function initTilt() {
+    if (window.matchMedia('(pointer: coarse)').matches) return; // skip touch devices
+    var cards = document.querySelectorAll('[data-tilt]');
+    cards.forEach(function (card) {
+      card.style.transformStyle = 'preserve-3d';
+      card.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
+      card.addEventListener('mousemove', function (e) {
+        var rect = card.getBoundingClientRect();
+        var x  = e.clientX - rect.left;
+        var y  = e.clientY - rect.top;
+        var cx = rect.width  / 2;
+        var cy = rect.height / 2;
+        var rx = ((y - cy) / cy) * -5; // max ±5deg
+        var ry = ((x - cx) / cx) *  5;
+        card.style.transition = 'transform 0.12s linear';
+        card.style.transform  = 'perspective(1100px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg)';
+      });
+      card.addEventListener('mouseleave', function () {
+        card.style.transition = 'transform 0.7s cubic-bezier(0.16, 1, 0.3, 1)';
+        card.style.transform  = 'perspective(1100px) rotateX(0deg) rotateY(0deg)';
+      });
+    });
+  }
+
+  /* ----------------------------------------------------------
+   * MOTION: Number count-up on view
+   * ---------------------------------------------------------- */
+  function animateNumber(el) {
+    var raw = el.dataset.countup || '0';
+    var target = parseFloat(raw);
+    if (isNaN(target)) return;
+    var dotIndex = raw.indexOf('.');
+    var decimals = dotIndex >= 0 ? raw.length - dotIndex - 1 : 0;
+    var useComma = el.dataset.countupComma === '1';
+    var duration = parseInt(el.dataset.countupDuration || '1400', 10);
+    var start = performance.now();
+    function format(v) {
+      var s = decimals > 0 ? v.toFixed(decimals) : Math.round(v).toString();
+      if (useComma) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return s;
+    }
+    el.textContent = format(0);
+    function step(now) {
+      var elapsed = now - start;
+      var t = Math.min(1, elapsed / duration);
+      var eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      el.textContent = format(target * eased);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function initCountup() {
+    var targets = document.querySelectorAll('[data-countup]');
+    if (!targets.length) return;
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            animateNumber(entry.target);
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.4 });
+      targets.forEach(function (el) { io.observe(el); });
+    } else {
+      targets.forEach(animateNumber);
+    }
+  }
+
+  /* ----------------------------------------------------------
+   * MOTION: Pin-scroll stepper (lg+ only)
+   * ---------------------------------------------------------- */
+  function initPinSteps() {
+    var containers = document.querySelectorAll('[data-pin-steps]');
+    if (!containers.length) return;
+    if (!window.matchMedia('(min-width: 1024px)').matches) return; // mobile = static grid
+
+    var ticking = false;
+    function update() {
+      containers.forEach(function (container) {
+        var steps = container.querySelectorAll('[data-step-index]');
+        if (!steps.length) return;
+        var rect = container.getBoundingClientRect();
+        var scrollable = container.offsetHeight - window.innerHeight;
+        var scrolled = Math.max(0, -rect.top);
+        var progress = scrollable > 0 ? Math.max(0, Math.min(1, scrolled / scrollable)) : 0;
+        var total = steps.length;
+        var activeIdx = Math.min(total - 1, Math.floor(progress * total + 0.0001));
+
+        steps.forEach(function (s, i) {
+          s.classList.toggle('is-active', i === activeIdx);
+          s.classList.toggle('is-past',   i <  activeIdx);
+        });
+
+        var bar = container.querySelector('[data-step-progress]');
+        if (bar) {
+          var barProgress = Math.min(1, ((activeIdx + 1) / total));
+          bar.style.width = (barProgress * 100).toFixed(1) + '%';
+        }
+      });
+      ticking = false;
+    }
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(update);
+        ticking = true;
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    update();
+  }
+
   function init() {
     injectLayout();
     // Defer behavior binding so the freshly injected DOM is queryable.
-    setTimeout(bindBehaviors, 0);
+    setTimeout(function () {
+      bindBehaviors();
+      initTilt();
+      initCountup();
+      initPinSteps();
+    }, 0);
   }
 
   if (document.readyState === 'loading') {
