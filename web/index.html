@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="format-detection" content="telephone=no">
+  <title>데일리에프앤아이대부 | 매입채권추심 전문</title>
+  <meta name="description" content="데일리에프앤아이대부는 합법 등록 매입채권추심업체로서, 투명한 절차와 채무자 권리 보호를 최우선으로 합니다.">
+  <meta name="theme-color" content="#020617">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="데일리에프앤아이대부 | 매입채권추심 전문">
+  <meta property="og:description" content="합법 등록 매입채권추심업체. 투명한 절차, 엄격한 준법, 채무자 권리 보호.">
+  <meta property="og:locale" content="ko_KR">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Pretendard -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+
+  <!-- Iconify (Solar set) -->
+  <script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+
+  <!-- Motion One (MOTION_INTENSITY 6) -->
+  <script src="https://unpkg.com/motion@10.18.0/dist/motion.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            display: ['Pretendard', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink: {
+              950: '#020617',
+              900: '#0b1120',
+              800: '#111827',
+              700: '#1f2937',
+            },
+            accent: {
+              50:  '#fffbeb',
+              200: '#fde68a',
+              300: '#fcd34d',
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+            },
+          },
+          maxWidth: {
+            '8xl': '88rem',
+          },
+          letterSpacing: {
+            'tightest-ko': '-0.025em',
+          },
+          boxShadow: {
+            'glass-edge': 'inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)',
+            'amber-soft': '0 20px 60px -20px rgba(245, 158, 11, 0.35)',
+          },
+          animation: {
+            'fade-up': 'fadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) both',
+            'float-slow': 'float 8s ease-in-out infinite',
+            'marquee': 'marquee 40s linear infinite',
+          },
+          keyframes: {
+            fadeUp: {
+              '0%':   { opacity: '0', transform: 'translateY(1.5rem)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            float: {
+              '0%,100%': { transform: 'translateY(0)' },
+              '50%':     { transform: 'translateY(-12px)' },
+            },
+            marquee: {
+              '0%':   { transform: 'translateX(0)' },
+              '100%': { transform: 'translateX(-50%)' },
+            },
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Pretendard', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-feature-settings: "ss01", "ss02", "case", "tnum";
+      background-color: #020617;
+      color: #e5e7eb;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Korean typography baseline */
+    .ko { word-break: keep-all; line-break: strict; overflow-wrap: break-word; }
+
+    /* Selection */
+    ::selection { background: #fbbf24; color: #0b1120; }
+
+    /* Subtle grain overlay (fixed, performance-safe) */
+    .grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 60;
+      opacity: 0.06;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    }
+
+    /* Ambient gradient mesh background */
+    .mesh-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(900px 600px at 12% 8%,  rgba(245,158,11,0.10), transparent 60%),
+        radial-gradient(700px 500px at 88% 18%, rgba(56,189,248,0.05), transparent 60%),
+        radial-gradient(800px 600px at 50% 92%, rgba(245,158,11,0.06), transparent 60%);
+    }
+
+    /* Liquid glass surface */
+    .glass {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 30px 80px -40px rgba(0,0,0,0.6);
+    }
+
+    /* Magnetic CTA */
+    .btn-magnet {
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                  box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                  background-color 0.3s ease;
+      will-change: transform;
+    }
+    .btn-magnet:hover  { transform: translateY(-2px) scale(1.02); }
+    .btn-magnet:active { transform: translateY(0) scale(0.98); }
+    .btn-magnet .arrow { transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+    .btn-magnet:hover .arrow { transform: translateX(4px); }
+
+    /* Reveal on scroll (IntersectionObserver hooks) */
+    .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity 0.9s cubic-bezier(0.16,1,0.3,1), transform 0.9s cubic-bezier(0.16,1,0.3,1); }
+    .reveal.is-in { opacity: 1; transform: translateY(0); }
+
+    /* Hide scrollbar for marquee strips */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { scrollbar-width: none; }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body class="ko bg-ink-950 text-zinc-200 antialiased">
+
+  <!-- Grain overlay -->
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       SECTIONS WILL BE INSERTED HERE (1-B ~ 1-J)
+       ============================================================ -->
+
+  <main id="main">
+    <!-- placeholder until next steps -->
+    <section class="relative min-h-[100dvh] flex items-center justify-center">
+      <div class="mesh-bg"></div>
+      <div class="relative z-10 text-center px-6">
+        <p class="text-xs tracking-[0.3em] text-accent-400 uppercase mb-6">Daily F&amp;I · Step 1-A Skeleton</p>
+        <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tightest-ko text-white">
+          데일리에프앤아이대부
+        </h1>
+        <p class="mt-6 text-base md:text-lg text-zinc-400 max-w-[42ch] mx-auto leading-relaxed">
+          빌드 진행 중입니다. 다음 단계에서 네비게이션과 히어로가 추가됩니다.
+        </p>
+      </div>
+    </section>
+  </main>
+
+</body>
+</html>
