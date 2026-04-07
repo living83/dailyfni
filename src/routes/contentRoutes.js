@@ -157,6 +157,19 @@ router.post('/contents/generate-all', async (req, res) => {
   console.log(`[Content] 일괄 생성 완료`);
 });
 
+// POST /api/contents/reset-stuck — 발행중 상태 잠긴 콘텐츠를 검수완료로 복원
+router.post('/contents/reset-stuck', (req, res) => {
+  const stuck = Content.listContents().filter(c => c.status === '발행중');
+  let restored = 0;
+  for (const item of stuck) {
+    // 본문이 있으면 검수완료로, 없으면 대기로
+    const newStatus = (item.body && item.body.length > 50) ? '검수완료' : '대기';
+    Content.updateContent(item.id, { status: newStatus });
+    restored++;
+  }
+  res.json({ success: true, message: `${restored}건 복원됨`, restored });
+});
+
 // POST /api/contents/check-duplicate — 중복 체크
 router.post('/contents/check-duplicate', async (req, res) => {
   const { title, keywords } = req.body;

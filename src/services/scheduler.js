@@ -218,25 +218,27 @@ async function checkAndRun() {
         const postType = getPostTypeForTier(account.tier || 1, days);
         console.log(`[Scheduler] ${account.accountName}: Tier ${account.tier}, ${days}일 경과, 타입=${postType}`);
 
-        // 2. 매칭되는 대기 콘텐츠 찾기
+        // 2. 검수완료 콘텐츠 찾기 (AI 생성 완료된 것)
         const contents = Content.listContents();
         let pendingContent = contents.find(c =>
-          c.status === '대기' && c.contentType === postType
+          c.status === '검수완료' && c.contentType === postType
         );
 
-        // 대기 콘텐츠 없으면 → 기존 키워드에서 자동 재활용
+        // 검수완료가 없으면 → 발행완료 키워드 재활용 (비동기로 새 콘텐츠 AI 생성 요청)
         if (!pendingContent) {
           const usedContent = contents.find(c =>
-            (c.status === '발행완료' || c.status === '검수완료') && c.contentType === postType
+            c.status === '발행완료' && c.contentType === postType
           );
           if (usedContent) {
-            pendingContent = Content.recycleKeyword(usedContent.id);
-            console.log(`[Scheduler] 키워드 재활용: "${usedContent.keyword}" → 새 콘텐츠 ${pendingContent.id}`);
+            const recycled = Content.recycleKeyword(usedContent.id);
+            console.log(`[Scheduler] 키워드 재활용: "${usedContent.keyword}" → 새 콘텐츠 ${recycled.id} (AI 생성 대기)`);
+            // 재활용된 콘텐츠는 '대기' 상태 → AI 생성 필요 → 다음 주기에 처리
+            continue;
           }
         }
 
         if (!pendingContent) {
-          console.log(`[Scheduler] ${account.accountName}: '${postType}' 콘텐츠가 없습니다. 건너뜁니다.`);
+          console.log(`[Scheduler] ${account.accountName}: '${postType}' 검수완료 콘텐츠가 없습니다. 건너뜁니다.`);
           continue;
         }
 
