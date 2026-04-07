@@ -1,15 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Zap, Play, Trash2, CheckCircle2, Loader2, Clock, XCircle,
-  AlertTriangle, Info, Save, Send, Calendar, Shield, ArrowUpCircle,
+  AlertTriangle, Info, Send,
 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
-import Toggle from '../components/Toggle'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
 import { PageSkeleton } from '../components/LoadingSkeleton'
-import type { PostingQueueItem, PostingSettings, ErrorLogEntry, PostingStatus } from '../types'
+import type { PostingQueueItem, ErrorLogEntry, PostingStatus } from '../types'
 
 type Severity = '경고' | '오류' | '정보'
 
@@ -37,17 +36,6 @@ function SeverityIcon({ severity }: { severity: Severity }) {
   }
 }
 
-/* Tier rules from PRD — 1계정 1일 1포스팅, N일 주기 중 일반/광고 비율 */
-const tierRules = [
-  { tier: 1, label: '신규', cycle: '매일', general: 1, ad: 0, desc: '매일 일반글 1건', color: 'bg-muted-foreground' },
-  { tier: 2, label: '성장', cycle: '4일', general: 3, ad: 1, desc: '3일 일반 → 1일 광고', color: 'bg-primary' },
-  { tier: 3, label: '중급', cycle: '4일', general: 2, ad: 2, desc: '2일 일반 → 2일 광고', color: 'bg-violet-500' },
-  { tier: 4, label: '고수익', cycle: '4일', general: 1, ad: 3, desc: '1일 일반 → 3일 광고', color: 'bg-amber' },
-  { tier: 5, label: '최상위', cycle: '5일', general: 1, ad: 4, desc: '1일 일반 → 4일 광고', color: 'bg-emerald' },
-]
-
-const dayLabels = ['월', '화', '수', '목', '금', '토', '일']
-
 export default function Posting() {
   const { toast } = useToast()
 
@@ -56,29 +44,6 @@ export default function Posting() {
   const [loading, setLoading] = useState(true)
   const [runningAll, setRunningAll] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
-  const [savingSettings, setSavingSettings] = useState(false)
-
-  // Schedule settings
-  const [autoEngine, setAutoEngine] = useState(false)
-  const [startHour, setStartHour] = useState('09')
-  const [startMin, setStartMin] = useState('00')
-  const [endHour, setEndHour] = useState('18')
-  const [endMin, setEndMin] = useState('00')
-  const [selectedDays, setSelectedDays] = useState([true, true, true, true, true, false, false])
-  const [intervalMin, setIntervalMin] = useState(30)
-  const [intervalMax, setIntervalMax] = useState(90)
-  const [randomRest, setRandomRest] = useState(true)
-  const [dailyMax, setDailyMax] = useState(10)
-  const [accountMax, setAccountMax] = useState(3)
-  const [distribution, setDistribution] = useState<PostingSettings['distribution']>('tier')
-  const [autoTierUpgrade, setAutoTierUpgrade] = useState(true)
-  const [footerText, setFooterText] = useState('홈페이지에서 등록 하거나')
-  const [footerLink, setFooterLink] = useState('http://home.dailyfni.co.kr')
-  const [footerText2, setFooterText2] = useState('카카오톡으로 문의주셔도 됩니다.')
-  const [footerLink2, setFooterLink2] = useState('http://pf.kakao.com/')
-
-  const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
-  const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
 
   const fetchQueue = useCallback(async () => {
     try { const { data } = await api.get('/posting/queue'); setQueue(data.queue || []) } catch {}
@@ -87,31 +52,8 @@ export default function Posting() {
   const fetchErrors = useCallback(async () => {
     try { const { data } = await api.get('/posting/errors'); setErrors(data.errors || []) } catch {}
   }, [])
-  const fetchSettings = useCallback(async () => {
-    try {
-      const { data } = await api.get('/posting/settings')
-      const s = data.settings
-      if (s.autoEngine !== undefined) setAutoEngine(s.autoEngine)
-      if (s.startHour) setStartHour(s.startHour)
-      if (s.startMin) setStartMin(s.startMin)
-      if (s.endHour) setEndHour(s.endHour)
-      if (s.endMin) setEndMin(s.endMin)
-      if (s.selectedDays) setSelectedDays(s.selectedDays)
-      if (s.intervalMin) setIntervalMin(s.intervalMin)
-      if (s.intervalMax) setIntervalMax(s.intervalMax)
-      if (s.randomRest !== undefined) setRandomRest(s.randomRest)
-      if (s.dailyMax) setDailyMax(s.dailyMax)
-      if (s.accountMax) setAccountMax(s.accountMax)
-      if (s.distribution) setDistribution(s.distribution)
-      if (s.autoTierUpgrade !== undefined) setAutoTierUpgrade(s.autoTierUpgrade)
-      if (s.footerLink !== undefined) setFooterLink(s.footerLink)
-      if (s.footerText !== undefined) setFooterText(s.footerText)
-      if (s.footerLink2 !== undefined) setFooterLink2(s.footerLink2)
-      if (s.footerText2 !== undefined) setFooterText2(s.footerText2)
-    } catch {}
-  }, [])
 
-  useEffect(() => { fetchQueue(); fetchErrors(); fetchSettings() }, [fetchQueue, fetchErrors, fetchSettings])
+  useEffect(() => { fetchQueue(); fetchErrors() }, [fetchQueue, fetchErrors])
 
   const handleRunAll = async () => {
     setRunningAll(true)
@@ -144,24 +86,7 @@ export default function Posting() {
     try { await api.delete(`/posting/queue/${id}`); setQueue(prev => prev.filter(r => r.id !== id)); toast('success', '삭제됨') } catch { toast('error', '삭제 실패') }
   }
 
-  const handleSaveSettings = async () => {
-    setSavingSettings(true)
-    try {
-      await api.put('/posting/settings', {
-        autoEngine, startHour, startMin, endHour, endMin, selectedDays,
-        intervalMin, intervalMax, randomRest, dailyMax, accountMax, distribution, autoTierUpgrade,
-        footerLink, footerText, footerLink2, footerText2,
-      })
-      toast('success', '포스팅 스케줄이 저장되었습니다.')
-    } catch { toast('error', '설정 저장에 실패했습니다.') }
-    setSavingSettings(false)
-  }
-
-  const toggleDay = (i: number) => setSelectedDays(prev => prev.map((v, idx) => idx === i ? !v : v))
-
   if (loading) return <PageSkeleton />
-
-  const selectClass = 'rounded-lg bg-input border border-border px-4 py-2.5 text-foreground focus:border-primary focus:outline-none transition-colors appearance-none'
 
   return (
     <div className="space-y-6">
@@ -169,7 +94,7 @@ export default function Posting() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">포스팅 관리</h1>
-          <p className="text-sm text-muted-foreground">자동 포스팅 스케줄 및 수동 발행을 관리합니다</p>
+          <p className="text-sm text-muted-foreground">수동 포스팅 발행 및 오류 로그를 관리합니다</p>
         </div>
         <button onClick={handleRunAll} disabled={runningAll}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald text-white text-sm font-medium hover:bg-emerald/90 transition-colors disabled:opacity-50">
@@ -178,206 +103,15 @@ export default function Posting() {
         </button>
       </div>
 
-      {/* ═══ 자동 포스팅 스케줄 ═══ */}
-      <div className="glass-panel rounded-xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">자동 포스팅 스케줄</h2>
-          </div>
-          <Toggle enabled={autoEngine} onToggle={() => setAutoEngine(!autoEngine)} />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Left: 시간/요일/간격 */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">시작 시간</label>
-                <div className="flex items-center gap-1">
-                  <select value={startHour} onChange={e => setStartHour(e.target.value)} className={`${selectClass} w-20`}>
-                    {hours.map(h => <option key={h} value={h}>{h}시</option>)}
-                  </select>
-                  <span className="text-muted-foreground">:</span>
-                  <select value={startMin} onChange={e => setStartMin(e.target.value)} className={`${selectClass} w-20`}>
-                    {minutes.map(m => <option key={m} value={m}>{m}분</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">종료 시간</label>
-                <div className="flex items-center gap-1">
-                  <select value={endHour} onChange={e => setEndHour(e.target.value)} className={`${selectClass} w-20`}>
-                    {hours.map(h => <option key={h} value={h}>{h}시</option>)}
-                  </select>
-                  <span className="text-muted-foreground">:</span>
-                  <select value={endMin} onChange={e => setEndMin(e.target.value)} className={`${selectClass} w-20`}>
-                    {minutes.map(m => <option key={m} value={m}>{m}분</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">포스팅 요일</label>
-              <div className="flex gap-2">
-                {dayLabels.map((d, i) => (
-                  <button key={d} onClick={() => toggleDay(i)}
-                    className={`w-9 h-9 rounded-full text-sm font-medium transition-colors ${
-                      selectedDays[i] ? 'bg-primary text-white' : 'border border-border text-muted-foreground hover:border-primary'
-                    }`}>{d}</button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">포스팅 간격</label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">최소</span>
-                <input type="number" value={intervalMin} onChange={e => setIntervalMin(Number(e.target.value))}
-                  className={`${selectClass} w-20 text-center`} />
-                <span className="text-xs text-muted-foreground">분 ~ 최대</span>
-                <input type="number" value={intervalMax} onChange={e => setIntervalMax(Number(e.target.value))}
-                  className={`${selectClass} w-20 text-center`} />
-                <span className="text-xs text-muted-foreground">분</span>
-              </div>
-            </div>
-
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={randomRest} onChange={() => setRandomRest(!randomRest)}
-                className="w-4 h-4 rounded accent-primary" />
-              <div>
-                <span className="text-sm text-foreground">랜덤 휴식</span>
-                <p className="text-xs text-muted-foreground">10% 확률로 하루 쉬기 (어뷰징 방지)</p>
-              </div>
-            </label>
-
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1.5">일일 포스팅 계정 수</label>
-              <input type="number" value={dailyMax} onChange={e => setDailyMax(Number(e.target.value))} min={1}
-                className={`${selectClass} w-full`} />
-              <p className="text-xs text-muted-foreground mt-1">하루에 포스팅할 계정 수 (1계정 = 1포스팅)</p>
-            </div>
-
-            <div>
-              <label className="block text-sm text-muted-foreground mb-2">분배 방식</label>
-              <div className="flex flex-wrap gap-2">
-                {([['sequential', '순차'], ['random', '랜덤'], ['tier', '티어 기반']] as const).map(([v, l]) => (
-                  <label key={v} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${
-                    distribution === v ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'
-                  }`}>
-                    <input type="radio" name="dist" value={v} checked={distribution === v} onChange={() => setDistribution(v)} className="sr-only" />
-                    <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${distribution === v ? 'border-primary' : 'border-muted-foreground'}`}>
-                      {distribution === v && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                    </span>
-                    {l}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: 티어별 규칙 */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Shield className="w-4 h-4" /> 티어별 포스팅 규칙
-            </div>
-
-            <div className="space-y-3">
-              {tierRules.map(t => {
-                const total = t.general + t.ad
-                return (
-                  <div key={t.tier} className="p-3 rounded-lg border border-border bg-background/40">
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2.5 h-2.5 rounded-full ${t.color}`} />
-                        <span className="text-sm font-medium text-foreground">Tier {t.tier} — {t.label}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{t.cycle} 주기</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mb-2">{t.desc}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2.5 rounded-full bg-muted overflow-hidden flex">
-                        {t.general > 0 && (
-                          <div className="h-full bg-primary/60 rounded-l-full" style={{ width: `${(t.general / total) * 100}%` }} />
-                        )}
-                        {t.ad > 0 && (
-                          <div className="h-full bg-amber/60 rounded-r-full" style={{ width: `${(t.ad / total) * 100}%` }} />
-                        )}
-                      </div>
-                      <div className="flex gap-3 text-[10px] shrink-0">
-                        <span className="text-primary">일반 {t.general}일</span>
-                        <span className="text-amber">광고 {t.ad}일</span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="flex items-center gap-3 p-2 rounded-lg bg-primary/5 border border-primary/10">
-              <Info className="w-4 h-4 text-primary shrink-0" />
-              <p className="text-xs text-muted-foreground">1계정 1일 1포스팅 원칙. 티어 비율에 따라 오늘 일반/광고를 자동 결정합니다.</p>
-            </div>
-
-            <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-border bg-background/40">
-              <input type="checkbox" checked={autoTierUpgrade} onChange={() => setAutoTierUpgrade(!autoTierUpgrade)}
-                className="w-4 h-4 rounded accent-primary" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <ArrowUpCircle className="w-4 h-4 text-emerald" />
-                  <span className="text-sm font-medium text-foreground">2주마다 자동 티어 업그레이드</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">티어가 올라가면 광고 포스팅 비중이 자동으로 증가합니다</p>
-              </div>
-            </label>
-
-            {/* 하단 링크 설정 — 2개 슬롯 */}
-            <div className="p-3 rounded-lg border border-border bg-background/40 space-y-4">
-              <div>
-                <div className="text-sm font-medium text-foreground">포스팅 하단 문구 / 링크</div>
-                <p className="text-xs text-muted-foreground">모든 포스팅 본문 하단에 자동으로 삽입됩니다. (최대 2개)</p>
-              </div>
-
-              {/* 링크 1 (홈페이지) */}
-              <div className="space-y-2 p-3 rounded-lg bg-background/40 border border-border/50">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-primary/15 text-primary text-[10px] font-bold grid place-items-center">1</span>
-                  <span className="text-xs font-medium text-foreground">홈페이지 / 메인 링크</span>
-                </div>
-                <input type="text" value={footerText} onChange={e => setFooterText(e.target.value)}
-                  placeholder="예: 홈페이지에서 등록 하거나"
-                  className={`${selectClass} w-full text-sm`} />
-                <input type="text" value={footerLink} onChange={e => setFooterLink(e.target.value)}
-                  placeholder="http://home.dailyfni.co.kr"
-                  className={`${selectClass} w-full text-sm`} />
-              </div>
-
-              {/* 링크 2 (카카오채널) */}
-              <div className="space-y-2 p-3 rounded-lg bg-background/40 border border-border/50">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-amber/15 text-amber text-[10px] font-bold grid place-items-center">2</span>
-                  <span className="text-xs font-medium text-foreground">카카오채널 / 보조 링크</span>
-                </div>
-                <input type="text" value={footerText2} onChange={e => setFooterText2(e.target.value)}
-                  placeholder="예: 카카오톡으로 문의주셔도 됩니다."
-                  className={`${selectClass} w-full text-sm`} />
-                <input type="text" value={footerLink2} onChange={e => setFooterLink2(e.target.value)}
-                  placeholder="http://pf.kakao.com/..."
-                  className={`${selectClass} w-full text-sm`} />
-              </div>
-            </div>
-
-            <button onClick={handleSaveSettings} disabled={savingSettings}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-primary to-secondary text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
-              {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              스케줄 저장
-            </button>
-          </div>
-        </div>
+      {/* 자동 포스팅 스케줄은 시스템 설정 페이지로 이동되었다는 안내 */}
+      <div className="flex items-center gap-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
+        <Info className="w-4 h-4 text-primary shrink-0" />
+        <p className="text-sm text-muted-foreground">
+          자동 포스팅 스케줄 설정은 <span className="text-foreground font-medium">시스템 설정</span> 페이지로 이동되었습니다.
+        </p>
       </div>
 
-      {/* ═══ 수동 포스팅 큐 ═══ */}
+      {/* 수동 포스팅 큐 */}
       <div className="glass-panel rounded-xl p-5">
         <h2 className="text-lg font-semibold text-foreground mb-4">수동 포스팅 큐</h2>
         {queue.length === 0 ? (
@@ -428,7 +162,7 @@ export default function Posting() {
         )}
       </div>
 
-      {/* ═══ 오류 로그 ═══ */}
+      {/* 오류 로그 */}
       <div className="glass-panel rounded-xl p-5">
         <h2 className="text-lg font-semibold text-foreground mb-4">오류 로그</h2>
         {errors.length === 0 ? (
