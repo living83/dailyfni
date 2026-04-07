@@ -7,12 +7,22 @@ const { listAccounts, getAccountRaw } = require('../models/Account');
 const Engagement = require('../models/Engagement');
 const { requestEngageBatch } = require('./pythonBridge');
 const telegram = require('./telegram');
+const db = require('../db/sqlite');
 
 let intervalId = null;
-let lastRunDate = '';
-let todayVisitedCount = 0;
 let isProcessing = false;
-let isRestDay = false;
+
+/* ── 영속 상태 (재시작에도 보존) ── */
+function loadState() {
+  try {
+    const row = db.prepare(`SELECT value FROM settings WHERE key = 'engagement_state'`).get();
+    if (row) return JSON.parse(row.value);
+  } catch {}
+  return { lastRunDate: '', todayVisitedCount: 0, isRestDay: false };
+}
+function saveState(state) {
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('engagement_state', ?)`).run(JSON.stringify(state));
+}
 
 function startEngagementScheduler() {
   stopEngagementScheduler();
@@ -44,14 +54,18 @@ async function checkAndRunEngagement() {
 
     const now = new Date();
     const today = now.toISOString().slice(0, 10);
+    const state = loadState();
 
-    if (lastRunDate !== today) {
-      lastRunDate = today;
-      todayVisitedCount = 0;
-      isRestDay = false;
+    // 새 날짜로 진입 시 상태 리셋
+    if (state.lastRunDate !== today) {
+      state.lastRunDate = today;
+      state.todayVisitedCount = 0;
+      state.isRestDay = false;
+      saveState(state);
     }
 
-    if (isRestDay) return;
+    // 오늘 이미 실행했으면 스킵 (재시작에도 영속)
+    if (state.isRestDay) return;
 
     // 시간 체크
     const currentHour = now.getHours();
@@ -67,13 +81,15 @@ async function checkAndRunEngagement() {
 
     if (currentTime < startTime || currentTime > endTime) return;
 
+    // 트리거 윈도우: 시작 시각부터 10분 이내에만 발동
+    // (재시작 후 윈도우 중간에 즉시 실행되는 문제 방지)
+    if (currentTime > startTime + 10) return;
+
     // 참여 계정
     const engageAccounts = listAccounts().filter(a => a.isActive && a.neighborEngage);
     if (engageAccounts.length === 0) return;
 
     const maxVisits = settings.maxVisits || 10;
-    // 하루 1회 실행 조건 — 이미 실행했으면 스킵
-    if (todayVisitedCount >= maxVisits * engageAccounts.length) return;
 
     isProcessing = true;
     console.log(`[EngScheduler] 공감 실행 — ${engageAccounts.length}개 계정, ${now.toLocaleTimeString()}`);
@@ -99,7 +115,7 @@ async function checkAndRunEngagement() {
 
         const likes = result.like_count || 0;
         totalLikes += likes;
-        todayVisitedCount += likes;
+        state.todayVisitedCount += likes;
 
         for (const r of result.results || []) {
           if (r.like_success) {
@@ -126,7 +142,8 @@ async function checkAndRunEngagement() {
     }
 
     console.log(`[EngScheduler] 오늘 총 공감 ${totalLikes}건 완료`);
-    isRestDay = true; // 하루 1회만 실행
+    state.isRestDay = true; // 하루 1회만 실행 (영속 저장)
+    saveState(state);
   } catch (err) {
     console.error('[EngScheduler] 오류:', err.message);
   } finally {
@@ -136,11 +153,12 @@ async function checkAndRunEngagement() {
 
 function getEngagementSchedulerStatus() {
   const settings = getSettingsRaw();
+  const state = loadState();
   return {
     running: !!intervalId && !!settings.engagementBot,
-    lastRunDate,
-    todayVisitedCount,
-    isRestDay,
+    lastRunDate: state.lastRunDate,
+    todayVisitedCount: state.todayVisitedCount,
+    isRestDay: state.isRestDay,
     isProcessing,
   };
 }

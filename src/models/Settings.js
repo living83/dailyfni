@@ -7,6 +7,10 @@ const defaultSettings = {
   engagementBot: false,
   engStartHour: '09',
   engStartMin: '00',
+  engEndHour: '18',
+  engEndMin: '00',
+  visitInterval: 10,
+  randomDelay: true,
   maxVisits: 20,
   heartLike: true,
   engagementAccountIds: [],
@@ -44,9 +48,9 @@ function updateSettings(data) {
   if (data.claudeApiKey && data.claudeApiKey.startsWith('••')) delete data.claudeApiKey;
   if (data.naverClientSecret && data.naverClientSecret.startsWith('••')) delete data.naverClientSecret;
 
-  const boolFields = ['engagementBot', 'heartLike', 'proxyAutoCheck'];
-  const strFields = ['claudeApiKey', 'naverClientId', 'naverClientSecret', 'engStartHour', 'engStartMin', 'logLevel', 'logRetention', 'proxyCheckInterval'];
-  const numFields = ['maxVisits'];
+  const boolFields = ['engagementBot', 'heartLike', 'proxyAutoCheck', 'randomDelay'];
+  const strFields = ['claudeApiKey', 'naverClientId', 'naverClientSecret', 'engStartHour', 'engStartMin', 'engEndHour', 'engEndMin', 'logLevel', 'logRetention', 'proxyCheckInterval'];
+  const numFields = ['maxVisits', 'visitInterval'];
 
   for (const k of boolFields) if (data[k] !== undefined) current[k] = !!data[k];
   for (const k of strFields) if (data[k] !== undefined) current[k] = String(data[k]);
