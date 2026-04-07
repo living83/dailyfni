@@ -598,6 +598,259 @@
         </div>
       </div>
     </section>
+
+    <!-- ============================================================
+         ASSETS — 회사 자산 & 성과 (Bento Grid) (Phase 1-E)
+         ============================================================ -->
+    <section id="assets" class="relative py-24 sm:py-32 bg-gradient-to-b from-ink-950 via-ink-900/40 to-ink-950">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+          <div class="max-w-2xl">
+            <p class="reveal text-xs tracking-[0.3em] text-accent-400 uppercase">자산현황 · Assets</p>
+            <h2 class="reveal mt-4 text-4xl md:text-5xl lg:text-[3.25rem] font-bold leading-tight tracking-tightest-ko text-white">
+              숫자로 보는<br>데일리에프앤아이대부.
+            </h2>
+          </div>
+          <p class="reveal text-sm text-zinc-500 max-w-md">
+            아래 수치는 시안용 placeholder입니다. 실데이터로 교체해 주세요.
+          </p>
+        </div>
+
+        <!-- Bento grid: 12-col, 4-row -->
+        <div class="reveal mt-14 grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 auto-rows-[minmax(140px,auto)] gap-4">
+
+          <!-- Hero metric (large) -->
+          <div class="md:col-span-6 lg:col-span-7 lg:row-span-2 relative rounded-3xl border border-white/10 bg-white/[0.02] p-7 sm:p-8 overflow-hidden">
+            <div aria-hidden="true" class="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-accent-400/15 blur-3xl"></div>
+            <div class="relative">
+              <div class="flex items-center gap-2 text-accent-300">
+                <iconify-icon icon="solar:graph-up-bold" width="18" aria-hidden="true"></iconify-icon>
+                <span class="text-[11px] tracking-widest uppercase text-zinc-500">누적 매입채권 규모</span>
+              </div>
+              <p class="mt-6 text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tightest-ko text-white tabular-nums">
+                1,247<span class="text-accent-400 text-5xl sm:text-6xl lg:text-7xl">억</span>
+              </p>
+              <p class="mt-3 text-sm text-zinc-400 leading-relaxed max-w-md">
+                2018년 사업개시 이후 양수한 채권의 원금 기준 누적액입니다. 정기 외부 회계감사를 통해 검증됩니다.
+              </p>
+              <div class="mt-8 flex items-center gap-4 text-xs text-zinc-500">
+                <span class="inline-flex items-center gap-1.5">
+                  <iconify-icon icon="solar:calendar-minimalistic-linear" width="14" aria-hidden="true"></iconify-icon>
+                  최종 갱신 [필수입력: YYYY.MM]
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <iconify-icon icon="solar:document-text-linear" width="14" aria-hidden="true"></iconify-icon>
+                  외부 감사 보고서
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recovery rate -->
+          <div class="md:col-span-3 lg:col-span-5 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <div class="flex items-center gap-2 text-accent-300">
+              <iconify-icon icon="solar:target-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">평균 회수율</span>
+            </div>
+            <div class="mt-4 flex items-end gap-3">
+              <p class="text-5xl font-bold text-white tabular-nums">37.4<span class="text-2xl text-zinc-500">%</span></p>
+              <span class="mb-1 inline-flex items-center gap-0.5 text-xs text-emerald-300">
+                <iconify-icon icon="solar:arrow-up-linear" width="12"></iconify-icon> 2.1%p
+              </span>
+            </div>
+            <p class="mt-2 text-xs text-zinc-500">전년 동기 대비</p>
+          </div>
+
+          <!-- Compliance -->
+          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <div class="flex items-center gap-2 text-accent-300">
+              <iconify-icon icon="solar:shield-check-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">준법 점검</span>
+            </div>
+            <p class="mt-4 text-4xl font-bold text-white tabular-nums">0<span class="text-base text-zinc-500"> 건</span></p>
+            <p class="mt-2 text-xs text-zinc-500">최근 12개월 행정처분</p>
+          </div>
+
+          <!-- Operating since -->
+          <div class="md:col-span-3 lg:col-span-2 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <div class="flex items-center gap-2 text-accent-300">
+              <iconify-icon icon="solar:calendar-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">설립</span>
+            </div>
+            <p class="mt-4 text-4xl font-bold text-white tabular-nums">[YYYY]</p>
+          </div>
+
+          <!-- Asset class breakdown -->
+          <div class="md:col-span-6 lg:col-span-6 rounded-3xl border border-white/10 bg-white/[0.02] p-7">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 text-accent-300">
+                <iconify-icon icon="solar:pie-chart-2-bold" width="18" aria-hidden="true"></iconify-icon>
+                <span class="text-[11px] tracking-widest uppercase text-zinc-500">자산 구성</span>
+              </div>
+              <span class="text-[11px] text-zinc-500">[필수입력]</span>
+            </div>
+            <ul class="mt-6 space-y-4">
+              <li>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-zinc-300">금융 채권</span>
+                  <span class="text-white font-medium tabular-nums">62%</span>
+                </div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400 w-[62%]"></div></div>
+              </li>
+              <li>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-zinc-300">상사 채권</span>
+                  <span class="text-white font-medium tabular-nums">23%</span>
+                </div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/70 w-[23%]"></div></div>
+              </li>
+              <li>
+                <div class="flex items-center justify-between text-sm">
+                  <span class="text-zinc-300">기타 채권</span>
+                  <span class="text-white font-medium tabular-nums">15%</span>
+                </div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/40 w-[15%]"></div></div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Audit -->
+          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <div class="flex items-center gap-2 text-accent-300">
+              <iconify-icon icon="solar:checklist-minimalistic-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">외부 감사</span>
+            </div>
+            <p class="mt-4 text-3xl font-bold text-white">연 2회</p>
+            <p class="mt-2 text-xs text-zinc-500">독립 회계법인</p>
+          </div>
+
+          <!-- Staff -->
+          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+            <div class="flex items-center gap-2 text-accent-300">
+              <iconify-icon icon="solar:users-group-rounded-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">전문 인력</span>
+            </div>
+            <p class="mt-4 text-3xl font-bold text-white tabular-nums">42<span class="text-base text-zinc-500"> 명</span></p>
+            <p class="mt-2 text-xs text-zinc-500">신용관리사 · 변호사 자문 포함</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         PROTECT — 고객 권리 & 채무자 보호 (Phase 1-F)
+         ============================================================ -->
+    <section id="protect" class="relative py-24 sm:py-32 border-t border-white/[0.06]">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
+
+          <!-- Left: heading -->
+          <div class="lg:col-span-5 lg:sticky lg:top-32 self-start">
+            <p class="reveal text-xs tracking-[0.3em] text-accent-400 uppercase">고객권리 · Protection</p>
+            <h2 class="reveal mt-4 text-4xl md:text-5xl lg:text-[3.25rem] font-bold leading-tight tracking-tightest-ko text-white">
+              채무자도 고객입니다.
+            </h2>
+            <p class="reveal mt-5 text-base md:text-lg text-zinc-400 leading-relaxed">
+              데일리에프앤아이대부는 채권의 회수보다 사람의 존엄을 우선합니다.
+              모든 추심원은 채권추심법에 명시된 금지행위를 숙지하고,
+              매년 의무 교육과 윤리 서약을 이행합니다.
+            </p>
+            <a href="#contact" class="reveal btn-magnet mt-8 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] text-white px-6 py-3.5 text-sm font-medium hover:bg-white/[0.07]">
+              <iconify-icon icon="solar:phone-calling-rounded-linear" width="16" aria-hidden="true"></iconify-icon>
+              민원·이의제기 접수
+              <iconify-icon class="arrow" icon="solar:arrow-right-linear" width="14" aria-hidden="true"></iconify-icon>
+            </a>
+          </div>
+
+          <!-- Right: rights checklist -->
+          <div class="lg:col-span-7">
+            <ul class="reveal grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <li class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:user-id-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-zinc-500">권리 01</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">신원 확인 요구권</p>
+                <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                  추심원의 소속·성명·신분증을 요구할 수 있으며, 본 사이트에서 직접 조회 가능합니다.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:document-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-zinc-500">권리 02</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">채권 증빙 열람권</p>
+                <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                  채권의 발생 원인, 잔액, 양도 사실을 입증하는 서류 제공을 요청할 수 있습니다.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:shield-cross-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-zinc-500">권리 03</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">소멸시효 항변권</p>
+                <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                  소멸시효가 완성된 채권에 대해 변제 의무가 없음을 주장할 수 있습니다.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:clock-circle-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-zinc-500">권리 04</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">야간 추심 거부권</p>
+                <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                  21시 이후 ~ 익일 8시 이전의 방문·연락은 법으로 금지되어 있습니다.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:chat-square-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-zinc-500">권리 05</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">상환 협의권</p>
+                <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                  본인의 변제 능력을 고려한 분할·감면·유예 협의를 요청할 수 있습니다.
+                </p>
+              </li>
+              <li class="rounded-2xl border border-accent-400/30 bg-accent-400/[0.06] p-5">
+                <div class="flex items-center gap-2 text-accent-300">
+                  <iconify-icon icon="solar:gavel-bold" width="18" aria-hidden="true"></iconify-icon>
+                  <span class="text-[11px] tracking-widest uppercase text-accent-300">권리 06</span>
+                </div>
+                <p class="mt-3 text-base font-semibold text-white">민원 · 분쟁조정 신청권</p>
+                <p class="mt-1.5 text-xs text-zinc-300 leading-relaxed">
+                  당사 내부 민원, 금융감독원, 한국소비자원 등 외부 기관에 신청할 수 있습니다.
+                </p>
+              </li>
+            </ul>
+
+            <!-- Banned acts callout -->
+            <div class="reveal mt-6 rounded-3xl border border-rose-500/20 bg-rose-500/[0.04] p-6 sm:p-7">
+              <div class="flex items-start gap-3">
+                <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300 ring-1 ring-rose-500/30">
+                  <iconify-icon icon="solar:danger-triangle-bold" width="18" aria-hidden="true"></iconify-icon>
+                </span>
+                <div>
+                  <h3 class="text-base font-semibold text-white">법으로 금지된 추심행위</h3>
+                  <p class="mt-1.5 text-xs text-zinc-400 leading-relaxed">
+                    폭언·협박, 야간 방문, 가족·지인에 대한 채무 사실 고지, 반복 연락,
+                    소속·신분 미공개 행위 등은 모두 금지되어 있습니다.
+                    위반 사례가 있는 경우 즉시 당사 또는 금융감독원(1332)에 신고해 주세요.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
   </main>
 
 </body>
