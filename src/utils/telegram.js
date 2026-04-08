@@ -59,7 +59,7 @@ function sendTelegram(message) {
 
 // 신규 고객 유입 알림
 function notifyNewCustomer({ name, phone, content, source }) {
-  const msg = `🔔 <b>신규 고객 유입</b>\n\n` +
+  const msg = `🔔 <b>신규 고객이 유입됐습니다</b>\n\n` +
     `👤 이름: ${name}\n` +
     `📞 연락처: ${phone}\n` +
     `📥 출처: ${source || '홈페이지'}\n` +
