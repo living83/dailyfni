@@ -29,14 +29,14 @@
    * ---------------------------------------------------------- */
   function buildTopBar() {
     return ''
-      + '<div id="topUtilityBar" class="hidden md:block fixed top-0 inset-x-0 z-50 bg-ink-900/85 backdrop-blur-md border-b border-white/[0.05]">'
-      +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-9 flex items-center text-[11px] leading-none tracking-tight">'
-      +     '<div class="flex items-center gap-3 text-zinc-400 min-w-0">'
-      +       '<span class="text-white/95 font-semibold whitespace-nowrap">(주)데일리에프앤아이대부</span>'
-      +       '<span class="h-3 w-px bg-white/15"></span>'
-      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부업)</span></span>'
-      +       '<span class="text-zinc-600">·</span>'
-      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부중개업)</span></span>'
+      + '<div id="topUtilityBar" class="hidden lg:block fixed top-0 inset-x-0 z-50 bg-ink-900/90 backdrop-blur-md border-b border-white/[0.05]">'
+      +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-14 flex items-center text-2xl leading-none tracking-tight">'
+      +     '<div class="flex items-center gap-4 text-zinc-300 min-w-0">'
+      +       '<span class="text-white font-bold whitespace-nowrap">(주)데일리에프앤아이대부</span>'
+      +       '<span class="h-6 w-px bg-white/20"></span>'
+      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-400">(대부업)</span></span>'
+      +       '<span class="text-zinc-500">·</span>'
+      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-400">(대부중개업)</span></span>'
       +     '</div>'
       +   '</div>'
       + '</div>';
@@ -74,7 +74,7 @@
     }).join('');
 
     return ''
-      + '<header class="fixed top-4 md:top-11 inset-x-0 z-40 px-4 sm:px-6">'
+      + '<header class="fixed top-4 lg:top-16 inset-x-0 z-40 px-4 sm:px-6">'
       +   '<nav aria-label="주 메뉴" class="mx-auto max-w-6xl glass rounded-full pl-4 pr-3 sm:pl-5 sm:pr-4 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-4 sm:gap-6">'
       +     '<a href="./index.html" class="flex items-center gap-2.5 group justify-self-start" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
       +       BRAND_MARK
@@ -112,8 +112,22 @@
    * ---------------------------------------------------------- */
   function buildFooter() {
     var year = new Date().getFullYear();
+
+    var DISCLAIMER = ''
+      + '02-2138-0750, 금리 연 20% 이내(연체금리는 약정금리+3%p 이내, 연 20% 이내) 단, 2021.7.7부터 체결, 갱신, 연장되는 계약에 한함. '
+      + '취급수수료 등 기타부대비용 및 조기상환조건 없음 단, 부동산 담보대출의 경우 부대비용 및 중도상환 시 중도상환수수료(3%) 발생. '
+      + '(대부이자, 연체이자, 중도상환수수료의 합계금액은 연 20%이내에서 수취) ※ 부대비용 : 등록면허세, 지방교육세, 등기신청수수료, 국민주택채권매입금액 및 근저당권해지비용 '
+      + '중개수수료를 요구하거나 받는 것은 불법. 과도한 빚은 당신에게 큰 불행을 안겨줄 수 있습니다. 대출시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다. '
+      + '단, LTV 산정시 근저당권 설정금액 기준으로 산정함. 당일입금은 공동인증서를 통한 등기설정이 가능한 경우에 한하며, 부동산담보대출 권리보험가입 등의 사유로 제한될 수 있음.';
+
     return ''
       + '<footer class="relative border-t border-white/[0.06] bg-ink-900/40">'
+      // Legal disclaimer — shown above brand block on every page
+      +   '<div class="border-b border-white/[0.06]">'
+      +     '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 lg:py-14">'
+      +       '<p class="text-base md:text-lg lg:text-2xl leading-[1.85] text-zinc-300 break-keep-all">' + DISCLAIMER + '</p>'
+      +     '</div>'
+      +   '</div>'
       +   '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">'
       +     '<div class="grid grid-cols-1 lg:grid-cols-12 gap-10">'
       +       '<div class="lg:col-span-5">'
