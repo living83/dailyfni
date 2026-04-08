@@ -40,138 +40,201 @@
           공지사항.
         </h1>
         <p class="reveal mt-6 max-w-[58ch] text-base md:text-lg text-zinc-400 leading-relaxed">
-          회사의 최신 소식과 정책 변경 사항을 안내합니다.
-          중요 공지는 상단에 고정되며, 게시글은 시안용 placeholder입니다.
+          회사의 최신 경영·고객 공시와 채무조정 요청 절차를 확인하실 수 있습니다.
         </p>
       </div>
     </section>
 
     <!-- ============================================================
-         NOTICE LIST
+         NOTICE TABS + PANELS
          ============================================================ -->
     <section class="relative pb-20 lg:pb-28">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
-        <!-- Search + filter (UI placeholder) -->
-        <div class="reveal flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-          <div class="flex items-center gap-2 text-sm">
-            <button type="button" class="rounded-full bg-white/10 text-white px-4 py-1.5 ring-1 ring-white/15">전체</button>
-            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">중요</button>
-            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">공지</button>
-            <button type="button" class="rounded-full text-zinc-400 hover:text-white hover:bg-white/5 px-4 py-1.5">정책</button>
-          </div>
-          <label class="relative w-full sm:w-72">
-            <iconify-icon icon="solar:magnifer-linear" class="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" width="16" aria-hidden="true"></iconify-icon>
-            <input type="search" placeholder="공지사항 검색"
-                   class="w-full rounded-full border border-white/10 bg-white/[0.03] pl-9 pr-4 py-2 text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent-400/60 focus:bg-white/[0.05]">
-          </label>
+        <!-- Tabs -->
+        <div class="reveal flex flex-wrap items-center gap-2" role="tablist" aria-label="공지사항 카테고리">
+          <button type="button" data-notice-tab="all"        class="notice-tab is-active rounded-full px-4 py-2 text-sm font-medium transition" role="tab" aria-selected="true">전체공시</button>
+          <button type="button" data-notice-tab="management" class="notice-tab rounded-full px-4 py-2 text-sm font-medium transition" role="tab" aria-selected="false">경영공시</button>
+          <button type="button" data-notice-tab="customer"   class="notice-tab rounded-full px-4 py-2 text-sm font-medium transition" role="tab" aria-selected="false">고객공시</button>
+          <button type="button" data-notice-tab="debt"       class="notice-tab rounded-full px-4 py-2 text-sm font-medium transition" role="tab" aria-selected="false">채무조정요청</button>
         </div>
 
-        <ul class="reveal divide-y divide-white/[0.06] rounded-3xl border border-white/10 bg-white/[0.02]">
-          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
-            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30">
-              <iconify-icon icon="solar:bell-bing-bold" width="20" aria-hidden="true"></iconify-icon>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="inline-flex items-center rounded-full bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30 px-2 py-0.5">중요</span>
-                <span class="text-zinc-500 tabular-nums">2026.04.02</span>
-              </div>
-              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
-                <a href="#" class="hover:text-accent-300 transition">개인정보처리방침 일부 개정 안내</a>
-              </h2>
-              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
-                개인정보보호법 개정에 따라 수집 항목과 보관 기간 일부가 변경됩니다. 시행일 이전에 반드시 확인 부탁드립니다.
-              </p>
-            </div>
-          </li>
-          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
-            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
-              <iconify-icon icon="solar:document-text-bold" width="20" aria-hidden="true"></iconify-icon>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
-                <span class="text-zinc-500 tabular-nums">2026.03.21</span>
-              </div>
-              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
-                <a href="#" class="hover:text-accent-300 transition">민원 처리 절차 개선 안내</a>
-              </h2>
-              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
-                민원 응대 SLA를 7영업일에서 5영업일로 단축하였습니다. 처리 단계별 진행 상황도 안내해 드립니다.
-              </p>
-            </div>
-          </li>
-          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
-            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
-              <iconify-icon icon="solar:calendar-mark-bold" width="20" aria-hidden="true"></iconify-icon>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
-                <span class="text-zinc-500 tabular-nums">2026.02.14</span>
-              </div>
-              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
-                <a href="#" class="hover:text-accent-300 transition">설 연휴 고객센터 운영 일정</a>
-              </h2>
-              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
-                설 연휴 기간(2026.02.16 ~ 2026.02.18) 고객센터 운영이 일시 중단됩니다. 이메일 접수는 정상적으로 가능합니다.
-              </p>
-            </div>
-          </li>
-          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
-            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
-              <iconify-icon icon="solar:shield-check-bold" width="20" aria-hidden="true"></iconify-icon>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">정책</span>
-                <span class="text-zinc-500 tabular-nums">2026.01.08</span>
-              </div>
-              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
-                <a href="#" class="hover:text-accent-300 transition">2026년 채권추심 윤리 강령 갱신</a>
-              </h2>
-              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
-                전 임직원이 2026년 채권추심 윤리 강령에 서약하였습니다. 강령 전문은 본 사이트에서 열람 가능합니다.
-              </p>
-            </div>
-          </li>
-          <li class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">
-            <div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-zinc-300 ring-1 ring-white/10">
-              <iconify-icon icon="solar:graph-up-bold" width="20" aria-hidden="true"></iconify-icon>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="inline-flex items-center rounded-full bg-white/5 text-zinc-300 ring-1 ring-white/10 px-2 py-0.5">공지</span>
-                <span class="text-zinc-500 tabular-nums">2025.12.05</span>
-              </div>
-              <h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">
-                <a href="#" class="hover:text-accent-300 transition">2025년 외부 회계감사 결과 보고</a>
-              </h2>
-              <p class="mt-1 text-sm text-zinc-400 leading-relaxed">
-                독립 회계법인의 2025년 정기 감사가 종료되었습니다. 보고서 요약본을 확인할 수 있습니다.
-              </p>
-            </div>
-          </li>
-        </ul>
+        <!-- ========== LIST PANEL (all / management / customer) ========== -->
+        <div data-notice-panel="list" class="mt-8">
+          <ul id="noticeList" class="reveal divide-y divide-white/[0.06] rounded-3xl border border-white/10 bg-white/[0.02]">
+            <!-- Rendered from window.NOTICES by script below -->
+          </ul>
+          <p data-notice-empty class="hidden reveal mt-8 text-center text-sm text-zinc-500">해당 카테고리에 등록된 공지가 없습니다.</p>
+        </div>
 
-        <!-- Pagination (UI placeholder) -->
-        <nav aria-label="페이지 이동" class="reveal mt-8 flex items-center justify-center gap-2 text-sm">
-          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-500 hover:text-white hover:bg-white/5" aria-label="이전 페이지">
-            <iconify-icon icon="solar:alt-arrow-left-linear" width="16"></iconify-icon>
-          </button>
-          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/15 tabular-nums">1</button>
-          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/5 tabular-nums">2</button>
-          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-white/5 tabular-nums">3</button>
-          <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-zinc-500 hover:text-white hover:bg-white/5" aria-label="다음 페이지">
-            <iconify-icon icon="solar:alt-arrow-right-linear" width="16"></iconify-icon>
-          </button>
-        </nav>
+        <!-- ========== DEBT PANEL (채무조정요청) ========== -->
+        <div data-notice-panel="debt" class="hidden mt-8">
+          <div class="reveal rounded-3xl border border-white/10 bg-white/[0.02] p-6 sm:p-10 lg:p-12">
+            <div class="flex items-start gap-4 sm:gap-5">
+              <span class="inline-flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30">
+                <iconify-icon icon="solar:hand-heart-bold" width="26" aria-hidden="true"></iconify-icon>
+              </span>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs tracking-[0.25em] uppercase text-accent-300">Debt Restructuring</p>
+                <h2 class="mt-2 text-2xl sm:text-3xl font-bold tracking-tightest-ko text-white leading-tight">채무조정 요청 안내</h2>
 
-        <p class="reveal mt-6 text-center text-[11px] text-zinc-500">* 표시 내용은 시안용 placeholder입니다.</p>
+                <div class="mt-5 space-y-3 text-[15px] sm:text-base text-zinc-300 leading-[1.9] break-keep-all max-w-2xl">
+                  <p>데일리에프앤아이는 자체 채무조정 상세절차에 따라 채무조정요청서류를 제공하고 있습니다.</p>
+                  <p class="text-white font-medium">아래 서류를 다운받아 사용하세요!</p>
+                </div>
+
+                <div class="mt-8">
+                  <a href="./assets/채무조정%20요청서.pdf"
+                     download="데일리에프앤아이_채무조정_요청서.pdf"
+                     class="btn-magnet inline-flex items-center gap-2 rounded-full bg-accent-400 text-white px-7 py-4 text-base font-semibold shadow-brand-soft">
+                    <iconify-icon icon="solar:download-minimalistic-bold" width="20" aria-hidden="true"></iconify-icon>
+                    채무조정 요청서 다운로드
+                    <iconify-icon class="arrow" icon="solar:arrow-right-linear" width="18" aria-hidden="true"></iconify-icon>
+                  </a>
+                </div>
+
+                <div class="mt-8 rounded-2xl border border-accent-400/20 bg-accent-400/[0.05] p-5 flex items-start gap-3">
+                  <iconify-icon icon="solar:info-circle-bold" class="text-accent-300 mt-0.5 shrink-0" width="20" aria-hidden="true"></iconify-icon>
+                  <p class="text-sm text-zinc-300 leading-relaxed break-keep-all">
+                    <span class="text-zinc-500">※</span> 상세 절차에 관한 내용은 대표번호
+                    <a href="tel:02-2138-0750" class="text-accent-300 font-semibold tabular-nums hover:text-accent-200 underline underline-offset-2">02-2138-0750</a>
+                    으로 연락 주셔서 상담 요청 해주세요.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </main>
+
+  <!-- ============================================================
+       NOTICE DATA + TAB LOGIC
+       ============================================================ -->
+  <script>
+    // Notices — managed in-page. Admins: add new posts at the top of this array.
+    // Each item: { id, category: 'management' | 'customer', badge: '중요' | '공지' | '정책',
+    //               date: 'YYYY.MM.DD', title, summary, icon (iconify solar id) }
+    window.NOTICES = [
+      {
+        id: 'privacy-policy-2026-04',
+        category: 'customer',
+        badge: '중요',
+        date: '2026.04.02',
+        title: '개인정보처리방침 일부 개정 안내',
+        summary: '개인정보보호법 개정에 따라 수집 항목과 보관 기간 일부가 변경됩니다. 시행일 이전에 반드시 확인 부탁드립니다.',
+        icon: 'solar:bell-bing-bold'
+      },
+      {
+        id: 'complaint-sla-2026-03',
+        category: 'customer',
+        badge: '공지',
+        date: '2026.03.21',
+        title: '민원 처리 절차 개선 안내',
+        summary: '민원 응대 SLA를 7영업일에서 5영업일로 단축하였습니다. 처리 단계별 진행 상황도 안내해 드립니다.',
+        icon: 'solar:document-text-bold'
+      },
+      {
+        id: 'lunar-holiday-2026-02',
+        category: 'customer',
+        badge: '공지',
+        date: '2026.02.14',
+        title: '설 연휴 고객센터 운영 일정',
+        summary: '설 연휴 기간(2026.02.16 ~ 2026.02.18) 고객센터 운영이 일시 중단됩니다. 이메일 접수는 정상적으로 가능합니다.',
+        icon: 'solar:calendar-mark-bold'
+      },
+      {
+        id: 'ethics-2026-01',
+        category: 'management',
+        badge: '정책',
+        date: '2026.01.08',
+        title: '2026년 채권추심 윤리 강령 갱신',
+        summary: '전 임직원이 2026년 채권추심 윤리 강령에 서약하였습니다. 강령 전문은 본 사이트에서 열람 가능합니다.',
+        icon: 'solar:shield-check-bold'
+      },
+      {
+        id: 'audit-2025-12',
+        category: 'management',
+        badge: '공지',
+        date: '2025.12.05',
+        title: '2025년 외부 회계감사 결과 보고',
+        summary: '독립 회계법인의 2025년 정기 감사가 종료되었습니다. 보고서 요약본을 확인할 수 있습니다.',
+        icon: 'solar:graph-up-bold'
+      }
+    ];
+
+    (function () {
+      var tabs       = document.querySelectorAll('[data-notice-tab]');
+      var panelList  = document.querySelector('[data-notice-panel="list"]');
+      var panelDebt  = document.querySelector('[data-notice-panel="debt"]');
+      var listEl     = document.getElementById('noticeList');
+      var emptyEl    = document.querySelector('[data-notice-empty]');
+
+      function escape(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+        });
+      }
+
+      function renderItem(n) {
+        var badgeClass = n.badge === '중요'
+          ? 'bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30'
+          : 'bg-white/5 text-zinc-300 ring-1 ring-white/10';
+        var iconWrapClass = n.badge === '중요'
+          ? 'bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30'
+          : 'bg-white/5 text-zinc-300 ring-1 ring-white/10';
+        return ''
+          + '<li data-notice-category="' + n.category + '" class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">'
+          +   '<div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ' + iconWrapClass + '">'
+          +     '<iconify-icon icon="' + n.icon + '" width="20" aria-hidden="true"></iconify-icon>'
+          +   '</div>'
+          +   '<div class="flex-1 min-w-0">'
+          +     '<div class="flex items-center gap-2 text-[11px]">'
+          +       '<span class="inline-flex items-center rounded-full px-2 py-0.5 ' + badgeClass + '">' + escape(n.badge) + '</span>'
+          +       '<span class="text-zinc-500 tabular-nums">' + escape(n.date) + '</span>'
+          +       '<span class="text-[10px] text-zinc-600 uppercase tracking-widest ml-1">' + (n.category === 'management' ? 'Management' : 'Customer') + '</span>'
+          +     '</div>'
+          +     '<h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">' + escape(n.title) + '</h2>'
+          +     '<p class="mt-1 text-sm text-zinc-400 leading-relaxed">' + escape(n.summary) + '</p>'
+          +   '</div>'
+          + '</li>';
+      }
+
+      function render(filter) {
+        if (!listEl) return;
+        var list = (window.NOTICES || []).filter(function (n) {
+          if (filter === 'all') return n.category === 'management' || n.category === 'customer';
+          return n.category === filter;
+        });
+        listEl.innerHTML = list.map(renderItem).join('');
+        if (emptyEl) emptyEl.classList.toggle('hidden', list.length > 0);
+      }
+
+      function setActive(target) {
+        tabs.forEach(function (t) {
+          var active = t.dataset.noticeTab === target;
+          t.setAttribute('aria-selected', String(active));
+          t.classList.toggle('is-active', active);
+        });
+        if (target === 'debt') {
+          if (panelList) panelList.classList.add('hidden');
+          if (panelDebt) panelDebt.classList.remove('hidden');
+        } else {
+          if (panelList) panelList.classList.remove('hidden');
+          if (panelDebt) panelDebt.classList.add('hidden');
+          render(target);
+        }
+      }
+
+      tabs.forEach(function (t) {
+        t.addEventListener('click', function () { setActive(t.dataset.noticeTab); });
+      });
+
+      // Initial render
+      render('all');
+    })();
+  </script>
 
   <div data-site="footer"></div>
   <script src="./assets/layout.js"></script>
