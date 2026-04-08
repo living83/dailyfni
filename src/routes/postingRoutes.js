@@ -7,7 +7,7 @@ const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
 const { processBody } = require('../services/postingHelper');
 const { getPostTypeForTier, daysBetween } = require('../services/scheduler');
-const { getSchedulerStatus, restartScheduler, getLogs } = require('../services/scheduler');
+const { getSchedulerStatus, restartScheduler, getLogs, stopScheduler, startScheduler, isRunning } = require('../services/scheduler');
 
 const router = Router();
 
@@ -240,6 +240,18 @@ router.get('/posting/scheduler-status', (req, res) => {
 // GET /api/posting/scheduler-logs — 스케줄러 실시간 로그 (최신 순)
 router.get('/posting/scheduler-logs', (req, res) => {
   res.json({ success: true, logs: getLogs() });
+});
+
+// POST /api/posting/scheduler/stop — 스케줄러 즉시 정지
+router.post('/posting/scheduler/stop', (req, res) => {
+  stopScheduler();
+  res.json({ success: true, running: isRunning(), message: '스케줄러가 정지되었습니다. 진행 중인 작업은 완료 후 멈춥니다.' });
+});
+
+// POST /api/posting/scheduler/start — 스케줄러 시작
+router.post('/posting/scheduler/start', (req, res) => {
+  startScheduler();
+  res.json({ success: true, running: isRunning(), message: '스케줄러가 시작되었습니다.' });
 });
 
 // GET /api/posting/settings

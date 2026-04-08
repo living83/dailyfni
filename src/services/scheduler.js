@@ -399,20 +399,20 @@ function startScheduler() {
   running = true;
   intervalHandle = setInterval(() => {
     checkAndRun().catch(err => {
-      console.error('[Scheduler] 예기치 않은 오류:', err.message);
+      log('error', `예기치 않은 오류: ${err.message}`);
     });
   }, 60 * 1000);
 
-  console.log('[Scheduler] 스케줄러 시작됨 (60초 간격)');
+  log('info', '스케줄러 시작됨 (60초 간격)');
 
   // 시작 시 즉시 한 번 체크
   checkAndRun().catch(err => {
-    console.error('[Scheduler] 초기 체크 오류:', err.message);
+    log('error', `초기 체크 오류: ${err.message}`);
   });
 }
 
 /**
- * 스케줄러 정지
+ * 스케줄러 정지 — interval 해제. 진행 중인 작업은 완료됨.
  */
 function stopScheduler() {
   if (intervalHandle) {
@@ -420,7 +420,7 @@ function stopScheduler() {
     intervalHandle = null;
   }
   running = false;
-  console.log('[Scheduler] 스케줄러 정지됨');
+  log('warn', '스케줄러 정지됨 - 다음 체크부터 실행되지 않습니다');
 }
 
 /**
@@ -461,4 +461,5 @@ module.exports = {
   daysBetween,
   checkTierUpgrades,
   getLogs,
+  isRunning: () => running,
 };

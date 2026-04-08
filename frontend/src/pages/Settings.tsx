@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward } from 'lucide-react'
+import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Square, Play } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import api from '../lib/api'
@@ -79,21 +79,49 @@ export default function Settings() {
   const [footerLink2, setFooterLink2] = useState('http://pf.kakao.com/')
   const [savingPosting, setSavingPosting] = useState(false)
 
-  /* ── 스케줄러 실시간 로그 ── */
+  /* ── 스케줄러 실시간 로그 + 상태 ── */
   type SchedulerLog = { time: string; level: 'info' | 'warn' | 'error' | 'success' | 'skip'; message: string }
   const [schedulerLogs, setSchedulerLogs] = useState<SchedulerLog[]>([])
+  const [schedulerRunning, setSchedulerRunning] = useState(false)
+  const [togglingScheduler, setTogglingScheduler] = useState(false)
+
   useEffect(() => {
     let mounted = true
     const fetchLogs = async () => {
       try {
-        const { data } = await api.get('/posting/scheduler-logs')
-        if (mounted && data?.logs) setSchedulerLogs(data.logs)
+        const [logRes, statusRes] = await Promise.all([
+          api.get('/posting/scheduler-logs'),
+          api.get('/posting/scheduler-status'),
+        ])
+        if (mounted) {
+          if (logRes.data?.logs) setSchedulerLogs(logRes.data.logs)
+          if (statusRes.data) setSchedulerRunning(!!statusRes.data.running)
+        }
       } catch {}
     }
     fetchLogs()
     const iv = setInterval(fetchLogs, 3000)
     return () => { mounted = false; clearInterval(iv) }
   }, [])
+
+  const handleStopScheduler = async () => {
+    setTogglingScheduler(true)
+    try {
+      await api.post('/posting/scheduler/stop')
+      setSchedulerRunning(false)
+      toast('success', '스케줄러가 정지되었습니다. 진행 중인 작업은 완료 후 멈춥니다.')
+    } catch { toast('error', '정지 실패') }
+    setTogglingScheduler(false)
+  }
+  const handleStartScheduler = async () => {
+    setTogglingScheduler(true)
+    try {
+      await api.post('/posting/scheduler/start')
+      setSchedulerRunning(true)
+      toast('success', '스케줄러가 시작되었습니다.')
+    } catch { toast('error', '시작 실패') }
+    setTogglingScheduler(false)
+  }
 
   const fetchPostingSettings = useCallback(async () => {
     try {
@@ -192,12 +220,33 @@ export default function Settings() {
 
       {/* ── 자동 포스팅 스케줄 설정 ── */}
       <div className="glass-panel rounded-xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-primary" />
             <h2 className="text-lg font-semibold text-foreground">자동 포스팅 스케줄 설정</h2>
+            <span className={`ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+              schedulerRunning ? 'bg-emerald/15 text-emerald' : 'bg-muted text-muted-foreground'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${schedulerRunning ? 'bg-emerald animate-pulse' : 'bg-muted-foreground'}`} />
+              {schedulerRunning ? '실행 중' : '정지'}
+            </span>
           </div>
-          <Toggle enabled={autoEngine} onToggle={() => setAutoEngine(!autoEngine)} />
+          <div className="flex items-center gap-2">
+            {schedulerRunning ? (
+              <button onClick={handleStopScheduler} disabled={togglingScheduler}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 hover:bg-rose-500/25 text-sm font-medium transition-colors disabled:opacity-50">
+                {togglingScheduler ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 fill-current" />}
+                정지
+              </button>
+            ) : (
+              <button onClick={handleStartScheduler} disabled={togglingScheduler}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald/15 text-emerald border border-emerald/30 hover:bg-emerald/25 text-sm font-medium transition-colors disabled:opacity-50">
+                {togglingScheduler ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                시작
+              </button>
+            )}
+            <Toggle enabled={autoEngine} onToggle={() => setAutoEngine(!autoEngine)} />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -390,8 +439,11 @@ export default function Settings() {
             {/* 하단 링크 설정 */}
             <div className="p-3 rounded-lg border border-border bg-background/40 space-y-4">
               <div>
-                <div className="text-sm font-medium text-foreground">포스팅 하단 문구 / 링크</div>
-                <p className="text-xs text-muted-foreground">모든 포스팅 본문 하단에 자동으로 삽입됩니다. (최대 2개)</p>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-medium text-foreground">포스팅 하단 문구 / 링크</div>
+                  <span className="inline-block px-2 py-0.5 rounded-full bg-amber/15 text-amber text-[10px] font-medium">광고글 전용</span>
+                </div>
+                <p className="text-xs text-muted-foreground">광고 포스팅 본문 하단에만 자동 삽입됩니다. 일반글에는 적용되지 않습니다. (최대 2개)</p>
               </div>
 
               <div className="space-y-2 p-3 rounded-lg bg-background/40 border border-border/50">

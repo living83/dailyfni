@@ -43,18 +43,21 @@ function appendFooter(body) {
 
 /**
  * 본문 전체 처리 — 광고 고지(상단) + 하단 링크(하단)
+ * 광고글(contentType === '광고(대출)' | 'ad')에만 고지와 하단 링크를 적용합니다.
+ * 일반 정보성 글에는 아무것도 추가하지 않습니다.
  * @param {string} body - 원본 본문
  * @param {string} contentType - '일반 정보성' | '광고(대출)'
  * @returns {string}
  */
 function processBody(body, contentType) {
   let processed = body || '';
-  // 광고글이면 최상단에 고지 삽입
-  if (contentType === '광고(대출)' || contentType === 'ad') {
+  const isAd = contentType === '광고(대출)' || contentType === 'ad';
+  if (isAd) {
+    // 광고글: 상단 고지 + 하단 링크
     processed = prependAdDisclosure(processed);
+    processed = appendFooter(processed);
   }
-  // 모든 글에 하단 링크 추가
-  processed = appendFooter(processed);
+  // 일반글: 원본 그대로 반환
   return processed;
 }
 
