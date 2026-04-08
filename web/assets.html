@@ -51,14 +51,16 @@
          ============================================================ -->
     <section class="relative pb-24 lg:pb-32">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="reveal grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 auto-rows-[minmax(140px,auto)] gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 auto-rows-[minmax(140px,auto)] gap-4">
 
           <!-- Hero metric -->
-          <div class="md:col-span-6 lg:col-span-7 lg:row-span-2 relative rounded-3xl border border-white/10 bg-white/[0.02] p-7 sm:p-8 overflow-hidden">
+          <div class="reveal card-lift md:col-span-6 lg:col-span-7 lg:row-span-2 relative rounded-3xl border border-white/10 bg-white/[0.02] p-7 sm:p-8 overflow-hidden" style="transition-delay: 0ms">
             <div aria-hidden="true" class="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-accent-400/15 blur-3xl"></div>
             <div class="relative">
               <div class="flex items-center gap-2 text-accent-300">
-                <iconify-icon icon="solar:graph-up-bold" width="18" aria-hidden="true"></iconify-icon>
+                <span class="card-icon inline-flex">
+                  <iconify-icon icon="solar:graph-up-bold" width="18" aria-hidden="true"></iconify-icon>
+                </span>
                 <span class="text-[11px] tracking-widest uppercase text-zinc-500">누적 매입채권 규모</span>
               </div>
               <p class="mt-6 text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tightest-ko text-white tabular-nums">
@@ -82,9 +84,11 @@
           </div>
 
           <!-- Recovery amount -->
-          <div class="md:col-span-3 lg:col-span-5 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+          <div class="reveal card-lift md:col-span-3 lg:col-span-5 rounded-3xl border border-white/10 bg-white/[0.02] p-6" style="transition-delay: 80ms">
             <div class="flex items-center gap-2 text-accent-300">
-              <iconify-icon icon="solar:target-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="card-icon inline-flex">
+                <iconify-icon icon="solar:target-bold" width="18" aria-hidden="true"></iconify-icon>
+              </span>
               <span class="text-[11px] tracking-widest uppercase text-zinc-500">회수액</span>
             </div>
             <p class="mt-4 text-5xl font-bold text-white tabular-nums"><span data-countup="14">0</span><span class="text-2xl text-accent-300">억</span><span class="text-2xl text-zinc-500"> 원+</span></p>
@@ -92,76 +96,85 @@
           </div>
 
           <!-- Compliance -->
-          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+          <div class="reveal card-lift md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6" style="transition-delay: 160ms">
             <div class="flex items-center gap-2 text-accent-300">
-              <iconify-icon icon="solar:shield-check-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="card-icon inline-flex">
+                <iconify-icon icon="solar:shield-check-bold" width="18" aria-hidden="true"></iconify-icon>
+              </span>
               <span class="text-[11px] tracking-widest uppercase text-zinc-500">준법 점검</span>
             </div>
-            <p class="mt-4 text-4xl font-bold text-white tabular-nums">0<span class="text-base text-zinc-500"> 건</span></p>
+            <p class="mt-4 text-4xl font-bold text-white tabular-nums"><span data-countup="0">0</span><span class="text-base text-zinc-500"> 건</span></p>
             <p class="mt-2 text-xs text-zinc-500">최근 12개월 행정처분</p>
           </div>
 
           <!-- Operating since -->
-          <div class="md:col-span-3 lg:col-span-2 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+          <div class="reveal card-lift md:col-span-3 lg:col-span-2 rounded-3xl border border-white/10 bg-white/[0.02] p-6" style="transition-delay: 240ms">
             <div class="flex items-center gap-2 text-accent-300">
-              <iconify-icon icon="solar:calendar-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="card-icon inline-flex">
+                <iconify-icon icon="solar:calendar-bold" width="18" aria-hidden="true"></iconify-icon>
+              </span>
               <span class="text-[11px] tracking-widest uppercase text-zinc-500">설립</span>
             </div>
-            <p class="mt-4 text-4xl font-bold text-white tabular-nums">[YYYY]</p>
+            <p class="mt-4 text-4xl font-bold text-white tabular-nums"><span data-countup="2024">0</span><span class="text-base text-zinc-500"> 년</span></p>
           </div>
 
           <!-- Asset breakdown -->
-          <div class="md:col-span-6 lg:col-span-6 rounded-3xl border border-white/10 bg-white/[0.02] p-7">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2 text-accent-300">
+          <div class="reveal card-lift md:col-span-6 lg:col-span-6 rounded-3xl border border-white/10 bg-white/[0.02] p-7" style="transition-delay: 320ms">
+            <div class="flex items-center gap-2 text-accent-300">
+              <span class="card-icon inline-flex">
                 <iconify-icon icon="solar:pie-chart-2-bold" width="18" aria-hidden="true"></iconify-icon>
-                <span class="text-[11px] tracking-widest uppercase text-zinc-500">자산 구성</span>
-              </div>
-              <span class="text-[11px] text-zinc-500">[필수입력]</span>
+              </span>
+              <span class="text-[11px] tracking-widest uppercase text-zinc-500">자산 구성</span>
             </div>
             <ul class="mt-6 space-y-4">
               <li>
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-zinc-300">금융 채권</span>
-                  <span class="text-white font-medium tabular-nums">62%</span>
+                  <span class="text-white font-medium tabular-nums">95%</span>
                 </div>
-                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400 w-[62%]"></div></div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400 w-[95%]"></div></div>
               </li>
               <li>
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-zinc-300">상사 채권</span>
-                  <span class="text-white font-medium tabular-nums">23%</span>
+                  <span class="text-white font-medium tabular-nums">4%</span>
                 </div>
-                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/70 w-[23%]"></div></div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/70 w-[4%]"></div></div>
               </li>
               <li>
                 <div class="flex items-center justify-between text-sm">
                   <span class="text-zinc-300">기타 채권</span>
-                  <span class="text-white font-medium tabular-nums">15%</span>
+                  <span class="text-white font-medium tabular-nums">1%</span>
                 </div>
-                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/40 w-[15%]"></div></div>
+                <div class="mt-1.5 h-1.5 rounded-full bg-white/5 overflow-hidden"><div class="h-full bg-accent-400/40 w-[1%]"></div></div>
               </li>
             </ul>
           </div>
 
           <!-- Audit -->
-          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+          <div class="reveal card-lift md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6" style="transition-delay: 400ms">
             <div class="flex items-center gap-2 text-accent-300">
-              <iconify-icon icon="solar:checklist-minimalistic-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="card-icon inline-flex">
+                <iconify-icon icon="solar:checklist-minimalistic-bold" width="18" aria-hidden="true"></iconify-icon>
+              </span>
               <span class="text-[11px] tracking-widest uppercase text-zinc-500">외부 감사</span>
             </div>
             <p class="mt-4 text-3xl font-bold text-white">연 2회</p>
             <p class="mt-2 text-xs text-zinc-500">독립 회계법인</p>
           </div>
 
-          <!-- Staff -->
-          <div class="md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6">
+          <!-- Staff (text-only, no number) -->
+          <div class="reveal card-lift md:col-span-3 lg:col-span-3 rounded-3xl border border-white/10 bg-white/[0.02] p-6" style="transition-delay: 480ms">
             <div class="flex items-center gap-2 text-accent-300">
-              <iconify-icon icon="solar:users-group-rounded-bold" width="18" aria-hidden="true"></iconify-icon>
+              <span class="card-icon inline-flex">
+                <iconify-icon icon="solar:users-group-rounded-bold" width="18" aria-hidden="true"></iconify-icon>
+              </span>
               <span class="text-[11px] tracking-widest uppercase text-zinc-500">전문 인력</span>
             </div>
-            <p class="mt-4 text-3xl font-bold text-white tabular-nums"><span data-countup="42">0</span><span class="text-base text-zinc-500"> 명</span></p>
-            <p class="mt-2 text-xs text-zinc-500">신용관리사 · 변호사 자문 포함</p>
+            <p class="mt-4 text-base font-semibold text-white leading-snug break-keep-all">
+              <span class="text-accent-300">웰컴금융그룹</span> 출신<br>10년 이상 NPL 전문가
+            </p>
+            <p class="mt-2 text-xs text-zinc-500">신용관리사 · 변호사 자문 등</p>
           </div>
         </div>
       </div>
