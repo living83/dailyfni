@@ -265,11 +265,15 @@
     var dotIndex = raw.indexOf('.');
     var decimals = dotIndex >= 0 ? raw.length - dotIndex - 1 : 0;
     var useComma = el.dataset.countupComma === '1';
+    var padWidth = parseInt(el.dataset.countupPad || '0', 10);
     var duration = parseInt(el.dataset.countupDuration || '1400', 10);
     var start = performance.now();
     function format(v) {
       var s = decimals > 0 ? v.toFixed(decimals) : Math.round(v).toString();
       if (useComma) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      if (padWidth > 0 && s.length < padWidth) {
+        s = new Array(padWidth - s.length + 1).join('0') + s;
+      }
       return s;
     }
     el.textContent = format(0);

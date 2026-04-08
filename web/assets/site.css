@@ -91,6 +91,30 @@ body {
   transition-delay: 1.0s;
 }
 
+/* Card lift — hover raise + shadow + border accent */
+.card-lift {
+  transition:
+    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.4s ease,
+    background-color 0.4s ease;
+  will-change: transform;
+}
+.card-lift:hover {
+  transform: translateY(-6px);
+  border-color: rgba(108, 165, 202, 0.35);
+  background-color: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 28px 70px -28px rgba(39, 119, 176, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Card icon chip — rotates + scales on parent card hover */
+.card-icon {
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-lift:hover .card-icon {
+  transform: rotate(6deg) scale(1.1);
+}
+
 /* Pin-scroll stepper — desktop only */
 .step-item {
   transition:
