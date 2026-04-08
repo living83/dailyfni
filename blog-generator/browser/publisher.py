@@ -377,13 +377,17 @@ async def _input_body(page, editor, content: str):
         await body_el.click()
         await random_delay(0.5, 1.0)
 
-    # 가운데 정렬 적용 (SE 에디터 단축키 Ctrl+Shift+E)
+    # ⚠️ Ctrl+Shift+E 단축키 제거 — 네이버 SE에서는 가운데 정렬이 아니라
+    # 취소선 토글로 작동하여 첫 줄에 취소선이 적용되는 버그가 있었음.
+    # 정렬은 에디터 기본값(왼쪽)을 유지합니다.
+    #
+    # 에디터에 잔존할 수 있는 포맷 상태를 안전하게 해제 (idempotent toggle)
+    # — Bold가 켜져 있으면 끄고, 꺼져 있으면 켰다가 다시 끔
     try:
-        await page.keyboard.press("Control+Shift+e")
-        await asyncio.sleep(0.3)
-        logger.info("가운데 정렬 적용")
-    except Exception as e:
-        logger.debug(f"가운데 정렬 단축키 실패 (계속): {e}")
+        await page.evaluate("document.execCommand && document.execCommand('removeFormat', false, null)")
+        await asyncio.sleep(0.1)
+    except Exception:
+        pass
 
     base_delay = random.randint(25, 45)
     for line in plain_content.split("\n"):
