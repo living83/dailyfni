@@ -9,6 +9,7 @@ const { listAccounts, getAccountRaw, updateAccount } = require('../models/Accoun
 const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
 const { processBody } = require('../services/postingHelper');
+const db = require('../db/sqlite');
 
 // ── 상태 ──
 let intervalHandle = null;
@@ -90,6 +91,28 @@ function daysBetween(dateStr) {
 function todayStr() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * DB에서 오늘 이미 포스팅(발행완료/확인필요)된 계정 ID Set을 조회
+ * 재시작 후에도 정확한 "오늘 포스팅 현황"을 유지하기 위함
+ */
+function loadTodayPostedFromDB() {
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT accountId FROM postings
+      WHERE status IN ('발행완료', '확인필요')
+        AND date(createdAt, 'localtime') = date('now', 'localtime')
+        AND accountId IS NOT NULL
+    `).all();
+    const set = new Set(rows.map(r => r.accountId));
+    // __REST_DAY__ 플래그는 in-memory 유지 (DB에 없음)
+    if (todayPostedAccounts.has('__REST_DAY__')) set.add('__REST_DAY__');
+    return set;
+  } catch (err) {
+    log('error', `DB 조회 실패: ${err.message}`);
+    return new Set();
+  }
 }
 
 /**
@@ -186,13 +209,18 @@ async function checkAndRun() {
       return;
     }
 
-    // 날짜 리셋 체크
+    // 날짜 리셋 체크 — 재시작/날짜 변경 시 DB에서 오늘자 현황 복원
     const today = todayStr();
     if (lastRunDate !== today) {
+      const prevDate = lastRunDate;
       lastRunDate = today;
-      todayPostedAccounts = new Set();
+      todayPostedAccounts = loadTodayPostedFromDB();
       nextScheduledTime = null;
-      log('info', `새로운 날짜 감지: ${today} — 카운터 리셋`);
+      if (prevDate === '') {
+        log('info', `기동/재시작: 오늘자 포스팅 ${todayPostedAccounts.size}개 DB에서 복원`);
+      } else {
+        log('info', `새로운 날짜 감지: ${today} — DB 재조회 (${todayPostedAccounts.size}건)`);
+      }
     }
 
     // 요일 체크
@@ -250,10 +278,15 @@ async function checkAndRun() {
       return;
     }
 
+    // DB에서 오늘 완료된 계정 현황 재조회 (__REST_DAY__ 플래그는 유지)
+    const hadRestDay = todayPostedAccounts.has('__REST_DAY__');
+    todayPostedAccounts = loadTodayPostedFromDB();
+    if (hadRestDay) todayPostedAccounts.add('__REST_DAY__');
+
     // 오늘 아직 포스팅하지 않은 계정 필터
     const pendingAccounts = accounts.filter(a => !todayPostedAccounts.has(a.id));
     if (pendingAccounts.length === 0) {
-      log('info', '오늘 모든 계정 포스팅 완료');
+      log('info', `오늘 모든 계정 포스팅 완료 (${accounts.length}/${accounts.length})`);
       isProcessing = false;
       return;
     }
