@@ -8,21 +8,10 @@
   'use strict';
 
   /* ----------------------------------------------------------
-   * Brand monogram (inline SVG, currentColor)
+   * Brand logo (image, full lockup)
    * ---------------------------------------------------------- */
-  var BRAND_MARK = ''
-    + '<svg viewBox="0 0 28 28" class="h-7 w-7 text-accent-300" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    +   '<circle cx="9" cy="17.5" r="6.5"/>'
-    +   '<path d="M15.5 17.5 V4 H22.5"/>'
-    +   '<path d="M15.5 11 H20"/>'
-    + '</svg>';
-
-  var BRAND_MARK_LG = ''
-    + '<svg viewBox="0 0 28 28" class="h-9 w-9 text-accent-300" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    +   '<circle cx="9" cy="17.5" r="6.5"/>'
-    +   '<path d="M15.5 17.5 V4 H22.5"/>'
-    +   '<path d="M15.5 11 H20"/>'
-    + '</svg>';
+  var BRAND_MARK    = '<img src="./assets/log-black.png" alt="DAILY F&amp;I 데일리에프앤아이대부" class="h-10 w-auto select-none" draggable="false" />';
+  var BRAND_MARK_LG = '<img src="./assets/log-black.png" alt="DAILY F&amp;I 데일리에프앤아이대부 주식회사" class="h-12 w-auto select-none" draggable="false" />';
 
   /* ----------------------------------------------------------
    * TOP UTILITY BAR (legal / company info, md+ only)
@@ -32,11 +21,11 @@
       + '<div id="topUtilityBar" class="hidden lg:block fixed top-0 inset-x-0 z-50 bg-ink-900/90 backdrop-blur-md border-b border-white/[0.05]">'
       +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-14 flex items-center text-2xl leading-none tracking-tight">'
       +     '<div class="flex items-center gap-4 text-zinc-300 min-w-0">'
-      +       '<span class="text-white font-bold whitespace-nowrap">(주)데일리에프앤아이대부</span>'
+      +       '<span class="text-white font-bold whitespace-nowrap">주식회사 데일리에프앤아이대부</span>'
       +       '<span class="h-6 w-px bg-white/20"></span>'
       +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-400">(대부업)</span></span>'
       +       '<span class="text-zinc-500">·</span>'
-      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-400">(대부중개업)</span></span>'
+      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-400">(매입채권추심업)</span></span>'
       +     '</div>'
       +   '</div>'
       + '</div>';
@@ -76,12 +65,8 @@
     return ''
       + '<header class="fixed top-4 lg:top-16 inset-x-0 z-40 px-4 sm:px-6">'
       +   '<nav aria-label="주 메뉴" class="mx-auto max-w-6xl glass rounded-full pl-4 pr-3 sm:pl-5 sm:pr-4 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-4 sm:gap-6">'
-      +     '<a href="./index.html" class="flex items-center gap-2.5 group justify-self-start" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
+      +     '<a href="./index.html" class="flex items-center group justify-self-start py-1" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
       +       BRAND_MARK
-      +       '<span class="flex flex-col leading-[1.05]">'
-      +         '<span class="text-[10px] tracking-[0.22em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
-      +         '<span class="mt-[3px] text-[13px] sm:text-[14px] font-semibold tracking-tight text-white">데일리에프앤아이대부</span>'
-      +       '</span>'
       +     '</a>'
       +     '<ul class="hidden lg:flex items-center gap-0.5 text-[13.5px] justify-self-center">' + desktopItems + '</ul>'
       +     '<div class="flex items-center gap-2 justify-self-end">'
@@ -138,24 +123,20 @@
       +   '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">'
       +     '<div class="grid grid-cols-1 lg:grid-cols-12 gap-10">'
       +       '<div class="lg:col-span-5">'
-      +         '<a href="./index.html" class="flex items-center gap-3" aria-label="Daily F&amp;I · 데일리에프앤아이대부 주식회사">'
+      +         '<a href="./index.html" class="inline-flex items-center" aria-label="Daily F&amp;I · 데일리에프앤아이대부 주식회사">'
       +           BRAND_MARK_LG
-      +           '<span class="flex flex-col leading-none">'
-      +             '<span class="text-[11px] tracking-[0.22em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
-      +             '<span class="mt-1.5 text-base font-semibold text-white tracking-tight">데일리에프앤아이대부 주식회사</span>'
-      +           '</span>'
       +         '</a>'
       +         '<p class="mt-5 text-sm text-zinc-400 leading-relaxed max-w-md">합법 등록 매입채권추심업체. 채무자의 권리를 존중하며, 대부업법·채권추심법·신용정보법을 엄격히 준수합니다.</p>'
       +         '<dl class="mt-8 space-y-2.5 text-xs text-zinc-400">'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">상호</dt><dd>[필수입력: 데일리에프앤아이대부 주식회사]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대표자</dt><dd>[필수입력: 홍길동]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">사업자등록번호</dt><dd class="tabular-nums">[필수입력: 000-00-00000]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대부업 등록번호</dt><dd>[필수입력: 시·도 등록번호]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">매입채권추심업 등록</dt><dd>[필수입력: 금융위 등록번호]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">본점 주소</dt><dd>[필수입력: 서울특별시 OO구 OO대로 000]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">대표전화 / 팩스</dt><dd class="tabular-nums">[필수입력] / [필수입력]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">이메일</dt><dd class="break-all">[필수입력: info@example.co.kr]</dd></div>'
-      +           '<div class="grid grid-cols-[120px_1fr] gap-2"><dt class="text-zinc-500">개인정보보호책임자</dt><dd>[필수입력: 성명 / 직책]</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">상호</dt><dd>주식회사 데일리에프앤아이대부</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대표자</dt><dd>홍나령</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">사업자등록번호</dt><dd class="tabular-nums">894-86-03385</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대부업 등록번호</dt><dd class="tabular-nums">2024-금감원-2626</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">매입채권추심업 등록</dt><dd class="tabular-nums">2024-금감원-2626</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">본점 주소</dt><dd>서울특별시 금천구 서부샛길 606 대성디폴리스지식산업센터 비동 2604-1호</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대표전화</dt><dd class="tabular-nums">02-2138-0750</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">이메일</dt><dd class="break-all">sean.paek@dailyfni.com</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">개인정보보호책임자</dt><dd>백서호 / 감사</dd></div>'
       +         '</dl>'
       +       '</div>'
       +       '<div class="lg:col-span-3">'
