@@ -368,11 +368,16 @@ async function checkAndRun() {
 
       // 다음 계정 발행 전 랜덤 간격 대기
       if (toProcess.indexOf(account) < toProcess.length - 1) {
-        const minInterval = (settings.intervalMin || 5) * 60 * 1000;
-        const maxInterval = (settings.intervalMax || 15) * 60 * 1000;
+        const minMin = Number(settings.intervalMin);
+        const maxMin = Number(settings.intervalMax);
+        const safeMin = Number.isFinite(minMin) && minMin > 0 ? minMin : 5;
+        const safeMax = Number.isFinite(maxMin) && maxMin >= safeMin ? maxMin : safeMin + 10;
+        const minInterval = safeMin * 60 * 1000;
+        const maxInterval = safeMax * 60 * 1000;
         const waitMs = randomInt(minInterval, maxInterval);
         nextScheduledTime = Date.now() + waitMs;
-        log('info', `다음 발행까지 ${Math.round(waitMs / 60000)}분 대기`);
+        const waitMin = (waitMs / 60000).toFixed(1);
+        log('info', `다음 발행까지 ${waitMin}분 대기 (설정 ${safeMin}~${safeMax}분)`);
         isProcessing = false;
         return;
       }
