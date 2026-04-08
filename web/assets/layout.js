@@ -25,6 +25,28 @@
     + '</svg>';
 
   /* ----------------------------------------------------------
+   * TOP UTILITY BAR (legal / company info, md+ only)
+   * ---------------------------------------------------------- */
+  function buildTopBar() {
+    return ''
+      + '<div id="topUtilityBar" class="hidden md:block fixed top-0 inset-x-0 z-50 bg-ink-900/85 backdrop-blur-md border-b border-white/[0.05]">'
+      +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-9 flex items-center justify-between text-[11px] leading-none tracking-tight">'
+      +     '<div class="flex items-center gap-3 text-zinc-400 min-w-0">'
+      +       '<span class="text-white/95 font-semibold whitespace-nowrap">(주)데일리에프앤아이대부</span>'
+      +       '<span class="h-3 w-px bg-white/15"></span>'
+      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부업)</span></span>'
+      +       '<span class="text-zinc-600">·</span>'
+      +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부중개업)</span></span>'
+      +     '</div>'
+      +     '<div class="hidden lg:flex items-center gap-5 text-zinc-500">'
+      +       '<a href="./privacy.html" class="hover:text-white transition whitespace-nowrap">개인정보처리방침</a>'
+      +       '<a href="./terms.html" class="hover:text-white transition whitespace-nowrap">이용약관</a>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  /* ----------------------------------------------------------
    * NAV
    * ---------------------------------------------------------- */
   var NAV_LINKS = [
@@ -40,8 +62,8 @@
     var desktopItems = NAV_LINKS.map(function (l) {
       var isActive = l.page === currentPage;
       var cls = isActive
-        ? 'px-3 py-2 rounded-full text-white bg-white/10 transition'
-        : 'px-3 py-2 rounded-full hover:text-white hover:bg-white/5 transition';
+        ? 'relative inline-flex items-center px-3.5 py-2 rounded-full text-white bg-white/[0.08] ring-1 ring-white/10 transition'
+        : 'inline-flex items-center px-3.5 py-2 rounded-full text-zinc-300 hover:text-white hover:bg-white/[0.05] transition';
       var current = isActive ? ' aria-current="page"' : '';
       return '<li><a href="' + l.href + '" class="' + cls + '"' + current + '>' + l.label + '</a></li>';
     }).join('');
@@ -49,27 +71,27 @@
     var mobileItems = NAV_LINKS.map(function (l) {
       var isActive = l.page === currentPage;
       var cls = isActive
-        ? 'block px-4 py-3 rounded-2xl text-white bg-white/10'
+        ? 'block px-4 py-3 rounded-2xl text-white bg-white/[0.08] ring-1 ring-white/10'
         : 'block px-4 py-3 rounded-2xl text-zinc-200 hover:bg-white/5';
       var current = isActive ? ' aria-current="page"' : '';
       return '<li><a href="' + l.href + '" class="' + cls + '"' + current + '>' + l.full + '</a></li>';
     }).join('');
 
     return ''
-      + '<header class="fixed top-4 sm:top-6 inset-x-0 z-40 px-4 sm:px-6">'
-      +   '<nav aria-label="주 메뉴" class="mx-auto max-w-6xl glass rounded-full px-4 sm:px-6 py-3 flex items-center justify-between">'
-      +     '<a href="./index.html" class="flex items-center gap-2.5 group" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
+      + '<header class="fixed top-4 md:top-11 inset-x-0 z-40 px-4 sm:px-6">'
+      +   '<nav aria-label="주 메뉴" class="mx-auto max-w-6xl glass rounded-full pl-4 pr-3 sm:pl-5 sm:pr-4 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-4 sm:gap-6">'
+      +     '<a href="./index.html" class="flex items-center gap-2.5 group justify-self-start" aria-label="Daily F&amp;I · 데일리에프앤아이대부 홈">'
       +       BRAND_MARK
-      +       '<span class="flex flex-col leading-none">'
-      +         '<span class="text-[10px] tracking-[0.2em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
-      +         '<span class="mt-1 text-[13px] sm:text-sm font-semibold tracking-tight text-white">데일리에프앤아이대부</span>'
+      +       '<span class="flex flex-col leading-[1.05]">'
+      +         '<span class="text-[10px] tracking-[0.22em] text-accent-300 font-semibold">DAILY F&amp;I</span>'
+      +         '<span class="mt-[3px] text-[13px] sm:text-[14px] font-semibold tracking-tight text-white">데일리에프앤아이대부</span>'
       +       '</span>'
       +     '</a>'
-      +     '<ul class="hidden lg:flex items-center gap-1 text-sm text-zinc-300">' + desktopItems + '</ul>'
-      +     '<div class="flex items-center gap-2">'
-      +       '<a href="./support.html" class="hidden sm:inline-flex btn-magnet items-center gap-1.5 rounded-full bg-accent-400 text-white px-4 py-2 text-sm font-semibold shadow-brand-soft">'
+      +     '<ul class="hidden lg:flex items-center gap-0.5 text-[13.5px] justify-self-center">' + desktopItems + '</ul>'
+      +     '<div class="flex items-center gap-2 justify-self-end">'
+      +       '<a href="./support.html" class="hidden sm:inline-flex btn-magnet items-center gap-1.5 rounded-full bg-accent-400 text-white px-4 py-2 text-[13px] font-semibold shadow-brand-soft">'
       +         '문의하기'
-      +         '<iconify-icon class="arrow" icon="solar:arrow-right-linear" width="16" aria-hidden="true"></iconify-icon>'
+      +         '<iconify-icon class="arrow" icon="solar:arrow-right-linear" width="14" aria-hidden="true"></iconify-icon>'
       +       '</a>'
       +       '<button id="navToggle" type="button" class="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-zinc-200 hover:bg-white/5" aria-label="메뉴 열기" aria-expanded="false" aria-controls="mobileMenu">'
       +         '<iconify-icon icon="solar:hamburger-menu-linear" width="20" aria-hidden="true"></iconify-icon>'
@@ -164,7 +186,7 @@
     var page = (document.body && document.body.dataset && document.body.dataset.page) || '';
     var navSlot    = document.querySelector('[data-site="nav"]');
     var footerSlot = document.querySelector('[data-site="footer"]');
-    if (navSlot)    navSlot.outerHTML    = buildNav(page);
+    if (navSlot)    navSlot.outerHTML    = buildTopBar() + buildNav(page);
     if (footerSlot) footerSlot.outerHTML = buildFooter();
   }
 
