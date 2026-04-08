@@ -10,8 +10,8 @@
   /* ----------------------------------------------------------
    * Brand logo (image, full lockup)
    * ---------------------------------------------------------- */
-  var BRAND_MARK    = '<img src="./assets/log-black.png" alt="DAILY F&amp;I 데일리에프앤아이대부" class="h-10 w-auto select-none" draggable="false" />';
-  var BRAND_MARK_LG = '<img src="./assets/log-black.png" alt="DAILY F&amp;I 데일리에프앤아이대부 주식회사" class="h-12 w-auto select-none" draggable="false" />';
+  var BRAND_MARK    = '<img src="./assets/log.png" alt="DAILY F&amp;I 데일리에프앤아이대부" class="h-10 w-auto select-none" draggable="false" />';
+  var BRAND_MARK_LG = '<img src="./assets/log.png" alt="DAILY F&amp;I 데일리에프앤아이대부 주식회사" class="h-12 w-auto select-none" draggable="false" />';
 
   /* ----------------------------------------------------------
    * TOP UTILITY BAR (legal / company info, md+ only)
