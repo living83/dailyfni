@@ -7,7 +7,7 @@ const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
 const { processBody } = require('../services/postingHelper');
 const { getPostTypeForTier, daysBetween } = require('../services/scheduler');
-const { getSchedulerStatus, restartScheduler } = require('../services/scheduler');
+const { getSchedulerStatus, restartScheduler, getLogs } = require('../services/scheduler');
 
 const router = Router();
 
@@ -235,6 +235,11 @@ router.post('/posting/run-all', async (req, res) => {
 // GET /api/posting/scheduler-status
 router.get('/posting/scheduler-status', (req, res) => {
   res.json({ success: true, ...getSchedulerStatus() });
+});
+
+// GET /api/posting/scheduler-logs — 스케줄러 실시간 로그 (최신 순)
+router.get('/posting/scheduler-logs', (req, res) => {
+  res.json({ success: true, logs: getLogs() });
 });
 
 // GET /api/posting/settings

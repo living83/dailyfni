@@ -18,6 +18,26 @@ let todayPostedAccounts = new Set();
 let isProcessing = false; // 중복 실행 방지
 let nextScheduledTime = null; // 다음 발행 예정 시각
 
+// ── 링 버퍼 로그 (프론트엔드 실시간 표시용) ──
+const LOG_MAX = 200;
+const logBuffer = [];
+function log(level, message) {
+  const entry = {
+    time: new Date().toISOString(),
+    level, // 'info' | 'warn' | 'error' | 'success' | 'skip'
+    message,
+  };
+  logBuffer.push(entry);
+  if (logBuffer.length > LOG_MAX) logBuffer.shift();
+  const prefix = `[Scheduler]`;
+  if (level === 'error') console.error(prefix, message);
+  else if (level === 'warn') console.warn(prefix, message);
+  else console.log(prefix, message);
+}
+function getLogs() {
+  return logBuffer.slice().reverse(); // 최신이 위
+}
+
 // ── 티어별 사이클 정의 ──
 const TIER_CYCLES = {
   1: { length: 1, adIndices: [] },           // 항상 일반
@@ -172,27 +192,26 @@ async function checkAndRun() {
       lastRunDate = today;
       todayPostedAccounts = new Set();
       nextScheduledTime = null;
-      console.log(`[Scheduler] 새로운 날짜 감지: ${today} — 카운터 리셋`);
+      log('info', `새로운 날짜 감지: ${today} — 카운터 리셋`);
     }
 
     // 요일 체크
     if (!isTodaySelected(settings)) {
-      console.log(`[Scheduler] 오늘은 선택된 요일이 아님 (skip) - selectedDays=${JSON.stringify(settings.selectedDays)}`);
+      log('skip', `오늘은 선택된 요일이 아님 - selectedDays=${JSON.stringify(settings.selectedDays)}`);
       return;
     }
 
     // 시간대 체크
     if (!isWithinTimeWindow(settings)) {
       const now = new Date();
-      console.log(`[Scheduler] 시간 외 (skip) - 현재 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}, 윈도우 ${settings.startHour}:${settings.startMin}~${settings.endHour}:${settings.endMin}`);
+      log('skip', `시간 외 - 현재 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}, 윈도우 ${settings.startHour}:${settings.startMin}~${settings.endHour}:${settings.endMin}`);
       return;
     }
 
     // randomRest: 10% 확률로 오늘 전체 스킵
     if (settings.randomRest && todayPostedAccounts.size === 0 && !nextScheduledTime) {
       if (Math.random() < 0.1) {
-        console.log('[Scheduler] 랜덤 휴식: 오늘은 쉽니다.');
-        // 오늘 다시 실행하지 않도록 표시
+        log('info', '랜덤 휴식: 오늘은 쉽니다.');
         todayPostedAccounts.add('__REST_DAY__');
         return;
       }
@@ -203,10 +222,17 @@ async function checkAndRun() {
 
     // dailyMax 체크
     const dailyMax = settings.dailyMax || 10;
-    if (todayPostedAccounts.size >= dailyMax) return;
+    if (todayPostedAccounts.size >= dailyMax) {
+      log('skip', `일일 최대 ${dailyMax} 도달`);
+      return;
+    }
 
     // 다음 예정 시각이 있고 아직 도달하지 않았으면 스킵
-    if (nextScheduledTime && Date.now() < nextScheduledTime) return;
+    if (nextScheduledTime && Date.now() < nextScheduledTime) {
+      const remain = Math.round((nextScheduledTime - Date.now()) / 1000);
+      log('skip', `다음 발행까지 ${remain}초 대기중`);
+      return;
+    }
 
     // 자동 티어 업그레이드
     if (settings.autoTierUpgrade) {
@@ -214,12 +240,12 @@ async function checkAndRun() {
     }
 
     isProcessing = true;
-    console.log('[Scheduler] 자동 포스팅 시작...');
+    log('info', '자동 포스팅 시작...');
 
     // 활성 계정 목록
     const accounts = listAccounts().filter(a => a.isActive && a.autoPublish);
     if (accounts.length === 0) {
-      console.log('[Scheduler] 활성 계정이 없습니다.');
+      log('warn', '활성 계정이 없습니다.');
       isProcessing = false;
       return;
     }
@@ -227,7 +253,7 @@ async function checkAndRun() {
     // 오늘 아직 포스팅하지 않은 계정 필터
     const pendingAccounts = accounts.filter(a => !todayPostedAccounts.has(a.id));
     if (pendingAccounts.length === 0) {
-      console.log('[Scheduler] 오늘 모든 계정 포스팅 완료.');
+      log('info', '오늘 모든 계정 포스팅 완료');
       isProcessing = false;
       return;
     }
@@ -244,7 +270,7 @@ async function checkAndRun() {
         // 1. 포스팅 타입 결정
         const days = daysBetween(account.createdAt);
         const postType = getPostTypeForTier(account.tier || 1, days);
-        console.log(`[Scheduler] ${account.accountName}: Tier ${account.tier}, ${days}일 경과, 타입=${postType}`);
+        log('info', `${account.accountName}: Tier ${account.tier}, ${days}일 경과, 타입=${postType}`);
 
         // 2. 검수완료 콘텐츠 찾기 (AI 생성 완료된 것)
         const contents = Content.listContents();
@@ -259,14 +285,13 @@ async function checkAndRun() {
           );
           if (usedContent) {
             const recycled = Content.recycleKeyword(usedContent.id);
-            console.log(`[Scheduler] 키워드 재활용: "${usedContent.keyword}" → 새 콘텐츠 ${recycled.id} (AI 생성 대기)`);
-            // 재활용된 콘텐츠는 '대기' 상태 → AI 생성 필요 → 다음 주기에 처리
+            log('info', `키워드 재활용: "${usedContent.keyword}" → 새 콘텐츠 (AI 생성 대기)`);
             continue;
           }
         }
 
         if (!pendingContent) {
-          console.log(`[Scheduler] ${account.accountName}: '${postType}' 검수완료 콘텐츠가 없습니다. 건너뜁니다.`);
+          log('warn', `${account.accountName}: '${postType}' 검수완료 콘텐츠 없음, 건너뜀`);
           continue;
         }
 
@@ -279,7 +304,7 @@ async function checkAndRun() {
           contentId: pendingContent.id,
           scheduledTime: '즉시',
         });
-        console.log(`[Scheduler] 큐 생성: ${posting.id} (${account.accountName}, ${pendingContent.keyword})`);
+        log('info', `큐 생성: ${account.accountName} / "${pendingContent.keyword}"`);
 
         // 4. 콘텐츠 상태 업데이트
         Content.updateContent(pendingContent.id, { status: '발행중', accountId: account.id });
@@ -309,29 +334,27 @@ async function checkAndRun() {
           Posting.updatePosting(posting.id, { status: '발행완료', url: result.url, error: null });
           Content.updateContent(pendingContent.id, { status: '발행완료' });
           todayPostedAccounts.add(account.id);
-          console.log(`[Scheduler] 발행 성공: ${account.accountName} → ${result.url}`);
+          log('success', `발행 성공: ${account.accountName} → ${result.url}`);
           telegram.notifyPublishSuccess(account.accountName, pendingContent.keyword, result.url);
 
-          // 키워드 자동 재활용 — 다음 발행을 위해 같은 키워드로 새 콘텐츠 등록
           const recycled = Content.recycleKeyword(pendingContent.id);
           if (recycled) {
-            console.log(`[Scheduler] 키워드 자동 재활용: "${pendingContent.keyword}" → ${recycled.id}`);
+            log('info', `키워드 자동 재활용: "${pendingContent.keyword}"`);
           }
         } else if (result.timedOut) {
-          // 타임아웃: 실제로는 성공했을 수 있음 — 알림 보내지 않고 확인필요 상태
           Posting.updatePosting(posting.id, { status: '확인필요', error: '타임아웃 — 실제 발행 여부 확인 필요' });
           Content.updateContent(pendingContent.id, { status: '발행완료' });
           todayPostedAccounts.add(account.id);
-          console.warn(`[Scheduler] 발행 타임아웃 (확인필요): ${account.accountName}`);
+          log('warn', `발행 타임아웃 (확인필요): ${account.accountName}`);
         } else {
           Posting.updatePosting(posting.id, { status: '실패', error: result.error || '발행 실패' });
-          Content.updateContent(pendingContent.id, { status: '대기' }); // 실패 시 콘텐츠 복원
+          Content.updateContent(pendingContent.id, { status: '대기' });
           Posting.addError({
             accountName: account.accountName,
             message: `[자동] ${result.error || '발행 실패'}`,
             severity: '오류',
           });
-          console.error(`[Scheduler] 발행 실패: ${account.accountName} — ${result.error}`);
+          log('error', `발행 실패: ${account.accountName} — ${result.error}`);
           telegram.notifyPublishFail(account.accountName, pendingContent.keyword, result.error);
         }
       } catch (err) {
@@ -340,7 +363,7 @@ async function checkAndRun() {
           message: `[자동] ${err.message}`,
           severity: '오류',
         });
-        console.error(`[Scheduler] ${account.accountName} 처리 중 예외:`, err.message);
+        log('error', `${account.accountName} 처리 중 예외: ${err.message}`);
       }
 
       // 다음 계정 발행 전 랜덤 간격 대기
@@ -349,15 +372,15 @@ async function checkAndRun() {
         const maxInterval = (settings.intervalMax || 15) * 60 * 1000;
         const waitMs = randomInt(minInterval, maxInterval);
         nextScheduledTime = Date.now() + waitMs;
-        console.log(`[Scheduler] 다음 발행까지 ${Math.round(waitMs / 60000)}분 대기...`);
+        log('info', `다음 발행까지 ${Math.round(waitMs / 60000)}분 대기`);
         isProcessing = false;
-        return; // 다음 checkAndRun 호출에서 이어서 처리
+        return;
       }
     }
 
-    console.log(`[Scheduler] 오늘 포스팅 완료: ${todayPostedAccounts.size}/${dailyMax} 계정`);
+    log('success', `오늘 포스팅 완료: ${todayPostedAccounts.size}/${dailyMax} 계정`);
   } catch (err) {
-    console.error('[Scheduler] checkAndRun 오류:', err.message);
+    log('error', `checkAndRun 오류: ${err.message}`);
   } finally {
     isProcessing = false;
     if (!nextScheduledTime || Date.now() >= nextScheduledTime) {
@@ -437,4 +460,5 @@ module.exports = {
   getPostTypeForTier,
   daysBetween,
   checkTierUpgrades,
+  getLogs,
 };

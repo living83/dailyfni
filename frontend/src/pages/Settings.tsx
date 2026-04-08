@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2 } from 'lucide-react'
+import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import api from '../lib/api'
@@ -78,6 +78,22 @@ export default function Settings() {
   const [footerText2, setFooterText2] = useState('카카오톡으로 문의주셔도 됩니다.')
   const [footerLink2, setFooterLink2] = useState('http://pf.kakao.com/')
   const [savingPosting, setSavingPosting] = useState(false)
+
+  /* ── 스케줄러 실시간 로그 ── */
+  type SchedulerLog = { time: string; level: 'info' | 'warn' | 'error' | 'success' | 'skip'; message: string }
+  const [schedulerLogs, setSchedulerLogs] = useState<SchedulerLog[]>([])
+  useEffect(() => {
+    let mounted = true
+    const fetchLogs = async () => {
+      try {
+        const { data } = await api.get('/posting/scheduler-logs')
+        if (mounted && data?.logs) setSchedulerLogs(data.logs)
+      } catch {}
+    }
+    fetchLogs()
+    const iv = setInterval(fetchLogs, 3000)
+    return () => { mounted = false; clearInterval(iv) }
+  }, [])
 
   const fetchPostingSettings = useCallback(async () => {
     try {
@@ -269,6 +285,49 @@ export default function Settings() {
                     {l}
                   </label>
                 ))}
+              </div>
+            </div>
+
+            {/* ── 스케줄러 실시간 로그 ── */}
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Terminal className="w-4 h-4 text-primary" /> 스케줄러 실시간 로그
+                </label>
+                <span className="text-[10px] text-muted-foreground">3초마다 갱신 · 최근 {schedulerLogs.length}건</span>
+              </div>
+              <div className="rounded-lg border border-border bg-background/60 h-[280px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
+                {schedulerLogs.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                    로그 대기 중... (스케줄러는 60초마다 확인합니다)
+                  </div>
+                ) : (
+                  schedulerLogs.map((l, i) => {
+                    const t = new Date(l.time)
+                    const hhmmss = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`
+                    const levelStyle: Record<typeof l.level, string> = {
+                      info: 'text-sky-300',
+                      success: 'text-emerald',
+                      warn: 'text-amber',
+                      error: 'text-rose-400',
+                      skip: 'text-muted-foreground',
+                    }
+                    const LevelIcon = ({ level }: { level: typeof l.level }) => {
+                      if (level === 'success') return <CheckCircle2 className="w-3 h-3 inline text-emerald" />
+                      if (level === 'error') return <XCircle className="w-3 h-3 inline text-rose-400" />
+                      if (level === 'warn') return <AlertTriangle className="w-3 h-3 inline text-amber" />
+                      if (level === 'skip') return <SkipForward className="w-3 h-3 inline text-muted-foreground" />
+                      return <span className="inline-block w-3 h-3 rounded-full bg-sky-400/40 align-middle" />
+                    }
+                    return (
+                      <div key={i} className="flex items-start gap-2 px-1 py-0.5 hover:bg-white/[0.03] rounded">
+                        <span className="text-muted-foreground shrink-0">{hhmmss}</span>
+                        <LevelIcon level={l.level} />
+                        <span className={`${levelStyle[l.level]} break-all`}>{l.message}</span>
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </div>
           </div>
