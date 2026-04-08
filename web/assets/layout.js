@@ -30,17 +30,13 @@
   function buildTopBar() {
     return ''
       + '<div id="topUtilityBar" class="hidden md:block fixed top-0 inset-x-0 z-50 bg-ink-900/85 backdrop-blur-md border-b border-white/[0.05]">'
-      +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-9 flex items-center justify-between text-[11px] leading-none tracking-tight">'
+      +   '<div class="mx-auto max-w-7xl px-6 lg:px-8 h-9 flex items-center text-[11px] leading-none tracking-tight">'
       +     '<div class="flex items-center gap-3 text-zinc-400 min-w-0">'
       +       '<span class="text-white/95 font-semibold whitespace-nowrap">(주)데일리에프앤아이대부</span>'
       +       '<span class="h-3 w-px bg-white/15"></span>'
       +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부업)</span></span>'
       +       '<span class="text-zinc-600">·</span>'
       +       '<span class="whitespace-nowrap tabular-nums">2024-금감원-2626 <span class="text-zinc-500">(대부중개업)</span></span>'
-      +     '</div>'
-      +     '<div class="hidden lg:flex items-center gap-5 text-zinc-500">'
-      +       '<a href="./privacy.html" class="hover:text-white transition whitespace-nowrap">개인정보처리방침</a>'
-      +       '<a href="./terms.html" class="hover:text-white transition whitespace-nowrap">이용약관</a>'
       +     '</div>'
       +   '</div>'
       + '</div>';
