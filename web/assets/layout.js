@@ -120,12 +120,19 @@
       + '중개수수료를 요구하거나 받는 것은 불법. 과도한 빚은 당신에게 큰 불행을 안겨줄 수 있습니다. 대출시 귀하의 신용등급 또는 개인신용평점이 하락할 수 있습니다. '
       + '단, LTV 산정시 근저당권 설정금액 기준으로 산정함. 당일입금은 공동인증서를 통한 등기설정이 가능한 경우에 한하며, 부동산담보대출 권리보험가입 등의 사유로 제한될 수 있음.';
 
+    var DISCLAIMER_2 = ''
+      + '중개수수료를 요구하거나 받는 것은 불법입니다. 과도한 빚은 당신에게 큰 불행을 안겨줄 수 있습니다. '
+      + '상환능력에 비해 대출금, 신용카드 사용액이 과도할 경우 개인신용 평점이 하락 할 수 있으며 개인평점 하락으로 금융거래 시 불이익이 발행할 수 있습니다. '
+      + '대출게약을 체결하기 전에 관계법령에 따라 금융상품에 관한 중요 사항을 설명 받을 수 있습니다. '
+      + '계약을 체결하기 전에 자세한 내용은 상품설명서와 약관을 읽어보시기 바랍니다.';
+
     return ''
       + '<footer class="relative border-t border-white/[0.06] bg-ink-900/40">'
       // Legal disclaimer — shown above brand block on every page
       +   '<div class="border-b border-white/[0.06]">'
-      +     '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 lg:py-14">'
+      +     '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 lg:py-14 space-y-5 lg:space-y-7">'
       +       '<p class="text-base md:text-lg lg:text-2xl leading-[1.85] text-zinc-300 break-keep-all">' + DISCLAIMER + '</p>'
+      +       '<p class="text-base md:text-lg lg:text-2xl leading-[1.85] text-zinc-300 break-keep-all">' + DISCLAIMER_2 + '</p>'
       +     '</div>'
       +   '</div>'
       +   '<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">'
