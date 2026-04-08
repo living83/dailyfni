@@ -2193,7 +2193,7 @@ function renderNotifications() {
   `;
 }
 
-let lastNotiCount = 0;
+let lastNotiCount = -1; // -1: 최초 로드 전 (소리 안 울림)
 
 async function loadNotifications() {
   try {
@@ -2205,8 +2205,8 @@ async function loadNotifications() {
       const prevUnread = lastNotiCount;
       notificationData = data.data;
       const newUnread = notificationData.filter(n => !n.is_read).length;
-      // 새 알림이 추가되면 소리 + 브라우저 알림
-      if (newUnread > prevUnread && prevUnread > 0) {
+      // 새 알림이 추가되면 소리 + 브라우저 알림 (최초 로드 시 제외)
+      if (newUnread > prevUnread && lastNotiCount !== -1) {
         playNotiSound();
         showBrowserNotification(notificationData.find(n => !n.is_read));
       }
