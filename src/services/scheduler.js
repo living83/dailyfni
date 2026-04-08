@@ -37,6 +37,8 @@ const TIER_UPGRADE_DAYS = {
 
 // ── 요일 매핑 (JS getDay → 한국어) ──
 const DAY_MAP = ['일', '월', '화', '수', '목', '금', '토'];
+// 프론트엔드 boolean 배열 순서: [월, 화, 수, 목, 금, 토, 일]
+const FRONTEND_DAY_ORDER = ['월', '화', '수', '목', '금', '토', '일'];
 
 /**
  * 티어와 계정 생성일로부터 오늘 포스팅 타입 결정
@@ -76,18 +78,35 @@ function todayStr() {
 function isWithinTimeWindow(settings) {
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const startMinutes = (settings.startHour || 0) * 60 + (settings.startMin || 0);
-  const endMinutes = (settings.endHour || 23) * 60 + (settings.endMin || 59);
+  const startMinutes = parseInt(settings.startHour || '0', 10) * 60 + parseInt(settings.startMin || '0', 10);
+  const endMinutes = parseInt(settings.endHour || '23', 10) * 60 + parseInt(settings.endMin || '59', 10);
   return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
 }
 
 /**
  * 오늘 요일이 선택된 요일인지 확인
+ * 프론트엔드 포맷: boolean[7] — [월, 화, 수, 목, 금, 토, 일]
+ * 레거시 포맷: string[] — ['월', '화', ...]
  */
 function isTodaySelected(settings) {
-  const selectedDays = settings.selectedDays || ['월', '화', '수', '목', '금'];
-  const today = DAY_MAP[new Date().getDay()];
-  return selectedDays.includes(today);
+  const selectedDays = settings.selectedDays;
+  const todayKor = DAY_MAP[new Date().getDay()]; // JS: 0=일, 1=월, ..., 6=토
+
+  // 기본값 (월~금)
+  if (!selectedDays) return ['월', '화', '수', '목', '금'].includes(todayKor);
+
+  // boolean 배열 포맷 (프론트엔드)
+  if (Array.isArray(selectedDays) && typeof selectedDays[0] === 'boolean') {
+    const idx = FRONTEND_DAY_ORDER.indexOf(todayKor);
+    return idx >= 0 && !!selectedDays[idx];
+  }
+
+  // 문자열 배열 포맷 (레거시)
+  if (Array.isArray(selectedDays)) {
+    return selectedDays.includes(todayKor);
+  }
+
+  return false;
 }
 
 /**
@@ -143,7 +162,9 @@ async function checkAndRun() {
     const settings = Posting.getSettings();
 
     // autoEngine이 꺼져 있으면 무시
-    if (!settings.autoEngine) return;
+    if (!settings.autoEngine) {
+      return;
+    }
 
     // 날짜 리셋 체크
     const today = todayStr();
@@ -155,10 +176,17 @@ async function checkAndRun() {
     }
 
     // 요일 체크
-    if (!isTodaySelected(settings)) return;
+    if (!isTodaySelected(settings)) {
+      console.log(`[Scheduler] 오늘은 선택된 요일이 아님 (skip) - selectedDays=${JSON.stringify(settings.selectedDays)}`);
+      return;
+    }
 
     // 시간대 체크
-    if (!isWithinTimeWindow(settings)) return;
+    if (!isWithinTimeWindow(settings)) {
+      const now = new Date();
+      console.log(`[Scheduler] 시간 외 (skip) - 현재 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}, 윈도우 ${settings.startHour}:${settings.startMin}~${settings.endHour}:${settings.endMin}`);
+      return;
+    }
 
     // randomRest: 10% 확률로 오늘 전체 스킵
     if (settings.randomRest && todayPostedAccounts.size === 0 && !nextScheduledTime) {
