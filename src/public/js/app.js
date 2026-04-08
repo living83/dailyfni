@@ -432,26 +432,18 @@ setTimeout(() => loadDbCustomers(), 600);
 async function deleteCustomer(id, name) {
   if (!confirm(`"${name}" 고객을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return;
 
-  // MySQL 연동 시 API 호출
   try {
     const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      // 인메모리에서도 삭제
       delete customerData[id];
       navigate('customers');
       alert(`${name} 고객이 삭제되었습니다.`);
     } else {
-      // API 미구현 시 인메모리에서만 삭제
-      delete customerData[id];
-      navigate('customers');
-      alert(`${name} 고객이 삭제되었습니다.`);
+      alert(`삭제 실패: ${data.message || '알 수 없는 오류'}`);
     }
   } catch (e) {
-    // API 연결 안 될 때 인메모리에서만 삭제
-    delete customerData[id];
-    navigate('customers');
-    alert(`${name} 고객이 삭제되었습니다.`);
+    alert(`삭제 실패: 서버 연결 오류 (${e.message})`);
   }
 }
 
