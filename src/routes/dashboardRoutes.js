@@ -40,7 +40,7 @@ router.get('/dashboard/summary', async (req, res) => {
     // 미확인 알림 수 (로그인 사용자 기준)
     const userId = req.user?.id || req.query.userId || 0;
     const [unreadNotis] = await query(
-      'SELECT COUNT(*) as cnt FROM notifications WHERE is_read = 0 AND user_id = ?', [userId]
+      'SELECT COUNT(*) as cnt FROM notifications WHERE is_read = 0 AND target_user_id = ?', [userId]
     );
 
     // 오늘 상담 기록 수
