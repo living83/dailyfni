@@ -134,7 +134,7 @@
       +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대부업 등록번호</dt><dd class="tabular-nums">2024-금감원-2626</dd></div>'
       +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">매입채권추심업 등록</dt><dd class="tabular-nums">2024-금감원-2626</dd></div>'
       +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">본점 주소</dt><dd>서울특별시 금천구 서부샛길 606 대성디폴리스지식산업센터 비동 2604-1호</dd></div>'
-      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대표전화</dt><dd class="tabular-nums">02-2138-0750</dd></div>'
+      +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">대표전화 / 팩스</dt><dd class="tabular-nums">02-2138-0750 / 02-2138-0751</dd></div>'
       +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">이메일</dt><dd class="break-all">sean.paek@dailyfni.com</dd></div>'
       +           '<div class="grid grid-cols-[140px_1fr] gap-2"><dt class="text-zinc-500">개인정보보호책임자</dt><dd>백서호 / 감사</dd></div>'
       +         '</dl>'
