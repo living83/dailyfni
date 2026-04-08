@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
+const { notifyNewCustomer } = require('../utils/telegram');
 
 // ========================================
 // 홈페이지 상담 신청 접수 (외부 호출용)
@@ -51,6 +52,9 @@ router.post('/intake/homepage', async (req, res) => {
            `연락처: ${phone}`, s.id]
         );
       }
+
+      // 텔레그램 알림 전송
+      notifyNewCustomer({ name, phone, content, source });
     }
 
     res.json({ success: true, message: '접수 완료', id: resultId });
