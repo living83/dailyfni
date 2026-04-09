@@ -14,6 +14,12 @@
   var BRAND_MARK_LG = '<img src="./assets/log.png" alt="DAILY F&amp;I 데일리에프앤아이대부 주식회사" class="h-12 w-auto select-none" draggable="false" />';
 
   /* ----------------------------------------------------------
+   * Legal modal — terms of service PDF
+   * (한글 파일명은 encodeURIComponent로 URL-safe 처리)
+   * ---------------------------------------------------------- */
+  var TERMS_PDF_URL = './assets/pdfs/' + encodeURIComponent('이용약관.pdf');
+
+  /* ----------------------------------------------------------
    * TOP UTILITY BAR (legal / company info, md+ only)
    * ---------------------------------------------------------- */
   function buildTopBar() {
@@ -153,7 +159,7 @@
       +       '<div class="lg:col-span-4">'
       +         '<p class="text-[11px] tracking-widest uppercase text-zinc-500">법적 고지</p>'
       +         '<ul class="mt-4 space-y-2.5 text-sm text-zinc-300">'
-      +           '<li><a href="./terms.html"   class="hover:text-white transition">이용약관</a></li>'
+      +           '<li><a href="./terms.html"   data-open-terms-modal class="hover:text-white transition">이용약관</a></li>'
       +           '<li><a href="./privacy.html" class="hover:text-white transition">개인정보처리방침</a></li>'
       +           '<li><a href="./protect.html" class="hover:text-white transition">채무자 보호 통지</a></li>'
       +           '<li><a href="#" class="hover:text-white transition">채권 추심원 조회 (준비중)</a></li>'
@@ -178,6 +184,43 @@
   }
 
   /* ----------------------------------------------------------
+   * LEGAL MODAL (terms of service)
+   * ---------------------------------------------------------- */
+  function buildTermsModal() {
+    return ''
+      + '<div id="termsModal" class="legal-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="termsModalTitle">'
+      +   '<div class="legal-modal__backdrop" data-legal-close></div>'
+      +   '<div class="legal-modal__panel" role="document">'
+      +     '<div class="legal-modal__header">'
+      +       '<h2 id="termsModalTitle" class="legal-modal__title">이용약관</h2>'
+      +       '<div class="legal-modal__actions">'
+      +         '<a href="' + TERMS_PDF_URL + '" target="_blank" rel="noopener" class="legal-modal__action" aria-label="새 탭에서 열기" title="새 탭에서 열기">'
+      +           '<iconify-icon icon="solar:arrow-right-up-linear" width="18" aria-hidden="true"></iconify-icon>'
+      +         '</a>'
+      +         '<a href="' + TERMS_PDF_URL + '" download="dailyfni-이용약관.pdf" class="legal-modal__action" aria-label="다운로드" title="다운로드">'
+      +           '<iconify-icon icon="solar:download-linear" width="18" aria-hidden="true"></iconify-icon>'
+      +         '</a>'
+      +         '<button type="button" class="legal-modal__action" data-legal-close aria-label="닫기" title="닫기">'
+      +           '<iconify-icon icon="solar:close-square-linear" width="20" aria-hidden="true"></iconify-icon>'
+      +         '</button>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="legal-modal__body">'
+      +       '<iframe class="legal-modal__iframe" title="이용약관 PDF" data-legal-iframe></iframe>'
+      +       '<div class="legal-modal__fallback" data-legal-fallback hidden>'
+      +         '<iconify-icon icon="solar:document-text-linear" width="40" aria-hidden="true"></iconify-icon>'
+      +         '<p>이 기기에서는 PDF 미리보기가 제한됩니다.<br>아래 버튼으로 약관을 확인해 주세요.</p>'
+      +         '<div class="legal-modal__fallback-actions">'
+      +           '<a href="' + TERMS_PDF_URL + '" target="_blank" rel="noopener" class="legal-modal__fallback-btn legal-modal__fallback-btn--primary">새 탭에서 보기</a>'
+      +           '<a href="' + TERMS_PDF_URL + '" download="dailyfni-이용약관.pdf" class="legal-modal__fallback-btn">다운로드</a>'
+      +         '</div>'
+      +       '</div>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  /* ----------------------------------------------------------
    * INJECT
    * ---------------------------------------------------------- */
   function injectLayout() {
@@ -186,6 +229,9 @@
     var footerSlot = document.querySelector('[data-site="footer"]');
     if (navSlot)    navSlot.outerHTML    = buildTopBar() + buildNav(page);
     if (footerSlot) footerSlot.outerHTML = buildFooter();
+    if (document.body && !document.getElementById('termsModal')) {
+      document.body.insertAdjacentHTML('beforeend', buildTermsModal());
+    }
   }
 
   /* ----------------------------------------------------------
@@ -211,6 +257,9 @@
       });
     }
 
+    // Legal modal (terms of service)
+    bindTermsModal();
+
     // Reveal-on-scroll (IntersectionObserver, no scroll listeners)
     var reveals = document.querySelectorAll('.reveal');
     if ('IntersectionObserver' in window && reveals.length) {
@@ -226,6 +275,83 @@
     } else {
       reveals.forEach(function (el) { el.classList.add('is-in'); });
     }
+  }
+
+  /* ----------------------------------------------------------
+   * LEGAL MODAL behavior — open/close/ESC/backdrop + iOS fallback
+   * ---------------------------------------------------------- */
+  function bindTermsModal() {
+    var modal = document.getElementById('termsModal');
+    if (!modal) return;
+
+    var iframe   = modal.querySelector('[data-legal-iframe]');
+    var fallback = modal.querySelector('[data-legal-fallback]');
+    var isIOS    = /iPad|iPhone|iPod/.test(navigator.userAgent || '') && !window.MSStream;
+    var iframeLoaded = false;
+    var lastFocused  = null;
+
+    function openModal(e) {
+      if (e && e.preventDefault) e.preventDefault();
+      lastFocused = document.activeElement;
+      modal.setAttribute('aria-hidden', 'false');
+      modal.classList.add('is-open');
+      document.documentElement.classList.add('legal-modal-lock');
+
+      if (isIOS) {
+        // iOS Safari: iframe PDF 렌더 버그 우회 — fallback 화면으로 안내
+        if (iframe) iframe.setAttribute('hidden', '');
+        if (fallback) fallback.removeAttribute('hidden');
+      } else if (!iframeLoaded && iframe) {
+        iframe.src = TERMS_PDF_URL + '#toolbar=1&navpanes=0&view=FitH';
+        iframeLoaded = true;
+      }
+
+      // 포커스를 모달 내부로 이동 (접근성)
+      var closeBtn = modal.querySelector('[data-legal-close]:not(.legal-modal__backdrop)');
+      if (closeBtn && closeBtn.focus) {
+        setTimeout(function () { closeBtn.focus(); }, 80);
+      }
+    }
+
+    function closeModal() {
+      modal.setAttribute('aria-hidden', 'true');
+      modal.classList.remove('is-open');
+      document.documentElement.classList.remove('legal-modal-lock');
+      if (lastFocused && lastFocused.focus) {
+        try { lastFocused.focus(); } catch (_) {}
+      }
+    }
+
+    // 1) 이용약관 링크 클릭 → 모달 오픈 (이벤트 위임)
+    document.addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== document) {
+        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-open-terms-modal')) {
+          openModal(e);
+          return;
+        }
+        el = el.parentNode;
+      }
+    });
+
+    // 2) 닫기 트리거 (X 버튼, 배경) — 모달 내부 요소만 반응
+    modal.addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== modal) {
+        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-legal-close')) {
+          closeModal();
+          return;
+        }
+        el = el.parentNode;
+      }
+    });
+
+    // 3) ESC 키로 닫기
+    document.addEventListener('keydown', function (e) {
+      if ((e.key === 'Escape' || e.keyCode === 27) && modal.classList.contains('is-open')) {
+        closeModal();
+      }
+    });
   }
 
   /* ----------------------------------------------------------
