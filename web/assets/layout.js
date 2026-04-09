@@ -14,11 +14,24 @@
   var BRAND_MARK_LG = '<img src="./assets/log.png" alt="DAILY F&amp;I 데일리에프앤아이대부 주식회사" class="h-12 w-auto select-none" draggable="false" />';
 
   /* ----------------------------------------------------------
-   * Legal modal — terms of service text
-   * 런타임에 txt 파일을 fetch해서 '전자금융거래 기본약관' 기준으로 split
+   * Legal modal — 법적 고지 문서 카탈로그
+   * 각 key는 footer의 data-legal-open 속성값과 매칭
+   * 런타임에 해당 txt 파일을 fetch해서 pre-wrap 텍스트로 렌더
    * ---------------------------------------------------------- */
-  var TERMS_TXT_URL = './assets/txt/' + encodeURIComponent('이용약관.txt');
-  var TERMS_SPLIT_MARKER = '전자금융거래 기본약관';
+  var LEGAL_TXT_DIR = './assets/txt/';
+  var LEGAL_DOCS = {
+    'terms':    { title: '이용약관',              file: '이용약관.txt' },
+    'privacy':  { title: '개인정보처리방침',       file: '개인정보처리방침.txt' },
+    'cctv':     { title: '영상정보처리운용방침',   file: '영상정보처리운용방침.txt' },
+    'credit':   { title: '신용정보활용체제',       file: '신용정보활용체제.txt' },
+    'noemail':  { title: '이메일무단수집거부',     file: '이메일무단수집거부.txt' },
+    'disclaim': { title: '책임의 한계와 법적고지', file: '책임의 한계와 법적고지.txt' },
+    'inquiry':  {
+      title: '채권 추심원 조회',
+      // 정적 콘텐츠 (파일 없이 inline 표시)
+      body: '담당자    백서호\n부서      무담보NPL영업팀\n연락처    02-2138-0749'
+    }
+  };
 
   /* ----------------------------------------------------------
    * TOP UTILITY BAR (legal / company info, md+ only)
@@ -160,10 +173,13 @@
       +       '<div class="lg:col-span-4">'
       +         '<p class="text-[11px] tracking-widest uppercase text-zinc-500">법적 고지</p>'
       +         '<ul class="mt-4 space-y-2.5 text-sm text-zinc-300">'
-      +           '<li><a href="./terms.html"   data-open-terms-modal class="hover:text-white transition">이용약관</a></li>'
-      +           '<li><a href="./privacy.html" class="hover:text-white transition">개인정보처리방침</a></li>'
-      +           '<li><a href="./protect.html" class="hover:text-white transition">채무자 보호 통지</a></li>'
-      +           '<li><a href="#" class="hover:text-white transition">채권 추심원 조회 (준비중)</a></li>'
+      +           '<li><a href="#" data-legal-open="terms"    class="hover:text-white transition">이용약관</a></li>'
+      +           '<li><a href="#" data-legal-open="privacy"  class="hover:text-white transition">개인정보처리방침</a></li>'
+      +           '<li><a href="#" data-legal-open="cctv"     class="hover:text-white transition">영상정보처리운용방침</a></li>'
+      +           '<li><a href="#" data-legal-open="credit"   class="hover:text-white transition">신용정보활용체제</a></li>'
+      +           '<li><a href="#" data-legal-open="noemail"  class="hover:text-white transition">이메일무단수집거부</a></li>'
+      +           '<li><a href="#" data-legal-open="disclaim" class="hover:text-white transition">책임의 한계와 법적고지</a></li>'
+      +           '<li><a href="#" data-legal-open="inquiry"  class="hover:text-white transition">채권 추심원 조회</a></li>'
       +         '</ul>'
       +         '<div class="mt-8 rounded-2xl border border-white/10 bg-white/[0.02] p-5">'
       +           '<p class="text-[11px] tracking-widest uppercase text-zinc-500">불법추심 신고</p>'
@@ -185,47 +201,37 @@
   }
 
   /* ----------------------------------------------------------
-   * LEGAL MODAL (terms of service) — 2-tab text viewer
+   * LEGAL MODAL — 법적 고지 문서 뷰어 (공용, 동적 로드)
+   * 헤더의 타이틀과 본문은 열 때 LEGAL_DOCS[key] 기준으로 채워짐
    * ---------------------------------------------------------- */
-  function buildTermsModal() {
+  function buildLegalModal() {
     return ''
-      + '<div id="termsModal" class="legal-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="termsModalTitle">'
+      + '<div id="legalModal" class="legal-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="legalModalTitle">'
       +   '<div class="legal-modal__backdrop" data-legal-close></div>'
       +   '<div class="legal-modal__panel" role="document">'
       +     '<header class="legal-modal__header">'
       +       '<div class="legal-modal__title-group">'
       +         '<p class="legal-modal__eyebrow">법적 고지</p>'
-      +         '<h2 id="termsModalTitle" class="legal-modal__title">이용약관</h2>'
+      +         '<h2 id="legalModalTitle" class="legal-modal__title" data-legal-title>문서</h2>'
       +       '</div>'
       +       '<button type="button" class="legal-modal__close" data-legal-close aria-label="닫기" title="닫기 (ESC)">'
       +         '<iconify-icon icon="solar:close-square-linear" width="22" aria-hidden="true"></iconify-icon>'
       +       '</button>'
       +     '</header>'
-      +     '<div class="legal-modal__tabs" role="tablist" aria-label="약관 종류">'
-      +       '<button type="button" class="legal-modal__tab is-active" data-legal-tab="terms" role="tab" aria-selected="true" aria-controls="legalPanelTerms" id="legalTabTerms">'
-      +         '<span class="legal-modal__tab-index">01</span>'
-      +         '<span class="legal-modal__tab-label">대부거래 약관</span>'
-      +       '</button>'
-      +       '<button type="button" class="legal-modal__tab" data-legal-tab="efin" role="tab" aria-selected="false" aria-controls="legalPanelEfin" id="legalTabEfin" tabindex="-1">'
-      +         '<span class="legal-modal__tab-index">02</span>'
-      +         '<span class="legal-modal__tab-label">전자금융거래 기본약관</span>'
-      +       '</button>'
-      +     '</div>'
       +     '<div class="legal-modal__body" data-legal-body oncontextmenu="return false">'
       +       '<div class="legal-modal__state" data-legal-state="loading">'
       +         '<iconify-icon icon="svg-spinners:ring-resize" width="28" aria-hidden="true"></iconify-icon>'
-      +         '<p>약관을 불러오는 중…</p>'
+      +         '<p>문서를 불러오는 중…</p>'
       +       '</div>'
       +       '<div class="legal-modal__state" data-legal-state="error" hidden>'
       +         '<iconify-icon icon="solar:danger-triangle-linear" width="32" aria-hidden="true"></iconify-icon>'
-      +         '<p>약관을 불러오지 못했습니다.<br>잠시 후 다시 시도해 주세요.</p>'
+      +         '<p>문서를 불러오지 못했습니다.<br>잠시 후 다시 시도해 주세요.</p>'
       +       '</div>'
-      +       '<article class="legal-modal__article" data-legal-article hidden role="tabpanel" aria-labelledby="legalTabTerms" id="legalPanelTerms">'
-      +         '<div class="legal-modal__article-meta" data-legal-meta></div>'
+      +       '<article class="legal-modal__article" data-legal-article hidden>'
       +         '<pre class="legal-modal__text" data-legal-text></pre>'
       +         '<div class="legal-modal__footnote">'
       +           '<iconify-icon icon="solar:shield-check-linear" width="14" aria-hidden="true"></iconify-icon>'
-      +           '<span>본 약관은 열람용으로만 제공되며, 복제 · 배포를 금지합니다.</span>'
+      +           '<span>본 문서는 열람용으로만 제공되며, 복제 · 배포를 금지합니다.</span>'
       +         '</div>'
       +       '</article>'
       +     '</div>'
@@ -242,8 +248,8 @@
     var footerSlot = document.querySelector('[data-site="footer"]');
     if (navSlot)    navSlot.outerHTML    = buildTopBar() + buildNav(page);
     if (footerSlot) footerSlot.outerHTML = buildFooter();
-    if (document.body && !document.getElementById('termsModal')) {
-      document.body.insertAdjacentHTML('beforeend', buildTermsModal());
+    if (document.body && !document.getElementById('legalModal')) {
+      document.body.insertAdjacentHTML('beforeend', buildLegalModal());
     }
   }
 
@@ -270,8 +276,8 @@
       });
     }
 
-    // Legal modal (terms of service)
-    bindTermsModal();
+    // Legal modal (공용 문서 뷰어)
+    bindLegalModal();
 
     // Reveal-on-scroll (IntersectionObserver, no scroll listeners)
     var reveals = document.querySelectorAll('.reveal');
@@ -291,24 +297,22 @@
   }
 
   /* ----------------------------------------------------------
-   * LEGAL MODAL behavior — fetch text, tab switching, copy protection
+   * LEGAL MODAL behavior — 공용 뷰어: 동적 로드 + 캐시 + 복사 방지
    * ---------------------------------------------------------- */
-  function bindTermsModal() {
-    var modal = document.getElementById('termsModal');
+  function bindLegalModal() {
+    var modal = document.getElementById('legalModal');
     if (!modal) return;
 
-    var bodyEl   = modal.querySelector('[data-legal-body]');
-    var articleEl= modal.querySelector('[data-legal-article]');
-    var textEl   = modal.querySelector('[data-legal-text]');
-    var metaEl   = modal.querySelector('[data-legal-meta]');
-    var stateLoad= modal.querySelector('[data-legal-state="loading"]');
-    var stateErr = modal.querySelector('[data-legal-state="error"]');
-    var tabBtns  = modal.querySelectorAll('[data-legal-tab]');
+    var bodyEl    = modal.querySelector('[data-legal-body]');
+    var articleEl = modal.querySelector('[data-legal-article]');
+    var textEl    = modal.querySelector('[data-legal-text]');
+    var titleEl   = modal.querySelector('[data-legal-title]');
+    var stateLoad = modal.querySelector('[data-legal-state="loading"]');
+    var stateErr  = modal.querySelector('[data-legal-state="error"]');
 
     var lastFocused = null;
-    var SECTIONS    = null; // { terms: {meta, body}, efin: {meta, body} }
-    var fetchingPromise = null;
-    var currentTab  = 'terms';
+    var cache       = {}; // key → body string
+    var pending     = {}; // key → Promise (로딩 중 중복 fetch 방지)
 
     function setState(name) {
       if (stateLoad) stateLoad.hidden = (name !== 'loading');
@@ -316,87 +320,65 @@
       if (articleEl) articleEl.hidden = (name !== 'ready');
     }
 
-    function parseRawText(raw) {
-      // 윈도우 개행(\r\n), 구형 맥(\r) 모두 LF로 정규화
-      var text = raw.replace(/\r\n?/g, '\n');
+    function loadDoc(key) {
+      if (cache[key] != null) return Promise.resolve(cache[key]);
+      if (pending[key])       return pending[key];
+      var doc = LEGAL_DOCS[key];
+      if (!doc) return Promise.reject(new Error('unknown legal doc: ' + key));
 
-      // '전자금융거래 기본약관' 헤더 기준으로 split (첫 매치만)
-      var markerIdx = text.indexOf('\n' + TERMS_SPLIT_MARKER);
-      var termsPart, efinPart;
-      if (markerIdx !== -1) {
-        termsPart = text.slice(0, markerIdx).trim();
-        efinPart  = text.slice(markerIdx + 1).trim();
-      } else {
-        termsPart = text.trim();
-        efinPart  = '';
+      // inline body (file 없이 정적 콘텐츠)
+      if (typeof doc.body === 'string') {
+        cache[key] = doc.body;
+        return Promise.resolve(cache[key]);
       }
 
-      // 첫 섹션에서 '이용약관' 라벨 라인 제거 (중복 방지)
-      termsPart = termsPart.replace(/^\s*이용약관\s*\n+/, '');
-
-      // 시행일/개정일 정보 추출 (괄호 안)
-      function extractMeta(body) {
-        var m = body.match(/\(([^)]*개정[^)]*)\)/);
-        return m ? m[1].trim() : '';
-      }
-
-      return {
-        terms: { meta: extractMeta(termsPart), body: termsPart },
-        efin:  { meta: extractMeta(efinPart),  body: efinPart  }
-      };
-    }
-
-    function loadText() {
-      if (SECTIONS) return Promise.resolve(SECTIONS);
-      if (fetchingPromise) return fetchingPromise;
-      setState('loading');
-      fetchingPromise = fetch(TERMS_TXT_URL, { cache: 'no-cache' })
+      // 파일 fetch
+      var url = LEGAL_TXT_DIR + encodeURIComponent(doc.file);
+      pending[key] = fetch(url, { cache: 'no-cache' })
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.text();
         })
         .then(function (raw) {
-          SECTIONS = parseRawText(raw);
-          return SECTIONS;
+          // 윈도우 개행 정규화 + 앞뒤 공백 제거
+          var text = raw.replace(/\r\n?/g, '\n').replace(/^\s+|\s+$/g, '');
+          cache[key] = text;
+          delete pending[key];
+          return text;
         })
         .catch(function (err) {
-          fetchingPromise = null;
-          setState('error');
+          delete pending[key];
           throw err;
         });
-      return fetchingPromise;
+      return pending[key];
     }
 
-    function renderTab(key) {
-      if (!SECTIONS || !SECTIONS[key]) return;
-      currentTab = key;
-      // 탭 활성 상태 갱신
-      for (var i = 0; i < tabBtns.length; i++) {
-        var btn = tabBtns[i];
-        var isActive = btn.getAttribute('data-legal-tab') === key;
-        btn.classList.toggle('is-active', isActive);
-        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-        btn.setAttribute('tabindex', isActive ? '0' : '-1');
-      }
-      // 본문 렌더 (textContent 사용 → XSS 안전, 줄바꿈은 CSS pre-wrap으로)
-      var data = SECTIONS[key];
-      if (metaEl) metaEl.textContent = data.meta || '';
-      if (textEl) textEl.textContent = data.body || '';
-      // 탭 전환 시 스크롤 최상단으로
+    function renderDoc(key) {
+      var doc = LEGAL_DOCS[key];
+      if (!doc) return;
+      if (titleEl) titleEl.textContent = doc.title || '';
+      setState('loading');
       if (bodyEl) bodyEl.scrollTop = 0;
-      setState('ready');
+
+      loadDoc(key)
+        .then(function (body) {
+          if (textEl) textEl.textContent = body || '';
+          setState('ready');
+          if (bodyEl) bodyEl.scrollTop = 0;
+        })
+        .catch(function () {
+          setState('error');
+        });
     }
 
-    function openModal(e) {
+    function openModal(key, e) {
       if (e && e.preventDefault) e.preventDefault();
+      if (!LEGAL_DOCS[key]) return;
       lastFocused = document.activeElement;
       modal.setAttribute('aria-hidden', 'false');
       modal.classList.add('is-open');
       document.documentElement.classList.add('legal-modal-lock');
-
-      loadText().then(function () {
-        renderTab(currentTab);
-      }).catch(function () { /* error state already shown */ });
+      renderDoc(key);
 
       // 포커스를 닫기 버튼으로
       var closeBtn = modal.querySelector('.legal-modal__close');
@@ -414,31 +396,25 @@
       }
     }
 
-    // 1) 이용약관 링크 클릭 → 모달 오픈 (이벤트 위임)
+    // 1) 문서 열기 — data-legal-open="KEY" (이벤트 위임, 모든 페이지 공통)
     document.addEventListener('click', function (e) {
       var el = e.target;
       while (el && el !== document) {
-        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-open-terms-modal')) {
-          openModal(e);
+        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-legal-open')) {
+          openModal(el.getAttribute('data-legal-open'), e);
           return;
         }
         el = el.parentNode;
       }
     });
 
-    // 2) 닫기 / 탭 클릭 (모달 내부 이벤트 위임)
+    // 2) 닫기 (X 버튼, 배경)
     modal.addEventListener('click', function (e) {
       var el = e.target;
       while (el && el !== modal) {
-        if (el.nodeType === 1 && el.hasAttribute) {
-          if (el.hasAttribute('data-legal-close')) {
-            closeModal();
-            return;
-          }
-          if (el.hasAttribute('data-legal-tab')) {
-            renderTab(el.getAttribute('data-legal-tab'));
-            return;
-          }
+        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-legal-close')) {
+          closeModal();
+          return;
         }
         el = el.parentNode;
       }
@@ -451,7 +427,7 @@
         closeModal();
         return;
       }
-      // 복사/인쇄/저장/전체선택/잘라내기 단축키 차단
+      // 복사/인쇄/저장/전체선택/잘라내기/소스보기 단축키 차단
       var isMod = e.ctrlKey || e.metaKey;
       if (isMod) {
         var k = (e.key || '').toLowerCase();
@@ -464,9 +440,9 @@
 
     // 4) 드래그/복사 이벤트 차단 (본문 영역)
     if (bodyEl) {
-      bodyEl.addEventListener('copy',      function (e) { e.preventDefault(); });
-      bodyEl.addEventListener('cut',       function (e) { e.preventDefault(); });
-      bodyEl.addEventListener('dragstart', function (e) { e.preventDefault(); });
+      bodyEl.addEventListener('copy',        function (e) { e.preventDefault(); });
+      bodyEl.addEventListener('cut',         function (e) { e.preventDefault(); });
+      bodyEl.addEventListener('dragstart',   function (e) { e.preventDefault(); });
       bodyEl.addEventListener('selectstart', function (e) { e.preventDefault(); });
     }
   }
