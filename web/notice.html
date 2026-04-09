@@ -216,33 +216,29 @@
         if (n.pdf_url) {
           pdfBtn = ''
             + '<a href="' + escape(n.pdf_url) + '" target="_blank" rel="noopener"'
-            +    ' onclick="event.stopPropagation()"'
-            +    ' class="mt-2 inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.03] px-2.5 py-1 text-[10px] text-zinc-200 hover:bg-white/[0.07] transition">'
-            +   '<iconify-icon icon="solar:download-minimalistic-bold" width="11" aria-hidden="true"></iconify-icon>'
-            +   '첨부파일'
+            +    ' class="mt-2.5 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-[13px] text-zinc-200 hover:bg-white/[0.07] transition">'
+            +   '<iconify-icon icon="solar:download-minimalistic-bold" width="14" aria-hidden="true"></iconify-icon>'
+            +   '첨부파일 다운로드'
             + '</a>';
         }
         return ''
-          + '<li data-notice-category="' + n.category + '">'
-          +   '<button type="button" data-notice-toggle class="w-full flex items-center gap-2.5 px-4 py-2.5 text-left hover:bg-white/[0.02] transition cursor-pointer">'
-          +     '<span class="inline-flex items-center rounded-full px-1.5 py-px text-[8px] shrink-0 ' + badgeClass + '">' + escape(n.badge) + '</span>'
-          +     '<span class="text-[9px] text-zinc-500 tabular-nums shrink-0">' + escape(n.date) + '</span>'
-          +     '<span class="text-[11px] text-white font-medium truncate flex-1 min-w-0">' + escape(n.title) + '</span>'
-          +     '<iconify-icon icon="solar:alt-arrow-down-linear" width="12" class="notice-chevron text-zinc-500 shrink-0 transition-transform duration-200" aria-hidden="true"></iconify-icon>'
-          +   '</button>'
-          +   '<div class="notice-detail hidden px-4 pb-3 pl-[4.5rem]">'
-          +     '<p class="text-[10px] text-zinc-400 leading-relaxed">' + escape(n.summary) + '</p>'
-          +     pdfBtn
+          + '<li data-notice-category="' + n.category + '" class="px-5 py-4 hover:bg-white/[0.02] transition">'
+          +   '<div class="flex items-center gap-2.5">'
+          +     '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[13px] shrink-0 ' + badgeClass + '">' + escape(n.badge) + '</span>'
+          +     '<span class="text-[14px] text-zinc-500 tabular-nums shrink-0">' + escape(n.date) + '</span>'
           +   '</div>'
+          +   '<h2 class="mt-1.5 text-[18px] text-white font-semibold leading-snug">' + escape(n.title) + '</h2>'
+          +   '<p class="mt-1 text-[15px] text-zinc-400 leading-relaxed">' + escape(n.summary) + '</p>'
+          +   pdfBtn
           + '</li>';
       }
 
       function renderLoading() {
         if (!listEl) return;
         listEl.innerHTML = ''
-          + '<li class="px-4 py-6 text-center text-xs text-zinc-500">'
-          +   '<iconify-icon icon="svg-spinners:ring-resize" width="20" aria-hidden="true"></iconify-icon>'
-          +   '<p class="mt-2">불러오는 중…</p>'
+          + '<li class="px-5 py-8 text-center text-sm text-zinc-500">'
+          +   '<iconify-icon icon="svg-spinners:ring-resize" width="24" aria-hidden="true"></iconify-icon>'
+          +   '<p class="mt-3">공지사항을 불러오는 중…</p>'
           + '</li>';
         if (emptyEl) emptyEl.classList.add('hidden');
       }
@@ -250,10 +246,10 @@
       function renderError(msg) {
         if (!listEl) return;
         listEl.innerHTML = ''
-          + '<li class="px-4 py-6 text-center text-xs text-zinc-500">'
-          +   '<iconify-icon icon="solar:danger-triangle-linear" width="20" aria-hidden="true"></iconify-icon>'
-          +   '<p class="mt-2 text-white text-[11px]">불러오지 못했습니다.</p>'
-          +   '<p class="mt-0.5 text-[9px] text-zinc-600">' + escape(msg || '네트워크 오류') + '</p>'
+          + '<li class="px-5 py-8 text-center text-sm text-zinc-500">'
+          +   '<iconify-icon icon="solar:danger-triangle-linear" width="28" aria-hidden="true"></iconify-icon>'
+          +   '<p class="mt-3 text-white">공지사항을 불러오지 못했습니다.</p>'
+          +   '<p class="mt-1 text-xs text-zinc-600">' + escape(msg || '네트워크 오류가 발생했습니다.') + '</p>'
           + '</li>';
         if (emptyEl) emptyEl.classList.add('hidden');
       }
@@ -292,31 +288,6 @@
       tabs.forEach(function (t) {
         t.addEventListener('click', function () { setActive(t.dataset.noticeTab); });
       });
-
-      // Accordion toggle — event delegation on listEl
-      if (listEl) {
-        listEl.addEventListener('click', function (e) {
-          var btn = e.target.closest('[data-notice-toggle]');
-          if (!btn) return;
-          var li = btn.closest('li');
-          if (!li) return;
-          var detail = li.querySelector('.notice-detail');
-          var chevron = btn.querySelector('.notice-chevron');
-          if (!detail) return;
-          var isOpen = !detail.classList.contains('hidden');
-          // Close all other open items first
-          listEl.querySelectorAll('.notice-detail:not(.hidden)').forEach(function (d) {
-            d.classList.add('hidden');
-            var otherChevron = d.closest('li').querySelector('.notice-chevron');
-            if (otherChevron) otherChevron.style.transform = '';
-          });
-          // Toggle current
-          if (!isOpen) {
-            detail.classList.remove('hidden');
-            if (chevron) chevron.style.transform = 'rotate(180deg)';
-          }
-        });
-      }
 
       // Fetch CSV from Google Sheets, parse, and render
       function loadNotices() {
