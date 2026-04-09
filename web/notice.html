@@ -113,68 +113,99 @@
        NOTICE DATA + TAB LOGIC
        ============================================================ -->
   <script>
-    // Notices — managed in-page. Admins: add new posts at the top of this array.
-    // Each item: { id, category: 'management' | 'customer', badge: '중요' | '공지' | '정책',
-    //               date: 'YYYY.MM.DD', title, summary, icon (iconify solar id) }
-    window.NOTICES = [
-      {
-        id: 'privacy-policy-2026-04',
-        category: 'customer',
-        badge: '중요',
-        date: '2026.04.02',
-        title: '개인정보처리방침 일부 개정 안내',
-        summary: '개인정보보호법 개정에 따라 수집 항목과 보관 기간 일부가 변경됩니다. 시행일 이전에 반드시 확인 부탁드립니다.',
-        icon: 'solar:bell-bing-bold'
-      },
-      {
-        id: 'complaint-sla-2026-03',
-        category: 'customer',
-        badge: '공지',
-        date: '2026.03.21',
-        title: '민원 처리 절차 개선 안내',
-        summary: '민원 응대 SLA를 7영업일에서 5영업일로 단축하였습니다. 처리 단계별 진행 상황도 안내해 드립니다.',
-        icon: 'solar:document-text-bold'
-      },
-      {
-        id: 'lunar-holiday-2026-02',
-        category: 'customer',
-        badge: '공지',
-        date: '2026.02.14',
-        title: '설 연휴 고객센터 운영 일정',
-        summary: '설 연휴 기간(2026.02.16 ~ 2026.02.18) 고객센터 운영이 일시 중단됩니다. 이메일 접수는 정상적으로 가능합니다.',
-        icon: 'solar:calendar-mark-bold'
-      },
-      {
-        id: 'ethics-2026-01',
-        category: 'management',
-        badge: '정책',
-        date: '2026.01.08',
-        title: '2026년 채권추심 윤리 강령 갱신',
-        summary: '전 임직원이 2026년 채권추심 윤리 강령에 서약하였습니다. 강령 전문은 본 사이트에서 열람 가능합니다.',
-        icon: 'solar:shield-check-bold'
-      },
-      {
-        id: 'audit-2025-12',
-        category: 'management',
-        badge: '공지',
-        date: '2025.12.05',
-        title: '2025년 외부 회계감사 결과 보고',
-        summary: '독립 회계법인의 2025년 정기 감사가 종료되었습니다. 보고서 요약본을 확인할 수 있습니다.',
-        icon: 'solar:graph-up-bold'
-      }
-    ];
-
+    // Notices — loaded from Google Sheets (Publish to web → CSV)
+    // To update notices: edit the spreadsheet in Google Sheets.
+    // Changes may take up to ~5 minutes to appear (Google's publish cache).
     (function () {
+      var NOTICE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH9aAyyy8M2ffmIo3MbWI-S1I1rLmEzcXLyrGIlADxhfg8q0N5nre4zZ-fPKqIMPcUcGZ9FA0G8UvK/pub?gid=0&single=true&output=csv';
+
+      // Korean category label (sheet A열) → internal code
+      var CATEGORY_MAP = {
+        '경영공시': 'management',
+        '고객공시': 'customer'
+      };
+      // Default icons per category
+      var DEFAULT_ICONS = {
+        management: 'solar:graph-up-bold',
+        customer:   'solar:bell-bing-bold'
+      };
+
       var tabs       = document.querySelectorAll('[data-notice-tab]');
       var panelList  = document.querySelector('[data-notice-panel="list"]');
       var panelDebt  = document.querySelector('[data-notice-panel="debt"]');
       var listEl     = document.getElementById('noticeList');
       var emptyEl    = document.querySelector('[data-notice-empty]');
 
+      var state = {
+        notices: null,  // null = not loaded yet, [] or [...] = loaded
+        error: null,
+        currentFilter: 'all'
+      };
+
       function escape(s) {
-        return String(s).replace(/[&<>"']/g, function (c) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
           return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
         });
+      }
+
+      // Minimal CSV parser — handles quoted fields, escaped quotes, CRLF
+      function parseCSV(text) {
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+        var rows = [], row = [], field = '', inQuotes = false;
+        var i = 0, len = text.length;
+        while (i < len) {
+          var c = text.charAt(i);
+          if (inQuotes) {
+            if (c === '"') {
+              if (text.charAt(i + 1) === '"') { field += '"'; i += 2; }
+              else { inQuotes = false; i++; }
+            } else { field += c; i++; }
+          } else {
+            if (c === '"') { inQuotes = true; i++; }
+            else if (c === ',') { row.push(field); field = ''; i++; }
+            else if (c === '\r') { i++; }
+            else if (c === '\n') { row.push(field); field = ''; rows.push(row); row = []; i++; }
+            else { field += c; i++; }
+          }
+        }
+        if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+        return rows;
+      }
+
+      function rowsToObjects(rows) {
+        if (!rows.length) return [];
+        var header = rows[0].map(function (h) { return String(h || '').trim().toLowerCase(); });
+        var items = [];
+        for (var i = 1; i < rows.length; i++) {
+          var row = rows[i];
+          if (!row.length || row.every(function (v) { return !v || !String(v).trim(); })) continue;
+          var obj = {};
+          for (var j = 0; j < header.length; j++) {
+            obj[header[j]] = (row[j] || '').trim();
+          }
+          items.push(obj);
+        }
+        return items;
+      }
+
+      function normalizeNotices(raw) {
+        var result = [];
+        raw.forEach(function (r) {
+          var cat = CATEGORY_MAP[r.category];
+          if (!cat) return; // unknown or blank category → skip
+          result.push({
+            category: cat,
+            date:     r.date    || '',
+            badge:    r.badge   || '공지',
+            title:    r.title   || '',
+            summary:  r.summary || '',
+            pdf_url:  r.pdf_url || '',
+            icon:     DEFAULT_ICONS[cat] || 'solar:document-text-bold'
+          });
+        });
+        // Sort by date descending (newest first). YYYY.MM.DD string compare works as date compare.
+        result.sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+        return result;
       }
 
       function renderItem(n) {
@@ -184,6 +215,15 @@
         var iconWrapClass = n.badge === '중요'
           ? 'bg-accent-400/15 text-accent-300 ring-1 ring-accent-400/30'
           : 'bg-white/5 text-zinc-300 ring-1 ring-white/10';
+        var pdfBtn = '';
+        if (n.pdf_url) {
+          pdfBtn = ''
+            + '<a href="' + escape(n.pdf_url) + '" target="_blank" rel="noopener"'
+            +    ' class="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.07] transition">'
+            +   '<iconify-icon icon="solar:download-minimalistic-bold" width="14" aria-hidden="true"></iconify-icon>'
+            +   '첨부파일 다운로드'
+            + '</a>';
+        }
         return ''
           + '<li data-notice-category="' + n.category + '" class="p-6 flex items-start gap-5 hover:bg-white/[0.02] transition">'
           +   '<div class="hidden sm:flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ' + iconWrapClass + '">'
@@ -197,15 +237,42 @@
           +     '</div>'
           +     '<h2 class="mt-2 text-base sm:text-lg font-semibold text-white leading-snug">' + escape(n.title) + '</h2>'
           +     '<p class="mt-1 text-sm text-zinc-400 leading-relaxed">' + escape(n.summary) + '</p>'
+          +     pdfBtn
           +   '</div>'
           + '</li>';
       }
 
+      function renderLoading() {
+        if (!listEl) return;
+        listEl.innerHTML = ''
+          + '<li class="p-10 text-center text-sm text-zinc-500">'
+          +   '<iconify-icon icon="svg-spinners:ring-resize" width="28" aria-hidden="true"></iconify-icon>'
+          +   '<p class="mt-3">공지사항을 불러오는 중…</p>'
+          + '</li>';
+        if (emptyEl) emptyEl.classList.add('hidden');
+      }
+
+      function renderError(msg) {
+        if (!listEl) return;
+        listEl.innerHTML = ''
+          + '<li class="p-10 text-center text-sm text-zinc-500">'
+          +   '<iconify-icon icon="solar:danger-triangle-linear" width="32" aria-hidden="true"></iconify-icon>'
+          +   '<p class="mt-3 text-white">공지사항을 불러오지 못했습니다.</p>'
+          +   '<p class="mt-1 text-[11px] text-zinc-600">' + escape(msg || '네트워크 오류가 발생했습니다.') + '</p>'
+          + '</li>';
+        if (emptyEl) emptyEl.classList.add('hidden');
+      }
+
       function render(filter) {
         if (!listEl) return;
-        var list = (window.NOTICES || []).filter(function (n) {
-          if (filter === 'all') return n.category === 'management' || n.category === 'customer';
-          return n.category === filter;
+        if (filter) state.currentFilter = filter;
+
+        if (state.error) { renderError(state.error); return; }
+        if (state.notices === null) { renderLoading(); return; }
+
+        var list = state.notices.filter(function (n) {
+          if (state.currentFilter === 'all') return n.category === 'management' || n.category === 'customer';
+          return n.category === state.currentFilter;
         });
         listEl.innerHTML = list.map(renderItem).join('');
         if (emptyEl) emptyEl.classList.toggle('hidden', list.length > 0);
@@ -231,8 +298,30 @@
         t.addEventListener('click', function () { setActive(t.dataset.noticeTab); });
       });
 
-      // Initial render
-      render('all');
+      // Fetch CSV from Google Sheets, parse, and render
+      function loadNotices() {
+        state.notices = null;
+        state.error = null;
+        render();
+        fetch(NOTICE_CSV_URL, { cache: 'no-cache' })
+          .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.text();
+          })
+          .then(function (csvText) {
+            var rows = parseCSV(csvText);
+            var raw  = rowsToObjects(rows);
+            state.notices = normalizeNotices(raw);
+            render();
+          })
+          .catch(function (err) {
+            state.error = (err && err.message) ? err.message : '알 수 없는 오류';
+            render();
+          });
+      }
+
+      // Initial load
+      loadNotices();
     })();
   </script>
 
