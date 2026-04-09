@@ -61,7 +61,7 @@
 
         <!-- ========== LIST PANEL (all / management / customer) ========== -->
         <div data-notice-panel="list" class="mt-8">
-          <ul id="noticeList" class="reveal divide-y divide-white/[0.04] rounded-2xl border border-white/10 bg-white/[0.02] overflow-y-auto max-h-[60vh]" style="scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.12) transparent">
+          <ul id="noticeList" class="reveal overflow-y-auto max-h-[60vh] space-y-3" style="scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.12) transparent">
             <!-- Rendered from Google Sheets CSV -->
           </ul>
           <p data-notice-empty class="hidden reveal mt-8 text-center text-xs text-zinc-500">해당 카테고리에 등록된 공지가 없습니다.</p>
@@ -222,7 +222,7 @@
             + '</a>';
         }
         return ''
-          + '<li data-notice-category="' + n.category + '" class="px-5 py-4 hover:bg-white/[0.02] transition">'
+          + '<li data-notice-category="' + n.category + '" class="card-lift rounded-2xl border border-white/10 bg-white/[0.02] p-5">'
           +   '<div class="flex items-center gap-2.5">'
           +     '<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[13px] shrink-0 ' + badgeClass + '">' + escape(n.badge) + '</span>'
           +     '<span class="text-[14px] text-zinc-500 tabular-nums shrink-0">' + escape(n.date) + '</span>'
