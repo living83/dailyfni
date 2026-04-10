@@ -28,8 +28,8 @@ db.exec(`
     neighborEngage INTEGER DEFAULT 1,
     proxyId TEXT,
     proxyServer TEXT,
-    createdAt TEXT DEFAULT (datetime('now')),
-    updatedAt TEXT DEFAULT (datetime('now'))
+    createdAt TEXT DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
 
   CREATE TABLE IF NOT EXISTS proxies (
@@ -42,7 +42,7 @@ db.exec(`
     speed INTEGER,
     assignedAccountId TEXT,
     assignedAccountName TEXT,
-    createdAt TEXT DEFAULT (datetime('now'))
+    createdAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
 
   CREATE TABLE IF NOT EXISTS contents (
@@ -56,8 +56,8 @@ db.exec(`
     grade TEXT,
     status TEXT DEFAULT '대기',
     accountId TEXT,
-    createdAt TEXT DEFAULT (datetime('now')),
-    updatedAt TEXT DEFAULT (datetime('now'))
+    createdAt TEXT DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
 
   CREATE TABLE IF NOT EXISTS postings (
@@ -71,13 +71,13 @@ db.exec(`
     status TEXT DEFAULT '대기중',
     url TEXT,
     error TEXT,
-    createdAt TEXT DEFAULT (datetime('now')),
-    updatedAt TEXT DEFAULT (datetime('now'))
+    createdAt TEXT DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
 
   CREATE TABLE IF NOT EXISTS posting_errors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT DEFAULT (datetime('now')),
+    timestamp TEXT DEFAULT (datetime('now', 'localtime')),
     accountName TEXT DEFAULT '',
     message TEXT DEFAULT '',
     severity TEXT DEFAULT '정보'
@@ -90,7 +90,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS engagement_activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    time TEXT DEFAULT (datetime('now')),
+    time TEXT DEFAULT (datetime('now', 'localtime')),
     accountName TEXT DEFAULT '',
     action TEXT DEFAULT '',
     target TEXT DEFAULT ''
@@ -102,7 +102,7 @@ db.exec(`
     acceptedCount INTEGER DEFAULT 0,
     skippedCount INTEGER DEFAULT 0,
     error TEXT DEFAULT '',
-    timestamp TEXT DEFAULT (datetime('now'))
+    timestamp TEXT DEFAULT (datetime('now', 'localtime'))
   );
 `);
 

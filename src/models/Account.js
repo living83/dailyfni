@@ -50,7 +50,7 @@ function updateAccount(id, data) {
     if (v !== undefined) { sets.push(`${k} = ?`); vals.push(v); }
   }
   if (sets.length === 0) return sanitize(row2obj(a));
-  sets.push(`updatedAt = datetime('now')`);
+  sets.push(`updatedAt = datetime('now', 'localtime')`);
   vals.push(id);
   db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   return sanitize(row2obj(selectById.get(id)));

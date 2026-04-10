@@ -31,7 +31,7 @@ function updateContent(id, data) {
     if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]); }
   }
   if (sets.length) {
-    sets.push(`updatedAt = datetime('now')`);
+    sets.push(`updatedAt = datetime('now', 'localtime')`);
     vals.push(id);
     db.prepare(`UPDATE contents SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
   }
