@@ -21,185 +21,82 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 40px 50px;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 60px;
 }
 
-/* 상단 뱃지 */
+/* 상단 카테고리 뱃지 */
 .badge {
   display: inline-block;
   background: rgba(255,255,255,0.7);
   border: 1.5px solid #80cbc4;
   border-radius: 20px;
-  padding: 6px 18px;
-  font-size: 13px;
+  padding: 7px 22px;
+  font-size: 14px;
   color: #00796b;
   font-weight: 500;
-  letter-spacing: 1px;
-  align-self: center;
-  margin-bottom: 20px;
+  letter-spacing: 1.5px;
+  margin-bottom: 32px;
 }
 
-/* 메인 제목 */
+/* 메인 제목 — 크게 */
 .title {
   text-align: center;
-  font-size: 32px;
+  font-size: 42px;
   font-weight: 900;
   color: #1a237e;
-  line-height: 1.4;
-  margin-bottom: 12px;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  line-height: 1.35;
+  margin-bottom: 24px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  word-break: keep-all;
 }
 
 /* 소제목 */
 .subtitle {
   text-align: center;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
-  color: #455a64;
-  margin-bottom: 30px;
+  color: #546e7a;
+  line-height: 1.5;
 }
 
-/* 하단 아이콘 영역 */
-.icons-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  margin-top: auto;
-  padding-bottom: 10px;
-}
-
-.icon-card {
-  background: rgba(255,255,255,0.85);
-  border-radius: 16px;
-  padding: 18px 22px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-  min-width: 140px;
-}
-
-.icon-emoji {
-  font-size: 42px;
-  line-height: 1;
-}
-
-.icon-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: #37474f;
-  text-align: center;
-}
-
-.icon-sub {
-  font-size: 11px;
-  color: #78909c;
-  text-align: center;
-}
-
-.arrow {
-  font-size: 32px;
-  color: #26a69a;
-  font-weight: 900;
-}
-
-/* 배경 장식 */
-.deco-circle {
+/* 배경 장식 원 */
+.deco {
   position: absolute;
   border-radius: 50%;
-  opacity: 0.15;
+  opacity: 0.12;
 }
-.deco-1 { width: 200px; height: 200px; background: #4db6ac; top: -40px; right: -30px; }
-.deco-2 { width: 120px; height: 120px; background: #80cbc4; bottom: 20px; left: -20px; }
-.deco-3 { width: 80px; height: 80px; background: #4dd0e1; top: 60px; left: 30px; }
+.d1 { width: 220px; height: 220px; background: #4db6ac; top: -50px; right: -40px; }
+.d2 { width: 140px; height: 140px; background: #80cbc4; bottom: -30px; left: -30px; }
+.d3 { width: 100px; height: 100px; background: #4dd0e1; bottom: 60px; right: 60px; }
+.d4 { width: 70px; height: 70px; background: #a5d6a7; top: 80px; left: 50px; }
 
-/* 우측 상단 강조 뱃지 */
-.highlight-badge {
+/* 하단 구분선 */
+.bottom-line {
   position: absolute;
-  top: 30px;
-  right: 40px;
-  background: linear-gradient(135deg, #e53935, #c62828);
-  color: white;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 14px;
-  line-height: 1.2;
-  box-shadow: 0 4px 12px rgba(229,57,53,0.4);
-  transform: rotate(8deg);
-}
-
-/* 좌측 일러스트 영역 */
-.illust-area {
-  position: absolute;
-  bottom: 30px;
-  left: 40px;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.person-icon {
-  font-size: 64px;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #26a69a, #42a5f5, #7e57c2);
 }
 </style>
 </head>
 <body>
 <div class="banner">
-  <!-- 배경 장식 -->
-  <div class="deco-circle deco-1"></div>
-  <div class="deco-circle deco-2"></div>
-  <div class="deco-circle deco-3"></div>
+  <div class="deco d1"></div>
+  <div class="deco d2"></div>
+  <div class="deco d3"></div>
+  <div class="deco d4"></div>
 
-  <!-- 우측 강조 뱃지 -->
-  <div class="highlight-badge">
-    <span>신청</span>
-    <span>가능</span>
-  </div>
+  <div class="badge">금융 정보 블로그</div>
 
-  <!-- 상단 뱃지 -->
-  <div class="badge">데일리FNI · 금융 정보 블로그</div>
-
-  <!-- 제목 -->
   <div class="title">전업주부 개인회생 대출,<br>피부양자 서류만 있으면 신청 가능한 이유</div>
 
-  <!-- 소제목 -->
   <div class="subtitle">소득 증빙의 어려움을 해결하는 법</div>
 
-  <!-- 하단 아이콘 -->
-  <div class="icons-row">
-    <div class="icon-card">
-      <span class="icon-emoji">📋</span>
-      <span class="icon-label">서류 준비</span>
-      <span class="icon-sub">주민등록등본</span>
-    </div>
-    <span class="arrow">→</span>
-    <div class="icon-card">
-      <span class="icon-emoji">✅</span>
-      <span class="icon-label">심사 승인</span>
-      <span class="icon-sub">개인회생 승인</span>
-    </div>
-    <span class="arrow">→</span>
-    <div class="icon-card">
-      <span class="icon-emoji">💰</span>
-      <span class="icon-label">대출 실행</span>
-      <span class="icon-sub">빠른 입금</span>
-    </div>
-    <span class="arrow">→</span>
-    <div class="icon-card">
-      <span class="icon-emoji">📈</span>
-      <span class="icon-label">신용 회복</span>
-      <span class="icon-sub">단계적 상승</span>
-    </div>
-  </div>
+  <div class="bottom-line"></div>
 </div>
 </body>
 </html>
