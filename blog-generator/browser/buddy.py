@@ -130,190 +130,164 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(2, 3)
 
-            # 디버그: 현재 URL과 페이지 스크린샷 저장
+            # 디버그: 현재 URL 확인
             actual_url = page.url
             logger.info(f"[{account_name}] 실제 URL: {actual_url}")
-            debug_dir = Path(settings.IMAGES_DIR) / "debug"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            debug_path = debug_dir / f"buddy_debug_{blog_id}.png"
-            try:
-                await page.screenshot(path=str(debug_path), full_page=True)
-                logger.info(f"[{account_name}] 디버그 스크린샷: {debug_path}")
-            except Exception as e:
-                logger.debug(f"스크린샷 실패: {e}")
 
-            # 디버그: 페이지 주요 텍스트 로그
+            # ── 받은신청 탭 확인 (기본 탭) ──
             try:
-                body_text = await page.inner_text("body")
-                preview = body_text[:500].replace('\n', ' | ')
-                logger.info(f"[{account_name}] 페이지 텍스트 미리보기: {preview}")
-            except Exception:
-                pass
-
-            # ── 받은신청 탭 클릭 (이미 기본 탭일 수 있음) ──
-            try:
-                recv_tab = await page.query_selector(
-                    'a:has-text("받은신청"), [class*="tab"]:has-text("받은신청")'
-                )
+                recv_tab = await page.query_selector('a:has-text("받은신청")')
                 if recv_tab:
                     await recv_tab.click()
                     await random_delay(1, 2)
-                    logger.info(f"[{account_name}] 받은신청 탭 클릭")
             except Exception:
                 pass
 
-            # ── 신청 행 수집 (다양한 셀렉터 시도) ──
-            row_selectors = [
-                "table.buddy_list tbody tr",
-                ".bdy_lst tbody tr",
-                "table tbody tr:has(input[type='checkbox'])",
-                "table.type_list tbody tr",
-                ".tbl_type tbody tr",
-                "table tr:has(td)",
-                "#content table tbody tr",
-                ".container table tbody tr",
-            ]
-            rows = []
-            for sel in row_selectors:
-                rows = await page.query_selector_all(sel)
-                if rows:
-                    logger.info(f"[{account_name}] 셀렉터 '{sel}'로 {len(rows)}행 발견")
-                    break
-                else:
-                    logger.debug(f"[{account_name}] 셀렉터 '{sel}' → 0행")
+            # ── 신청 건수 확인 ──
+            checkboxes = await page.query_selector_all("input[type='checkbox']")
+            # 첫 번째는 헤더 전체선택, 마지막도 전체선택일 수 있음
+            # 중간의 체크박스가 실제 신청 행
+            logger.info(f"[{account_name}] 체크박스 총 {len(checkboxes)}개 발견")
 
-            if not rows:
-                # 추가 디버그: 모든 table과 tr 개수 확인
-                all_tables = await page.query_selector_all("table")
-                all_trs = await page.query_selector_all("tr")
-                all_checkboxes = await page.query_selector_all("input[type='checkbox']")
-                logger.warning(
-                    f"[{account_name}] 신청 행 없음 — table: {len(all_tables)}, "
-                    f"tr: {len(all_trs)}, checkbox: {len(all_checkboxes)}"
-                )
+            if len(checkboxes) <= 2:
+                # 전체선택 체크박스만 있고 신청 행이 없음
+                logger.info(f"[{account_name}] 수락할 서로이웃 신청이 없습니다.")
                 result["success"] = True
                 result["accepted_count"] = 0
                 return result
 
-            total_pending = len(rows)
-            to_accept = min(total_pending, max_accept)
-            logger.info(f"[{account_name}] 서로이웃 신청 {total_pending}건 발견, 최대 {to_accept}건 수락 예정")
+            # ── "전체선택" 클릭 → "수락" 클릭 (하단 배치 버튼 사용) ──
+            # 페이지 하단의 "전체선택" 체크박스를 찾아 클릭
+            select_all_clicked = False
 
-            # ── 체크박스 선택 ──
-            checked = 0
-            for i, row in enumerate(rows):
-                if checked >= to_accept:
-                    break
+            # 방법 1: 하단 "전체선택" 텍스트 옆 체크박스
+            try:
+                select_all_label = await page.query_selector('text=전체선택')
+                if select_all_label:
+                    # 전체선택 텍스트 근처의 체크박스 클릭
+                    parent = await select_all_label.evaluate_handle('el => el.parentElement')
+                    cb = await parent.as_element().query_selector("input[type='checkbox']")
+                    if cb:
+                        await cb.click()
+                        select_all_clicked = True
+                        logger.info(f"[{account_name}] 하단 전체선택 체크박스 클릭")
+            except Exception as e:
+                logger.debug(f"전체선택 방법1 실패: {e}")
 
-                # 메시지 있는 신청만 필터링
-                if accept_mode == "with_message":
-                    try:
-                        msg_cell = await row.query_selector("td:nth-child(2), .msg, .message")
-                        msg_text = (await msg_cell.inner_text()).strip() if msg_cell else ""
-                        if not msg_text:
-                            result["skipped_count"] += 1
-                            continue
-                    except Exception:
-                        pass
-
+            # 방법 2: 마지막 체크박스가 전체선택인 경우
+            if not select_all_clicked and len(checkboxes) >= 2:
                 try:
-                    checkbox = await row.query_selector("input[type='checkbox']")
-                    if checkbox:
-                        is_checked = await checkbox.is_checked()
-                        if not is_checked:
-                            await checkbox.click()
-                            await asyncio.sleep(0.1)
-                        checked += 1
+                    last_cb = checkboxes[-1]
+                    await last_cb.click()
+                    select_all_clicked = True
+                    logger.info(f"[{account_name}] 마지막 체크박스(전체선택) 클릭")
                 except Exception as e:
-                    logger.debug(f"체크박스 클릭 실패 (row {i}): {e}")
+                    logger.debug(f"전체선택 방법2 실패: {e}")
 
-            if checked == 0:
-                logger.info(f"[{account_name}] 선택된 신청이 없습니다.")
-                result["success"] = True
-                return result
+            # 방법 3: 첫 번째 체크박스(헤더 전체선택) 클릭
+            if not select_all_clicked and len(checkboxes) >= 1:
+                try:
+                    await checkboxes[0].click()
+                    select_all_clicked = True
+                    logger.info(f"[{account_name}] 첫 번째 체크박스(헤더 전체선택) 클릭")
+                except Exception as e:
+                    logger.debug(f"전체선택 방법3 실패: {e}")
 
-            logger.info(f"[{account_name}] {checked}건 체크 완료, 수락 버튼 클릭")
+            await random_delay(0.5, 1)
 
-            # ── 수락 버튼 클릭 ──
-            accept_btn = await page.query_selector(
-                'a:has-text("수락"), button:has-text("수락"), '
-                'input[value="수락"], .btn_accept, [class*="accept"]'
-            )
-            if not accept_btn:
-                # 전체 선택 후 상단 수락 버튼 시도
-                select_all = await page.query_selector(
-                    'th input[type="checkbox"], .check_all input'
-                )
-                if select_all:
-                    await select_all.click()
-                    await random_delay(0.5, 1)
-                accept_btn = await page.query_selector(
-                    'a:has-text("수락"), button:has-text("수락"), input[value="수락"]'
-                )
+            # 체크된 개수 확인
+            checked_count = 0
+            for cb in checkboxes:
+                try:
+                    if await cb.is_checked():
+                        checked_count += 1
+                except Exception:
+                    pass
+            logger.info(f"[{account_name}] 체크된 항목: {checked_count}개")
 
-            if not accept_btn:
+            # ── "수락" 버튼 클릭 (하단 배치 수락 버튼) ──
+            accept_clicked = False
+
+            # 하단 "전체선택 | 수락 | 거절" 영역의 수락 버튼
+            accept_selectors = [
+                'text=전체선택 >> .. >> text=수락',     # 전체선택 옆의 수락
+                'input[value="수락"]',                  # input 버튼
+                'button:has-text("수락")',              # button
+                'a:has-text("수락")',                   # link
+            ]
+            # 개별 행의 수락 링크가 아닌, 하단 배치 수락 버튼만 타겟
+            # 페이지에서 "수락" 텍스트가 여러 개 있으므로 하단 것을 우선
+            try:
+                # 하단 영역 (전체선택과 같은 레벨)에 있는 수락 버튼 찾기
+                all_accept_links = await page.query_selector_all('a:has-text("수락"), button:has-text("수락"), input[value="수락"]')
+                if all_accept_links:
+                    # 마지막 수락 버튼이 하단 배치 버튼 (개별 행 수락은 위쪽에 있음)
+                    target_btn = all_accept_links[-1]
+                    await target_btn.click()
+                    accept_clicked = True
+                    logger.info(f"[{account_name}] 하단 수락 버튼 클릭 (총 {len(all_accept_links)}개 중 마지막)")
+            except Exception as e:
+                logger.warning(f"[{account_name}] 수락 버튼 클릭 실패: {e}")
+
+            if not accept_clicked:
                 result["error"] = "수락 버튼을 찾을 수 없습니다."
                 return result
 
-            await accept_btn.click()
             await random_delay(2, 3)
 
             # ── 팝업 "서로이웃 맺기" → 확인 클릭 ──
-            confirm_selectors = [
-                'button:has-text("확인")',
-                'input[value="확인"]',
-                'a:has-text("확인")',
-                '.btn_ok',
-                '[class*="confirm"] button',
-                '[class*="popup"] button:has-text("확인")',
-            ]
-
+            # BothBuddyMultiAcceptForm.naver 팝업이 뜸
             confirmed = False
-            # 팝업이 새 페이지로 뜰 수 있음 (BothBuddyMultiAcceptForm)
-            for target in [page] + list(context.pages):
-                for sel in confirm_selectors:
-                    try:
-                        btn = await target.query_selector(sel)
-                        if btn and await btn.is_visible():
-                            await btn.click()
-                            confirmed = True
-                            logger.info(f"[{account_name}] 확인 버튼 클릭 완료")
-                            break
-                    except Exception:
-                        continue
-                if confirmed:
-                    break
 
-            # 새 팝업 윈도우가 열릴 수 있음
+            # 팝업 윈도우 대기
+            try:
+                popup = await page.wait_for_event("popup", timeout=5000)
+                await popup.wait_for_load_state("domcontentloaded")
+                await random_delay(1, 2)
+                logger.info(f"[{account_name}] 팝업 URL: {popup.url}")
+
+                # 팝업에서 "확인" 클릭
+                confirm_btn = await popup.query_selector(
+                    'button:has-text("확인"), input[value="확인"], a:has-text("확인")'
+                )
+                if confirm_btn:
+                    await confirm_btn.click()
+                    confirmed = True
+                    logger.info(f"[{account_name}] 팝업에서 확인 클릭 완료")
+                await random_delay(1, 2)
+            except Exception as e:
+                logger.debug(f"팝업 대기 실패: {e}")
+
+            # 팝업이 아닌 같은 페이지 내 모달일 수 있음
             if not confirmed:
                 try:
-                    popup = await page.wait_for_event("popup", timeout=5000)
-                    await popup.wait_for_load_state("domcontentloaded")
-                    await random_delay(1, 2)
-                    for sel in confirm_selectors:
-                        btn = await popup.query_selector(sel)
-                        if btn:
-                            await btn.click()
-                            confirmed = True
-                            logger.info(f"[{account_name}] 팝업 윈도우에서 확인 클릭")
-                            break
+                    await page.click(
+                        'button:has-text("확인"), input[value="확인")',
+                        timeout=5000
+                    )
+                    confirmed = True
+                    logger.info(f"[{account_name}] 페이지 내 확인 클릭")
                 except Exception:
                     pass
 
+            # alert 대화상자 처리
             if not confirmed:
-                # 최후 수단: 페이지 전체에서 확인 버튼 검색
-                await random_delay(1, 2)
                 try:
-                    await page.click('button:has-text("확인"), input[value="확인"]', timeout=5000)
-                    confirmed = True
+                    page.on("dialog", lambda dialog: dialog.accept())
+                    await random_delay(1, 2)
                 except Exception:
-                    logger.warning(f"[{account_name}] 확인 버튼을 찾지 못했습니다 (수락은 진행됐을 수 있음)")
+                    pass
 
             await random_delay(1, 2)
 
+            # 수락된 개수 = 전체 체크박스 - 2(전체선택 상하단) or checked_count
+            accepted = max(checked_count - 2, len(checkboxes) - 2)
+            if accepted < 0:
+                accepted = 0
+
             result["success"] = True
-            result["accepted_count"] = checked
-            logger.info(f"[{account_name}] 서로이웃 {checked}건 수락 완료")
+            result["accepted_count"] = accepted
+            logger.info(f"[{account_name}] 서로이웃 약 {accepted}건 수락 완료")
 
         except Exception as e:
             logger.exception(f"accept_buddy_requests 예외: {e}")
