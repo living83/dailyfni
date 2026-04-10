@@ -301,6 +301,42 @@ async def health():
     return {"status": "ok", "server": "python-fastapi", "port": 8000}
 
 
+# ═══════════════════════════════════════════════════════
+# 대시보드 통합 API — 서로이웃 자동 수락
+# ═══════════════════════════════════════════════════════
+
+class BuddyAcceptRequest(BaseModel):
+    account: dict
+    config: dict  # { max_accept, accept_mode }
+
+class BuddyPendingRequest(BaseModel):
+    account: dict
+
+@app.post("/api/dashboard/buddy/accept")
+async def dashboard_buddy_accept(req: BuddyAcceptRequest):
+    """서로이웃 신청 일괄 수락"""
+    try:
+        from browser.buddy import accept_buddy_requests
+        result = await accept_buddy_requests(req.account, req.config)
+        return result
+    except ImportError as e:
+        return {"success": False, "accepted_count": 0, "error": f"모듈 로드 실패: {e}"}
+    except Exception as e:
+        return {"success": False, "accepted_count": 0, "error": str(e)}
+
+@app.post("/api/dashboard/buddy/pending")
+async def dashboard_buddy_pending(req: BuddyPendingRequest):
+    """서로이웃 대기 신청 수 조회"""
+    try:
+        from browser.buddy import get_pending_count
+        result = await get_pending_count(req.account)
+        return result
+    except ImportError as e:
+        return {"success": False, "pending_count": 0, "error": f"모듈 로드 실패: {e}"}
+    except Exception as e:
+        return {"success": False, "pending_count": 0, "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

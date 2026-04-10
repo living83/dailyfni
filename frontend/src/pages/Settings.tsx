@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Square, Play } from 'lucide-react'
+import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Square, Play, UserPlus } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import api from '../lib/api'
@@ -121,6 +121,65 @@ export default function Settings() {
       toast('success', '스케줄러가 시작되었습니다.')
     } catch { toast('error', '시작 실패') }
     setTogglingScheduler(false)
+  }
+
+  /* ── 서로이웃 자동 수락 설정 ── */
+  const [buddyEnabled, setBuddyEnabled] = useState(false)
+  const [buddyDays, setBuddyDays] = useState([true, false, true, false, true, false, false])
+  const [buddyHour, setBuddyHour] = useState('09')
+  const [buddyMin, setBuddyMin] = useState('00')
+  const [buddyMode, setBuddyMode] = useState<'all' | 'with_message'>('all')
+  const [buddyMax, setBuddyMax] = useState(50)
+  const [buddyAccountIds, setBuddyAccountIds] = useState<string[]>([])
+  const [buddyAllAccounts, setBuddyAllAccounts] = useState(true)
+  const [savingBuddy, setSavingBuddy] = useState(false)
+  type BuddyLog = { id: number; accountName: string; acceptedCount: number; skippedCount: number; error: string; timestamp: string }
+  const [buddyLogs, setBuddyLogs] = useState<BuddyLog[]>([])
+
+  const fetchBuddySettings = useCallback(async () => {
+    try {
+      const [settingsRes, logsRes] = await Promise.all([
+        api.get('/buddy/settings'),
+        api.get('/buddy/logs'),
+      ])
+      const s = settingsRes.data?.settings || {}
+      if (s.enabled !== undefined) setBuddyEnabled(s.enabled)
+      if (s.selectedDays) setBuddyDays(s.selectedDays)
+      if (s.runHour) setBuddyHour(s.runHour)
+      if (s.runMin) setBuddyMin(s.runMin)
+      if (s.acceptMode) setBuddyMode(s.acceptMode)
+      if (s.dailyMaxAccept) setBuddyMax(s.dailyMaxAccept)
+      if (s.accountIds && s.accountIds.length > 0) {
+        setBuddyAccountIds(s.accountIds)
+        setBuddyAllAccounts(false)
+      }
+      if (logsRes.data?.logs) setBuddyLogs(logsRes.data.logs)
+    } catch {}
+  }, [])
+
+  useEffect(() => { fetchBuddySettings() }, [fetchBuddySettings])
+
+  const handleSaveBuddy = async () => {
+    setSavingBuddy(true)
+    try {
+      await api.put('/buddy/settings', {
+        enabled: buddyEnabled,
+        selectedDays: buddyDays,
+        runHour: buddyHour,
+        runMin: buddyMin,
+        acceptMode: buddyMode,
+        dailyMaxAccept: buddyMax,
+        accountIds: buddyAllAccounts ? [] : buddyAccountIds,
+      })
+      toast('success', '서로이웃 설정이 저장되었습니다.')
+    } catch { toast('error', '저장 실패') }
+    setSavingBuddy(false)
+  }
+
+  const toggleBuddyDay = (i: number) => setBuddyDays(prev => prev.map((v, idx) => idx === i ? !v : v))
+
+  const toggleBuddyAccount = (id: string) => {
+    setBuddyAccountIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   const fetchPostingSettings = useCallback(async () => {
@@ -600,6 +659,137 @@ export default function Settings() {
             <p className="text-xs text-muted-foreground">
               선택된 계정: {Object.values(selectedAccounts).filter(Boolean).length} / {accountList.length}개
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 서로이웃 자동 수락 설정 ── */}
+      <div className="glass-panel rounded-xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-emerald" />
+            <h2 className="text-lg font-semibold text-foreground">서로이웃 자동 수락 설정</h2>
+          </div>
+          <Toggle enabled={buddyEnabled} onToggle={() => setBuddyEnabled(!buddyEnabled)} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 좌: 스케줄 설정 */}
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>실행 요일 (주간 단위)</label>
+              <div className="flex gap-2">
+                {dayLabels.map((d, i) => (
+                  <button key={d} onClick={() => toggleBuddyDay(i)}
+                    className={`w-9 h-9 rounded-full text-sm font-medium transition-colors ${
+                      buddyDays[i] ? 'bg-emerald text-white' : 'border border-border text-muted-foreground hover:border-emerald'
+                    }`}>{d}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className={labelClass}>실행 시간</label>
+              <div className="flex items-center gap-1">
+                <select value={buddyHour} onChange={e => setBuddyHour(e.target.value)} className={`${selectClass} w-20`}>
+                  {hours.map(h => <option key={h} value={h}>{h}시</option>)}
+                </select>
+                <span className="text-muted-foreground">:</span>
+                <select value={buddyMin} onChange={e => setBuddyMin(e.target.value)} className={`${selectClass} w-20`}>
+                  {minutes.map(m => <option key={m} value={m}>{m}분</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className={labelClass}>수락 조건</label>
+              <div className="flex flex-wrap gap-2">
+                {([['all', '전체 수락'], ['with_message', '메시지 있는 신청만']] as const).map(([v, l]) => (
+                  <label key={v} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${
+                    buddyMode === v ? 'border-emerald bg-emerald/10 text-emerald' : 'border-border text-muted-foreground hover:border-emerald/50'
+                  }`}>
+                    <input type="radio" name="buddyMode" value={v} checked={buddyMode === v} onChange={() => setBuddyMode(v)} className="sr-only" />
+                    <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${buddyMode === v ? 'border-emerald' : 'border-muted-foreground'}`}>
+                      {buddyMode === v && <span className="w-1.5 h-1.5 rounded-full bg-emerald" />}
+                    </span>
+                    {l}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className={labelClass}>일일 최대 수락</label>
+              <input type="number" value={buddyMax} onChange={e => setBuddyMax(Number(e.target.value))} min={1} max={200}
+                className={`${selectClass} w-full`} />
+              <p className="text-xs text-muted-foreground mt-1">계정당 1회 실행 시 최대 수락 수 (어뷰징 방지: 50건 권장)</p>
+            </div>
+
+            <div>
+              <label className={labelClass}>참여 계정</label>
+              <div className="space-y-2 rounded-lg border border-border bg-card/50 p-3 max-h-[200px] overflow-y-auto">
+                <label className="flex items-center gap-3 cursor-pointer border-b border-border pb-2">
+                  <input type="checkbox" checked={buddyAllAccounts} onChange={() => {
+                    const next = !buddyAllAccounts
+                    setBuddyAllAccounts(next)
+                    if (next) setBuddyAccountIds([])
+                  }} className="w-4 h-4 rounded accent-emerald" />
+                  <span className="text-sm font-medium text-foreground">전체 계정</span>
+                </label>
+                {(accountsData?.accounts || []).map((a: any) => (
+                  <label key={a.id} className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox"
+                      checked={buddyAllAccounts || buddyAccountIds.includes(a.id)}
+                      disabled={buddyAllAccounts}
+                      onChange={() => toggleBuddyAccount(a.id)}
+                      className="w-4 h-4 rounded accent-emerald" />
+                    <span className="text-sm text-foreground">{a.accountName}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button onClick={handleSaveBuddy} disabled={savingBuddy}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-emerald to-teal-500 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+              {savingBuddy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              서로이웃 설정 저장
+            </button>
+          </div>
+
+          {/* 우: 최근 수락 로그 */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Terminal className="w-4 h-4" /> 최근 수락 로그
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 h-[440px] overflow-y-auto p-3 space-y-2">
+              {buddyLogs.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                  아직 수락 기록이 없습니다
+                </div>
+              ) : (
+                buddyLogs.map(log => {
+                  const t = new Date(log.timestamp)
+                  const dateStr = `${String(t.getMonth()+1).padStart(2,'0')}/${String(t.getDate()).padStart(2,'0')} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`
+                  const hasError = !!log.error
+                  return (
+                    <div key={log.id} className={`p-2.5 rounded-lg border text-sm ${hasError ? 'border-rose-500/30 bg-rose-500/5' : 'border-border bg-background/40'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-foreground">{log.accountName}</span>
+                        <span className="text-xs text-muted-foreground">{dateStr}</span>
+                      </div>
+                      {hasError ? (
+                        <p className="text-xs text-rose-400">{log.error}</p>
+                      ) : (
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-emerald">✓ {log.acceptedCount}건 수락</span>
+                          {log.skippedCount > 0 && <span className="text-muted-foreground">({log.skippedCount}건 건너뜀)</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>

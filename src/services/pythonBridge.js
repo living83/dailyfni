@@ -150,6 +150,36 @@ async function checkHealth() {
   }
 }
 
+/**
+ * 서로이웃 수락 — Python buddy.accept_buddy_requests 호출
+ */
+async function requestBuddyAccept(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/buddy/accept`, params, {
+      timeout: 300000, // 5분
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] BuddyAccept 실패:', err.message);
+    return { success: false, accepted_count: 0, error: err.response?.data?.detail || err.message };
+  }
+}
+
+/**
+ * 서로이웃 대기 수 조회 — Python buddy.get_pending_count 호출
+ */
+async function requestBuddyPending(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/buddy/pending`, params, {
+      timeout: 60000,
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] BuddyPending 실패:', err.message);
+    return { success: false, pending_count: 0, error: err.response?.data?.detail || err.message };
+  }
+}
+
 module.exports = {
   requestGenerate,
   requestPublish,
@@ -158,5 +188,7 @@ module.exports = {
   requestEngageBatch,
   checkDuplicate,
   checkHealth,
+  requestBuddyAccept,
+  requestBuddyPending,
   PYTHON_URL,
 };

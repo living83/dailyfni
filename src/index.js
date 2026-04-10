@@ -16,6 +16,7 @@ const contentRoutes = require('./routes/contentRoutes');
 const postingRoutes = require('./routes/postingRoutes');
 const engagementRoutes = require('./routes/engagementRoutes');
 const statsRoutes = require('./routes/statsRoutes');
+const buddyRoutes = require('./routes/buddyRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +44,7 @@ app.use('/api', contentRoutes);
 app.use('/api', postingRoutes);
 app.use('/api', engagementRoutes);
 app.use('/api', statsRoutes);
+app.use('/api', buddyRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
@@ -54,6 +56,10 @@ startScheduler();
 // --- 이웃참여 스케줄러 ---
 const { startEngagementScheduler } = require('./services/engagementScheduler');
 startEngagementScheduler();
+
+// --- 서로이웃 수락 스케줄러 ---
+const { startBuddyScheduler } = require('./services/buddyAcceptScheduler');
+startBuddyScheduler();
 
 app.listen(PORT, () => {
   console.log(`\n=== DailyFNI Agency System ===`);

@@ -95,6 +95,15 @@ db.exec(`
     action TEXT DEFAULT '',
     target TEXT DEFAULT ''
   );
+
+  CREATE TABLE IF NOT EXISTS buddy_accept_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    accountName TEXT DEFAULT '',
+    acceptedCount INTEGER DEFAULT 0,
+    skippedCount INTEGER DEFAULT 0,
+    error TEXT DEFAULT '',
+    timestamp TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 module.exports = db;
