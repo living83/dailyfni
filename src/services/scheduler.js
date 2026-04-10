@@ -18,6 +18,7 @@ let lastRunDate = '';
 let todayPostedAccounts = new Set();
 let isProcessing = false; // 중복 실행 방지
 let nextScheduledTime = null; // 다음 발행 예정 시각
+let restDayDecided = false;  // 오늘 랜덤 휴식 판정이 완료되었는지
 
 // ── 링 버퍼 로그 (프론트엔드 실시간 표시용) ──
 const LOG_MAX = 200;
@@ -216,6 +217,7 @@ async function checkAndRun() {
       lastRunDate = today;
       todayPostedAccounts = loadTodayPostedFromDB();
       nextScheduledTime = null;
+      restDayDecided = false; // 새 날짜 → 휴식 판정 초기화
       if (prevDate === '') {
         log('info', `기동/재시작: 오늘자 포스팅 ${todayPostedAccounts.size}개 DB에서 복원`);
       } else {
@@ -236,13 +238,15 @@ async function checkAndRun() {
       return;
     }
 
-    // randomRest: 10% 확률로 오늘 전체 스킵
-    if (settings.randomRest && todayPostedAccounts.size === 0 && !nextScheduledTime) {
+    // randomRest: 10% 확률로 오늘 전체 스킵 — ★ 하루 1회만 판정
+    if (settings.randomRest && !restDayDecided) {
+      restDayDecided = true; // 한 번만 굴리고 다시는 안 굴림
       if (Math.random() < 0.1) {
-        log('info', '랜덤 휴식: 오늘은 쉽니다.');
+        log('info', '랜덤 휴식: 오늘은 쉽니다. (10% 확률 당첨)');
         todayPostedAccounts.add('__REST_DAY__');
         return;
       }
+      log('info', '랜덤 휴식 판정: 오늘은 일합니다. (90%)');
     }
 
     // 랜덤 휴식일이면 스킵
