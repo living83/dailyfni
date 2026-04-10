@@ -80,4 +80,33 @@ router.post('/buddy/accept-now', async (req, res) => {
   console.log(`[BuddyRoute] 즉시 수락 완료 — 총 ${totalAccepted}건`);
 });
 
+// POST /api/buddy/test — 단일 계정 디버그 테스트
+router.post('/buddy/test', async (req, res) => {
+  const { naverId } = req.body;
+  if (!naverId) return res.json({ success: false, message: 'naverId 필요' });
+
+  const accounts = listAccounts();
+  const acc = accounts.find(a => a.accountName?.includes(naverId) || a.id === naverId);
+  if (!acc) return res.json({ success: false, message: `계정 ${naverId} 없음` });
+
+  const raw = getAccountRaw(acc.id);
+  if (!raw) return res.json({ success: false, message: '계정 정보 조회 실패' });
+
+  try {
+    const result = await requestBuddyAccept({
+      account: {
+        id: raw.id,
+        account_name: raw.accountName,
+        naver_id: raw.naverId,
+        naver_password: raw.naverPassword || '',
+      },
+      config: { max_accept: 5, accept_mode: 'all', debug: true },
+    });
+    buddy.addLog(raw.accountName, result.accepted_count || 0, result.skipped_count || 0, result.error || '');
+    res.json({ success: true, accountName: raw.accountName, naverId: raw.naverId, ...result });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;

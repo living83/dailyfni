@@ -130,9 +130,18 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(2, 3)
 
-            # 디버그: 현재 URL 확인
+            # 디버그: URL + 스크린샷 + HTML 저장
             actual_url = page.url
             logger.info(f"[{account_name}] 실제 URL: {actual_url}")
+            debug_dir = Path(settings.IMAGES_DIR) / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                await page.screenshot(path=str(debug_dir / f"buddy_{blog_id}.png"), full_page=True)
+                html_content = await page.content()
+                (debug_dir / f"buddy_{blog_id}.html").write_text(html_content, encoding="utf-8")
+                logger.info(f"[{account_name}] 디버그 저장 완료: {debug_dir}")
+            except Exception as e:
+                logger.debug(f"디버그 저장 실패: {e}")
 
             # ── 받은신청 탭 확인 (기본 탭) ──
             try:
