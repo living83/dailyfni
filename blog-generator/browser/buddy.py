@@ -141,46 +141,34 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(3, 4)
 
-            # ── iframe 접근 (네이버 관리 페이지는 #papermain iframe 사용) ──
-            target = None
-            for frame in page.frames:
-                if "papermain" in (frame.name or "") or "buddy" in (frame.url or "").lower():
-                    target = frame
-                    logger.info(f"[{account_name}] iframe 발견: name={frame.name}, url={frame.url}")
-                    break
-
-            if not target:
-                # iframe을 ID로 직접 찾기
+            # ── iframe src URL 추출 후 직접 이동 ──
+            # 네이버 관리 페이지는 #papermain iframe 안에 실제 콘텐츠가 있음
+            # content_frame() 대신 iframe src를 직접 추출하여 새 페이지로 이동
+            iframe_src = None
+            try:
                 iframe_el = await page.query_selector("#papermain, iframe[name='papermain']")
                 if iframe_el:
-                    target = await iframe_el.content_frame()
-                    if target:
-                        logger.info(f"[{account_name}] #papermain iframe 접근 성공")
+                    iframe_src = await iframe_el.get_attribute("src")
+                    logger.info(f"[{account_name}] papermain iframe src: {iframe_src}")
+            except Exception as e:
+                logger.debug(f"iframe src 추출 실패: {e}")
 
-            if not target:
-                # 모든 frame에서 체크박스 탐색
-                for frame in page.frames:
-                    try:
-                        cbs = await frame.query_selector_all("input[type='checkbox']")
-                        if len(cbs) > 2:
-                            target = frame
-                            logger.info(f"[{account_name}] 체크박스가 있는 frame 발견 ({len(cbs)}개)")
-                            break
-                    except Exception:
-                        continue
+            if iframe_src:
+                # iframe URL로 직접 이동 (cross-origin 우회)
+                await page.goto(iframe_src, wait_until="domcontentloaded", timeout=30000)
+                await random_delay(2, 3)
+                logger.info(f"[{account_name}] iframe URL로 직접 이동 완료")
+            else:
+                logger.warning(f"[{account_name}] papermain iframe 미발견 — 현재 페이지에서 시도")
 
-            if not target:
-                target = page
-                logger.warning(f"[{account_name}] iframe 미발견 — 메인 페이지에서 시도")
+            target = page  # 이제 page가 iframe 콘텐츠를 직접 보고 있음
 
-            await random_delay(1, 2)
-
-            # 디버그: iframe 내용 저장
+            # 디버그: 스크린샷 + HTML 저장
             debug_dir = Path(settings.IMAGES_DIR) / "debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
             try:
                 await page.screenshot(path=str(debug_dir / f"buddy_{blog_id}.png"), full_page=True)
-                frame_html = await target.content()
+                frame_html = await page.content()
                 (debug_dir / f"buddy_{blog_id}_frame.html").write_text(frame_html, encoding="utf-8")
             except Exception:
                 pass
