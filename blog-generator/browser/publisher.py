@@ -1010,12 +1010,28 @@ async def publish_single_post(account: dict, post_data: dict) -> dict:
             # ── 5. 대표이미지 삽입 (제목 입력 직후, 본문 전) ──────
             post_type = post_data.get("post_type", "general")
             is_ad_post = (post_type == "ad")
-            target_keyword = post_data.get("keyword", post_data.get("title", "")[:20])
+            target_keyword = post_data.get("keyword", "")
+            target_title = post_data.get("title", target_keyword)
+
+            # 본문에서 첫 200자를 description으로 추출 (이미지 생성 컨텍스트용)
+            raw_content = post_data.get("content", "")
+            img_description = ""
+            if raw_content:
+                # HTML 태그 제거 후 첫 200자
+                import re as _img_re
+                plain = _img_re.sub(r'<[^>]+>', '', raw_content).strip()
+                # 광고 고지 문구 제외
+                plain = plain.replace('본 포스팅은 소정의 금액을 받고 작성하게 됐습니다.', '').strip()
+                img_description = plain[:200]
 
             # 광고글 / 일반글 모두 Gemini로 대표이미지 생성 시도
-            # (네이버 AI 이미지 버튼은 자동화 탐지로 불안정 → Gemini로 통일)
-            logger.info(f"[{'광고' if is_ad_post else '일반'}글] Gemini 대표이미지 생성 중: '{target_keyword}'")
-            img_path = await generate_image_with_gemini(target_keyword, is_ad=is_ad_post)
+            logger.info(f"[{'광고' if is_ad_post else '일반'}글] Gemini 대표이미지 생성 중: 제목='{target_title}', 키워드='{target_keyword}'")
+            img_path = await generate_image_with_gemini(
+                target_keyword,
+                is_ad=is_ad_post,
+                title=target_title,
+                description=img_description,
+            )
             if img_path:
                 await _insert_image_from_file(page, editor, img_path)
                 logger.info(f"대표이미지 삽입 완료: {img_path}")

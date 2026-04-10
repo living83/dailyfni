@@ -315,7 +315,7 @@ _GEMINI_MODELS = [
 ]
 
 
-async def _gemini_generate(keyword: str, is_ad: bool) -> str | None:
+async def _gemini_generate(keyword: str, is_ad: bool, title: str = "", description: str = "") -> str | None:
     """
     Call the Gemini image-generation API.
 
@@ -327,18 +327,32 @@ async def _gemini_generate(keyword: str, is_ad: bool) -> str | None:
         logger.warning("GOOGLE_API_KEY is not set – skipping Gemini image generation")
         return None
 
+    # 제목과 설명을 프롬프트에 반영
+    topic_parts = []
+    if title:
+        topic_parts.append(f"Title: {title}")
+    if keyword and keyword != title:
+        topic_parts.append(f"Keyword: {keyword}")
+    if description:
+        topic_parts.append(f"Description: {description[:200]}")
+    topic_context = "\n".join(topic_parts) if topic_parts else f"Topic: {keyword}"
+
     # Build the prompt
     if is_ad:
         prompt = (
-            f"Create a professional, eye-catching advertisement banner image for the following topic. "
-            f"Use bold, modern design with vibrant colors. Do NOT include any text in the image. "
-            f"Topic: {keyword}"
+            f"Create a professional, eye-catching advertisement image that visually represents "
+            f"the product/service described below. Use bold, modern design with vibrant colors. "
+            f"The image should clearly convey the theme and feeling of this specific product. "
+            f"Do NOT include any text, letters, numbers, or watermarks in the image.\n\n"
+            f"{topic_context}"
         )
     else:
         prompt = (
-            f"Create a clean, professional blog featured image for the following topic. "
-            f"Use a modern, minimal style. Do NOT include any text in the image. "
-            f"Topic: {keyword}"
+            f"Create a clean, professional blog featured image that visually represents "
+            f"the specific topic described below. Use a modern, minimal style with relevant "
+            f"visual elements that match the article content. "
+            f"Do NOT include any text, letters, numbers, or watermarks in the image.\n\n"
+            f"{topic_context}"
         )
 
     payload = {
@@ -417,18 +431,29 @@ async def _gemini_generate(keyword: str, is_ad: bool) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def generate_image_with_gemini(keyword: str, is_ad: bool = False) -> str | None:
+async def generate_image_with_gemini(
+    keyword: str,
+    is_ad: bool = False,
+    title: str = "",
+    description: str = "",
+) -> str | None:
     """
     Generate a blog featured image with a 2-step fallback:
 
     1. Gemini REST API (remote, high quality)
     2. Pillow local text-banner (offline, guaranteed)
 
+    Args:
+        keyword: 포스팅 키워드
+        is_ad: 광고글 여부
+        title: 블로그 제목 (이미지 주제에 반영)
+        description: 상품/콘텐츠 설명 (이미지 분위기에 반영)
+
     Returns the saved file path, or ``None`` if everything fails.
     """
     # Step 1: Try Gemini
     try:
-        result = await _gemini_generate(keyword, is_ad)
+        result = await _gemini_generate(keyword, is_ad, title=title, description=description)
         if result:
             return result
         logger.info("Gemini generation returned None – falling back to local")
