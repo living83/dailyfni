@@ -21,7 +21,7 @@ from config import settings
 
 CODE_VERSION = "2026-04-10-v1-buddy"
 
-BUDDY_ADMIN_URL = "https://admin.blog.naver.com/BothBuddyListForm.nhn"
+BUDDY_ADMIN_URL = "https://admin.blog.naver.com/{blog_id}/buddy/relation"
 
 
 async def get_pending_count(account: dict) -> dict:
@@ -50,7 +50,7 @@ async def get_pending_count(account: dict) -> dict:
             blog_id = account["naver_id"]
 
             # 서로이웃 관리 페이지 접근
-            url = f"{BUDDY_ADMIN_URL}?blogId={blog_id}"
+            url = BUDDY_ADMIN_URL.format(blog_id=blog_id)
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(2, 3)
 
@@ -124,7 +124,7 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
 
             page = await context.new_page()
             blog_id = account["naver_id"]
-            url = f"{BUDDY_ADMIN_URL}?blogId={blog_id}"
+            url = BUDDY_ADMIN_URL.format(blog_id=blog_id)
 
             logger.info(f"[{account_name}] 서로이웃 관리 페이지 접근: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
