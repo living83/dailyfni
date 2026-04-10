@@ -445,12 +445,18 @@ function startScheduler() {
     });
   }, 60 * 1000);
 
-  log('info', '스케줄러 시작됨 (60초 간격)');
+  log('info', '스케줄러 시작됨 (60초 간격) — 첫 체크 2분 후');
 
-  // 시작 시 즉시 한 번 체크
-  checkAndRun().catch(err => {
-    log('error', `초기 체크 오류: ${err.message}`);
-  });
+  // 서버 시작 후 2분 대기 후 첫 체크 (즉시 실행 방지)
+  // 수동 재시작 시 정지 버튼으로 제어할 여유를 줌
+  setTimeout(() => {
+    if (running) {
+      log('info', '초기 대기 완료 — 첫 체크 시작');
+      checkAndRun().catch(err => {
+        log('error', `초기 체크 오류: ${err.message}`);
+      });
+    }
+  }, 120 * 1000);
 }
 
 /**
