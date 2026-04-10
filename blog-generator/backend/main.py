@@ -302,6 +302,39 @@ async def health():
 
 
 # ═══════════════════════════════════════════════════════
+# 블로그 스타일 분석 API
+# ═══════════════════════════════════════════════════════
+
+class AnalyzeRequest(BaseModel):
+    urls: list[str]
+    max_posts: int = 5
+
+@app.post("/api/dashboard/blog/analyze")
+async def dashboard_blog_analyze(req: AnalyzeRequest):
+    """블로그 URL 목록을 크롤링하여 글쓰기 스타일을 분석합니다."""
+    try:
+        from ai.blog_analyzer import crawl_blog_posts, generate_style_guide, save_style_data
+        analyses = await crawl_blog_posts(req.urls, max_posts=req.max_posts)
+        guide = generate_style_guide(analyses)
+        save_style_data(analyses, guide)
+        return {"success": True, "analyses": analyses, "guide": guide}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/dashboard/blog/style-guide")
+async def dashboard_style_guide():
+    """저장된 스타일 가이드를 반환합니다."""
+    try:
+        from ai.blog_analyzer import load_style_data
+        data = load_style_data()
+        if data:
+            return {"success": True, **data}
+        return {"success": False, "message": "아직 분석된 스타일 가이드가 없습니다."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════════════
 # 대시보드 통합 API — 서로이웃 자동 수락
 # ═══════════════════════════════════════════════════════
 

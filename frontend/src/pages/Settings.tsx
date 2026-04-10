@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Square, Play, UserPlus } from 'lucide-react'
+import { Save, Users, Shield, Download, Upload, Heart, Clock, Sliders, Calendar, Info, ArrowUpCircle, Loader2, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Square, Play, UserPlus, BookOpen, Search } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import { useFetch, useMutation } from '../hooks/useApi'
 import api from '../lib/api'
@@ -180,6 +180,49 @@ export default function Settings() {
 
   const toggleBuddyAccount = (id: string) => {
     setBuddyAccountIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  /* ── 블로그 스타일 분석 ── */
+  const [styleUrls, setStyleUrls] = useState('')
+  const [styleGuide, setStyleGuide] = useState('')
+  const [styleLoading, setStyleLoading] = useState(false)
+  const [savingStyle, setSavingStyle] = useState(false)
+  const [styleUpdatedAt, setStyleUpdatedAt] = useState('')
+
+  useEffect(() => {
+    api.get('/style/settings').then(({ data }) => {
+      if (data?.guide) setStyleGuide(data.guide)
+    }).catch(() => {})
+    api.get('/style/guide').then(({ data }: any) => {
+      if (data?.updated_at) setStyleUpdatedAt(data.updated_at)
+    }).catch(() => {})
+  }, [])
+
+  const handleAnalyze = async () => {
+    const urls = styleUrls.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'))
+    if (urls.length === 0) { toast('error', 'URL을 1개 이상 입력하세요'); return }
+    setStyleLoading(true)
+    try {
+      await api.post('/style/analyze', { urls, maxPosts: urls.length })
+      toast('success', `${urls.length}개 URL 분석 시작 — 완료 후 자동 저장됩니다.`)
+      // 30초 후 결과 폴링
+      setTimeout(async () => {
+        try {
+          const { data } = await api.get('/style/settings')
+          if (data?.guide) { setStyleGuide(data.guide); toast('success', '스타일 가이드 생성 완료!') }
+        } catch {}
+        setStyleLoading(false)
+      }, 30000)
+    } catch { toast('error', '분석 시작 실패'); setStyleLoading(false) }
+  }
+
+  const handleSaveStyle = async () => {
+    setSavingStyle(true)
+    try {
+      await api.put('/style/settings', { guide: styleGuide })
+      toast('success', '스타일 가이드 저장됨 — 다음 글 생성부터 자동 적용됩니다.')
+    } catch { toast('error', '저장 실패') }
+    setSavingStyle(false)
   }
 
   const fetchPostingSettings = useCallback(async () => {
@@ -790,6 +833,64 @@ export default function Settings() {
                 })
               )}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 블로그 스타일 분석 (글 품질 개선) ── */}
+      <div className="glass-panel rounded-xl p-6 space-y-5">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-5 h-5 text-violet-400" />
+          <h2 className="text-lg font-semibold text-foreground">블로그 스타일 분석</h2>
+          {styleUpdatedAt && (
+            <span className="ml-2 text-xs text-muted-foreground">
+              최종 분석: {new Date(styleUpdatedAt).toLocaleDateString('ko-KR')}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          인기 블로그 URL을 분석하여 글쓰기 스타일 가이드를 생성합니다. 생성된 가이드는 AI 콘텐츠 생성 시 자동으로 프롬프트에 주입됩니다.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 좌: URL 입력 + 분석 */}
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>참고 블로그 URL (줄바꿈으로 구분)</label>
+              <textarea
+                value={styleUrls}
+                onChange={e => setStyleUrls(e.target.value)}
+                placeholder={"https://blog.naver.com/example1/123456\nhttps://blog.naver.com/example2/789012\nhttps://blog.naver.com/example3/345678"}
+                rows={5}
+                className="w-full rounded-lg bg-input border border-border px-4 py-2.5 text-foreground text-sm focus:border-primary focus:outline-none transition-colors resize-none font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">잘 쓴 블로그 포스팅 URL을 3~5개 입력하세요. 톤, 구조, 분량을 자동 분석합니다.</p>
+            </div>
+            <button onClick={handleAnalyze} disabled={styleLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+              {styleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {styleLoading ? '분석 중... (30초 소요)' : '블로그 분석 시작'}
+            </button>
+          </div>
+
+          {/* 우: 스타일 가이드 편집 */}
+          <div className="space-y-4">
+            <div>
+              <label className={labelClass}>스타일 가이드 (AI 프롬프트에 자동 주입)</label>
+              <textarea
+                value={styleGuide}
+                onChange={e => setStyleGuide(e.target.value)}
+                placeholder="블로그를 분석하면 자동 생성됩니다. 수동으로 편집할 수도 있습니다."
+                rows={10}
+                className="w-full rounded-lg bg-input border border-border px-4 py-2.5 text-foreground text-xs focus:border-primary focus:outline-none transition-colors resize-none font-mono leading-relaxed"
+              />
+              <p className="text-xs text-muted-foreground mt-1">이 가이드가 존재하면 AI 글 생성 시 자동으로 프롬프트 끝에 추가됩니다. 비워두면 미적용.</p>
+            </div>
+            <button onClick={handleSaveStyle} disabled={savingStyle}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+              {savingStyle ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              스타일 가이드 저장
+            </button>
           </div>
         </div>
       </div>

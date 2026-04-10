@@ -180,6 +180,33 @@ async function requestBuddyPending(params) {
   }
 }
 
+/**
+ * 블로그 스타일 분석 — Python blog_analyzer 호출
+ */
+async function requestBlogAnalyze(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/blog/analyze`, params, {
+      timeout: 120000, // 2분 (크롤링 시간)
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] BlogAnalyze 실패:', err.message);
+    return { success: false, error: err.response?.data?.detail || err.message };
+  }
+}
+
+/**
+ * 저장된 스타일 가이드 조회
+ */
+async function requestStyleGuide() {
+  try {
+    const res = await axios.get(`${PYTHON_URL}/api/dashboard/blog/style-guide`, { timeout: 10000 });
+    return res.data;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   requestGenerate,
   requestPublish,
@@ -190,5 +217,7 @@ module.exports = {
   checkHealth,
   requestBuddyAccept,
   requestBuddyPending,
+  requestBlogAnalyze,
+  requestStyleGuide,
   PYTHON_URL,
 };
