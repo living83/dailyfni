@@ -52,23 +52,34 @@ async def get_pending_count(account: dict) -> dict:
             # 서로이웃 관리 페이지 접근
             url = BUDDY_ADMIN_URL.format(blog_id=blog_id)
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await random_delay(2, 3)
+            await random_delay(3, 4)
 
-            # 받은신청 탭에서 행 개수 카운트
-            rows = await page.query_selector_all(
-                "table.buddy_list tbody tr, .buddy_lst li, .bdy_lst tr"
-            )
-            count = len(rows) if rows else 0
+            # iframe 접근
+            target = page
+            iframe_el = await page.query_selector("#papermain, iframe[name='papermain']")
+            if iframe_el:
+                frame = await iframe_el.content_frame()
+                if frame:
+                    target = frame
 
-            # 페이지 텍스트에서 숫자 추출 시도 (예: "서로이웃 신청 29")
+            # 사이드바에서 숫자 추출 (예: "서로이웃 신청 29")
+            count = 0
             try:
                 text = await page.inner_text("body")
                 import re
                 m = re.search(r'서로이웃\s*신청\s*(\d+)', text)
                 if m:
-                    count = max(count, int(m.group(1)))
+                    count = int(m.group(1))
             except Exception:
                 pass
+
+            # iframe 내부 체크박스로도 카운트
+            if count == 0:
+                try:
+                    cbs = await target.query_selector_all("input[type='checkbox']")
+                    count = max(len(cbs) - 2, 0)  # 전체선택 체크박스 제외
+                except Exception:
+                    pass
 
             result["success"] = True
             result["pending_count"] = count
@@ -128,32 +139,63 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
 
             logger.info(f"[{account_name}] 서로이웃 관리 페이지 접근: {url}")
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await random_delay(2, 3)
+            await random_delay(3, 4)
 
-            # 디버그: URL + 스크린샷 + HTML 저장
-            actual_url = page.url
-            logger.info(f"[{account_name}] 실제 URL: {actual_url}")
+            # ── iframe 접근 (네이버 관리 페이지는 #papermain iframe 사용) ──
+            target = None
+            for frame in page.frames:
+                if "papermain" in (frame.name or "") or "buddy" in (frame.url or "").lower():
+                    target = frame
+                    logger.info(f"[{account_name}] iframe 발견: name={frame.name}, url={frame.url}")
+                    break
+
+            if not target:
+                # iframe을 ID로 직접 찾기
+                iframe_el = await page.query_selector("#papermain, iframe[name='papermain']")
+                if iframe_el:
+                    target = await iframe_el.content_frame()
+                    if target:
+                        logger.info(f"[{account_name}] #papermain iframe 접근 성공")
+
+            if not target:
+                # 모든 frame에서 체크박스 탐색
+                for frame in page.frames:
+                    try:
+                        cbs = await frame.query_selector_all("input[type='checkbox']")
+                        if len(cbs) > 2:
+                            target = frame
+                            logger.info(f"[{account_name}] 체크박스가 있는 frame 발견 ({len(cbs)}개)")
+                            break
+                    except Exception:
+                        continue
+
+            if not target:
+                target = page
+                logger.warning(f"[{account_name}] iframe 미발견 — 메인 페이지에서 시도")
+
+            await random_delay(1, 2)
+
+            # 디버그: iframe 내용 저장
             debug_dir = Path(settings.IMAGES_DIR) / "debug"
             debug_dir.mkdir(parents=True, exist_ok=True)
             try:
                 await page.screenshot(path=str(debug_dir / f"buddy_{blog_id}.png"), full_page=True)
-                html_content = await page.content()
-                (debug_dir / f"buddy_{blog_id}.html").write_text(html_content, encoding="utf-8")
-                logger.info(f"[{account_name}] 디버그 저장 완료: {debug_dir}")
-            except Exception as e:
-                logger.debug(f"디버그 저장 실패: {e}")
+                frame_html = await target.content()
+                (debug_dir / f"buddy_{blog_id}_frame.html").write_text(frame_html, encoding="utf-8")
+            except Exception:
+                pass
 
             # ── 받은신청 탭 확인 (기본 탭) ──
             try:
-                recv_tab = await page.query_selector('a:has-text("받은신청")')
+                recv_tab = await target.query_selector('a:has-text("받은신청")')
                 if recv_tab:
                     await recv_tab.click()
                     await random_delay(1, 2)
             except Exception:
                 pass
 
-            # ── 신청 건수 확인 ──
-            checkboxes = await page.query_selector_all("input[type='checkbox']")
+            # ── 신청 건수 확인 (iframe 내부에서) ──
+            checkboxes = await target.query_selector_all("input[type='checkbox']")
             # 첫 번째는 헤더 전체선택, 마지막도 전체선택일 수 있음
             # 중간의 체크박스가 실제 신청 행
             logger.info(f"[{account_name}] 체크박스 총 {len(checkboxes)}개 발견")
@@ -171,7 +213,7 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
 
             # 방법 1: 하단 "전체선택" 텍스트 옆 체크박스
             try:
-                select_all_label = await page.query_selector('text=전체선택')
+                select_all_label = await target.query_selector('text=전체선택')
                 if select_all_label:
                     # 전체선택 텍스트 근처의 체크박스 클릭
                     parent = await select_all_label.evaluate_handle('el => el.parentElement')
@@ -228,7 +270,7 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
             # 페이지에서 "수락" 텍스트가 여러 개 있으므로 하단 것을 우선
             try:
                 # 하단 영역 (전체선택과 같은 레벨)에 있는 수락 버튼 찾기
-                all_accept_links = await page.query_selector_all('a:has-text("수락"), button:has-text("수락"), input[value="수락"]')
+                all_accept_links = await target.query_selector_all('a:has-text("수락"), button:has-text("수락"), input[value="수락"]')
                 if all_accept_links:
                     # 마지막 수락 버튼이 하단 배치 버튼 (개별 행 수락은 위쪽에 있음)
                     target_btn = all_accept_links[-1]
