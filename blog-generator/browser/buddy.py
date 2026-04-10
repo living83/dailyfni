@@ -5,6 +5,7 @@ Playwright를 사용하여 로그인 후 서로이웃 신청을 일괄 수락합
 
 import asyncio
 import random
+from pathlib import Path
 from typing import Optional
 
 from loguru import logger
@@ -129,6 +130,26 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(2, 3)
 
+            # 디버그: 현재 URL과 페이지 스크린샷 저장
+            actual_url = page.url
+            logger.info(f"[{account_name}] 실제 URL: {actual_url}")
+            debug_dir = Path(settings.IMAGES_DIR) / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_path = debug_dir / f"buddy_debug_{blog_id}.png"
+            try:
+                await page.screenshot(path=str(debug_path), full_page=True)
+                logger.info(f"[{account_name}] 디버그 스크린샷: {debug_path}")
+            except Exception as e:
+                logger.debug(f"스크린샷 실패: {e}")
+
+            # 디버그: 페이지 주요 텍스트 로그
+            try:
+                body_text = await page.inner_text("body")
+                preview = body_text[:500].replace('\n', ' | ')
+                logger.info(f"[{account_name}] 페이지 텍스트 미리보기: {preview}")
+            except Exception:
+                pass
+
             # ── 받은신청 탭 클릭 (이미 기본 탭일 수 있음) ──
             try:
                 recv_tab = await page.query_selector(
@@ -137,23 +158,39 @@ async def accept_buddy_requests(account: dict, config: dict) -> dict:
                 if recv_tab:
                     await recv_tab.click()
                     await random_delay(1, 2)
+                    logger.info(f"[{account_name}] 받은신청 탭 클릭")
             except Exception:
                 pass
 
-            # ── 신청 행 수집 ──
+            # ── 신청 행 수집 (다양한 셀렉터 시도) ──
             row_selectors = [
                 "table.buddy_list tbody tr",
                 ".bdy_lst tbody tr",
                 "table tbody tr:has(input[type='checkbox'])",
+                "table.type_list tbody tr",
+                ".tbl_type tbody tr",
+                "table tr:has(td)",
+                "#content table tbody tr",
+                ".container table tbody tr",
             ]
             rows = []
             for sel in row_selectors:
                 rows = await page.query_selector_all(sel)
                 if rows:
+                    logger.info(f"[{account_name}] 셀렉터 '{sel}'로 {len(rows)}행 발견")
                     break
+                else:
+                    logger.debug(f"[{account_name}] 셀렉터 '{sel}' → 0행")
 
             if not rows:
-                logger.info(f"[{account_name}] 수락할 서로이웃 신청이 없습니다.")
+                # 추가 디버그: 모든 table과 tr 개수 확인
+                all_tables = await page.query_selector_all("table")
+                all_trs = await page.query_selector_all("tr")
+                all_checkboxes = await page.query_selector_all("input[type='checkbox']")
+                logger.warning(
+                    f"[{account_name}] 신청 행 없음 — table: {len(all_tables)}, "
+                    f"tr: {len(all_trs)}, checkbox: {len(all_checkboxes)}"
+                )
                 result["success"] = True
                 result["accepted_count"] = 0
                 return result
