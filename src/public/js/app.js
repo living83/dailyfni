@@ -215,10 +215,7 @@ function navigate(page) {
   }
   // 고객원장 렌더 후 타임라인 + 상품 추천 로드
   if (page === 'customer-ledger' && currentLedgerId) {
-    setTimeout(() => {
-      loadLedgerTimelines(currentLedgerId);
-      loadLedgerRecommendations();
-    }, 200);
+    setTimeout(() => loadLedgerTimelines(currentLedgerId), 200);
   }
 }
 
@@ -3424,12 +3421,6 @@ function renderCustomerLedger() {
           <table><thead><tr><th>대출상품</th><th>대출금액</th><th>상태</th><th>신청일</th></tr></thead>
           <tbody><tr><td>${c.loan_amount||c.loanAmount ? '-' : '-'}</td><td>${c.loan_amount||c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${regDate}</td></tr></tbody></table>
         </div></div>
-
-        <div class="panel"><div class="panel-header"><h2>상품 추천</h2></div>
-          <div class="panel-body" style="padding:8px;">
-            <div id="ledgerRecommendedProducts" style="font-size:11px;color:#94a3b8;">로딩중...</div>
-          </div>
-        </div>
       </div>
 
       <div style="width:320px;flex-shrink:0;">
