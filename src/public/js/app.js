@@ -147,6 +147,7 @@ const pages = {
   employees: { title: '직원/권한 관리', render: renderEmployees },
   notifications: { title: '알림', render: renderNotifications },
   audit: { title: '감사로그', render: renderAudit },
+  'doc-convert': { title: '문서 변환', render: renderDocConvert },
 };
 
 // --- 초기화 ---
@@ -2386,6 +2387,114 @@ setTimeout(() => loadNotifications(), 1000);
 // ========================================
 // 11. 감사로그
 // ========================================
+// ========================================
+// 문서 변환 (PDF → TIFF)
+// ========================================
+function renderDocConvert() {
+  return `
+    <div class="panel">
+      <div class="panel-header"><h2>PDF → TIFF 변환</h2></div>
+      <div class="panel-body" style="padding:16px;">
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>파일 선택</th>
+              <td colspan="3">
+                <input type="file" id="docFiles" accept=".pdf" multiple style="font-size:12px;">
+                <span style="font-size:11px;color:#64748b;margin-left:8px;">여러 파일 선택 가능</span>
+              </td>
+            </tr>
+            <tr>
+              <th>해상도 (DPI)</th>
+              <td>
+                <select id="docDpi" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+                  <option value="150">150 DPI (일반)</option>
+                  <option value="300" selected>300 DPI (고품질)</option>
+                  <option value="600">600 DPI (최고품질)</option>
+                </select>
+              </td>
+              <th>출력 형식</th>
+              <td>
+                <select id="docFormat" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+                  <option value="tiff" selected>TIFF</option>
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px;">
+          <button class="btn btn-primary" onclick="startDocConvert()" style="padding:8px 24px;">변환 시작</button>
+        </div>
+        <div id="docConvertProgress" style="margin-top:12px;display:none;">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px;">변환 진행 중...</div>
+          <div id="docConvertStatus" style="font-size:11px;color:#64748b;"></div>
+        </div>
+        <div id="docConvertResults" style="margin-top:12px;"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function startDocConvert() {
+  const fileInput = document.getElementById('docFiles');
+  const dpi = document.getElementById('docDpi').value;
+  const format = document.getElementById('docFormat').value;
+  const progressDiv = document.getElementById('docConvertProgress');
+  const statusDiv = document.getElementById('docConvertStatus');
+  const resultsDiv = document.getElementById('docConvertResults');
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    alert('파일을 선택해주세요.');
+    return;
+  }
+
+  progressDiv.style.display = 'block';
+  resultsDiv.innerHTML = '';
+
+  let html = '';
+  for (let i = 0; i < fileInput.files.length; i++) {
+    const file = fileInput.files[i];
+    statusDiv.textContent = `(${i+1}/${fileInput.files.length}) ${file.name} 변환 중...`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('dpi', dpi);
+    formData.append('format', format);
+
+    try {
+      const res = await fetch('/api/doc-convert', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const outName = file.name.replace(/\.pdf$/i, '.' + format);
+        const size = (blob.size / 1024).toFixed(0);
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;margin-bottom:4px;">
+          <span style="font-size:12px;"><span style="color:#16a34a;font-weight:700;">✓</span> ${outName} (${size}KB)</span>
+          <a href="${url}" download="${outName}" class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px;">다운로드</a>
+        </div>`;
+      } else {
+        const err = await res.json().catch(() => ({ message: '변환 실패' }));
+        html += `<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;margin-bottom:4px;font-size:12px;">
+          <span style="color:#991b1b;">✗ ${file.name}: ${err.message}</span>
+        </div>`;
+      }
+    } catch (e) {
+      html += `<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;margin-bottom:4px;font-size:12px;">
+        <span style="color:#991b1b;">✗ ${file.name}: 서버 연결 실패</span>
+      </div>`;
+    }
+  }
+
+  progressDiv.style.display = 'none';
+  resultsDiv.innerHTML = `<div style="font-size:12px;font-weight:600;margin-bottom:6px;">변환 완료 (${fileInput.files.length}건)</div>` + html;
+}
+
 let auditData = [];
 
 function renderAudit() {

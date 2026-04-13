@@ -26,6 +26,7 @@ const auditApiRoutes = require('./routes/auditApiRoutes');
 const customerApiRoutes = require('./routes/customerApiRoutes');
 const consultationApiRoutes = require('./routes/consultationApiRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const docConvertRoutes = require('./routes/docConvertRoutes');
 
 const path = require('path');
 const cors = require('cors');
@@ -76,6 +77,7 @@ app.use('/api', auditApiRoutes);
 app.use('/api', customerApiRoutes);
 app.use('/api', consultationApiRoutes);
 app.use('/api', dashboardRoutes);
+app.use('/api', docConvertRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
