@@ -211,9 +211,12 @@ function navigate(page) {
       });
     }, 50);
   }
-  // 고객원장 렌더 후 타임라인 로드
+  // 고객원장 렌더 후 타임라인 + 상품 추천 로드
   if (page === 'customer-ledger' && currentLedgerId) {
-    setTimeout(() => loadLedgerTimelines(currentLedgerId), 200);
+    setTimeout(() => {
+      loadLedgerTimelines(currentLedgerId);
+      loadLedgerRecommendations();
+    }, 200);
   }
 }
 
@@ -2919,6 +2922,102 @@ async function saveLedgerMemo(customerId) {
   loadLedgerTimelines(customerId);
 }
 
+// 고객원장 상품 추천 로드
+function loadLedgerRecommendations() {
+  const container = document.getElementById('ledgerRecommendedProducts');
+  if (!container || !ledgerCustomer) return;
+
+  const c = ledgerCustomer;
+  const ssn = (c.ssn || '').replace(/-/g, '');
+  const birthYear = parseInt(ssn.substring(0, 2));
+  const century = (ssn.length >= 7 && (ssn.charAt(6) === '3' || ssn.charAt(6) === '4')) ? 2000 : 1900;
+  const age = new Date().getFullYear() - (century + birthYear);
+
+  const jobMap = {'가입':'직장인(4대가입)','미가입':'직장인(미가입)','선택':''};
+  const has4 = c.has_4_insurance || '';
+  let jobType = c.employment_type || '';
+  if (!jobType && has4) jobType = jobMap[has4] || '';
+  if (!jobType) jobType = '직장인(4대가입)';
+
+  const customer = {
+    jobType,
+    age: age || parseInt(c.age) || 40,
+    has4Insurance: (has4 === '가입' || has4 === 'Y'),
+    insurancePeriod: 12,
+    vehicleNo: c.vehicle_no || '',
+    vehicleYear: parseInt(c.vehicle_year) || 0,
+    vehicleKm: parseInt(String(c.vehicle_km).replace(/[^0-9]/g, '')) || 0,
+    recoveryType: c.recovery_type || '무',
+    recoveryPaid: parseInt(c.recovery_paid_count) || 0,
+    recoveryTotal: parseInt(c.recovery_total_count) || 0,
+    hasProperty: (c.housing_ownership || '').includes('소유'),
+    loanAmount: parseInt(c.loan_amount) || 0
+  };
+
+  if (typeof matchProducts !== 'function') {
+    container.innerHTML = '<div style="font-size:11px;color:#94a3b8;">상품 매칭 모듈을 불러올 수 없습니다.</div>';
+    return;
+  }
+
+  const result = matchProducts(customer);
+  const totalRec = result.recommended.length + result.conditional.length;
+
+  if (totalRec === 0) {
+    container.innerHTML = '<div style="font-size:11px;color:#94a3b8;">조건에 맞는 추천 상품이 없습니다.</div>';
+    return;
+  }
+
+  // 카테고리 분류
+  const allRec = [...result.recommended, ...result.conditional];
+  const isRecovery = (r) => r.category?.includes('회복') || r.category?.includes('회생') || r.category?.includes('파산') || r.name?.includes('회생') || r.name?.includes('파산') || r.name?.includes('회복');
+  const isAuto = (r) => r.category?.includes('오토') || r.name?.includes('오토') || r.name?.includes('차량');
+  const isProperty = (r) => r.category?.includes('부동산') || r.name?.includes('부동산') || r.name?.includes('담보');
+  const isSunshine = (r) => r.category?.includes('햇살') || r.name?.includes('햇살') || r.name?.includes('사잇돌');
+  const categories = {
+    '전체': allRec,
+    '신용': allRec.filter(r => !isAuto(r) && !isProperty(r) && !isRecovery(r) && !isSunshine(r)),
+    '오토론': allRec.filter(r => isAuto(r)),
+    '부동산': allRec.filter(r => isProperty(r)),
+    '회파복': allRec.filter(r => isRecovery(r)),
+    '햇살론': allRec.filter(r => isSunshine(r)),
+  };
+  const activeCats = Object.entries(categories).filter(([k,v]) => v.length > 0);
+
+  let html = `<div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;">
+    ★ ${c.name}님 추천 상품 (${totalRec}개)
+    <span style="font-size:10px;font-weight:400;color:#64748b;">${customer.jobType} | ${customer.age}세 | 회파복:${customer.recoveryType}</span>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;">
+    ${activeCats.map(([cat, items]) => `<button onclick="window._ledgerRecCat='${cat}';loadLedgerRecommendations();" style="padding:2px 8px;border:1px solid ${(window._ledgerRecCat||'전체')===cat?'#16a34a':'#d1d5db'};background:${(window._ledgerRecCat||'전체')===cat?'#dcfce7':'#fff'};border-radius:12px;font-size:10px;cursor:pointer;color:${(window._ledgerRecCat||'전체')===cat?'#166534':'#64748b'};">${cat} (${items.length})</button>`).join('')}
+  </div>`;
+
+  const selectedCat = window._ledgerRecCat || '전체';
+  const filteredRec = (categories[selectedCat] || allRec).filter(r => result.recommended.includes(r));
+  const filteredCond = (categories[selectedCat] || allRec).filter(r => result.conditional.includes(r));
+
+  filteredRec.forEach(r => {
+    html += `<div style="border-left:3px solid #16a34a;margin-bottom:3px;padding:4px 8px;background:#fafafa;border-radius:0 4px 4px 0;cursor:pointer;" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;">${r.name}</span>
+        <span style="font-size:10px;color:#16a34a;font-weight:700;">★ ${r.matchRate}%</span>
+      </div>
+      <div style="font-size:9px;color:#64748b;">${r.reasons.join(' | ')}</div>
+    </div>`;
+  });
+
+  filteredCond.forEach(r => {
+    html += `<div style="border-left:3px solid #d97706;margin-bottom:3px;padding:4px 8px;background:#fafafa;border-radius:0 4px 4px 0;cursor:pointer;" ondblclick="openProductGuide(this)" data-product-name="${r.name}" data-fidx="${r.fidx}" title="더블클릭: 상품 가이드">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;font-weight:600;">${r.name}</span>
+        <span style="font-size:10px;color:#d97706;font-weight:700;">△ ${r.matchRate}%</span>
+      </div>
+      <div style="font-size:9px;color:#d97706;">${r.failReasons.join(' | ')}</div>
+    </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
 // 고객원장 타임라인 로드 (상담이력 + 감사로그)
 async function loadLedgerTimelines(customerId) {
   try {
@@ -3154,6 +3253,12 @@ function renderCustomerLedger() {
           <table><thead><tr><th>대출상품</th><th>대출금액</th><th>상태</th><th>신청일</th></tr></thead>
           <tbody><tr><td>${c.loan_amount||c.loanAmount ? '-' : '-'}</td><td>${c.loan_amount||c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${regDate}</td></tr></tbody></table>
         </div></div>
+
+        <div class="panel"><div class="panel-header"><h2>상품 추천</h2></div>
+          <div class="panel-body" style="padding:8px;">
+            <div id="ledgerRecommendedProducts" style="font-size:11px;color:#94a3b8;">로딩중...</div>
+          </div>
+        </div>
       </div>
 
       <div style="width:320px;flex-shrink:0;">
