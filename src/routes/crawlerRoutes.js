@@ -7,6 +7,16 @@ router.get('/crawler/status', (req, res) => {
   res.json({ success: true, data: crawler.getStatus() });
 });
 
+// 현재 페이지 HTML 구조 디버그
+router.get('/crawler/debug-html', async (req, res) => {
+  try {
+    const html = await crawler.getPageHtml();
+    res.json({ success: true, data: html });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 론앤마스터 로그인
 router.post('/crawler/login', async (req, res) => {
   try {

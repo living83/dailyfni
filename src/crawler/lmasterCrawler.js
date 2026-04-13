@@ -598,6 +598,22 @@ async function closeBrowser() {
   }
 }
 
+// 현재 페이지 테이블 HTML 디버그
+async function getPageHtml() {
+  if (!page) throw new Error('브라우저가 실행 중이 아닙니다.');
+  return await page.evaluate(() => {
+    const tables = document.querySelectorAll('table');
+    const result = [];
+    tables.forEach((t, i) => {
+      const firstRow = t.querySelector('tr');
+      const cells = firstRow ? [...firstRow.querySelectorAll('th,td')].map(c => c.textContent.trim()).join(' | ') : '';
+      const rowCount = t.querySelectorAll('tr').length;
+      result.push({ index: i, rows: rowCount, firstRow: cells.substring(0, 300) });
+    });
+    return result;
+  });
+}
+
 // 상태 확인
 function getStatus() {
   return {
@@ -616,5 +632,6 @@ module.exports = {
   getLoanList,
   getLoanDetail,
   closeBrowser,
-  getStatus
+  getStatus,
+  getPageHtml
 };
