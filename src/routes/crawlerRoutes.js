@@ -45,12 +45,18 @@ router.post('/crawler/product-map', async (req, res) => {
 
 // 대출신청내역 목록 조회
 router.get('/crawler/loan-list', async (req, res) => {
+  // 30초 타임아웃
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) res.status(504).json({ success: false, message: '조회 시간 초과 (30초)' });
+  }, 30000);
   try {
     const { agentNo, upw, status, dateType, dateRange, product } = req.query;
     const data = await crawler.getLoanList(agentNo || '12', upw || '1', { status, dateType, dateRange, product });
-    res.json({ success: true, data });
+    clearTimeout(timeout);
+    if (!res.headersSent) res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    clearTimeout(timeout);
+    if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
   }
 });
 

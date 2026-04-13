@@ -505,9 +505,10 @@ async function getLoanList(agentNo, upw, filters = {}) {
   if (filters.dateRange) url += `&s_date_range=${filters.dateRange}`;
   if (filters.product) url += `&s_fin_name=${encodeURIComponent(filters.product)}`;
 
-  await delay(2000, 4000);
-  await page.goto(url, { waitUntil: 'networkidle2' });
-  await delay(1500, 2500);
+  console.log('[크롤러] 대출목록 조회:', url);
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await delay(1000, 2000);
+  console.log('[크롤러] 페이지 로드 완료');
 
   const data = await page.evaluate(() => {
     const rows = [];
