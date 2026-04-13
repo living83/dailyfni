@@ -270,9 +270,10 @@ router.post('/settlement/executions', async (req, res) => {
 // 실행 건 목록 조회
 router.get('/settlement/executions', async (req, res) => {
   try {
-    const { month, dbSource, assignedTo } = req.query;
+    const { month, dbSource, assignedTo, customerName } = req.query;
     let sql = 'SELECT * FROM settlement_executions WHERE 1=1';
     const params = [];
+    if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
     if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
     if (dbSource && dbSource !== '전체 출처') { sql += ' AND db_source = ?'; params.push(dbSource); }
     if (assignedTo && assignedTo !== '전체 담당자') { sql += ' AND assigned_to = ?'; params.push(assignedTo); }

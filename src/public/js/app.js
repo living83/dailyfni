@@ -215,7 +215,10 @@ function navigate(page) {
   }
   // 고객원장 렌더 후 타임라인 + 상품 추천 로드
   if (page === 'customer-ledger' && currentLedgerId) {
-    setTimeout(() => loadLedgerTimelines(currentLedgerId), 200);
+    setTimeout(() => {
+      loadLedgerTimelines(currentLedgerId);
+      loadLedgerLoanList(ledgerCustomer?.name);
+    }, 200);
   }
   // 대출 신청 관리 진입 시 자동 동기화
   if (page === 'loans') {
@@ -3222,6 +3225,33 @@ function loadLedgerRecommendations() {
 }
 
 // 고객원장 타임라인 로드 (상담이력 + 감사로그)
+// 고객원장 연결된 대출 신청 로드
+async function loadLedgerLoanList(customerName) {
+  const tbody = document.getElementById('ledgerLoanList');
+  if (!tbody || !customerName) return;
+  try {
+    const res = await fetch(`/api/settlement/executions?customerName=${encodeURIComponent(customerName)}`);
+    const data = await res.json();
+    if (data.success && data.data.length > 0) {
+      const statusMap = {'승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','접수':'badge-submit','심사':'badge-review'};
+      tbody.innerHTML = data.data.map(e => {
+        const date = e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : '-';
+        return `<tr>
+          <td>${e.product_name || '-'}</td>
+          <td>${e.loan_amount || 0}만</td>
+          <td>${Number(e.fee_amount || 0).toFixed(1)}만</td>
+          <td><span class="badge badge-approved">승인</span></td>
+          <td>${date}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">연결된 대출 신청이 없습니다.</td></tr>';
+    }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">로드 실패</td></tr>';
+  }
+}
+
 async function loadLedgerTimelines(customerId) {
   try {
     const [cRes, aRes] = await Promise.all([
@@ -3453,8 +3483,8 @@ function renderCustomerLedger() {
         </div></div>
 
         <div class="panel"><div class="panel-header"><h2>연결된 대출 신청</h2></div><div class="panel-body" style="padding:0;">
-          <table><thead><tr><th>대출상품</th><th>대출금액</th><th>상태</th><th>신청일</th></tr></thead>
-          <tbody><tr><td>${c.loan_amount||c.loanAmount ? '-' : '-'}</td><td>${c.loan_amount||c.loanAmount||'-'}</td><td><span class="badge ${badgeClass}">${status}</span></td><td>${regDate}</td></tr></tbody></table>
+          <table><thead><tr><th>대출상품</th><th>대출금액</th><th>수수료</th><th>상태</th><th>실행일</th></tr></thead>
+          <tbody id="ledgerLoanList"><tr><td colspan="5" style="text-align:center;padding:20px;color:#94a3b8;">로딩중...</td></tr></tbody></table>
         </div></div>
       </div>
 
