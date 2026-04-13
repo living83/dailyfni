@@ -506,8 +506,10 @@ async function getLoanList(agentNo, upw, filters = {}) {
   if (filters.product) url += `&s_fin_name=${encodeURIComponent(filters.product)}`;
 
   console.log('[크롤러] 대출목록 조회:', url);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await delay(1000, 2000);
+  await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+  // AJAX 데이터 로드 대기 (테이블에 td가 나올 때까지)
+  await page.waitForSelector('table td', { timeout: 10000 }).catch(() => {});
+  await delay(1000, 1500);
   console.log('[크롤러] 페이지 로드 완료');
 
   const data = await page.evaluate(() => {
@@ -603,12 +605,17 @@ async function getPageHtml() {
   if (!page) throw new Error('브라우저가 실행 중이 아닙니다.');
   return await page.evaluate(() => {
     const tables = document.querySelectorAll('table');
-    const result = [];
+    const result = { tables: [], bodySnippet: document.body.innerHTML.substring(0, 3000) };
     tables.forEach((t, i) => {
-      const firstRow = t.querySelector('tr');
-      const cells = firstRow ? [...firstRow.querySelectorAll('th,td')].map(c => c.textContent.trim()).join(' | ') : '';
-      const rowCount = t.querySelectorAll('tr').length;
-      result.push({ index: i, rows: rowCount, firstRow: cells.substring(0, 300) });
+      const rows = t.querySelectorAll('tr');
+      const rowData = [];
+      rows.forEach((r, j) => {
+        if (j < 3) { // 첫 3행만
+          const cells = [...r.querySelectorAll('th,td')].map(c => c.textContent.trim().substring(0, 30));
+          rowData.push(cells);
+        }
+      });
+      result.tables.push({ index: i, totalRows: rows.length, firstRows: rowData, html: t.outerHTML.substring(0, 500) });
     });
     return result;
   });
