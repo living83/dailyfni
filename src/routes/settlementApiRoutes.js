@@ -172,6 +172,75 @@ router.post('/settlement/reopen-month', async (req, res) => {
   }
 });
 
+// === 론앤마스터 승인 건 → 실행 건 자동 등록 ===
+router.post('/settlement/sync-from-loans', async (req, res) => {
+  try {
+    const { loanData } = req.body;
+    if (!loanData || !Array.isArray(loanData)) {
+      return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
+    }
+
+    // 승인 건만 필터 (상태에 '승인' 포함)
+    const approved = loanData.filter(r => r.status && r.status.includes('승인') && r.approvedAmount);
+
+    // 정산 정책 조회 (최신 월)
+    const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
+
+    // 기존 실행 건 조회 (중복 방지)
+    const existing = await query('SELECT customer_name, product_name, executed_date FROM settlement_executions');
+    const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : ''}`));
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const loan of approved) {
+      const amount = parseInt(String(loan.approvedAmount).replace(/[^0-9]/g, '')) || 0;
+      if (amount <= 0) { skipped++; continue; }
+
+      // 실행일: 처리일시에서 날짜 추출
+      const dateMatch = (loan.processDate || loan.applyDate || '').match(/(\d{4}-\d{2}-\d{2})/);
+      const execDate = dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0];
+
+      // 중복 체크
+      const key = `${loan.customerName}_${loan.productName}_${execDate}`;
+      if (existKey.has(key)) { skipped++; continue; }
+
+      // 정산 정책에서 수수료율 찾기 (상품명 부분 매칭)
+      let rateUnder = 0, rateOver = 0;
+      const productClean = (loan.productName || '').replace(/\(.*\)/, '').trim();
+      for (const p of policies) {
+        if (loan.productName.includes(p.product) || p.product.includes(productClean)) {
+          rateUnder = parseFloat(p.rate_under) || 0;
+          rateOver = parseFloat(p.rate_over) || 0;
+          break;
+        }
+      }
+
+      // 수수료 계산 (500만 기준)
+      let feeAmount = 0;
+      if (amount <= 500) {
+        feeAmount = amount * (rateUnder || rateOver) / 100;
+      } else {
+        feeAmount = amount * (rateOver || rateUnder) / 100;
+      }
+      feeAmount = Math.round(feeAmount * 10) / 10;
+
+      await query(
+        `INSERT INTO settlement_executions (customer_name, executed_date, loan_amount, product_name, fee_rate_under, fee_rate_over, fee_amount, db_source, assigned_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [loan.customerName || '', execDate, amount, loan.productName || '', rateUnder, rateOver, feeAmount, '', loan.recruiter || '']
+      );
+      existKey.add(key);
+      added++;
+    }
+
+    await logAudit({ eventType: 'settlement_change', targetType: 'execution', afterValue: `론앤마스터 동기화: ${added}건 등록, ${skipped}건 스킵`, performedBy: 'system' });
+    res.json({ success: true, data: { added, skipped, totalApproved: approved.length } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // === 매출 집계 ===
 
 // 실행 건 등록

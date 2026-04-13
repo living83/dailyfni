@@ -532,6 +532,8 @@ async function syncLoanList() {
       loanListData = data.data.rows || [];
       loanListSummary = data.data.summary;
       if (statusEl) statusEl.textContent = `${loanListData.length}건 동기화 완료 (${new Date().toLocaleTimeString()})`;
+      // 승인 건 자동 정산 등록
+      syncApprovedToSettlement(loanListData);
       // 테이블 직접 업데이트 (navigate 호출 시 무한루프 방지)
       const tbody = document.getElementById('loanListBody');
       if (tbody) {
@@ -552,6 +554,22 @@ async function syncLoanList() {
   } catch (e) {
     if (statusEl) statusEl.textContent = '연결 실패: ' + e.message;
   }
+}
+
+// 승인 건 → 정산 자동 등록
+async function syncApprovedToSettlement(loanData) {
+  try {
+    const res = await fetch('/api/settlement/sync-from-loans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loanData })
+    });
+    const data = await res.json();
+    if (data.success && data.data.added > 0) {
+      const statusEl = document.getElementById('loanSyncStatus');
+      if (statusEl) statusEl.textContent += ` | 정산 ${data.data.added}건 등록`;
+    }
+  } catch (e) { console.error('정산 동기화 실패:', e); }
 }
 
 // ========================================
