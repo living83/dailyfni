@@ -932,7 +932,7 @@ async def async_publish_to_cafe(
                 logger.info("발행 후 리다이렉트 대기 중...")
                 import time as t_
                 start_wait = t_.time()
-                while t_.time() - start_wait < 30:
+                while t_.time() - start_wait < 60:  # 리다이렉트 대기 시간을 30초에서 60초로 넉넉하게 연장
                     cur = page.url
                     logger.debug(f"리다이렉트 대기 중... 현재 URL: {cur}")
                     if _is_article_url(cur):
