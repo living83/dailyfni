@@ -140,7 +140,7 @@ async function checkAndRun() {
         console.log(`[BuddyScheduler] ${raw.accountName}: ${accepted}건 수락, ${skipped}건 건너뜀`);
 
         if (accepted > 0) {
-          telegram.sendMessage(`🤝 [${raw.accountName}] 서로이웃 ${accepted}건 수락 완료`).catch(() => {});
+          telegram.send(`🤝 [${raw.accountName}] 서로이웃 ${accepted}건 수락 완료`).catch(() => {});
         }
       } catch (err) {
         console.error(`[BuddyScheduler] ${raw.accountName} 예외:`, err.message);
