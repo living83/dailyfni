@@ -175,7 +175,7 @@ router.post('/settlement/reopen-month', async (req, res) => {
 // === 론앤마스터 승인 건 → 실행 건 자동 등록 ===
 router.post('/settlement/sync-from-loans', async (req, res) => {
   try {
-    const { loanData } = req.body;
+    const { loanData, performedBy } = req.body;
     if (!loanData || !Array.isArray(loanData)) {
       return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
     }
@@ -189,6 +189,9 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
     // 기존 실행 건 조회 (중복 방지)
     const existing = await query('SELECT customer_name, product_name, executed_date FROM settlement_executions');
     const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : ''}`));
+
+    // 담당자: 로그인 사용자 (req.user 또는 performedBy)
+    const assignedTo = req.user?.name || performedBy || '';
 
     let added = 0;
     let skipped = 0;
@@ -204,6 +207,11 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       // 중복 체크
       const key = `${loan.customerName}_${loan.productName}_${execDate}`;
       if (existKey.has(key)) { skipped++; continue; }
+
+      // 고객원장에서 DB출처 조회
+      let dbSource = '';
+      const custRows = await query('SELECT db_source FROM customers WHERE name = ? LIMIT 1', [loan.customerName]);
+      if (custRows.length > 0) dbSource = custRows[0].db_source || '';
 
       // 정산 정책에서 수수료율 찾기 (상품명 부분 매칭)
       let rateUnder = 0, rateOver = 0;
@@ -228,7 +236,7 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       await query(
         `INSERT INTO settlement_executions (customer_name, executed_date, loan_amount, product_name, fee_rate_under, fee_rate_over, fee_amount, db_source, assigned_to)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [loan.customerName || '', execDate, amount, loan.productName || '', rateUnder, rateOver, feeAmount, '', loan.recruiter || '']
+        [loan.customerName || '', execDate, amount, loan.productName || '', rateUnder, rateOver, feeAmount, dbSource, assignedTo]
       );
       existKey.add(key);
       added++;

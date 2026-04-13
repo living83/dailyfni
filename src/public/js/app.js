@@ -559,10 +559,11 @@ async function syncLoanList() {
 // 승인 건 → 정산 자동 등록
 async function syncApprovedToSettlement(loanData) {
   try {
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
     const res = await fetch('/api/settlement/sync-from-loans', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ loanData })
+      body: JSON.stringify({ loanData, performedBy: user.name || '' })
     });
     const data = await res.json();
     if (data.success && data.data.added > 0) {
