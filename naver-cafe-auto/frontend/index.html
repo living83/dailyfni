@@ -1263,11 +1263,15 @@ function ScheduleTab({ schedule, events, reload }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="input-group">
             <label>기본 시작 시각 (시)</label>
-            <NumInput stateKey="base_start_hour" value={schedule.base_start_hour ?? 8} min={0} max={23} fallback={8} />
+            <select value={schedule.base_start_hour ?? 8} onChange={e => updateConfig('base_start_hour', Number(e.target.value))}>
+              {Array.from({length: 24}, (_, i) => <option key={i} value={i}>{String(i).padStart(2, '0')}시</option>)}
+            </select>
           </div>
           <div className="input-group">
             <label>기본 시작 시각 (분)</label>
-            <NumInput stateKey="base_start_minute" value={schedule.base_start_minute ?? 0} min={0} max={59} fallback={0} />
+            <select value={schedule.base_start_minute ?? 0} onChange={e => updateConfig('base_start_minute', Number(e.target.value))}>
+              {[0, 10, 20, 30, 40, 50].map(m => <option key={m} value={m}>{String(m).padStart(2, '0')}분</option>)}
+            </select>
           </div>
           <div className="input-group">
             <label>일별 지연 (분)</label>
