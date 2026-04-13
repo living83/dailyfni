@@ -512,41 +512,40 @@ async function getLoanList(agentNo, upw, filters = {}) {
 
   const data = await page.evaluate(() => {
     const rows = [];
-    const table = document.querySelector('table.tbl_list') || document.querySelector('table[class*=list]');
+    const debug = { tableCount: 0, thTexts: [], tdCounts: [], pageTitle: document.title, bodyLength: document.body.innerText.length };
 
-    if (!table) {
-      // 테이블 클래스를 못 찾으면 모든 테이블에서 탐색
-      const allTables = document.querySelectorAll('table');
-      for (const t of allTables) {
-        const ths = t.querySelectorAll('th');
-        const thTexts = [...ths].map(th => th.textContent.trim());
-        if (thTexts.includes('이름') && thTexts.includes('처리상태')) {
-          // 이 테이블이 대출 목록 테이블
-          const trs = t.querySelectorAll('tbody tr, tr');
-          for (const tr of trs) {
-            const tds = tr.querySelectorAll('td');
-            if (tds.length >= 10) {
-              rows.push({
-                applyDate: tds[0]?.textContent?.trim() || '',
-                processDate: tds[1]?.textContent?.trim() || '',
-                agency: tds[2]?.textContent?.trim() || '',
-                productName: tds[3]?.textContent?.trim() || '',
-                recruiter: tds[4]?.textContent?.trim() || '',
-                auth: tds[5]?.textContent?.trim() || '',
-                consent: tds[6]?.textContent?.trim() || '',
-                customerName: tds[7]?.textContent?.trim() || '',
-                birthDate: tds[8]?.textContent?.trim() || '',
-                gender: tds[9]?.textContent?.trim() || '',
-                jobType: tds[10]?.textContent?.trim() || '',
-                status: tds[11]?.textContent?.trim() || '',
-                approvedAmount: tds[12]?.textContent?.trim() || '',
-                reviewMemo: tds[13]?.textContent?.trim() || '',
-                branchMemo: tds[14]?.textContent?.trim() || '',
-              });
-            }
+    const allTables = document.querySelectorAll('table');
+    debug.tableCount = allTables.length;
+
+    for (const t of allTables) {
+      const ths = t.querySelectorAll('th');
+      const thTexts = [...ths].map(th => th.textContent.trim());
+      if (thTexts.length > 3) debug.thTexts.push(thTexts.join(','));
+
+      // 이름 또는 고객명 포함 테이블 찾기
+      if (thTexts.some(x => x.includes('이름') || x.includes('고객')) && thTexts.some(x => x.includes('상태') || x.includes('처리'))) {
+        const trs = t.querySelectorAll('tr');
+        for (const tr of trs) {
+          const tds = tr.querySelectorAll('td');
+          debug.tdCounts.push(tds.length);
+          if (tds.length >= 8) {
+            rows.push({
+              applyDate: tds[0]?.textContent?.trim() || '',
+              processDate: tds[1]?.textContent?.trim() || '',
+              productName: tds[2]?.textContent?.trim() || tds[3]?.textContent?.trim() || '',
+              recruiter: tds[3]?.textContent?.trim() || tds[4]?.textContent?.trim() || '',
+              customerName: tds[4]?.textContent?.trim() || tds[7]?.textContent?.trim() || '',
+              birthDate: tds[5]?.textContent?.trim() || tds[8]?.textContent?.trim() || '',
+              gender: tds[6]?.textContent?.trim() || tds[9]?.textContent?.trim() || '',
+              jobType: tds[7]?.textContent?.trim() || tds[10]?.textContent?.trim() || '',
+              status: tds[8]?.textContent?.trim() || tds[11]?.textContent?.trim() || '',
+              approvedAmount: tds[9]?.textContent?.trim() || tds[12]?.textContent?.trim() || '',
+              reviewMemo: tds[10]?.textContent?.trim() || tds[13]?.textContent?.trim() || '',
+              branchMemo: tds[11]?.textContent?.trim() || tds[14]?.textContent?.trim() || '',
+            });
           }
-          break;
         }
+        break;
       }
     }
 
@@ -560,13 +559,11 @@ async function getLoanList(agentNo, upw, filters = {}) {
       todayRejected: parseInt(summaryMatch[4])
     } : null;
 
-    // 페이지 정보
-    const pageText = document.body.innerText;
-    const totalMatch = pageText.match(/(\d+)건/);
-    const total = totalMatch ? parseInt(totalMatch[1]) : 0;
-
-    return { rows, summary, total };
+    const total = rows.length;
+    return { rows, summary, total, debug };
   });
+
+  console.log('[크롤러] 파싱 결과:', data.rows?.length, '건, 테이블:', data.debug?.tableCount, ', TH:', JSON.stringify(data.debug?.thTexts?.slice(0,3)));
 
   return {
     ...data,
