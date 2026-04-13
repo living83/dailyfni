@@ -180,8 +180,8 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
     }
 
-    // 승인 건만 필터 (상태에 '승인' 포함)
-    const approved = loanData.filter(r => r.status && r.status.includes('승인') && r.approvedAmount);
+    // 승인 + 부결 건 필터 (접수/심사 제외)
+    const targetLoans = loanData.filter(r => r.status && (r.status.includes('승인') || r.status.includes('부결')));
 
     // 정산 정책 조회 (최신 월)
     const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
@@ -196,54 +196,60 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
     let added = 0;
     let skipped = 0;
 
-    for (const loan of approved) {
+    for (const loan of targetLoans) {
       const amount = parseInt(String(loan.approvedAmount).replace(/[^0-9]/g, '')) || 0;
-      if (amount <= 0) { skipped++; continue; }
+      const loanStatus = loan.status.includes('승인') ? '승인' : '부결';
 
       // 실행일: 처리일시에서 날짜 추출
       const dateMatch = (loan.processDate || loan.applyDate || '').match(/(\d{4}-\d{2}-\d{2})/);
       const execDate = dateMatch ? dateMatch[1] : new Date().toISOString().split('T')[0];
 
       // 중복 체크
-      const key = `${loan.customerName}_${loan.productName}_${execDate}`;
+      const key = `${loan.customerName}_${loan.productName}_${execDate}_${loanStatus}`;
       if (existKey.has(key)) { skipped++; continue; }
 
       // 고객원장에서 DB출처 조회
       let dbSource = '';
-      const custRows = await query('SELECT db_source FROM customers WHERE name = ? LIMIT 1', [loan.customerName]);
+      const custRows = await query('SELECT id, db_source FROM customers WHERE name = ? LIMIT 1', [loan.customerName]);
       if (custRows.length > 0) dbSource = custRows[0].db_source || '';
 
-      // 정산 정책에서 수수료율 찾기 (상품명 부분 매칭)
-      let rateUnder = 0, rateOver = 0;
-      const productClean = (loan.productName || '').replace(/\(.*\)/, '').trim();
-      for (const p of policies) {
-        if (loan.productName.includes(p.product) || p.product.includes(productClean)) {
-          rateUnder = parseFloat(p.rate_under) || 0;
-          rateOver = parseFloat(p.rate_over) || 0;
-          break;
+      let rateUnder = 0, rateOver = 0, feeAmount = 0;
+      if (loanStatus === '승인' && amount > 0) {
+        // 정산 정책에서 수수료율 찾기
+        const productClean = (loan.productName || '').replace(/\(.*\)/, '').trim();
+        for (const p of policies) {
+          if (loan.productName.includes(p.product) || p.product.includes(productClean)) {
+            rateUnder = parseFloat(p.rate_under) || 0;
+            rateOver = parseFloat(p.rate_over) || 0;
+            break;
+          }
         }
+        // 수수료 계산 (500만 기준)
+        if (amount <= 500) {
+          feeAmount = amount * (rateUnder || rateOver) / 100;
+        } else {
+          feeAmount = amount * (rateOver || rateUnder) / 100;
+        }
+        feeAmount = Math.round(feeAmount * 10) / 10;
       }
-
-      // 수수료 계산 (500만 기준)
-      let feeAmount = 0;
-      if (amount <= 500) {
-        feeAmount = amount * (rateUnder || rateOver) / 100;
-      } else {
-        feeAmount = amount * (rateOver || rateUnder) / 100;
-      }
-      feeAmount = Math.round(feeAmount * 10) / 10;
 
       await query(
-        `INSERT INTO settlement_executions (customer_name, executed_date, loan_amount, product_name, fee_rate_under, fee_rate_over, fee_amount, db_source, assigned_to)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [loan.customerName || '', execDate, amount, loan.productName || '', rateUnder, rateOver, feeAmount, dbSource, assignedTo]
+        `INSERT INTO settlement_executions (customer_name, executed_date, loan_amount, product_name, fee_rate_under, fee_rate_over, fee_amount, db_source, assigned_to, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [loan.customerName || '', execDate, amount, loan.productName || '', rateUnder, rateOver, feeAmount, dbSource, assignedTo, loanStatus]
       );
+
+      // 고객 상태 자동 변경 (승인/부결)
+      if (custRows.length > 0) {
+        await query('UPDATE customers SET status = ? WHERE id = ?', [loanStatus, custRows[0].id]);
+      }
+
       existKey.add(key);
       added++;
     }
 
     await logAudit({ eventType: 'settlement_change', targetType: 'execution', afterValue: `론앤마스터 동기화: ${added}건 등록, ${skipped}건 스킵`, performedBy: 'system' });
-    res.json({ success: true, data: { added, skipped, totalApproved: approved.length } });
+    res.json({ success: true, data: { added, skipped, total: targetLoans.length } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

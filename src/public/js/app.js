@@ -355,8 +355,7 @@ function renderCustomers() {
     const ssn = c.ssn||'';
     const ssnDisplay = ssn.length >= 8 ? ssn.substring(0,6) + '-' + ssn.charAt(7) : ssn.substring(0,6);
     const loanDate = c.last_loan_date ? new Date(c.last_loan_date).toISOString().split('T')[0] : (c.loan_date ? new Date(c.loan_date).toISOString().split('T')[0] : '-');
-    const loanAmount = c.last_loan_amount || c.loan_amount || '-';
-    const loanProduct = c.last_loan_product || '';
+    const loanList = c.loan_list || '';
     const score = c.credit_score || 0;
     return `<tr>
       <td>${c.id}</td>
@@ -365,7 +364,7 @@ function renderCustomers() {
       <td>${creditStatusBadge(c.credit_status)}</td>
       <td style="color:${score>=700?'#16a34a':score>=600?'#d97706':'#ef4444'};font-weight:600;">${score}</td>
       <td>${loanDate}</td>
-      <td>${loanAmount !== '-' ? loanAmount + '만' : '-'}${loanProduct ? '<br><span style="font-size:10px;color:#64748b;">'+loanProduct+'</span>' : ''}</td>
+      <td style="font-size:10px;max-width:200px;">${loanList || '-'}</td>
       <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
       <td>${c.assigned_to||'-'}</td>
       <td>${c.db_source||'-'}</td>
@@ -3235,14 +3234,15 @@ async function loadLedgerLoanList(customerName) {
     const res = await fetch(`/api/settlement/executions?customerName=${encodeURIComponent(customerName)}`);
     const data = await res.json();
     if (data.success && data.data.length > 0) {
-      const statusMap = {'승인':'badge-approved','부결':'badge-rejected','실행':'badge-executed','접수':'badge-submit','심사':'badge-review'};
       tbody.innerHTML = data.data.map(e => {
         const date = e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : '-';
+        const st = e.status || '승인';
+        const badgeCls = st.includes('승인') ? 'badge-approved' : st.includes('부결') ? 'badge-rejected' : 'badge-lead';
         return `<tr>
           <td>${e.product_name || '-'}</td>
           <td>${e.loan_amount || 0}만</td>
           <td>${Number(e.fee_amount || 0).toFixed(1)}만</td>
-          <td><span class="badge badge-approved">승인</span></td>
+          <td><span class="badge ${badgeCls}">${st}</span></td>
           <td>${date}</td>
         </tr>`;
       }).join('');

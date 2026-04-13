@@ -64,14 +64,11 @@ router.get('/customers', async (req, res) => {
   try {
     const { search, creditStatus, status, assignedTo } = req.query;
     let sql = `SELECT c.*,
-      se.product_name as last_loan_product, se.loan_amount as last_loan_amount,
-      se.executed_date as last_loan_date, se.fee_amount as last_fee_amount
+      (SELECT GROUP_CONCAT(CONCAT(se2.product_name, ' ', se2.loan_amount, '만 ', IFNULL(se2.status,'승인')) ORDER BY se2.executed_date DESC SEPARATOR ' / ')
+       FROM settlement_executions se2 WHERE se2.customer_name = c.name) as loan_list,
+      (SELECT MAX(se3.executed_date) FROM settlement_executions se3 WHERE se3.customer_name = c.name) as last_loan_date,
+      (SELECT SUM(se4.loan_amount) FROM settlement_executions se4 WHERE se4.customer_name = c.name AND se4.status = '승인') as total_loan_amount
       FROM customers c
-      LEFT JOIN (
-        SELECT customer_name, product_name, loan_amount, executed_date, fee_amount,
-          ROW_NUMBER() OVER (PARTITION BY customer_name ORDER BY executed_date DESC) as rn
-        FROM settlement_executions
-      ) se ON c.name = se.customer_name AND se.rn = 1
       WHERE 1=1`;
     const params = [];
 
