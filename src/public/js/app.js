@@ -2400,8 +2400,8 @@ function renderDocConvert() {
             <tr>
               <th>파일 선택</th>
               <td colspan="3">
-                <input type="file" id="docFiles" accept=".pdf" multiple style="font-size:12px;">
-                <span style="font-size:11px;color:#64748b;margin-left:8px;">여러 파일 선택 가능</span>
+                <input type="file" id="docFiles" accept=".pdf,.jpg,.jpeg,.png,.bmp,.gif" multiple style="font-size:12px;">
+                <span style="font-size:11px;color:#64748b;margin-left:8px;">PDF, JPG, PNG 등 여러 파일 선택 가능</span>
               </td>
             </tr>
             <tr>

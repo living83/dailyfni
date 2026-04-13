@@ -42,7 +42,7 @@ router.post('/doc-convert', upload.single('file'), async (req, res) => {
 
     // 출력 파일 전송 후 삭제
     const mimeMap = { tiff: 'image/tiff', png: 'image/png', jpg: 'image/jpeg' };
-    const origName = (req.file.originalname || 'output').replace(/\.pdf$/i, '') + '.' + format;
+    const origName = (req.file.originalname || 'output').replace(/\.(pdf|jpg|jpeg|png|bmp|gif)$/i, '') + '.' + format;
 
     res.setHeader('Content-Type', mimeMap[format] || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(origName)}"`);
