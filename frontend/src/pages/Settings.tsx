@@ -406,15 +406,6 @@ export default function Settings() {
               </div>
             </div>
 
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" checked={randomRest} onChange={() => setRandomRest(!randomRest)}
-                className="w-4 h-4 rounded accent-primary" />
-              <div>
-                <span className="text-sm text-foreground">랜덤 휴식</span>
-                <p className="text-xs text-muted-foreground">10% 확률로 하루 쉬기 (어뷰징 방지)</p>
-              </div>
-            </label>
-
             <div>
               <label className={labelClass}>일일 포스팅 계정 수</label>
               <input type="number" value={dailyMax} onChange={e => setDailyMax(Number(e.target.value))} min={1}

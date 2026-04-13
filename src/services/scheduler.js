@@ -18,7 +18,6 @@ let lastRunDate = '';
 let todayPostedAccounts = new Set();
 let isProcessing = false; // 중복 실행 방지
 let nextScheduledTime = null; // 다음 발행 예정 시각
-let restDayDecided = false;  // 오늘 랜덤 휴식 판정이 완료되었는지
 
 // ── 링 버퍼 로그 (프론트엔드 실시간 표시용) ──
 const LOG_MAX = 200;
@@ -107,8 +106,6 @@ function loadTodayPostedFromDB() {
         AND accountId IS NOT NULL
     `).all();
     const set = new Set(rows.map(r => r.accountId));
-    // __REST_DAY__ 플래그는 in-memory 유지 (DB에 없음)
-    if (todayPostedAccounts.has('__REST_DAY__')) set.add('__REST_DAY__');
     return set;
   } catch (err) {
     log('error', `DB 조회 실패: ${err.message}`);
@@ -217,7 +214,6 @@ async function checkAndRun() {
       lastRunDate = today;
       todayPostedAccounts = loadTodayPostedFromDB();
       nextScheduledTime = null;
-      restDayDecided = false; // 새 날짜 → 휴식 판정 초기화
       if (prevDate === '') {
         log('info', `기동/재시작: 오늘자 포스팅 ${todayPostedAccounts.size}개 DB에서 복원`);
       } else {
@@ -237,20 +233,6 @@ async function checkAndRun() {
       log('skip', `시간 외 - 현재 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}, 윈도우 ${settings.startHour}:${settings.startMin}~${settings.endHour}:${settings.endMin}`);
       return;
     }
-
-    // randomRest: 10% 확률로 오늘 전체 스킵 — ★ 하루 1회만 판정
-    if (settings.randomRest && !restDayDecided) {
-      restDayDecided = true; // 한 번만 굴리고 다시는 안 굴림
-      if (Math.random() < 0.1) {
-        log('info', '랜덤 휴식: 오늘은 쉽니다. (10% 확률 당첨)');
-        todayPostedAccounts.add('__REST_DAY__');
-        return;
-      }
-      log('info', '랜덤 휴식 판정: 오늘은 일합니다. (90%)');
-    }
-
-    // 랜덤 휴식일이면 스킵
-    if (todayPostedAccounts.has('__REST_DAY__')) return;
 
     // dailyMax 체크
     const dailyMax = settings.dailyMax || 10;
@@ -282,10 +264,8 @@ async function checkAndRun() {
       return;
     }
 
-    // DB에서 오늘 완료된 계정 현황 재조회 (__REST_DAY__ 플래그는 유지)
-    const hadRestDay = todayPostedAccounts.has('__REST_DAY__');
+    // DB에서 오늘 완료된 계정 현황 재조회
     todayPostedAccounts = loadTodayPostedFromDB();
-    if (hadRestDay) todayPostedAccounts.add('__REST_DAY__');
 
     // 오늘 아직 포스팅하지 않은 계정 필터
     const pendingAccounts = accounts.filter(a => !todayPostedAccounts.has(a.id));
@@ -487,8 +467,7 @@ function getSchedulerStatus() {
     running,
     lastRunDate,
     todayPosted: todayPostedAccounts.size,
-    todayPostedAccounts: Array.from(todayPostedAccounts).filter(id => id !== '__REST_DAY__'),
-    isRestDay: todayPostedAccounts.has('__REST_DAY__'),
+    todayPostedAccounts: Array.from(todayPostedAccounts),
     nextRunIn,
   };
 }
