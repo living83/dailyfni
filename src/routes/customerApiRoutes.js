@@ -63,15 +63,24 @@ router.post('/customers', async (req, res) => {
 router.get('/customers', async (req, res) => {
   try {
     const { search, creditStatus, status, assignedTo } = req.query;
-    let sql = 'SELECT * FROM customers WHERE 1=1';
+    let sql = `SELECT c.*,
+      se.product_name as last_loan_product, se.loan_amount as last_loan_amount,
+      se.executed_date as last_loan_date, se.fee_amount as last_fee_amount
+      FROM customers c
+      LEFT JOIN (
+        SELECT customer_name, product_name, loan_amount, executed_date, fee_amount,
+          ROW_NUMBER() OVER (PARTITION BY customer_name ORDER BY executed_date DESC) as rn
+        FROM settlement_executions
+      ) se ON c.name = se.customer_name AND se.rn = 1
+      WHERE 1=1`;
     const params = [];
 
-    if (search) { sql += ' AND (name LIKE ? OR phone LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
-    if (creditStatus && creditStatus !== '전체 신용상태') { sql += ' AND credit_status = ?'; params.push(creditStatus); }
-    if (status && status !== '전체 진행상태') { sql += ' AND status = ?'; params.push(status); }
-    if (assignedTo && assignedTo !== '전체 담당자') { sql += ' AND assigned_to = ?'; params.push(assignedTo); }
+    if (search) { sql += ' AND (c.name LIKE ? OR c.phone LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (creditStatus && creditStatus !== '전체 신용상태') { sql += ' AND c.credit_status = ?'; params.push(creditStatus); }
+    if (status && status !== '전체 진행상태') { sql += ' AND c.status = ?'; params.push(status); }
+    if (assignedTo && assignedTo !== '전체 담당자') { sql += ' AND c.assigned_to = ?'; params.push(assignedTo); }
 
-    sql += ' ORDER BY id DESC LIMIT 100';
+    sql += ' ORDER BY c.id DESC LIMIT 100';
     const rows = await query(sql, params);
     res.json({ success: true, data: maskCustomerList(rows) });
   } catch (err) {

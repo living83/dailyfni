@@ -354,7 +354,9 @@ function renderCustomers() {
   const rows = dbCustomers.map(c => {
     const ssn = c.ssn||'';
     const ssnDisplay = ssn.length >= 8 ? ssn.substring(0,6) + '-' + ssn.charAt(7) : ssn.substring(0,6);
-    const loanDate = c.loan_date ? new Date(c.loan_date).toISOString().split('T')[0] : '-';
+    const loanDate = c.last_loan_date ? new Date(c.last_loan_date).toISOString().split('T')[0] : (c.loan_date ? new Date(c.loan_date).toISOString().split('T')[0] : '-');
+    const loanAmount = c.last_loan_amount || c.loan_amount || '-';
+    const loanProduct = c.last_loan_product || '';
     const score = c.credit_score || 0;
     return `<tr>
       <td>${c.id}</td>
@@ -363,7 +365,7 @@ function renderCustomers() {
       <td>${creditStatusBadge(c.credit_status)}</td>
       <td style="color:${score>=700?'#16a34a':score>=600?'#d97706':'#ef4444'};font-weight:600;">${score}</td>
       <td>${loanDate}</td>
-      <td>${c.loan_amount||'-'}</td>
+      <td>${loanAmount !== '-' ? loanAmount + '만' : '-'}${loanProduct ? '<br><span style="font-size:10px;color:#64748b;">'+loanProduct+'</span>' : ''}</td>
       <td><span class="badge ${statusMap[c.status]||'badge-lead'}">${c.status||'리드'}</span></td>
       <td>${c.assigned_to||'-'}</td>
       <td>${c.db_source||'-'}</td>
