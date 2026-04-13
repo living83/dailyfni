@@ -514,40 +514,30 @@ async function getLoanList(agentNo, upw, filters = {}) {
 
   const data = await page.evaluate(() => {
     const rows = [];
-    const debug = { tableCount: 0, thTexts: [], tdCounts: [], pageTitle: document.title, bodyLength: document.body.innerText.length };
 
-    const allTables = document.querySelectorAll('table');
-    debug.tableCount = allTables.length;
+    // 론앤마스터 테이블: id="id_list_table", 헤더는 td.cs_thema_ListBar_Header
+    const table = document.getElementById('id_list_table') || document.querySelector('table.cs_thema_ListTable');
 
-    for (const t of allTables) {
-      const ths = t.querySelectorAll('th');
-      const thTexts = [...ths].map(th => th.textContent.trim());
-      if (thTexts.length > 3) debug.thTexts.push(thTexts.join(','));
-
-      // 이름 또는 고객명 포함 테이블 찾기
-      if (thTexts.some(x => x.includes('이름') || x.includes('고객')) && thTexts.some(x => x.includes('상태') || x.includes('처리'))) {
-        const trs = t.querySelectorAll('tr');
-        for (const tr of trs) {
-          const tds = tr.querySelectorAll('td');
-          debug.tdCounts.push(tds.length);
-          if (tds.length >= 8) {
-            rows.push({
-              applyDate: tds[0]?.textContent?.trim() || '',
-              processDate: tds[1]?.textContent?.trim() || '',
-              productName: tds[2]?.textContent?.trim() || tds[3]?.textContent?.trim() || '',
-              recruiter: tds[3]?.textContent?.trim() || tds[4]?.textContent?.trim() || '',
-              customerName: tds[4]?.textContent?.trim() || tds[7]?.textContent?.trim() || '',
-              birthDate: tds[5]?.textContent?.trim() || tds[8]?.textContent?.trim() || '',
-              gender: tds[6]?.textContent?.trim() || tds[9]?.textContent?.trim() || '',
-              jobType: tds[7]?.textContent?.trim() || tds[10]?.textContent?.trim() || '',
-              status: tds[8]?.textContent?.trim() || tds[11]?.textContent?.trim() || '',
-              approvedAmount: tds[9]?.textContent?.trim() || tds[12]?.textContent?.trim() || '',
-              reviewMemo: tds[10]?.textContent?.trim() || tds[13]?.textContent?.trim() || '',
-              branchMemo: tds[11]?.textContent?.trim() || tds[14]?.textContent?.trim() || '',
-            });
-          }
+    if (table) {
+      const trs = table.querySelectorAll('tr');
+      for (let i = 1; i < trs.length; i++) { // 0번은 헤더
+        const tds = trs[i].querySelectorAll('td');
+        if (tds.length >= 14) {
+          rows.push({
+            applyDate: tds[0]?.textContent?.trim() || '',
+            processDate: tds[1]?.textContent?.trim() || '',
+            productName: tds[3]?.textContent?.trim() || '',
+            recruiter: tds[4]?.textContent?.trim() || '',
+            customerName: tds[7]?.textContent?.trim() || '',
+            birthDate: tds[8]?.textContent?.trim() || '',
+            gender: tds[9]?.textContent?.trim() || '',
+            jobType: tds[10]?.textContent?.trim() || '',
+            status: tds[11]?.textContent?.trim() || '',
+            approvedAmount: tds[12]?.textContent?.trim() || '',
+            reviewMemo: tds[13]?.textContent?.trim() || '',
+            branchMemo: tds[14]?.textContent?.trim() || '',
+          });
         }
-        break;
       }
     }
 
@@ -562,7 +552,7 @@ async function getLoanList(agentNo, upw, filters = {}) {
     } : null;
 
     const total = rows.length;
-    return { rows, summary, total, debug };
+    return { rows, summary, total };
   });
 
   console.log('[크롤러] 파싱 결과:', data.rows?.length, '건, 테이블:', data.debug?.tableCount, ', TH:', JSON.stringify(data.debug?.thTexts?.slice(0,3)));
