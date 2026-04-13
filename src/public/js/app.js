@@ -217,6 +217,10 @@ function navigate(page) {
   if (page === 'customer-ledger' && currentLedgerId) {
     setTimeout(() => loadLedgerTimelines(currentLedgerId), 200);
   }
+  // 대출 신청 관리 진입 시 자동 동기화
+  if (page === 'loans') {
+    setTimeout(() => syncLoanList(), 100);
+  }
 }
 
 // ========================================
@@ -528,8 +532,20 @@ async function syncLoanList() {
       loanListData = data.data.rows || [];
       loanListSummary = data.data.summary;
       if (statusEl) statusEl.textContent = `${loanListData.length}건 동기화 완료 (${new Date().toLocaleTimeString()})`;
-      // 테이블 업데이트
-      navigate('loans');
+      // 테이블 직접 업데이트 (navigate 호출 시 무한루프 방지)
+      const tbody = document.getElementById('loanListBody');
+      if (tbody) {
+        const statusBadge = (s) => {
+          const map = {'접수':'badge-submit','전송':'badge-submit','심사':'badge-review','가승인':'badge-review','승인':'badge-approved','부결':'badge-rejected','진행후부결':'badge-rejected','완납':'badge-executed','본인취소':'badge-closed','진행불가':'badge-closed','조회중':'badge-lead','정상접수':'badge-submit','상담중':'badge-consult','진행중':'badge-consult','서류안내':'badge-consult','서류받음':'badge-consult','인증대기':'badge-lead'};
+          return `<span class="badge ${map[s]||'badge-lead'}">${s}</span>`;
+        };
+        tbody.innerHTML = loanListData.map(r => `<tr>
+          <td>${r.applyDate}</td><td>${r.processDate}</td><td>${r.productName}</td>
+          <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
+          <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
+          <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
+        </tr>`).join('') || '<tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8;">데이터가 없습니다.</td></tr>';
+      }
     } else {
       if (statusEl) statusEl.textContent = '동기화 실패: ' + (data.message || '');
     }
