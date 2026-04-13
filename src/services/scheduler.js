@@ -39,13 +39,14 @@ function getLogs() {
   return logBuffer.slice().reverse(); // 최신이 위
 }
 
-// ── 티어별 사이클 정의 ──
+// ── 티어별 사이클 정의 (횟수 기반) ──
+// general: 일반 포스팅 횟수, ad: 광고 포스팅 횟수 → 사이클 = general + ad
 const TIER_CYCLES = {
-  1: { length: 1, adIndices: [] },           // 항상 일반
-  2: { length: 4, adIndices: [3] },          // 3일반, 1광고
-  3: { length: 4, adIndices: [2, 3] },       // 2일반, 2광고
-  4: { length: 4, adIndices: [1, 2, 3] },    // 1일반, 3광고
-  5: { length: 5, adIndices: [1, 2, 3, 4] }, // 1일반, 4광고
+  1: { general: 1, ad: 0 },  // 매번 일반 (광고 없음)
+  2: { general: 4, ad: 1 },  // 4번 일반 → 1번 광고 (5회 주기)
+  3: { general: 3, ad: 1 },  // 3번 일반 → 1번 광고 (4회 주기)
+  4: { general: 2, ad: 2 },  // 2번 일반 → 2번 광고 (4회 주기)
+  5: { general: 1, ad: 1 },  // 1번 일반 → 1번 광고 (2회 주기)
 };
 
 // ── 티어 업그레이드 기준 (일수) ──
@@ -62,15 +63,24 @@ const DAY_MAP = ['일', '월', '화', '수', '목', '금', '토'];
 const FRONTEND_DAY_ORDER = ['월', '화', '수', '목', '금', '토', '일'];
 
 /**
- * 티어와 계정 생성일로부터 오늘 포스팅 타입 결정
+ * 티어와 누적 발행 횟수로 다음 포스팅 타입 결정 (횟수 기반)
+ *
+ * 사이클: [일반 × general회] → [광고 × ad회] → 반복
+ * 예) tier3 = 일반3 → 광고1 → 일반3 → 광고1 → ...
+ *
+ * @param {number} tier - 계정 티어 (1~5)
+ * @param {number} publishedCount - 이 계정의 총 발행완료 횟수
  */
-function getPostTypeForTier(tier, daysSinceCreation) {
+function getPostTypeForTier(tier, publishedCount) {
   const cycle = TIER_CYCLES[tier] || TIER_CYCLES[1];
-  const dayInCycle = daysSinceCreation % cycle.length;
-  if (cycle.adIndices.includes(dayInCycle)) {
-    return '광고(대출)';
+  const total = cycle.general + cycle.ad;
+  if (total === 0 || cycle.ad === 0) return '일반 정보성';
+  const pos = publishedCount % total;
+  // 사이클 내 처음 general회는 일반, 나머지 ad회는 광고
+  if (pos < cycle.general) {
+    return '일반 정보성';
   }
-  return '일반 정보성';
+  return '광고(대출)';
 }
 
 /**
@@ -284,10 +294,13 @@ async function checkAndRun() {
       if (todayPostedAccounts.size >= dailyMax) break;
 
       try {
-        // 1. 포스팅 타입 결정
-        const days = daysBetween(account.createdAt);
-        const postType = getPostTypeForTier(account.tier || 1, days);
-        log('info', `${account.accountName}: Tier ${account.tier}, ${days}일 경과, 타입=${postType}`);
+        // 1. 포스팅 타입 결정 (횟수 기반)
+        const publishedCount = db.prepare(
+          `SELECT COUNT(1) as cnt FROM postings WHERE accountId = ? AND status IN ('발행완료', '확인필요')`
+        ).get(account.id)?.cnt || 0;
+        const postType = getPostTypeForTier(account.tier || 1, publishedCount);
+        const cycle = TIER_CYCLES[account.tier || 1] || TIER_CYCLES[1];
+        log('info', `${account.accountName}: Tier ${account.tier}, 누적 ${publishedCount}회, 사이클[${cycle.general}일반+${cycle.ad}광고] → ${postType}`);
 
         // 2. 검수완료 콘텐츠 찾기 (AI 생성 완료된 것)
         const contents = Content.listContents();

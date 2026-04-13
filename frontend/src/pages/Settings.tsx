@@ -7,13 +7,13 @@ import Toggle from '../components/Toggle'
 import { PageSkeleton } from '../components/LoadingSkeleton'
 import type { SystemSettings, Account, PostingSettings } from '../types'
 
-/* Tier rules — 1계정 1일 1포스팅, N일 주기 중 일반/광고 비율 */
+/* Tier rules — 횟수 기반 사이클: 일반 N회 → 광고 M회 → 반복 */
 const tierRules = [
-  { tier: 1, label: '신규', cycle: '매일', general: 1, ad: 0, desc: '매일 일반글 1건', color: 'bg-muted-foreground' },
-  { tier: 2, label: '성장', cycle: '4일', general: 3, ad: 1, desc: '3일 일반 → 1일 광고', color: 'bg-primary' },
-  { tier: 3, label: '중급', cycle: '4일', general: 2, ad: 2, desc: '2일 일반 → 2일 광고', color: 'bg-violet-500' },
-  { tier: 4, label: '고수익', cycle: '4일', general: 1, ad: 3, desc: '1일 일반 → 3일 광고', color: 'bg-amber' },
-  { tier: 5, label: '최상위', cycle: '5일', general: 1, ad: 4, desc: '1일 일반 → 4일 광고', color: 'bg-emerald' },
+  { tier: 1, label: '신규', cycle: '1회', general: 1, ad: 0, desc: '매번 일반글만', color: 'bg-muted-foreground' },
+  { tier: 2, label: '성장', cycle: '5회', general: 4, ad: 1, desc: '일반 4회 → 광고 1회', color: 'bg-primary' },
+  { tier: 3, label: '중급', cycle: '4회', general: 3, ad: 1, desc: '일반 3회 → 광고 1회', color: 'bg-violet-500' },
+  { tier: 4, label: '고수익', cycle: '4회', general: 2, ad: 2, desc: '일반 2회 → 광고 2회', color: 'bg-amber' },
+  { tier: 5, label: '최상위', cycle: '2회', general: 1, ad: 1, desc: '일반 1회 → 광고 1회', color: 'bg-emerald' },
 ]
 
 const dayLabels = ['월', '화', '수', '목', '금', '토', '일']
@@ -503,8 +503,8 @@ export default function Settings() {
                         )}
                       </div>
                       <div className="flex gap-3 text-[10px] shrink-0">
-                        <span className="text-primary">일반 {t.general}일</span>
-                        <span className="text-amber">광고 {t.ad}일</span>
+                        <span className="text-primary">일반 {t.general}회</span>
+                        <span className="text-amber">광고 {t.ad}회</span>
                       </div>
                     </div>
                   </div>
@@ -514,7 +514,7 @@ export default function Settings() {
 
             <div className="flex items-center gap-3 p-2 rounded-lg bg-primary/5 border border-primary/10">
               <Info className="w-4 h-4 text-primary shrink-0" />
-              <p className="text-xs text-muted-foreground">1계정 1일 1포스팅 원칙. 티어 비율에 따라 오늘 일반/광고를 자동 결정합니다.</p>
+              <p className="text-xs text-muted-foreground">1계정 1일 1포스팅. 누적 발행 횟수 기반으로 일반/광고를 자동 결정합니다.</p>
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border border-border bg-background/40">
