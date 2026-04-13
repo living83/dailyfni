@@ -71,7 +71,8 @@ async function checkAndRun() {
     if (!settings.enabled) return;
 
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    // 로컬 날짜 사용 (KST) — toISOString()은 UTC라 9시간 차이 발생
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const state = loadState();
 
     // 오늘 이미 실행했으면 스킵
