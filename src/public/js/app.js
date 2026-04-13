@@ -205,6 +205,7 @@ function navigate(page) {
   if (page === 'loan-register' && loanRegisterCustomerId) {
     setTimeout(() => {
       renderRecommendations();
+      loadLoanRegisterTimeline(loanRegisterCustomerId);
       // 폼 입력값 변경 시 추천 상품 자동 갱신
       document.querySelectorAll('.form-table input, .form-table select').forEach(el => {
         el.addEventListener('change', () => setTimeout(renderRecommendations, 100));
@@ -828,6 +829,19 @@ function renderLoanRegister() {
       <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;" onclick="submitLoanRegister()">접수 등록</button>
       <button class="btn btn-outline" onclick="loanRegisterCustomerId=null;navigate('loan-register');">초기화</button>
     </div>
+
+    ${c ? `<!-- 메모 / 상담 이력 -->
+    <div class="panel" style="margin-top:12px;">
+      <div class="panel-header"><h2>메모 / 상담 이력</h2><button class="btn btn-primary btn-sm" onclick="saveLoanRegisterMemo(${loanRegisterCustomerId})">기록 저장</button></div>
+      <div class="panel-body" style="padding:8px 12px;">
+        <textarea id="loanRegisterMemo" rows="3" placeholder="메모를 입력하면 상담 이력에 기록됩니다..." style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;"></textarea>
+      </div>
+      <div class="panel-body" style="padding:8px 12px;border-top:1px solid #e2e8f0;max-height:300px;overflow-y:auto;">
+        <div class="timeline" id="loanRegisterTimeline">
+          <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
+        </div>
+      </div>
+    </div>` : ''}
     </div><!-- /loan-register-left -->
 
     <div class="loan-register-right">
@@ -857,6 +871,54 @@ function renderLoanRegister() {
     </div><!-- /loan-register-right -->
     </div><!-- /loan-register-layout -->
   `;
+}
+
+// 대출접수 페이지 상담 이력 로드
+async function loadLoanRegisterTimeline(customerId) {
+  const timeline = document.getElementById('loanRegisterTimeline');
+  if (!timeline) return;
+  try {
+    const res = await fetch(`/api/consultations?customerId=${customerId}`);
+    const data = await res.json();
+    if (data.success && data.data.length > 0) {
+      timeline.innerHTML = data.data.map(c => {
+        const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
+        return `<div class="timeline-item">
+          <div class="tl-date">${date}</div>
+          <div class="tl-content">${c.content || ''}</div>
+          <div class="tl-user">${c.channel ? c.channel + ' | ' : ''}메모 | ${c.performed_by || ''}</div>
+        </div>`;
+      }).join('');
+    } else {
+      timeline.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:8px;">상담 이력이 없습니다.</div>';
+    }
+  } catch (e) {
+    timeline.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:8px;">로드 실패</div>';
+  }
+}
+
+// 대출접수 페이지 메모 저장
+async function saveLoanRegisterMemo(customerId) {
+  const textarea = document.getElementById('loanRegisterMemo');
+  if (!textarea || !textarea.value.trim()) { alert('메모를 입력하세요.'); return; }
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  try {
+    const res = await fetch('/api/consultations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId, channel: '메모', content: textarea.value.trim(),
+        performedBy: user.name || '', performedById: user.id || 0
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      textarea.value = '';
+      loadLoanRegisterTimeline(customerId);
+    } else {
+      alert('저장 실패: ' + (data.message || ''));
+    }
+  } catch (e) { alert('저장 오류: ' + e.message); }
 }
 
 // 접수 등록 (론앤마스터 자동 입력)
