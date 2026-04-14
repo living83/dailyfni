@@ -671,35 +671,84 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   };
   page.on('dialog', dialogHandler);
 
-  // 제출 버튼 클릭 (텍스트 기반 매칭, fallback 없음 — 못 찾으면 실패)
+  // 제출 버튼 클릭 (정확 매칭 우선 + 강화된 deny list, fallback 없음 — 못 찾으면 실패)
+  // 이전 버그: '등록'만 포함해도 매칭되어 '등록업체조회' 같은 조회 버튼을 눌러버림
   const submitResult = await page.evaluate(() => {
-    // 후보 수집 후 가장 적합한 버튼 1개 선택
-    const allBtns = document.querySelectorAll('input[type="submit"], input[type="button"], button, a');
-    const candidates = [];
-    for (const btn of allBtns) {
-      const text = (btn.value || btn.textContent || '').trim();
-      if (!text) continue;
-      // 제외 단어
-      if (text.includes('초기화') || text.includes('취소') || text.includes('삭제') ||
-          text.includes('닫기') || text.includes('목록') || text.includes('검색')) continue;
-      // 허용 단어
-      if (text.includes('등록') || text.includes('접수') || text.includes('저장') || text.includes('신청') || text.includes('제출')) {
-        candidates.push({ el: btn, text });
-      }
+    const allBtns = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button, a'));
+
+    // 허용 단어
+    const ALLOW = ['접수', '등록', '저장', '신청', '제출', '완료'];
+    // 정확 매칭 대상 (최우선)
+    const EXACT = [
+      '접수', '등록', '저장', '신청', '제출', '완료',
+      '접수하기', '등록하기', '저장하기', '신청하기', '제출하기',
+      '최종접수', '최종 접수', '작성완료', '작성 완료', '접수완료', '접수 완료',
+      '대출접수', '대출 접수', '대출신청', '대출 신청', '신청서 저장'
+    ];
+    // 반드시 제외 단어 — 조회/임시저장/업체관리 등 접수가 아닌 버튼
+    const DENY = [
+      '조회', '검색', '찾기', '목록', '리스트',
+      '임시', '임시저장', '수정', '변경',
+      '삭제', '취소', '닫기', '되돌리기',
+      '초기화', '리셋', 'reset', 'RESET',
+      '보기', '상세', '다운로드', '업로드', '출력', '인쇄',
+      '이전', '다음', '새로고침', '확인',
+      '업체', '회사', '지점', '담당자', '관리', '설정'  // '등록업체조회','지점등록' 등
+    ];
+    const hasDeny = (t) => DENY.some(d => t.includes(d));
+    const btnText = (b) => (b.value || b.textContent || '').trim();
+    const visible = (b) => (b.offsetParent !== null) && !b.disabled && b.type !== 'hidden';
+
+    const typeRank = (b) => {
+      // input[type=submit] 1순위, input[type=button] 2, button 3, a 4
+      if (b.tagName === 'INPUT' && b.type === 'submit') return 1;
+      if (b.tagName === 'INPUT' && b.type === 'button') return 2;
+      if (b.tagName === 'BUTTON') return 3;
+      return 4;
+    };
+
+    // 1단계: 정확 매칭
+    let exact = [];
+    for (const b of allBtns) {
+      if (!visible(b)) continue;
+      const t = btnText(b);
+      if (!t || hasDeny(t)) continue;
+      if (EXACT.includes(t)) exact.push({ b, t });
     }
-    if (candidates.length === 0) {
-      return { clicked: false, buttonText: '', reason: 'submit_button_not_found' };
+    if (exact.length > 0) {
+      exact.sort((x, y) => typeRank(x.b) - typeRank(y.b));
+      exact[0].b.click();
+      return { clicked: true, buttonText: exact[0].t, via: 'exact', candidateCount: exact.length };
     }
-    // "접수" > "등록" > "신청" > "저장" > "제출" 순으로 우선순위
-    const priority = ['접수', '등록', '신청', '저장', '제출'];
-    candidates.sort((a, b) => {
-      const pa = priority.findIndex(p => a.text.includes(p));
-      const pb = priority.findIndex(p => b.text.includes(p));
-      return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
-    });
-    const chosen = candidates[0];
-    chosen.el.click();
-    return { clicked: true, buttonText: chosen.text, candidateCount: candidates.length };
+
+    // 2단계: 포함 매칭 (단 deny 단어 없어야 함)
+    let subs = [];
+    for (const b of allBtns) {
+      if (!visible(b)) continue;
+      const t = btnText(b);
+      if (!t || hasDeny(t)) continue;
+      if (ALLOW.some(a => t.includes(a))) subs.push({ b, t });
+    }
+    if (subs.length > 0) {
+      // ALLOW 우선순위: 접수 > 등록 > 신청 > 저장 > 제출 > 완료
+      const pri = ALLOW;
+      subs.sort((x, y) => {
+        const px = pri.findIndex(p => x.t.includes(p));
+        const py = pri.findIndex(p => y.t.includes(p));
+        if (px !== py) return (px < 0 ? 99 : px) - (py < 0 ? 99 : py);
+        return typeRank(x.b) - typeRank(y.b);
+      });
+      subs[0].b.click();
+      return { clicked: true, buttonText: subs[0].t, via: 'substring', candidateCount: subs.length };
+    }
+
+    // 후보가 없으면 실패 + 화면상 클릭 가능한 버튼 텍스트 샘플 반환 (디버그용)
+    const sample = allBtns
+      .filter(visible)
+      .map(btnText)
+      .filter(Boolean)
+      .slice(0, 40);
+    return { clicked: false, buttonText: '', reason: 'submit_button_not_found', sample };
   });
 
   // 제출 후 페이지 이동/응답 대기

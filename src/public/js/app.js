@@ -1356,20 +1356,28 @@ async function submitLoanRegister() {
     if (data.success) {
       const result = data.data;
       const sr = result.submitResponse;
-      const submitOk = !!(sr?.isSuccess && !sr?.isError);
+      const chosenText = result.submitResult?.buttonText || '';
+      // 클릭된 버튼이 '조회/임시저장/수정/목록' 등 접수가 아닌 관리 버튼이면 실패로 판정
+      const looksWrong = /조회|검색|찾기|임시|수정|삭제|취소|닫기|목록|리스트|업체|회사|지점|관리|보기|상세/.test(chosenText);
+      const submitOk = !!(sr?.isSuccess && !sr?.isError) && !looksWrong;
 
       let msg = '';
       if (submitOk) {
         msg += `✅ 론앤마스터 접수 완료\n\n`;
+      } else if (looksWrong) {
+        msg += `❌ 론앤마스터 접수 실패 (잘못된 버튼 클릭)\n\n`;
       } else {
         msg += `❌ 론앤마스터 접수 실패\n\n`;
       }
       msg += `입력 필드: ${result.filledCount}개\n`;
       msg += `미매칭 필드: ${(result.notFoundFields||[]).length}개\n`;
-      if (result.submitResult?.buttonText) msg += `클릭 버튼: ${result.submitResult.buttonText}\n`;
+      if (chosenText) msg += `클릭 버튼: ${chosenText}${result.submitResult?.via ? ' ('+result.submitResult.via+')' : ''}\n`;
       if (sr?.failureReason) msg += `\n실패 사유: ${sr.failureReason}\n`;
       if (sr?.alertMessage) msg += `\n알림 메시지: ${sr.alertMessage}\n`;
       msg += `\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
+      if (looksWrong) {
+        msg += `\n\n※ 접수 버튼이 아닌 '${chosenText}' 가 클릭되었습니다. 서버 로그를 확인하고 관리자에게 알려주세요.`;
+      }
       alert(msg);
 
       if (submitOk) {
@@ -1382,6 +1390,11 @@ async function submitLoanRegister() {
             body: JSON.stringify({ ...loanRegisterCustomerDB, status: '접수' })
           });
         }
+      }
+
+      // 버튼을 아예 못 찾은 경우: 후보 샘플 표시 (sample 은 server 에서 반환)
+      if (!result.submitResult?.clicked && (result.submitResult?.sample || []).length > 0) {
+        console.log('[접수] 제출 버튼 후보:', result.submitResult.sample);
       }
     } else {
       alert('접수 실패: ' + (data.message || '알 수 없는 오류'));
