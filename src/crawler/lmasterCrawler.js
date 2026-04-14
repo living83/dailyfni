@@ -257,11 +257,27 @@ async function scanFormFields(agentNo, upw) {
 // options.dryRun=true 면 폼 채우기까지만 하고 제출 직전에 멈춤 (스크린샷 반환)
 async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   const { dryRun = false } = options;
-  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
 
   const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(500, 1000);
+
+  // 로그아웃 / 세션만료 페이지 조기 감지 (로그인 재시도 유도)
+  const sessionCheck = await page.evaluate(() => {
+    const body = document.body?.innerText || '';
+    const href = location.href || '';
+    const patterns = ['ACCESS_Deny', 'InValid_LoginInfo', '로그아웃되었습니다', '로그아웃 되었습니다', '세션이 만료', 'Session Timeout', 'login.asp'];
+    const matched = patterns.find(p => body.includes(p) || href.includes(p));
+    return matched ? { kicked: true, reason: matched, url: href, snippet: body.substring(0, 300) } : { kicked: false };
+  });
+  if (sessionCheck.kicked) {
+    isLoggedIn = false; // 로컬 플래그 정정
+    const err = new Error(`론앤마스터 세션이 만료되어 로그아웃되었습니다 (감지: "${sessionCheck.reason}"). 상단의 [론앤마스터 연동] 버튼으로 재로그인 후 다시 시도하세요.`);
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    err.detail = sessionCheck;
+    throw err;
+  }
 
   // 1단계: 상품 선택 (fidx 기반) - 다양한 패턴 커버
   let productSelectResult = { selected: false, via: null, detail: '' };

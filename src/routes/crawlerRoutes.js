@@ -155,10 +155,17 @@ router.post('/crawler/submit-loan', async (req, res) => {
       res.json({ success: true, data: result });
     } finally {
       // 제출 완료 후에도 10초는 유지 (추가 중복 방지)
-      // 실패 시에는 즉시 해제해도 되지만, 동일 중복 방지를 위해 그대로 둠
       if (lockKey) _submitLocks.set(lockKey, Date.now());
     }
   } catch (err) {
+    // 세션 만료는 프론트가 재로그인 유도할 수 있게 401 로 반환
+    if (err && err.code === 'LMASTER_SESSION_EXPIRED') {
+      return res.status(401).json({
+        success: false,
+        code: 'LMASTER_SESSION_EXPIRED',
+        message: err.message
+      });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });

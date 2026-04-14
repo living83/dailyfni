@@ -1222,6 +1222,11 @@ async function submitLoanRegister() {
       body: JSON.stringify({ formData, dryRun: true })
     });
     const preview = await previewRes.json();
+    if (previewRes.status === 401 && preview.code === 'LMASTER_SESSION_EXPIRED') {
+      crawlerLoggedIn = false;
+      alert('⚠ 론앤마스터 세션이 만료되었습니다.\n\n상단의 [론앤마스터 연동] 버튼을 눌러 재로그인한 뒤 다시 시도해 주세요.');
+      return;
+    }
     if (!preview.success) {
       alert('미리보기 실패: ' + (preview.message || '알 수 없는 오류'));
       return;
