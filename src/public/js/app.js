@@ -1236,6 +1236,7 @@ async function submitLoanRegister() {
     const confirmed = await showSubmitPreviewModal({
       productName, name, loanAmount,
       filledCount: p.filledCount,
+      filledFields: p.filledFields || [],
       notFoundFields: p.notFoundFields || [],
       screenshot: p.screenshot || '',
       missingRequired
@@ -1300,8 +1301,10 @@ async function submitLoanRegister() {
 }
 
 // 접수 미리보기 모달 (dry-run 결과 표시)
-function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, notFoundFields, screenshot, missingRequired }) {
+function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, filledFields, notFoundFields, screenshot, missingRequired }) {
   return new Promise((resolve) => {
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
 
@@ -1310,16 +1313,43 @@ function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, no
 
     const warnHtml = missingRequired.length > 0
       ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
-           <strong>⚠ 필수 항목 미매칭:</strong> ${missingRequired.join(', ')}<br/>
+           <strong>⚠ 필수 항목 미매칭:</strong> ${esc(missingRequired.join(', '))}<br/>
            <span style="font-size:12px;">이대로 제출하면 론앤마스터에서 오류가 날 수 있습니다.</span>
          </div>`
       : '';
 
-    const notMatchHtml = (notFoundFields || []).length > 0
-      ? `<details style="margin-top:8px;"><summary style="cursor:pointer;color:#64748b;font-size:13px;">미매칭 필드 ${notFoundFields.length}개 보기</summary>
-           <div style="font-size:12px;color:#64748b;padding:6px 0;line-height:1.6;">${notFoundFields.join(', ')}</div>
+    // 채워진 필드 목록 (label / target / value)
+    const filledRows = (filledFields || []).map(f => {
+      const label = esc(f.field || '');
+      const target = esc(f.target || '');
+      const value = esc(String(f.value ?? '').substring(0, 120));
+      return `<tr>
+        <td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap;color:#0f172a;">${label}</td>
+        <td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap;color:#64748b;font-family:monospace;font-size:11px;">${target}</td>
+        <td style="padding:3px 8px;border-bottom:1px solid #f1f5f9;color:#334155;">${value}</td>
+      </tr>`;
+    }).join('');
+    const filledDetailHtml = filledRows
+      ? `<details style="margin-top:6px;">
+           <summary style="cursor:pointer;color:#0369a1;font-size:12px;">채워진 필드 ${filledCount}개 상세 보기</summary>
+           <div style="max-height:240px;overflow:auto;border:1px solid #e2e8f0;border-radius:4px;margin-top:6px;">
+             <table style="width:100%;border-collapse:collapse;font-size:12px;">
+               <thead><tr style="background:#f8fafc;">
+                 <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e2e8f0;">라벨</th>
+                 <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e2e8f0;">필드명</th>
+                 <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e2e8f0;">값</th>
+               </tr></thead>
+               <tbody>${filledRows}</tbody>
+             </table>
+           </div>
          </details>`
-      : '<div style="color:#16a34a;font-size:13px;">✓ 모든 필드 매칭 완료</div>';
+      : '';
+
+    const notMatchHtml = (notFoundFields || []).length > 0
+      ? `<details style="margin-top:6px;"><summary style="cursor:pointer;color:#b45309;font-size:12px;">미매칭 필드 ${notFoundFields.length}개 보기</summary>
+           <div style="font-size:12px;color:#64748b;padding:6px 0;line-height:1.6;">${esc(notFoundFields.join(', '))}</div>
+         </details>`
+      : '<div style="color:#16a34a;font-size:13px;margin-top:6px;">✓ 모든 필드 매칭 완료</div>';
 
     const imgHtml = screenshot
       ? `<img src="data:image/png;base64,${screenshot}" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;" alt="폼 미리보기"/>`
@@ -1328,13 +1358,14 @@ function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, no
     box.innerHTML = `
       <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;">
         <h3 style="margin:0;font-size:16px;">론앤마스터 접수 미리보기 (아직 제출되지 않음)</h3>
-        <div style="font-size:12px;color:#64748b;margin-top:4px;">[${productName}] / 고객: ${name} / 요청액: ${loanAmount}만</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;">[${esc(productName)}] / 고객: ${esc(name)} / 요청액: ${esc(loanAmount)}만</div>
       </div>
       <div style="padding:16px 20px;overflow-y:auto;flex:1;">
         ${warnHtml}
         <div style="background:#f0f9ff;border:1px solid #bae6fd;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
-          ✓ 입력 완료 필드: <strong>${filledCount}개</strong>
+          ✓ 입력 완료 필드: <strong>${filledCount}개</strong> / 미매칭: <strong>${(notFoundFields||[]).length}개</strong>
         </div>
+        ${filledDetailHtml}
         ${notMatchHtml}
         <div style="margin-top:12px;">${imgHtml}</div>
       </div>
