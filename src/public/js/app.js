@@ -202,15 +202,18 @@ function navigate(page) {
   const active = document.querySelector(`.nav-item[data-page="${page}"]`);
   if (active) active.classList.add('active');
   document.getElementById('content').innerHTML = p.render();
-  // 대출 접수 페이지 렌더 후 추천 상품 자동 표시
-  if (page === 'loan-register' && loanRegisterCustomerId) {
+  // 대출 접수 페이지 렌더 후 추천 상품 자동 표시 + 고객적법확인 기본값 채움
+  if (page === 'loan-register') {
     setTimeout(() => {
-      renderRecommendations();
-      loadLoanRegisterTimeline(loanRegisterCustomerId);
-      // 폼 입력값 변경 시 추천 상품 자동 갱신
-      document.querySelectorAll('.form-table input, .form-table select').forEach(el => {
-        el.addEventListener('change', () => setTimeout(renderRecommendations, 100));
-      });
+      initLegalCheckDefaults();
+      if (loanRegisterCustomerId) {
+        renderRecommendations();
+        loadLoanRegisterTimeline(loanRegisterCustomerId);
+        // 폼 입력값 변경 시 추천 상품 자동 갱신
+        document.querySelectorAll('.form-table input, .form-table select').forEach(el => {
+          el.addEventListener('change', () => setTimeout(renderRecommendations, 100));
+        });
+      }
     }, 50);
   }
   // 고객원장 렌더 후 타임라인 + 상품 추천 로드
@@ -958,13 +961,55 @@ function renderLoanRegister() {
           </tbody>
         </table>
 
+        <!-- 고객적법확인 (아이앤유/대부 등 접수 시 필수) -->
+        <div class="form-section-title" style="color:#c53030;">고객적법확인 <span style="font-size:11px;">(아이앤유·대부 상품 접수 시 필수. 저장값은 다음 접수에도 재사용됩니다.)</span></div>
+        <table class="form-table">
+          <tbody>
+            <tr>
+              <th>최초수집경로</th>
+              <td>
+                <select id="lr-legal-firstPath">
+                  <option>고객이 먼저 중개인에게 연락</option>
+                  <option>중개인이 먼저 고객에게 연락</option>
+                </select>
+              </td>
+              <th>중개사연락처경로</th>
+              <td>
+                <select id="lr-legal-brokerPath">
+                  <option>인터넷 광고(고객이 직접 전화)</option>
+                  <option>전화 홍보</option>
+                  <option>문자 홍보</option>
+                  <option>지인소개</option>
+                  <option>기타</option>
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <th>작성년월일</th>
+              <td><input type="text" id="lr-legal-writeDate" style="width:200px;" placeholder="YYYYMMDD"></td>
+              <th>회사명</th>
+              <td><input type="text" id="lr-legal-company" placeholder="회사명"></td>
+            </tr>
+            <tr>
+              <th>작성자명 <span class="required">*</span></th>
+              <td><input type="text" id="lr-legal-writer" placeholder="작성자명 (로그인 직원 자동)"></td>
+              <th>대표자명</th>
+              <td><input type="text" id="lr-legal-ceo" placeholder="대표자명"></td>
+            </tr>
+            <tr>
+              <th>접수주소(URL)</th>
+              <td colspan="3"><input type="text" id="lr-legal-url" placeholder="접수처 URL (선택)"></td>
+            </tr>
+          </tbody>
+        </table>
+
         <!-- 기타사항 -->
         <div class="form-section-title">기타사항 <span style="font-size:11px;color:#c53030;">※하단 상품 선택란 빨간글씨 필수항목 또는 각 금융사별 자료실 가이드 우측 상단 ★접수시 필수 기재사항 참고하여 기재 후 접수!</span></div>
         <table class="form-table">
           <tbody>
             <tr>
               <td colspan="6" style="padding:0;">
-                <textarea rows="5" style="width:100%;border:none;padding:12px;font-size:12px;resize:vertical;" placeholder="기타사항을 입력하세요...">${c ? c.memo : ''}</textarea>
+                <textarea id="lr-memo" rows="5" style="width:100%;border:none;padding:12px;font-size:12px;resize:vertical;" placeholder="기타사항을 입력하세요...">${c ? c.memo : ''}</textarea>
               </td>
             </tr>
           </tbody>
@@ -1068,6 +1113,29 @@ async function saveLoanRegisterMemo(customerId) {
       alert('저장 실패: ' + (data.message || ''));
     }
   } catch (e) { alert('저장 오류: ' + e.message); }
+}
+
+// 고객적법확인 기본값 자동 채움 (페이지 렌더 직후 호출)
+// - 작성년월일: 오늘(YYYYMMDD)
+// - 작성자명: 로그인 직원 이름
+// - 회사명/대표자명/URL: localStorage 에 저장된 이전 값
+function initLegalCheckDefaults() {
+  try {
+    const d = new Date();
+    const today = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const user = JSON.parse(sessionStorage.getItem('loggedInUser')||'{}');
+    const saved = JSON.parse(localStorage.getItem('legalCheckDefaults')||'{}');
+
+    const setIfEmpty = (id, value) => {
+      const el = document.getElementById(id);
+      if (el && !el.value) el.value = value || '';
+    };
+    setIfEmpty('lr-legal-writeDate', today);
+    setIfEmpty('lr-legal-writer',    user.name || '');
+    setIfEmpty('lr-legal-company',   saved.company || '');
+    setIfEmpty('lr-legal-ceo',       saved.ceo || '');
+    setIfEmpty('lr-legal-url',       saved.url || '');
+  } catch {}
 }
 
 // 접수 등록 (론앤마스터 자동 입력)
@@ -1185,9 +1253,28 @@ async function submitLoanRegister() {
   const rc3 = getInputsInRow(recRows[3]);
   const monthlyPayment = rc3[0]?.value?.replace(/,/g, '') || '';
 
-  // 기타사항 테이블 (index 5)
-  const memoTable = tables[5];
-  const memo = memoTable?.querySelector('textarea')?.value || '';
+  // 기타사항 (id 기반 — 테이블 인덱스 변동에 견고)
+  const memo = document.getElementById('lr-memo')?.value || '';
+
+  // 고객적법확인 수집 + 빈 값은 기본값/로그인자/오늘 로 자동 채움
+  const todayYMD = (() => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; })();
+  const loginUser = (() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}'); } catch { return {}; } })();
+  const savedLegal = (() => { try { return JSON.parse(localStorage.getItem('legalCheckDefaults')||'{}'); } catch { return {}; } })();
+  const legal = {
+    firstPath:  document.getElementById('lr-legal-firstPath')?.value  || '고객이 먼저 중개인에게 연락',
+    brokerPath: document.getElementById('lr-legal-brokerPath')?.value || '인터넷 광고(고객이 직접 전화)',
+    writeDate:  document.getElementById('lr-legal-writeDate')?.value  || todayYMD,
+    company:    document.getElementById('lr-legal-company')?.value    || savedLegal.company || '',
+    writer:     document.getElementById('lr-legal-writer')?.value     || loginUser.name || '',
+    ceo:        document.getElementById('lr-legal-ceo')?.value        || savedLegal.ceo || '',
+    url:        document.getElementById('lr-legal-url')?.value        || savedLegal.url || ''
+  };
+  // 입력한 고정값(회사명/대표자명/URL)은 다음 접수에도 재사용되도록 저장
+  try {
+    localStorage.setItem('legalCheckDefaults', JSON.stringify({
+      company: legal.company, ceo: legal.ceo, url: legal.url
+    }));
+  } catch {}
 
   const formData = {
     fidx, productName, name, birth, gender, carrier,
@@ -1200,7 +1287,8 @@ async function submitLoanRegister() {
     vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
     recoveryType, courtName, caseNoYear, caseNoType, caseNoNum, refundBank, refundAccount, monthlyPayment,
     workZipcode, workAddress, workAddressDetail,
-    memo, dbSource
+    memo, dbSource,
+    legal   // 고객적법확인 블록 (firstPath / brokerPath / writeDate / company / writer / ceo / url)
   };
 
   // 중복 클릭 방지

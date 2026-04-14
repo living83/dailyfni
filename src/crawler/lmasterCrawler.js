@@ -501,6 +501,73 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     setInput('brt_bank_addr', data.refundAccount, '환급계좌');
     setInput('brt_month_repay_amt', data.monthlyPayment, '월변제금');
 
+    // === 고객적법확인 (아이앤유/대부 등) ===
+    // 론앤마스터 input 이름 (스캔 확인): call_date, call_comp, call_staff, call_ceo, call_url
+    // select (최초수집경로 / 중개사연락처경로) 는 이름이 불확실 → 라벨 매칭 우선 + 후보명 fallback
+    const legal = data.legal || {};
+    if (Object.keys(legal).length > 0) {
+      setInput('call_date',  legal.writeDate, '작성년월일');
+      setInput('call_comp',  legal.company,   '회사명');
+      setInput('call_staff', legal.writer,    '작성자명');
+      setInput('call_ceo',   legal.ceo,       '대표자명');
+      setInput('call_url',   legal.url,       '접수주소(URL)');
+
+      // 최초수집경로 / 중개사연락처경로 — 라벨 기반 select 탐색 후 text 매칭
+      const findSelectByLabel = (rxLabel) => {
+        const selects = document.querySelectorAll('select');
+        for (const sel of selects) {
+          const label = sel.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim() || '';
+          if (rxLabel.test(label)) return sel;
+        }
+        return null;
+      };
+      const setSelectByText = (sel, text, labelForLog) => {
+        if (!sel || !text) return false;
+        for (const opt of sel.options) {
+          if (opt.text.trim() === String(text).trim()) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: labelForLog, target: sel.name || '(select)', value: opt.text.trim() });
+            return true;
+          }
+        }
+        // 부분 매칭 fallback
+        for (const opt of sel.options) {
+          if (opt.text.includes(String(text)) || String(text).includes(opt.text.trim())) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: labelForLog + ' (부분매칭)', target: sel.name || '(select)', value: opt.text.trim() });
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (legal.firstPath) {
+        const firstSel = findSelectByLabel(/최초수집경로|수집경로/);
+        if (firstSel) {
+          if (!setSelectByText(firstSel, legal.firstPath, '최초수집경로')) notFound.push('최초수집경로');
+        } else {
+          // 후보명 직접 매칭
+          for (const n of ['call_path', 'call_path1', 'call_origin', 'src_path', 'call_first']) {
+            const el = document.querySelector(`select[name="${n}"]`);
+            if (el) { if (!setSelectByText(el, legal.firstPath, `최초수집경로[${n}]`)) notFound.push('최초수집경로'); break; }
+          }
+        }
+      }
+      if (legal.brokerPath) {
+        const brSel = findSelectByLabel(/중개사연락처경로|연락처경로|중개사경로/);
+        if (brSel) {
+          if (!setSelectByText(brSel, legal.brokerPath, '중개사연락처경로')) notFound.push('중개사연락처경로');
+        } else {
+          for (const n of ['call_path2', 'call_contact', 'broker_path', 'call_broker']) {
+            const el = document.querySelector(`select[name="${n}"]`);
+            if (el) { if (!setSelectByText(el, legal.brokerPath, `중개사연락처경로[${n}]`)) notFound.push('중개사연락처경로'); break; }
+          }
+        }
+      }
+    }
+
     // === 기타 (메모) ===
     // 실제 화면에 보이는 textarea 에 우선 기재해야 접수원이 확인 가능.
     // call_memo1/2/3 는 상품별로 hidden 이 많아 화면 반영이 안 되는 케이스 있음.
