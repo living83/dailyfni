@@ -381,6 +381,86 @@ router.post('/settlement/dedupe-executions', async (req, res) => {
   }
 });
 
+// === 실행 건 일괄 삭제 (관리자용, 매우 주의) ===
+// keep 필터와 **정확히 일치하는 행** 중 MIN(id) 1건만 남기고,
+// 해당 필터와 일치하지 않는 행 + 일치하는 행 중 MIN(id) 이외 행을 모두 삭제.
+// apply=false 는 건수만, apply=true + confirmText='PURGE' 일 때만 실제 삭제.
+router.post('/settlement/purge-executions', async (req, res) => {
+  try {
+    const { keep = {}, apply = false, confirmText } = req.body || {};
+
+    if (!keep.customerName || !keep.productName) {
+      return res.status(400).json({
+        success: false,
+        message: 'keep.customerName + keep.productName 최소 2개는 필수입니다.'
+      });
+    }
+
+    const conds = [];
+    const params = [];
+    if (keep.customerName)  { conds.push('customer_name = ?'); params.push(keep.customerName); }
+    if (keep.productName)   { conds.push('product_name = ?');  params.push(keep.productName); }
+    if (keep.executedDate)  { conds.push("DATE_FORMAT(executed_date, '%Y-%m-%d') = ?"); params.push(keep.executedDate); }
+    if (keep.loanAmount !== undefined && keep.loanAmount !== null && keep.loanAmount !== '') {
+      conds.push('loan_amount = ?'); params.push(Number(keep.loanAmount));
+    }
+    if (keep.status)        { conds.push("IFNULL(status, '승인') = ?"); params.push(keep.status); }
+    if (keep.dbSource)      { conds.push('db_source = ?'); params.push(keep.dbSource); }
+    if (keep.assignedTo)    { conds.push('assigned_to = ?'); params.push(keep.assignedTo); }
+
+    const whereKeep = conds.join(' AND ');
+
+    // 통계
+    const [totals] = await query('SELECT COUNT(*) AS cnt FROM settlement_executions');
+    const matches = await query(`SELECT id, customer_name, product_name, DATE_FORMAT(executed_date, '%Y-%m-%d') AS d, loan_amount, status, db_source, assigned_to FROM settlement_executions WHERE ${whereKeep} ORDER BY id`, params);
+
+    if (matches.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'keep 필터와 일치하는 행이 없습니다. 삭제를 중단했습니다.',
+        keep, matchedCount: 0
+      });
+    }
+
+    const keepId = matches[0].id; // 일치하는 것 중 가장 작은 id 만 유지
+    const willDelete = (totals.cnt || 0) - 1;
+
+    if (!apply) {
+      return res.json({
+        success: true,
+        dryRun: true,
+        totalRows: totals.cnt,
+        matchedCount: matches.length,
+        keepId,
+        keepRow: matches[0],
+        willDelete,
+        otherMatches: matches.slice(1, 10)  // 일치하지만 중복으로 삭제될 것들 미리보기
+      });
+    }
+
+    if (confirmText !== 'PURGE') {
+      return res.status(400).json({
+        success: false,
+        message: "실제 삭제하려면 body.confirmText 에 정확히 'PURGE' 문자열을 넣어주세요."
+      });
+    }
+
+    const result = await query('DELETE FROM settlement_executions WHERE id <> ?', [keepId]);
+    const deleted = (result && result.affectedRows) || 0;
+
+    await logAudit({
+      eventType: 'settlement_change',
+      targetType: 'execution',
+      afterValue: `실행 건 일괄삭제: keep={${JSON.stringify(keep)}}, keepId=${keepId}, 삭제 ${deleted}건`,
+      performedBy: req.user?.name || 'admin'
+    });
+
+    res.json({ success: true, applied: true, keepId, deleted });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // === 매출 집계 ===
 
 // 실행 건 등록
