@@ -253,8 +253,10 @@ async function scanFormFields(agentNo, upw) {
   return fields;
 }
 
-// 대출 신청서 자동 입력 (제출 전까지만 - 폼 채우기)
-async function submitLoanApplication(agentNo, upw, formData) {
+// 대출 신청서 자동 입력
+// options.dryRun=true 면 폼 채우기까지만 하고 제출 직전에 멈춤 (스크린샷 반환)
+async function submitLoanApplication(agentNo, upw, formData, options = {}) {
+  const { dryRun = false } = options;
   if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
 
   const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
@@ -412,6 +414,27 @@ async function submitLoanApplication(agentNo, upw, formData) {
 
     return { filled, notFound };
   }, formData);
+
+  // === Dry-run: 제출 직전에 멈추고 스크린샷/미매칭 필드 반환 ===
+  if (dryRun) {
+    let screenshot = '';
+    try {
+      screenshot = await page.screenshot({ encoding: 'base64', fullPage: true });
+    } catch (e) {
+      // 스크린샷 실패 시에도 필수 데이터는 반환
+      screenshot = '';
+    }
+    return {
+      success: true,
+      dryRun: true,
+      message: `[Dry-run] 폼 입력 (${fillResult.filled.length}개). 제출되지 않았습니다.`,
+      filledCount: fillResult.filled.length,
+      filledFields: fillResult.filled,
+      notFoundFields: fillResult.notFound,
+      screenshot,
+      pageUrl: page.url()
+    };
+  }
 
   // 3단계: alert 다이얼로그 핸들러 (제출 전에 등록)
   let alertMessage = '';

@@ -37,16 +37,14 @@ function deleteSession(token) {
 
 // API 인증 미들웨어
 function apiAuth(req, res, next) {
-  // 인증 불필요 경로
+  // 인증 불필요 경로 (로그인/홈페이지 신규유입/헬스체크만 공개)
   const publicPaths = [
     '/system/login',
     '/intake/homepage',
     '/health',
-    '/crawler/',
     '/api/system/login',
     '/api/intake/homepage',
-    '/api/health',
-    '/api/crawler/'
+    '/api/health'
   ];
 
   if (publicPaths.some(p => req.path === p || req.path.startsWith(p))) {

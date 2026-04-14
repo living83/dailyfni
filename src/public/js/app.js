@@ -1203,23 +1203,62 @@ async function submitLoanRegister() {
     memo, dbSource
   };
 
-  if (!confirm(`[${productName}] 상품으로 접수를 진행합니다.\n\n고객명: ${name}\n대출요청액: ${loanAmount}만원\n\n론앤마스터에 자동 접수됩니다.\n\n진행하시겠습니까?`)) {
+  // 중복 클릭 방지
+  if (window._loanSubmitInFlight) {
+    alert('이미 접수 처리 중입니다. 잠시만 기다려주세요.');
     return;
   }
 
+  // 1단계: Dry-run 으로 미리보기 요청 (제출 안 됨)
+  window._loanSubmitInFlight = true;
+  const submitBtn = document.querySelector('[onclick*="submitLoanRegister"]');
+  const origBtnText = submitBtn?.textContent;
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '미리보기 중...'; }
+
   try {
+    const previewRes = await fetch('/api/crawler/submit-loan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formData, dryRun: true })
+    });
+    const preview = await previewRes.json();
+    if (!preview.success) {
+      alert('미리보기 실패: ' + (preview.message || '알 수 없는 오류'));
+      return;
+    }
+
+    const p = preview.data;
+    // 필수 필드 체크 (미매칭된 필수 항목 경고)
+    const REQUIRED_FIELDS = ['이름', '생년월일', '전화1', '대출요청액'];
+    const missingRequired = (p.notFoundFields || []).filter(f => REQUIRED_FIELDS.includes(f));
+
+    // 미리보기 모달 표시
+    const confirmed = await showSubmitPreviewModal({
+      productName, name, loanAmount,
+      filledCount: p.filledCount,
+      notFoundFields: p.notFoundFields || [],
+      screenshot: p.screenshot || '',
+      missingRequired
+    });
+    if (!confirmed) return;
+
+    // 2단계: 실제 제출
+    if (submitBtn) submitBtn.textContent = '접수 중...';
     const res = await fetch('/api/crawler/submit-loan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ formData })
+      body: JSON.stringify({ formData, dryRun: false })
     });
     const data = await res.json();
+    if (res.status === 429) {
+      alert(data.message || '동일 접수가 진행 중입니다.');
+      return;
+    }
     if (data.success) {
       const result = data.data;
       const sr = result.submitResponse;
 
       if (result.submitResult?.clicked) {
-        // 제출까지 완료
         let msg = `론앤마스터 접수 완료!\n\n`;
         msg += `입력 필드: ${result.filledCount}개\n`;
         msg += `미매칭 필드: ${(result.notFoundFields||[]).length}개\n`;
@@ -1230,26 +1269,84 @@ async function submitLoanRegister() {
         msg += `\n\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
         alert(msg);
 
-        // 접수 완료 표시: 상품에 체크 + 로그 추가
         addSubmitLog(productName, fidx, result.filledCount);
+
+        // 고객 상태를 '접수'로 변경 (실제 성공 응답일 때만)
+        if (loanRegisterCustomerId && sr?.isSuccess && !sr?.isError) {
+          await fetch(`/api/customers/${loanRegisterCustomerId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...loanRegisterCustomerDB, status: '접수' })
+          });
+        }
       } else {
         alert(`폼 입력은 완료했으나 제출 버튼을 찾지 못했습니다.\n미매칭: ${(result.notFoundFields||[]).join(', ')}`);
-      }
-
-      // 고객 상태를 '접수'로 변경
-      if (loanRegisterCustomerId && result.submitResult?.clicked) {
-        await fetch(`/api/customers/${loanRegisterCustomerId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...loanRegisterCustomerDB, status: '접수' })
-        });
       }
     } else {
       alert('접수 실패: ' + (data.message || '알 수 없는 오류'));
     }
   } catch (e) {
     alert('서버 연결 실패: ' + e.message);
+  } finally {
+    window._loanSubmitInFlight = false;
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origBtnText || '접수'; }
   }
+}
+
+// 접수 미리보기 모달 (dry-run 결과 표시)
+function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, notFoundFields, screenshot, missingRequired }) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:8px;max-width:900px;width:90%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.3);';
+
+    const warnHtml = missingRequired.length > 0
+      ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
+           <strong>⚠ 필수 항목 미매칭:</strong> ${missingRequired.join(', ')}<br/>
+           <span style="font-size:12px;">이대로 제출하면 론앤마스터에서 오류가 날 수 있습니다.</span>
+         </div>`
+      : '';
+
+    const notMatchHtml = (notFoundFields || []).length > 0
+      ? `<details style="margin-top:8px;"><summary style="cursor:pointer;color:#64748b;font-size:13px;">미매칭 필드 ${notFoundFields.length}개 보기</summary>
+           <div style="font-size:12px;color:#64748b;padding:6px 0;line-height:1.6;">${notFoundFields.join(', ')}</div>
+         </details>`
+      : '<div style="color:#16a34a;font-size:13px;">✓ 모든 필드 매칭 완료</div>';
+
+    const imgHtml = screenshot
+      ? `<img src="data:image/png;base64,${screenshot}" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;" alt="폼 미리보기"/>`
+      : '<div style="padding:40px;text-align:center;color:#94a3b8;background:#f8fafc;border-radius:4px;">스크린샷을 생성할 수 없습니다.</div>';
+
+    box.innerHTML = `
+      <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;">
+        <h3 style="margin:0;font-size:16px;">론앤마스터 접수 미리보기 (아직 제출되지 않음)</h3>
+        <div style="font-size:12px;color:#64748b;margin-top:4px;">[${productName}] / 고객: ${name} / 요청액: ${loanAmount}만</div>
+      </div>
+      <div style="padding:16px 20px;overflow-y:auto;flex:1;">
+        ${warnHtml}
+        <div style="background:#f0f9ff;border:1px solid #bae6fd;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
+          ✓ 입력 완료 필드: <strong>${filledCount}개</strong>
+        </div>
+        ${notMatchHtml}
+        <div style="margin-top:12px;">${imgHtml}</div>
+      </div>
+      <div style="padding:12px 20px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">
+        <button id="_previewCancel" style="padding:8px 16px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;">취소</button>
+        <button id="_previewSubmit" style="padding:8px 16px;border:none;background:${missingRequired.length > 0 ? '#f59e0b' : '#2563eb'};color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">
+          ${missingRequired.length > 0 ? '경고 무시하고 제출' : '이대로 제출'}
+        </button>
+      </div>
+    `;
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+
+    const cleanup = (answer) => { document.body.removeChild(modal); resolve(answer); };
+    box.querySelector('#_previewCancel').onclick = () => cleanup(false);
+    box.querySelector('#_previewSubmit').onclick = () => cleanup(true);
+    modal.addEventListener('click', (e) => { if (e.target === modal) cleanup(false); });
+  });
 }
 
 // 접수 완료 로그 추가 + 상품 체크 표시

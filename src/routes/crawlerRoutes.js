@@ -2,6 +2,18 @@ const express = require('express');
 const router = express.Router();
 const crawler = require('../crawler/lmasterCrawler');
 
+// 실제 제출 중복 방지 락 (name+fidx, 10초 윈도우)
+// key: `${name}_${fidx}` → value: timestamp(ms)
+const _submitLocks = new Map();
+const SUBMIT_LOCK_WINDOW_MS = 10 * 1000;
+
+function _pruneSubmitLocks() {
+  const now = Date.now();
+  for (const [k, t] of _submitLocks) {
+    if (now - t > SUBMIT_LOCK_WINDOW_MS) _submitLocks.delete(k);
+  }
+}
+
 // 크롤러 상태 확인
 router.get('/crawler/status', (req, res) => {
   res.json({ success: true, data: crawler.getStatus() });
@@ -81,15 +93,52 @@ router.post('/crawler/scan-form', async (req, res) => {
   }
 });
 
-// 대출 접수 폼 자동 입력 (제출 전까지)
+// 대출 접수 폼 자동 입력
+// body.dryRun=true  → 폼 채우기만 + 스크린샷 반환 (미리보기)
+// body.dryRun=false → 실제 제출 (중복 방지 락 적용)
 router.post('/crawler/submit-loan', async (req, res) => {
   try {
-    const { agentNo, upw, formData } = req.body;
+    const { agentNo, upw, formData, dryRun } = req.body;
     if (!formData) {
       return res.status(400).json({ success: false, message: 'formData가 필요합니다.' });
     }
-    const result = await crawler.submitLoanApplication(agentNo || '12', upw || '1', formData);
-    res.json({ success: true, data: result });
+
+    const isDryRun = !!dryRun;
+
+    // 실제 제출만 중복 방지 락 적용
+    let lockKey = null;
+    if (!isDryRun) {
+      _pruneSubmitLocks();
+      const name = (formData.name || '').trim();
+      const fidx = String(formData.fidx || '').trim();
+      if (!name || !fidx) {
+        return res.status(400).json({ success: false, message: '실제 제출에는 name과 fidx가 필수입니다.' });
+      }
+      lockKey = `${name}_${fidx}`;
+      const lastAt = _submitLocks.get(lockKey);
+      if (lastAt && Date.now() - lastAt < SUBMIT_LOCK_WINDOW_MS) {
+        const remainSec = Math.ceil((SUBMIT_LOCK_WINDOW_MS - (Date.now() - lastAt)) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `동일 접수가 이미 진행 중입니다. ${remainSec}초 후 다시 시도하세요.`
+        });
+      }
+      _submitLocks.set(lockKey, Date.now());
+    }
+
+    try {
+      const result = await crawler.submitLoanApplication(
+        agentNo || '12',
+        upw || '1',
+        formData,
+        { dryRun: isDryRun }
+      );
+      res.json({ success: true, data: result });
+    } finally {
+      // 제출 완료 후에도 10초는 유지 (추가 중복 방지)
+      // 실패 시에는 즉시 해제해도 되지만, 동일 중복 방지를 위해 그대로 둠
+      if (lockKey) _submitLocks.set(lockKey, Date.now());
+    }
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
