@@ -501,8 +501,41 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     setInput('brt_bank_addr', data.refundAccount, '환급계좌');
     setInput('brt_month_repay_amt', data.monthlyPayment, '월변제금');
 
-    // === 기타 (메모 → call_memo1) ===
-    setInput('call_memo1', data.memo, '메모');
+    // === 기타 (메모) ===
+    // 론앤마스터는 상품별로 call_memo1/2/3 중 하나만 가시화하는 케이스가 있어 가시 요소에 우선 입력
+    if (data.memo) {
+      const memoVal = String(data.memo);
+      const candidates = ['call_memo1', 'call_memo2', 'call_memo3', 'call_memo'];
+      let memoTarget = null;
+      // 1) 가시 상태인 call_memo* 우선
+      for (const n of candidates) {
+        const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
+        if (el && el.offsetParent !== null) { memoTarget = { el, name: n, via: 'visible-call_memo' }; break; }
+      }
+      // 2) 가시 없으면 존재하는 첫 call_memo*
+      if (!memoTarget) {
+        for (const n of candidates) {
+          const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
+          if (el) { memoTarget = { el, name: n, via: 'hidden-call_memo' }; break; }
+        }
+      }
+      // 3) 그래도 없으면 label/th 가 "기타/메모/비고/특이사항" 인 textarea
+      if (!memoTarget) {
+        const allTas = document.querySelectorAll('textarea');
+        for (const ta of allTas) {
+          const label = ta.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim() || '';
+          if (/기타|메모|비고|특이/.test(label)) { memoTarget = { el: ta, name: ta.name || `(textarea:${label})`, via: 'label-match' }; break; }
+        }
+      }
+      if (memoTarget) {
+        memoTarget.el.value = memoVal;
+        memoTarget.el.dispatchEvent(new Event('input', { bubbles: true }));
+        memoTarget.el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push({ field: `메모 [${memoTarget.via}]`, target: memoTarget.name, value: memoVal.substring(0, 120) });
+      } else {
+        notFound.push('메모');
+      }
+    }
 
     return { filled, notFound };
   }, formData);
