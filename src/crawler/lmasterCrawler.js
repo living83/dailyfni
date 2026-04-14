@@ -917,10 +917,14 @@ async function getLoanList(agentNo, upw, filters = {}) {
       for (let i = 1; i < trs.length; i++) { // 0번은 헤더
         const tds = trs[i].querySelectorAll('td');
         if (tds.length >= 14) {
+          // 상품명 정규화: LoanMaster 행에 따라 이름 뒤에 '.' / ',' / '·' / '…' 등이 섞여 오는 케이스가 있어
+          // 제거하지 않으면 동일 상품이 다른 이름으로 중복 저장됨
+          const rawProduct = tds[3]?.textContent?.trim() || '';
+          const productName = rawProduct.replace(/[\s.,·…ㆍ]+$/u, '').trim();
           rows.push({
             applyDate: tds[0]?.textContent?.trim() || '',
             processDate: tds[1]?.textContent?.trim() || '',
-            productName: tds[3]?.textContent?.trim() || '',
+            productName,
             recruiter: tds[4]?.textContent?.trim() || '',
             customerName: tds[7]?.textContent?.trim() || '',
             birthDate: tds[8]?.textContent?.trim() || '',

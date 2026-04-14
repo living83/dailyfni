@@ -1751,7 +1751,7 @@ async function dedupeExecutions() {
     const data = await res.json();
     if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
 
-    alert(`✅ 정리 완료\n\n- 중복 그룹: ${data.totalDupeGroups}\n- 삭제: ${data.deleted}건`);
+    alert(`✅ 정리 완료\n\n- 상품명 정규화: ${data.normalizedRows || 0}건\n- 중복 그룹: ${data.totalDupeGroups}\n- 삭제: ${data.deleted}건`);
     // 매출/수당 정산 페이지 새로고침
     if (typeof loadSalesSummary === 'function') loadSalesSummary();
   } catch (e) {

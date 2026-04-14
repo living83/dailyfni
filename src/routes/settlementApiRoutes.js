@@ -173,6 +173,13 @@ router.post('/settlement/reopen-month', async (req, res) => {
 });
 
 // === 론앤마스터 승인 건 → 실행 건 자동 등록 ===
+// 상품명 정규화: '유노스(회생/파산).' vs '유노스(회생/파산)' 같이 꼬리에 문장부호가 달라서
+// 중복으로 쌓이던 버그 대응. 크롤러/sync/dedup 에서 동일 규칙 사용.
+function normalizeProductName(name) {
+  if (!name) return '';
+  return String(name).trim().replace(/[\s.,·…ㆍ]+$/u, '').trim();
+}
+
 router.post('/settlement/sync-from-loans', async (req, res) => {
   try {
     const { loanData, performedBy } = req.body;
@@ -180,8 +187,10 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
     }
 
-    // 승인 + 부결 건 필터 (접수/심사 제외)
-    const targetLoans = loanData.filter(r => r.status && (r.status.includes('승인') || r.status.includes('부결')));
+    // 승인 + 부결 건 필터 (접수/심사 제외) + 상품명 정규화
+    const targetLoans = loanData
+      .filter(r => r.status && (r.status.includes('승인') || r.status.includes('부결')))
+      .map(r => ({ ...r, productName: normalizeProductName(r.productName) }));
 
     // 정산 정책 조회 (최신 월)
     const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
@@ -264,6 +273,27 @@ router.post('/settlement/dedupe-executions', async (req, res) => {
   try {
     const { apply = false } = req.body || {};
 
+    // 0) 상품명 정규화 — 뒤에 '.' , ',' , 공백, 중점, 말줄임표가 붙어서 같은 상품이 다른 이름으로
+    //    쌓여있던 케이스를 먼저 합친다. MySQL 정규식 버전에 관계없이 안전하게 반복 TRIM.
+    //    예: '유노스(회생/파산).' → '유노스(회생/파산)'
+    let normalizedRows = 0;
+    if (apply) {
+      const norm = await query(`
+        UPDATE settlement_executions
+        SET product_name = TRIM(
+          TRAILING '.' FROM TRIM(
+            TRAILING ',' FROM TRIM(
+              TRAILING '·' FROM TRIM(
+                TRAILING 'ㆍ' FROM TRIM(product_name)
+              )
+            )
+          )
+        )
+        WHERE product_name REGEXP '[ .,·ㆍ]+$'
+      `);
+      normalizedRows = (norm && norm.affectedRows) || 0;
+    }
+
     // 1) 통계: 중복 그룹 수 + 총 삭제 예정 건수
     const [stats] = await query(`
       SELECT
@@ -341,11 +371,11 @@ router.post('/settlement/dedupe-executions', async (req, res) => {
     await logAudit({
       eventType: 'settlement_change',
       targetType: 'execution',
-      afterValue: `실행 건 중복 정리: ${totalDupeGroups}그룹, ${deleted}건 삭제`,
+      afterValue: `실행 건 중복 정리: 이름정규화 ${normalizedRows}건, ${totalDupeGroups}그룹, ${deleted}건 삭제`,
       performedBy: req.user?.name || 'admin'
     });
 
-    res.json({ success: true, applied: true, totalDupeGroups, deleted });
+    res.json({ success: true, applied: true, normalizedRows, totalDupeGroups, deleted });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
