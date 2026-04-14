@@ -579,6 +579,19 @@ async function openUploadModal(customerName, productName, fidx) {
   const old = document.getElementById('uploadModal');
   if (old) old.remove();
 
+  // fidx 없으면 productName으로 찾기
+  if (!fidx && typeof productCategories !== 'undefined') {
+    for (const cat of productCategories) {
+      for (const p of (cat.products || [])) {
+        if (productName.includes(p.name) || p.name.includes(productName)) {
+          fidx = p.fidx;
+          break;
+        }
+      }
+      if (fidx) break;
+    }
+  }
+
   // 상품 슬롯 정보 조회
   let slotCount = 1, slot1Label = '파일1', slot2Label = '파일2';
   if (fidx) {
