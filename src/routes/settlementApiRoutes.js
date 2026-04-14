@@ -186,9 +186,9 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
     // 정산 정책 조회 (최신 월)
     const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
 
-    // 기존 실행 건 조회 (중복 방지)
-    const existing = await query('SELECT customer_name, product_name, executed_date FROM settlement_executions');
-    const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : ''}`));
+    // 기존 실행 건 조회 (중복 방지) - status 포함
+    const existing = await query('SELECT customer_name, product_name, executed_date, status FROM settlement_executions');
+    const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : ''}_${e.status || '승인'}`));
 
     // 담당자: 로그인 사용자 (req.user 또는 performedBy)
     const assignedTo = req.user?.name || performedBy || '';
