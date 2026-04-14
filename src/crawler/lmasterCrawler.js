@@ -769,16 +769,36 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
       await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
       await delay(500, 1000);
 
-      // 제출 결과 확인 (성공/실패 메시지 추출)
+      // 제출 결과 판정
+      //  - 접수 성공 시 론앤마스터는 통상 대출신청내역(list_loanlist.asp) 으로 리다이렉트
+      //  - 폼 페이지(loanlist_app.asp) 에 그대로 있으면 실패/검증오류
+      //  - 본문의 '실패/오류/에러' 단순 포함은 왼쪽 메뉴/공지에 흔히 들어있어 오탐 유발 → 사용 안 함
       submitResponse = await page.evaluate(() => {
-        const body = document.body.innerText;
-        const isSuccess = body.includes('완료') || body.includes('성공') || body.includes('접수되었습니다') || body.includes('등록되었습니다');
-        const isError = body.includes('실패') || body.includes('오류') || body.includes('에러') || body.includes('ERROR');
+        const body = document.body.innerText || '';
+        const url = location.href || '';
+
+        // URL 기반 1차 판정
+        const onListPage = /list_loanlist\.asp/i.test(url);
+        const stillOnForm = /loanlist_app\.asp/i.test(url);
+
+        // 본문 기반 2차 판정 (명시적 문구만)
+        const explicitSuccess = /접수되었습니다|등록되었습니다|정상적으로\s*(처리|등록|접수)/.test(body);
+        const explicitError = /접수.*실패|등록.*실패|오류가\s*발생|에러가\s*발생|입력.{0,6}(확인|필수|누락)/.test(body);
+
+        let isSuccess = false;
+        let isError = false;
+        if (explicitError) { isError = true; }
+        else if (explicitSuccess) { isSuccess = true; }
+        else if (onListPage) { isSuccess = true; }       // 리스트로 넘어갔으면 성공
+        else if (stillOnForm) { isError = true; }        // 폼에 머물러있으면 실패
+
         return {
           pageText: body.substring(0, 500),
           isSuccess,
           isError,
-          url: location.href
+          onListPage,
+          stillOnForm,
+          url
         };
       });
     } catch (e) {
