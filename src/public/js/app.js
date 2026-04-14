@@ -848,7 +848,7 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>직업구분 <span class="required">*</span></th>
-              <td colspan="5"><select>${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], '')}</select></td>
+              <td colspan="5"><select>${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], (c?.employment_type) || (c?.has_4_insurance === '가입' ? '직장인(4대가입)' : (c?.has_4_insurance === '미가입' ? '직장인(미가입)' : '')))}</select></td>
             </tr>
             <tr>
               <th>직장명 <span class="required">*</span></th>
@@ -857,8 +857,8 @@ function renderLoanRegister() {
               <td colspan="2"><input type="text" placeholder="2020-01-15" value="${c ? (c.join_date||c.joinDate||'') : ''}"></td>
             </tr>
             <tr>
-              <th>4대보험 여부</th>
-              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입'], '')}</select></td>
+              <th>4대보험 여부 <span class="required">*</span></th>
+              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입'], (c?.has_4_insurance === '가입' || c?.has_4_insurance === '미가입') ? c.has_4_insurance : '')}</select></td>
               <th>(직장)사업자번호</th>
               <td colspan="2">
                 <div style="display:flex;gap:4px;">
@@ -1290,6 +1290,22 @@ async function submitLoanRegister() {
     memo, dbSource,
     legal   // 고객적법확인 블록 (firstPath / brokerPath / writeDate / company / writer / ceo / url)
   };
+
+  // 제출 전 클라이언트 검증: placeholder 선택 상태 / 필수 누락 감지
+  // (아직 버튼 상태 변경 전이라 여기서 return 해도 복구 불필요)
+  const isPlaceholder = (v) => !v || /^-.*-$/.test(String(v).trim()) || /^==.*==$/.test(String(v).trim()) || /항목\s*선택|선택\s*하세요|선택해?주세요/.test(String(v).trim());
+  const blockers = [];
+  if (!name) blockers.push('이름');
+  if (!birth) blockers.push('생년월일');
+  if (!phone1 || !phone2 || !phone3) blockers.push('전화번호(3칸)');
+  if (!loanAmount || String(loanAmount).replace(/[^\d]/g,'') === '0') blockers.push('대출요청액');
+  if (isPlaceholder(jobType)) blockers.push('직업구분');
+  if (isPlaceholder(insurance4)) blockers.push('4대보험');
+  if (productName && !fidx) blockers.push('상품 fidx 매핑');
+  if (blockers.length) {
+    alert('⚠ 제출 전 필수 항목을 채워주세요:\n\n- ' + blockers.join('\n- ') + '\n\n(placeholder 상태로 제출하면 론앤마스터가 "알 수 없는 오류"로 반려합니다)');
+    return;
+  }
 
   // 중복 클릭 방지
   if (window._loanSubmitInFlight) {

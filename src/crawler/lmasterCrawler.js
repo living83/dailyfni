@@ -420,23 +420,31 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
 
     function setSelect(name, value, label) {
       if (!value && value !== 0) return;
+      // 전산에서 placeholder 상태로 넘어온 경우 setSelect 실행 안 함 → 명시적 notFound
+      const vs = String(value).trim();
+      const looksPlaceholder = /^-.*-$/.test(vs) || /^==.*==$/.test(vs) ||
+                               /항목\s*선택|선택\s*하세요|선택해?주세요/.test(vs);
+      if (looksPlaceholder) { notFound.push((label || name) + ' [값이 placeholder]'); return; }
+
       const el = document.querySelector(`select[name="${name}"]`);
       if (el) {
         // 정확한 value 매칭
         for (const opt of el.options) {
-          if (opt.value === String(value)) {
+          if (opt.value === vs) {
             el.value = opt.value;
             el.dispatchEvent(new Event('change', { bubbles: true }));
             filled.push({ field: label || name, target: name, value: opt.text.trim() });
             return;
           }
         }
-        // 텍스트 포함 매칭
+        // 텍스트 포함 매칭 - 단, 매칭된 옵션이 placeholder 면 거부
         for (const opt of el.options) {
-          if (opt.text.includes(String(value)) || String(value).includes(opt.text.trim())) {
+          const ot = opt.text.trim();
+          if (/^-.*-$/.test(ot) || /^==.*==$/.test(ot) || /항목\s*선택|선택\s*하세요/.test(ot)) continue;
+          if (opt.text.includes(vs) || vs.includes(ot)) {
             el.value = opt.value;
             el.dispatchEvent(new Event('change', { bubbles: true }));
-            filled.push({ field: label || name, target: name, value: opt.text.trim() });
+            filled.push({ field: label || name, target: name, value: ot });
             return;
           }
         }
