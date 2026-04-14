@@ -399,7 +399,19 @@ router.post('/settlement/purge-executions', async (req, res) => {
     const conds = [];
     const params = [];
     if (keep.customerName)  { conds.push('customer_name = ?'); params.push(keep.customerName); }
-    if (keep.productName)   { conds.push('product_name = ?');  params.push(keep.productName); }
+    // 상품명은 뒤에 '.' 등이 붙어있어도 매칭되도록 기본이 prefix 매칭
+    // exactProduct=true 로 명시하면 완전 일치
+    if (keep.productName) {
+      if (keep.exactProduct) {
+        conds.push('product_name = ?'); params.push(keep.productName);
+      } else {
+        // 입력한 productName 에서 trailing 문장부호 제거 후 prefix 로 매칭
+        const base = String(keep.productName).trim().replace(/[\s.,·…ㆍ]+$/u, '');
+        conds.push("REPLACE(REPLACE(REPLACE(product_name, '.', ''), ',', ''), ' ', '') LIKE ?");
+        const stripped = base.replace(/[\s.,]/g, '');
+        params.push(stripped + '%');
+      }
+    }
     if (keep.executedDate)  { conds.push("DATE_FORMAT(executed_date, '%Y-%m-%d') = ?"); params.push(keep.executedDate); }
     if (keep.loanAmount !== undefined && keep.loanAmount !== null && keep.loanAmount !== '') {
       conds.push('loan_amount = ?'); params.push(Number(keep.loanAmount));
@@ -410,15 +422,20 @@ router.post('/settlement/purge-executions', async (req, res) => {
 
     const whereKeep = conds.join(' AND ');
 
-    // 통계
+    // 통계 + 고객 관련 실제 존재값 샘플 (진단용)
     const [totals] = await query('SELECT COUNT(*) AS cnt FROM settlement_executions');
     const matches = await query(`SELECT id, customer_name, product_name, DATE_FORMAT(executed_date, '%Y-%m-%d') AS d, loan_amount, status, db_source, assigned_to FROM settlement_executions WHERE ${whereKeep} ORDER BY id`, params);
 
     if (matches.length === 0) {
+      // 고객명만 같은 행들을 보여줘서 사용자가 실제 값 확인할 수 있게
+      const customerRows = keep.customerName
+        ? await query(`SELECT id, customer_name, product_name, DATE_FORMAT(executed_date, '%Y-%m-%d') AS d, loan_amount, status, db_source, assigned_to FROM settlement_executions WHERE customer_name = ? ORDER BY id LIMIT 20`, [keep.customerName])
+        : [];
       return res.status(400).json({
         success: false,
-        message: 'keep 필터와 일치하는 행이 없습니다. 삭제를 중단했습니다.',
-        keep, matchedCount: 0
+        message: 'keep 필터와 일치하는 행이 없습니다. 삭제를 중단했습니다. customerRows 확인 후 조건을 조정하세요.',
+        keep, matchedCount: 0,
+        customerRows
       });
     }
 
