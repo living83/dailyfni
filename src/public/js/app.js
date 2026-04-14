@@ -480,9 +480,10 @@ function renderLoans() {
         <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
         <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
         <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
+        <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${r.customerName}','${r.productName}','${r.fidx||''}')">첨부</button></td>
       </tr>`).join('');
   } else {
-    rowsHtml = '<tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8;">론앤마스터 연동 후 [동기화] 버튼을 클릭하세요.</td></tr>';
+    rowsHtml = '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">론앤마스터 연동 후 [동기화] 버튼을 클릭하세요.</td></tr>';
   }
 
   return `
@@ -502,7 +503,7 @@ function renderLoans() {
       <div class="panel-body" style="overflow-x:auto;">
         <table>
           <thead>
-            <tr><th>접수일시</th><th>처리일시</th><th>상품명</th><th>모집인</th><th>이름</th><th>생년월일</th><th>성별</th><th>직업구분</th><th>처리상태</th><th>승인액</th><th>심사메모</th></tr>
+            <tr><th>접수일시</th><th>처리일시</th><th>상품명</th><th>모집인</th><th>이름</th><th>생년월일</th><th>성별</th><th>직업구분</th><th>처리상태</th><th>승인액</th><th>심사메모</th><th>서류</th></tr>
           </thead>
           <tbody id="loanListBody">
             ${rowsHtml}
@@ -550,13 +551,99 @@ async function syncLoanList() {
           <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
           <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
           <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
-        </tr>`).join('') || '<tr><td colspan="11" style="text-align:center;padding:30px;color:#94a3b8;">데이터가 없습니다.</td></tr>';
+          <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${r.customerName}','${r.productName}','${r.fidx||''}')">첨부</button></td>
+        </tr>`).join('') || '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">데이터가 없습니다.</td></tr>';
       }
     } else {
       if (statusEl) statusEl.textContent = '동기화 실패: ' + (data.message || '');
     }
   } catch (e) {
     if (statusEl) statusEl.textContent = '연결 실패: ' + e.message;
+  }
+}
+
+// 서류 첨부 모달
+async function openUploadModal(customerName, productName, fidx) {
+  const old = document.getElementById('uploadModal');
+  if (old) old.remove();
+
+  // 상품 슬롯 정보 조회
+  let slotCount = 1, slot1Label = '파일1', slot2Label = '파일2';
+  if (fidx) {
+    try {
+      const res = await fetch(`/api/documents/slots/${fidx}`);
+      const data = await res.json();
+      if (data.success) {
+        slotCount = data.data.slot_count || 1;
+        slot1Label = data.data.slot1_label || '파일1';
+        slot2Label = data.data.slot2_label || '파일2';
+      }
+    } catch (e) {}
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'uploadModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:8px;width:500px;max-width:90%;padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <strong style="font-size:14px;">서류 첨부</strong>
+        <button onclick="document.getElementById('uploadModal').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748b;">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:12px;">
+        <div><strong>고객:</strong> ${customerName}</div>
+        <div><strong>상품:</strong> ${productName}</div>
+        <div><strong>파일 슬롯:</strong> ${slotCount}개</div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">${slot1Label} ${slotCount >= 1 ? '<span style="color:#ef4444;">*</span>' : ''}</label>
+        <input type="file" id="uploadFile1" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png" style="width:100%;font-size:12px;">
+      </div>
+      ${slotCount >= 2 ? `<div style="margin-bottom:12px;">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">${slot2Label}</label>
+        <input type="file" id="uploadFile2" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png" style="width:100%;font-size:12px;">
+      </div>` : ''}
+      <div id="uploadStatus" style="font-size:11px;color:#64748b;margin:8px 0;"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="submitUpload('${customerName}','${productName}','${fidx}')">업로드</button>
+        <button class="btn btn-outline" onclick="document.getElementById('uploadModal').remove()">취소</button>
+      </div>
+    </div>
+  `;
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+async function submitUpload(customerName, productName, fidx) {
+  const f1 = document.getElementById('uploadFile1')?.files?.[0];
+  const f2 = document.getElementById('uploadFile2')?.files?.[0];
+  const statusEl = document.getElementById('uploadStatus');
+  if (!f1) { alert('첫 번째 파일은 필수입니다.'); return; }
+
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  const formData = new FormData();
+  formData.append('customerName', customerName);
+  formData.append('productName', productName);
+  formData.append('fidx', fidx);
+  formData.append('uploadedBy', user.name || '');
+  formData.append('file1', f1);
+  if (f2) formData.append('file2', f2);
+
+  statusEl.textContent = '업로드 중...';
+  try {
+    const res = await fetch('/api/documents/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      const results = data.data.uploadResults;
+      const ok = results.filter(r => r.success).length;
+      const fail = results.length - ok;
+      alert(`업로드 완료!\n성공: ${ok}개, 실패: ${fail}개${data.data.submitResult?.clicked ? '\n작성완료 버튼 클릭됨' : ''}`);
+      document.getElementById('uploadModal').remove();
+    } else {
+      statusEl.textContent = '업로드 실패: ' + (data.message || '');
+    }
+  } catch (e) {
+    statusEl.textContent = '오류: ' + e.message;
   }
 }
 

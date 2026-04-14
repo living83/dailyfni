@@ -492,6 +492,113 @@ async function submitLoanApplication(agentNo, upw, formData) {
   };
 }
 
+// 서류 첨부 업로드 (다중 파일 지원)
+async function uploadDocuments(agentNo, upw, fidx, files) {
+  // files: [{ slot: 1, path: '/tmp/...', originalName: '...' }, ...]
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!files || files.length === 0) throw new Error('파일이 없습니다.');
+
+  // 접수 페이지 이동 + 해당 상품 선택
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await delay(500, 1000);
+
+  // 상품 클릭 (fidx 기반)
+  if (fidx) {
+    await page.evaluate((f) => {
+      const els = document.querySelectorAll('a, input[type="button"], button, span, td');
+      for (const el of els) {
+        const onclick = el.getAttribute('onclick') || '';
+        if (onclick.includes(`fidx=${f}`) || onclick.includes(`'${f}'`)) {
+          el.click();
+          return;
+        }
+      }
+    }, fidx);
+    await delay(500, 1000);
+  }
+
+  // 파일 input 찾기 (file(fidx), file2(fidx) 패턴)
+  const uploadResults = [];
+  for (const f of files) {
+    try {
+      const selector = f.slot === 2
+        ? `input[type="file"][name="file2(${fidx})"]`
+        : `input[type="file"][name="file(${fidx})"]`;
+      const el = await page.$(selector);
+      if (!el) {
+        // 백업 셀렉터: 슬롯 순번으로 찾기
+        const allFileInputs = await page.$$(`input[type="file"]`);
+        const targetEl = allFileInputs[f.slot - 1];
+        if (targetEl) {
+          await targetEl.uploadFile(f.path);
+          uploadResults.push({ slot: f.slot, success: true, selector: 'fallback' });
+          continue;
+        }
+        uploadResults.push({ slot: f.slot, success: false, message: '파일 슬롯 미발견' });
+        continue;
+      }
+      await el.uploadFile(f.path);
+      uploadResults.push({ slot: f.slot, success: true, selector });
+    } catch (e) {
+      uploadResults.push({ slot: f.slot, success: false, message: e.message });
+    }
+  }
+
+  await delay(500, 1000);
+
+  // 작성완료 버튼 클릭
+  const submitResult = await page.evaluate(() => {
+    const btns = document.querySelectorAll('input[type="submit"], input[type="button"], button');
+    for (const btn of btns) {
+      const text = (btn.value || btn.textContent || '').trim();
+      if (text.includes('작성완료') || text.includes('등록') || text.includes('접수')) {
+        if (text.includes('초기화') || text.includes('취소')) continue;
+        btn.click();
+        return { clicked: true, buttonText: text };
+      }
+    }
+    return { clicked: false };
+  });
+
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
+
+  return { uploadResults, submitResult, pageUrl: page.url() };
+}
+
+// 상품별 파일 슬롯 개수 스캔
+async function scanProductFileSlots(agentNo, upw, fidx) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await delay(500, 1000);
+
+  await page.evaluate((f) => {
+    const els = document.querySelectorAll('a, input[type="button"], button, span, td');
+    for (const el of els) {
+      const onclick = el.getAttribute('onclick') || '';
+      if (onclick.includes(`fidx=${f}`) || onclick.includes(`'${f}'`)) {
+        el.click();
+        return;
+      }
+    }
+  }, fidx);
+  await delay(500, 1000);
+
+  const slots = await page.evaluate((f) => {
+    const inputs = document.querySelectorAll(`input[type="file"][name*="(${f})"]`);
+    const result = [];
+    inputs.forEach((inp, idx) => {
+      const label = inp.closest('tr')?.querySelector('td:first-child, th')?.textContent?.trim() || `파일${idx+1}`;
+      result.push({ slot: idx + 1, name: inp.name, label });
+    });
+    return result;
+  }, fidx);
+
+  return slots;
+}
+
 // 브라우저 종료
 // 대출신청내역 목록 가져오기 (사용자 행동 모방)
 async function getLoanList(agentNo, upw, filters = {}) {
@@ -630,5 +737,7 @@ module.exports = {
   getLoanDetail,
   closeBrowser,
   getStatus,
-  getPageHtml
+  getPageHtml,
+  uploadDocuments,
+  scanProductFileSlots
 };
