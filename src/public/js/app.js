@@ -3490,7 +3490,7 @@ function renderCustomerLedger() {
         </div></div>
       </div>
 
-      <div style="width:320px;flex-shrink:0;">
+      <div style="width:480px;flex-shrink:0;">
         <div style="display:flex;gap:6px;margin-bottom:6px;">
           <button class="btn btn-outline btn-sm" id="ledgerEditBtn" onclick="toggleLedgerEdit()" style="flex:1;">수정</button>
           <button class="btn btn-primary btn-sm" id="ledgerSaveBtn" style="display:none;flex:1;" onclick="saveLedger()">수정 저장</button>
