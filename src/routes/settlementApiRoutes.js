@@ -478,6 +478,77 @@ router.post('/settlement/purge-executions', async (req, res) => {
   }
 });
 
+// === 실행 건 id 호이트리스트 기반 삭제 (관리자용, 단순 버전) ===
+// body.keepIds: number[] — 이 id 들만 남기고 나머지 모두 삭제
+// apply=true + confirmText='PURGE' 필요
+router.post('/settlement/purge-executions-by-ids', async (req, res) => {
+  try {
+    const { keepIds, apply = false, confirmText } = req.body || {};
+    if (!Array.isArray(keepIds) || keepIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'keepIds 배열이 필요합니다.' });
+    }
+    const ids = keepIds.map(n => parseInt(n, 10)).filter(Number.isFinite);
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, message: '유효한 id 가 없습니다.' });
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+
+    // 유지 대상 실재 확인
+    const keepRows = await query(
+      `SELECT id, customer_name, product_name, DATE_FORMAT(executed_date, '%Y-%m-%d') AS d, loan_amount, status, db_source, assigned_to FROM settlement_executions WHERE id IN (${placeholders}) ORDER BY id`,
+      ids
+    );
+    const foundIds = new Set(keepRows.map(r => r.id));
+    const missingIds = ids.filter(id => !foundIds.has(id));
+
+    const [{ cnt: totalRows }] = await query('SELECT COUNT(*) AS cnt FROM settlement_executions');
+    const willDelete = Math.max(0, totalRows - keepRows.length);
+
+    if (!apply) {
+      return res.json({
+        success: true,
+        dryRun: true,
+        totalRows,
+        keepIds: ids,
+        foundKeepRows: keepRows,
+        missingIds,
+        willDelete
+      });
+    }
+
+    if (confirmText !== 'PURGE') {
+      return res.status(400).json({
+        success: false,
+        message: "실제 삭제하려면 body.confirmText 에 정확히 'PURGE' 문자열을 넣어주세요."
+      });
+    }
+    if (missingIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `keepIds 중 DB 에 없는 id 가 있습니다: [${missingIds.join(', ')}]. 확인 후 다시 시도하세요.`
+      });
+    }
+
+    const result = await query(
+      `DELETE FROM settlement_executions WHERE id NOT IN (${placeholders})`,
+      ids
+    );
+    const deleted = (result && result.affectedRows) || 0;
+
+    await logAudit({
+      eventType: 'settlement_change',
+      targetType: 'execution',
+      afterValue: `실행 건 id 기반 일괄삭제: keepIds=[${ids.join(',')}], 삭제 ${deleted}건`,
+      performedBy: req.user?.name || 'admin'
+    });
+
+    res.json({ success: true, applied: true, keptIds: ids, deleted });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // === 매출 집계 ===
 
 // 실행 건 등록
