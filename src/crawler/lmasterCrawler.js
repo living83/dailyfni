@@ -263,37 +263,113 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(500, 1000);
 
-  // 1단계: 상품 선택 (fidx 기반)
+  // 1단계: 상품 선택 (fidx 기반) - 다양한 패턴 커버
+  let productSelectResult = { selected: false, via: null, detail: '' };
   if (formData.fidx) {
-    const productSelected = await page.evaluate((fidx) => {
-      // fidx로 상품 링크/버튼 찾아서 클릭
-      const allEls = document.querySelectorAll('a, input[type="button"], button, span, td');
-      for (const el of allEls) {
-        const onclick = el.getAttribute('onclick') || '';
-        const href = el.getAttribute('href') || '';
-        if (onclick.includes(`fidx=${fidx}`) || onclick.includes(`fidx:${fidx}`) ||
-            href.includes(`fidx=${fidx}`) || onclick.includes(`'${fidx}'`)) {
-          el.click();
-          return true;
+    productSelectResult = await page.evaluate((fidx) => {
+      const fidxStr = String(fidx);
+      const fidxNum = Number(fidx);
+
+      // 1) radio/checkbox input: value 일치
+      const radios = document.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+      for (const r of radios) {
+        if (String(r.value) === fidxStr) {
+          r.click();
+          // label 클릭이 필요한 경우 대비
+          if (r.id) {
+            const lbl = document.querySelector(`label[for="${r.id}"]`);
+            if (lbl) lbl.click();
+          }
+          r.checked = true;
+          r.dispatchEvent(new Event('change', { bubbles: true }));
+          return { selected: true, via: 'radio/checkbox', detail: `name=${r.name}, value=${r.value}` };
         }
       }
-      // select 옵션에서 찾기
+
+      // 2) select 옵션
       const selects = document.querySelectorAll('select');
       for (const sel of selects) {
         for (const opt of sel.options) {
-          if (opt.value == fidx || opt.getAttribute('data-fidx') == fidx) {
+          if (String(opt.value) === fidxStr || opt.getAttribute('data-fidx') === fidxStr) {
             sel.value = opt.value;
             sel.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
+            return { selected: true, via: 'select', detail: `name=${sel.name}, value=${opt.value}, text=${opt.text.trim()}` };
           }
         }
       }
-      return false;
+
+      // 3) onclick / href / data-* 속성이 fidx를 참조하는 클릭 가능 요소
+      //    element 본문이나 자식의 텍스트에 fidx 숫자가 그대로 있는 경우도 매칭
+      const allEls = document.querySelectorAll('a, input[type="button"], input[type="submit"], button, span, td, tr, div, li, label');
+      // 정규식: fidx=2197 / fidx:2197 / fidx('2197') / fidx(2197) / (2197) / '2197'
+      const rx = new RegExp(`(?:^|[^0-9])${fidxStr}(?:$|[^0-9])`);
+      for (const el of allEls) {
+        const onclick = el.getAttribute('onclick') || '';
+        const href = el.getAttribute('href') || '';
+        const dataFidx = el.getAttribute('data-fidx') || el.getAttribute('data-idx') || '';
+
+        const matchOnclick = onclick && (
+          onclick.includes(`fidx=${fidxStr}`) ||
+          onclick.includes(`fidx:${fidxStr}`) ||
+          onclick.includes(`'${fidxStr}'`) ||
+          onclick.includes(`"${fidxStr}"`) ||
+          onclick.includes(`(${fidxStr})`) ||
+          onclick.includes(`(${fidxStr},`) ||
+          onclick.includes(`,${fidxStr})`) ||
+          onclick.includes(`,${fidxStr},`) ||
+          rx.test(onclick)
+        );
+        const matchHref = href && (
+          href.includes(`fidx=${fidxStr}`) ||
+          href.includes(`/${fidxStr}`) ||
+          href.includes(`=${fidxStr}`)
+        );
+        const matchData = String(dataFidx) === fidxStr;
+
+        if (matchOnclick || matchHref || matchData) {
+          try { el.click(); } catch (e) {}
+          return { selected: true, via: 'onclick/href/data', detail: `tag=${el.tagName}, text="${(el.textContent || '').trim().substring(0,40)}", onclick="${onclick.substring(0,80)}", data-fidx=${dataFidx}` };
+        }
+      }
+
+      // 4) fileblank(fidx) 같은 패턴의 input name → 그 주변 행/그룹에서 클릭 가능한 요소 탐색
+      const fileInput = document.querySelector(`input[name="fileblank(${fidxStr})"], input[name="file(${fidxStr})"]`);
+      if (fileInput) {
+        // 같은 행(tr)이나 부모 그룹에서 라디오/체크박스/라벨/버튼 클릭 시도
+        const row = fileInput.closest('tr, li, div, label');
+        if (row) {
+          const radio = row.querySelector('input[type="radio"], input[type="checkbox"]');
+          if (radio) {
+            radio.click();
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+            return { selected: true, via: 'fileblank-neighbor-radio', detail: `name=${radio.name}, value=${radio.value}` };
+          }
+          const label = row.querySelector('label');
+          if (label) {
+            label.click();
+            return { selected: true, via: 'fileblank-neighbor-label', detail: `text=${(label.textContent||'').trim().substring(0,40)}` };
+          }
+        }
+      }
+
+      // 5) 전역 함수 호출 시도 (흔한 이름들)
+      try {
+        const globalFnNames = ['fn_fidx', 'go_fidx', 'select_fidx', 'selectFin', 'fn_sel', 'setFidx', 'chkFin', 'selFin'];
+        for (const fn of globalFnNames) {
+          if (typeof window[fn] === 'function') {
+            window[fn](fidxNum);
+            return { selected: true, via: 'global-fn', detail: `window.${fn}(${fidx})` };
+          }
+        }
+      } catch (e) {}
+
+      return { selected: false, via: null, detail: 'no matching element found' };
     }, formData.fidx);
 
-    if (productSelected) {
+    if (productSelectResult.selected) {
       await delay(500, 1000);
-      // 상품 선택 후 페이지 변경 대기
+      // 상품 선택 후 페이지 변경 대기 (네비게이션 없이 부분 업데이트일 수도 있음)
       await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {});
       await delay(300, 500);
     }
@@ -431,6 +507,7 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
       filledCount: fillResult.filled.length,
       filledFields: fillResult.filled,
       notFoundFields: fillResult.notFound,
+      productSelectResult,
       screenshot,
       pageUrl: page.url()
     };
@@ -545,6 +622,7 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     filledCount: fillResult.filled.length,
     filledFields: fillResult.filled,
     notFoundFields: fillResult.notFound,
+    productSelectResult,
     submitResult,
     submitResponse,
     pageUrl

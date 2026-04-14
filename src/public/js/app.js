@@ -1238,6 +1238,7 @@ async function submitLoanRegister() {
       filledCount: p.filledCount,
       filledFields: p.filledFields || [],
       notFoundFields: p.notFoundFields || [],
+      productSelectResult: p.productSelectResult || { selected: false, via: null, detail: '' },
       screenshot: p.screenshot || '',
       missingRequired
     });
@@ -1301,7 +1302,7 @@ async function submitLoanRegister() {
 }
 
 // 접수 미리보기 모달 (dry-run 결과 표시)
-function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, filledFields, notFoundFields, screenshot, missingRequired }) {
+function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, filledFields, notFoundFields, productSelectResult, screenshot, missingRequired }) {
   return new Promise((resolve) => {
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -1317,6 +1318,17 @@ function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, fi
            <span style="font-size:12px;">이대로 제출하면 론앤마스터에서 오류가 날 수 있습니다.</span>
          </div>`
       : '';
+
+    // 상품 선택 결과 표시
+    const psr = productSelectResult || {};
+    const productSelectHtml = psr.selected
+      ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:12px;">
+           ✓ 상품 선택 성공 (경로: ${esc(psr.via || '')})${psr.detail ? ' — ' + esc(String(psr.detail).substring(0,120)) : ''}
+         </div>`
+      : `<div style="background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:10px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
+           <strong>❌ 상품 선택 실패</strong> — 론앤마스터 페이지에서 fidx 매칭 요소를 찾지 못했습니다.<br/>
+           <span style="font-size:12px;">이대로 제출하면 상품이 선택되지 않은 상태로 접수될 수 있습니다. 취소하고 상품을 다시 클릭해 보세요.</span>
+         </div>`;
 
     // 채워진 필드 목록 (label / target / value)
     const filledRows = (filledFields || []).map(f => {
@@ -1362,6 +1374,7 @@ function showSubmitPreviewModal({ productName, name, loanAmount, filledCount, fi
       </div>
       <div style="padding:16px 20px;overflow-y:auto;flex:1;">
         ${warnHtml}
+        ${productSelectHtml}
         <div style="background:#f0f9ff;border:1px solid #bae6fd;padding:8px 12px;border-radius:6px;margin-bottom:10px;font-size:13px;">
           ✓ 입력 완료 필드: <strong>${filledCount}개</strong> / 미매칭: <strong>${(notFoundFields||[]).length}개</strong>
         </div>
