@@ -187,8 +187,10 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
     const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
 
     // 기존 실행 건 조회 (중복 방지) - status 포함
-    const existing = await query('SELECT customer_name, product_name, executed_date, status FROM settlement_executions');
-    const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : ''}_${e.status || '승인'}`));
+    // 주의: Node Date() 를 경유하면 서버 타임존(KST) ↔ UTC 변환 때문에 날짜가 하루 밀려
+    //       동일 건인데도 키가 달라져 중복이 계속 쌓였음. MySQL 에서 직접 YYYY-MM-DD 포맷으로 받아 비교.
+    const existing = await query("SELECT customer_name, product_name, DATE_FORMAT(executed_date, '%Y-%m-%d') AS executed_date_str, status FROM settlement_executions");
+    const existKey = new Set(existing.map(e => `${e.customer_name}_${e.product_name}_${e.executed_date_str || ''}_${e.status || '승인'}`));
 
     // 담당자: 로그인 사용자 (req.user 또는 performedBy)
     const assignedTo = req.user?.name || performedBy || '';
@@ -250,6 +252,84 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 
     await logAudit({ eventType: 'settlement_change', targetType: 'execution', afterValue: `론앤마스터 동기화: ${added}건 등록, ${skipped}건 스킵`, performedBy: 'system' });
     res.json({ success: true, data: { added, skipped, total: targetLoans.length } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// === 실행 건 중복 정리 (관리자용) ===
+// 동일 (customer_name, product_name, executed_date, status) 그룹에서 가장 큰 id 1건만 남기고 삭제
+// 먼저 dry-run 으로 영향 범위 확인 후 apply=true 로 실행
+router.post('/settlement/dedupe-executions', async (req, res) => {
+  try {
+    const { apply = false } = req.body || {};
+
+    // 중복 그룹 조회
+    const groups = await query(`
+      SELECT customer_name, product_name,
+             DATE_FORMAT(executed_date, '%Y-%m-%d') AS executed_date_str,
+             IFNULL(status, '승인') AS status,
+             COUNT(*) AS cnt,
+             GROUP_CONCAT(id ORDER BY id) AS ids,
+             MAX(id) AS keep_id
+      FROM settlement_executions
+      GROUP BY customer_name, product_name, executed_date_str, IFNULL(status, '승인')
+      HAVING cnt > 1
+      ORDER BY cnt DESC
+    `);
+
+    const totalDupeGroups = groups.length;
+    const totalToDelete = groups.reduce((s, g) => s + (g.cnt - 1), 0);
+
+    // 삭제할 id 목록 수집 (각 그룹에서 MAX(id) 만 유지)
+    const deleteIds = [];
+    for (const g of groups) {
+      const ids = String(g.ids || '').split(',').map(s => parseInt(s, 10)).filter(Number.isFinite);
+      for (const id of ids) {
+        if (id !== g.keep_id) deleteIds.push(id);
+      }
+    }
+
+    if (!apply) {
+      // 미리보기만 (상위 20개 그룹)
+      return res.json({
+        success: true,
+        dryRun: true,
+        totalDupeGroups,
+        totalToDelete,
+        sampleGroups: groups.slice(0, 20).map(g => ({
+          customer_name: g.customer_name,
+          product_name: g.product_name,
+          executed_date: g.executed_date_str,
+          status: g.status,
+          cnt: g.cnt,
+          keep_id: g.keep_id,
+          delete_ids: String(g.ids || '').split(',').filter(id => parseInt(id,10) !== g.keep_id).join(',')
+        }))
+      });
+    }
+
+    // 실제 삭제
+    if (deleteIds.length > 0) {
+      // IN 절 청크로 분할 (너무 크면 한 번에 안 됨)
+      const CHUNK = 500;
+      let deleted = 0;
+      for (let i = 0; i < deleteIds.length; i += CHUNK) {
+        const chunk = deleteIds.slice(i, i + CHUNK);
+        const placeholders = chunk.map(() => '?').join(',');
+        const r = await query(`DELETE FROM settlement_executions WHERE id IN (${placeholders})`, chunk);
+        deleted += (r && r.affectedRows) || 0;
+      }
+      await logAudit({
+        eventType: 'settlement_change',
+        targetType: 'execution',
+        afterValue: `실행 건 중복 정리: ${totalDupeGroups}그룹, ${deleted}건 삭제`,
+        performedBy: req.user?.name || 'admin'
+      });
+      return res.json({ success: true, applied: true, totalDupeGroups, deleted });
+    }
+
+    res.json({ success: true, applied: true, totalDupeGroups: 0, deleted: 0, message: '정리할 중복이 없습니다.' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
