@@ -1077,10 +1077,12 @@ async function loadLoanRegisterTimeline(customerId) {
     if (data.success && data.data.length > 0) {
       timeline.innerHTML = data.data.map(c => {
         const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
+        const channel = c.channel || '메모';
+        const author = c.consulted_by || '';
         return `<div class="timeline-item">
           <div class="tl-date">${date}</div>
-          <div class="tl-content">${c.content || ''}</div>
-          <div class="tl-user">${c.channel ? c.channel + ' | ' : ''}메모 | ${c.performed_by || ''}</div>
+          <div class="tl-content">${escapeHtml(c.content || '')}</div>
+          <div class="tl-user">${escapeHtml(channel)}${author ? ' | ' + escapeHtml(author) : ''}</div>
         </div>`;
       }).join('');
     } else {
