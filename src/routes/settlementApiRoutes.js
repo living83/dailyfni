@@ -258,78 +258,94 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 });
 
 // === 실행 건 중복 정리 (관리자용) ===
-// 동일 (customer_name, product_name, executed_date, status) 그룹에서 가장 큰 id 1건만 남기고 삭제
-// 먼저 dry-run 으로 영향 범위 확인 후 apply=true 로 실행
+// 동일 (customer_name, product_name, executed_date, status) 그룹에서 MAX(id) 1건만 남기고 삭제.
+// 대량 데이터에서도 안전하도록 SQL 레벨에서 직접 삭제 (GROUP_CONCAT truncation 위험 없음).
 router.post('/settlement/dedupe-executions', async (req, res) => {
   try {
     const { apply = false } = req.body || {};
 
-    // 중복 그룹 조회
-    const groups = await query(`
+    // 1) 통계: 중복 그룹 수 + 총 삭제 예정 건수
+    const [stats] = await query(`
+      SELECT
+        COUNT(*) AS total_rows,
+        COUNT(DISTINCT customer_name, product_name,
+          DATE_FORMAT(executed_date, '%Y-%m-%d'), IFNULL(status, '승인')) AS distinct_groups
+      FROM settlement_executions
+    `);
+    const totalToDelete = Math.max(0, (stats.total_rows || 0) - (stats.distinct_groups || 0));
+
+    const [grpStats] = await query(`
+      SELECT COUNT(*) AS dupe_groups FROM (
+        SELECT 1
+        FROM settlement_executions
+        GROUP BY customer_name, product_name,
+                 DATE_FORMAT(executed_date, '%Y-%m-%d'),
+                 IFNULL(status, '승인')
+        HAVING COUNT(*) > 1
+      ) t
+    `);
+    const totalDupeGroups = grpStats.dupe_groups || 0;
+
+    // 2) 샘플(상위 20개 중복 그룹) - preview 용. GROUP_CONCAT 제한을 3만자까지 열어둠.
+    await query(`SET SESSION group_concat_max_len = 30000`).catch(() => {});
+    const sample = await query(`
       SELECT customer_name, product_name,
-             DATE_FORMAT(executed_date, '%Y-%m-%d') AS executed_date_str,
+             DATE_FORMAT(executed_date, '%Y-%m-%d') AS executed_date,
              IFNULL(status, '승인') AS status,
              COUNT(*) AS cnt,
-             GROUP_CONCAT(id ORDER BY id) AS ids,
-             MAX(id) AS keep_id
+             MAX(id) AS keep_id,
+             SUBSTRING_INDEX(GROUP_CONCAT(id ORDER BY id), ',', 20) AS ids_preview
       FROM settlement_executions
-      GROUP BY customer_name, product_name, executed_date_str, IFNULL(status, '승인')
+      GROUP BY customer_name, product_name,
+               DATE_FORMAT(executed_date, '%Y-%m-%d'),
+               IFNULL(status, '승인')
       HAVING cnt > 1
       ORDER BY cnt DESC
+      LIMIT 20
     `);
 
-    const totalDupeGroups = groups.length;
-    const totalToDelete = groups.reduce((s, g) => s + (g.cnt - 1), 0);
-
-    // 삭제할 id 목록 수집 (각 그룹에서 MAX(id) 만 유지)
-    const deleteIds = [];
-    for (const g of groups) {
-      const ids = String(g.ids || '').split(',').map(s => parseInt(s, 10)).filter(Number.isFinite);
-      for (const id of ids) {
-        if (id !== g.keep_id) deleteIds.push(id);
-      }
-    }
-
     if (!apply) {
-      // 미리보기만 (상위 20개 그룹)
       return res.json({
         success: true,
         dryRun: true,
+        totalRows: stats.total_rows || 0,
         totalDupeGroups,
         totalToDelete,
-        sampleGroups: groups.slice(0, 20).map(g => ({
-          customer_name: g.customer_name,
-          product_name: g.product_name,
-          executed_date: g.executed_date_str,
-          status: g.status,
-          cnt: g.cnt,
-          keep_id: g.keep_id,
-          delete_ids: String(g.ids || '').split(',').filter(id => parseInt(id,10) !== g.keep_id).join(',')
-        }))
+        sampleGroups: sample
       });
     }
 
-    // 실제 삭제
-    if (deleteIds.length > 0) {
-      // IN 절 청크로 분할 (너무 크면 한 번에 안 됨)
-      const CHUNK = 500;
-      let deleted = 0;
-      for (let i = 0; i < deleteIds.length; i += CHUNK) {
-        const chunk = deleteIds.slice(i, i + CHUNK);
-        const placeholders = chunk.map(() => '?').join(',');
-        const r = await query(`DELETE FROM settlement_executions WHERE id IN (${placeholders})`, chunk);
-        deleted += (r && r.affectedRows) || 0;
-      }
-      await logAudit({
-        eventType: 'settlement_change',
-        targetType: 'execution',
-        afterValue: `실행 건 중복 정리: ${totalDupeGroups}그룹, ${deleted}건 삭제`,
-        performedBy: req.user?.name || 'admin'
-      });
-      return res.json({ success: true, applied: true, totalDupeGroups, deleted });
-    }
+    // 3) 실제 삭제 — 각 그룹에서 MAX(id)가 아닌 행 일괄 삭제
+    //    JOIN 방식으로 DB 가 직접 처리 (app 쪽 id 리스트 불필요)
+    const result = await query(`
+      DELETE e FROM settlement_executions e
+      JOIN (
+        SELECT customer_name, product_name,
+               DATE_FORMAT(executed_date, '%Y-%m-%d') AS d,
+               IFNULL(status, '승인') AS st,
+               MAX(id) AS keep_id
+        FROM settlement_executions
+        GROUP BY customer_name, product_name,
+                 DATE_FORMAT(executed_date, '%Y-%m-%d'),
+                 IFNULL(status, '승인')
+        HAVING COUNT(*) > 1
+      ) k
+        ON k.customer_name = e.customer_name
+       AND k.product_name  = e.product_name
+       AND k.d             = DATE_FORMAT(e.executed_date, '%Y-%m-%d')
+       AND k.st            = IFNULL(e.status, '승인')
+       AND e.id <> k.keep_id
+    `);
+    const deleted = (result && result.affectedRows) || 0;
 
-    res.json({ success: true, applied: true, totalDupeGroups: 0, deleted: 0, message: '정리할 중복이 없습니다.' });
+    await logAudit({
+      eventType: 'settlement_change',
+      targetType: 'execution',
+      afterValue: `실행 건 중복 정리: ${totalDupeGroups}그룹, ${deleted}건 삭제`,
+      performedBy: req.user?.name || 'admin'
+    });
+
+    res.json({ success: true, applied: true, totalDupeGroups, deleted });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

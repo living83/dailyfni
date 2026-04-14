@@ -1645,7 +1645,10 @@ function renderSettlementSales() {
       <select id="salesMonth">${months.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
       <select id="salesSource"><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select>
       <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
-      ${isAdmin() ? '<button class="btn btn-outline" style="margin-left:auto;" onclick="showAddExecution()">+ 실행 건 등록</button>' : ''}
+      ${isAdmin() ? `
+        <button class="btn btn-outline" style="margin-left:auto;" onclick="dedupeExecutions()" title="동일 고객+상품+일자+상태의 중복 실행건을 정리">🧹 중복 정리</button>
+        <button class="btn btn-outline" onclick="showAddExecution()">+ 실행 건 등록</button>
+      ` : ''}
     </div>
     <div class="stat-cards">
       <div class="stat-card"><div class="label">총 매출 (대출금액)</div><div class="value">${(s.totalSales||0).toLocaleString()}만</div></div>
@@ -1708,6 +1711,52 @@ async function loadSalesSummary() {
 
     if (document.getElementById('salesMonth')) navigate('settlement');
   } catch (e) { console.error(e); }
+}
+
+// 실행 건 중복 정리 (관리자용) — dry-run 으로 먼저 영향 범위 보여주고 확인 받아 실제 삭제
+async function dedupeExecutions() {
+  try {
+    // 1) dry-run
+    const dryRes = await fetch('/api/settlement/dedupe-executions', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false })
+    });
+    const dry = await dryRes.json();
+    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
+
+    if (dry.totalToDelete === 0) {
+      alert('정리할 중복이 없습니다.\n\n총 ' + (dry.totalRows || 0) + '건 / 중복 그룹 0');
+      return;
+    }
+
+    // 샘플 프리뷰 (상위 몇 건)
+    const rowsHtml = (dry.sampleGroups || []).slice(0, 10).map(g =>
+      `- ${g.customer_name} / ${g.product_name} / ${g.executed_date} / ${g.status} → ${g.cnt}건 (id ${g.ids_preview}, 남길 id: ${g.keep_id})`
+    ).join('\n');
+
+    const ok = confirm(
+      '⚠ 실행 건 중복 정리 미리보기\n\n' +
+      `- 총 행 수: ${dry.totalRows || 0}\n` +
+      `- 중복 그룹: ${dry.totalDupeGroups}\n` +
+      `- 삭제 예정: ${dry.totalToDelete}건\n\n` +
+      '각 그룹에서 가장 최근 id 1건만 남기고 나머지가 삭제됩니다. (감사로그 기록됨)\n\n' +
+      '상위 10개 그룹:\n' + rowsHtml + '\n\n' +
+      '정말 실행할까요?'
+    );
+    if (!ok) return;
+
+    // 2) 실제 적용
+    const res = await fetch('/api/settlement/dedupe-executions', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true })
+    });
+    const data = await res.json();
+    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
+
+    alert(`✅ 정리 완료\n\n- 중복 그룹: ${data.totalDupeGroups}\n- 삭제: ${data.deleted}건`);
+    // 매출/수당 정산 페이지 새로고침
+    if (typeof loadSalesSummary === 'function') loadSalesSummary();
+  } catch (e) {
+    alert('서버 연결 실패: ' + e.message);
+  }
 }
 
 function showAddExecution() {
