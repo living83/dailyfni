@@ -396,6 +396,17 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     const filled = [];
     const notFound = [];
 
+    // 날짜 정규화: 'YYYYMMDD' / 'YYYY-MM-DD' / 'YYYY/MM/DD' / 'YYYY.MM.DD' 모두 'YYYY-MM-DD'
+    // 론앤마스터 date picker 는 YYYY-MM-DD 만 인식 (빨간 박스 방지)
+    function normalizeDate(s) {
+      if (!s && s !== 0) return '';
+      const m = String(s).match(/(\d{4})[^\d]?(\d{1,2})[^\d]?(\d{1,2})/);
+      if (!m) return String(s);
+      const mm = m[2].padStart(2, '0');
+      const dd = m[3].padStart(2, '0');
+      return `${m[1]}-${mm}-${dd}`;
+    }
+
     function setInput(name, value, label) {
       if (!value && value !== 0) return;
       const el = document.querySelector(`input[name="${name}"], textarea[name="${name}"]`);
@@ -466,7 +477,7 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     const insuMap = {'가입':'Y','미가입':'N'};
     setSelect('j_IsInsu', insuMap[data.insurance4] || data.insurance4, '4대보험');
     setInput('j_name', data.company, '직장명');
-    setInput('j_date', data.joinDate, '입사일자');
+    setInput('j_date', normalizeDate(data.joinDate), '입사일자');
     setInput('j_no1', data.bizNo1, '사업자번호1');
     setInput('j_no2', data.bizNo2, '사업자번호2');
     setInput('j_no3', data.bizNo3, '사업자번호3');
@@ -506,7 +517,7 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     // select (최초수집경로 / 중개사연락처경로) 는 이름이 불확실 → 라벨 매칭 우선 + 후보명 fallback
     const legal = data.legal || {};
     if (Object.keys(legal).length > 0) {
-      setInput('call_date',  legal.writeDate, '작성년월일');
+      setInput('call_date',  normalizeDate(legal.writeDate), '작성년월일');
       setInput('call_comp',  legal.company,   '회사명');
       setInput('call_staff', legal.writer,    '작성자명');
       setInput('call_ceo',   legal.ceo,       '대표자명');

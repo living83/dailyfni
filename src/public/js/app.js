@@ -986,7 +986,7 @@ function renderLoanRegister() {
             </tr>
             <tr>
               <th>작성년월일</th>
-              <td><input type="text" id="lr-legal-writeDate" style="width:200px;" placeholder="YYYYMMDD"></td>
+              <td><input type="text" id="lr-legal-writeDate" style="width:200px;" placeholder="YYYY-MM-DD"></td>
               <th>회사명</th>
               <td><input type="text" id="lr-legal-company" placeholder="회사명"></td>
             </tr>
@@ -1116,13 +1116,13 @@ async function saveLoanRegisterMemo(customerId) {
 }
 
 // 고객적법확인 기본값 자동 채움 (페이지 렌더 직후 호출)
-// - 작성년월일: 오늘(YYYYMMDD)
+// - 작성년월일: 오늘(YYYY-MM-DD) — 론앤마스터 date picker 호환
 // - 작성자명: 로그인 직원 이름
 // - 회사명/대표자명/URL: localStorage 에 저장된 이전 값
 function initLegalCheckDefaults() {
   try {
     const d = new Date();
-    const today = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const user = JSON.parse(sessionStorage.getItem('loggedInUser')||'{}');
     const saved = JSON.parse(localStorage.getItem('legalCheckDefaults')||'{}');
 
@@ -1257,7 +1257,7 @@ async function submitLoanRegister() {
   const memo = document.getElementById('lr-memo')?.value || '';
 
   // 고객적법확인 수집 + 빈 값은 기본값/로그인자/오늘 로 자동 채움
-  const todayYMD = (() => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; })();
+  const todayYMD = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
   const loginUser = (() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}'); } catch { return {}; } })();
   const savedLegal = (() => { try { return JSON.parse(localStorage.getItem('legalCheckDefaults')||'{}'); } catch { return {}; } })();
   const legal = {
