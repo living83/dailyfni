@@ -444,26 +444,35 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   };
   page.on('dialog', dialogHandler);
 
-  // 제출 버튼 클릭
+  // 제출 버튼 클릭 (텍스트 기반 매칭, fallback 없음 — 못 찾으면 실패)
   const submitResult = await page.evaluate(() => {
-    // 제출/등록/저장 버튼 찾기
+    // 후보 수집 후 가장 적합한 버튼 1개 선택
     const allBtns = document.querySelectorAll('input[type="submit"], input[type="button"], button, a');
+    const candidates = [];
     for (const btn of allBtns) {
       const text = (btn.value || btn.textContent || '').trim();
-      if (text.includes('등록') || text.includes('접수') || text.includes('저장') || text.includes('신청')) {
-        // "초기화", "취소" 등 제외
-        if (text.includes('초기화') || text.includes('취소') || text.includes('삭제')) continue;
-        btn.click();
-        return { clicked: true, buttonText: text };
+      if (!text) continue;
+      // 제외 단어
+      if (text.includes('초기화') || text.includes('취소') || text.includes('삭제') ||
+          text.includes('닫기') || text.includes('목록') || text.includes('검색')) continue;
+      // 허용 단어
+      if (text.includes('등록') || text.includes('접수') || text.includes('저장') || text.includes('신청') || text.includes('제출')) {
+        candidates.push({ el: btn, text });
       }
     }
-    // form submit 시도
-    const form = document.querySelector('form');
-    if (form) {
-      form.submit();
-      return { clicked: true, buttonText: 'form.submit()' };
+    if (candidates.length === 0) {
+      return { clicked: false, buttonText: '', reason: 'submit_button_not_found' };
     }
-    return { clicked: false, buttonText: '' };
+    // "접수" > "등록" > "신청" > "저장" > "제출" 순으로 우선순위
+    const priority = ['접수', '등록', '신청', '저장', '제출'];
+    candidates.sort((a, b) => {
+      const pa = priority.findIndex(p => a.text.includes(p));
+      const pb = priority.findIndex(p => b.text.includes(p));
+      return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
+    });
+    const chosen = candidates[0];
+    chosen.el.click();
+    return { clicked: true, buttonText: chosen.text, candidateCount: candidates.length };
   });
 
   // 제출 후 페이지 이동/응답 대기
@@ -476,7 +485,6 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
       // 제출 결과 확인 (성공/실패 메시지 추출)
       submitResponse = await page.evaluate(() => {
         const body = document.body.innerText;
-        // alert 팝업이 뜬 경우 body에 포함될 수 있음
         const isSuccess = body.includes('완료') || body.includes('성공') || body.includes('접수되었습니다') || body.includes('등록되었습니다');
         const isError = body.includes('실패') || body.includes('오류') || body.includes('에러') || body.includes('ERROR');
         return {
@@ -497,6 +505,34 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   if (alertMessage) {
     submitResponse = submitResponse || {};
     submitResponse.alertMessage = alertMessage;
+
+    // alert 메시지에서 실패/경고 신호 분석
+    const msg = alertMessage;
+    const failurePatterns = [
+      '필수', '누락', '입력', '선택하', '확인',                                // 입력 검증
+      '실패', '오류', '에러', '불가', '거부', '잘못',                           // 명시적 실패
+      '중복', '이미 등록', '이미 접수', '이미 존재',                             // 중복
+      '형식', '자리', '길이', '잘못된', 'invalid', 'error', 'fail',           // 포맷 오류
+      '본인확인', '인증', '권한'                                                // 인증 관련
+    ];
+    const successPatterns = ['완료', '성공', '등록되었습니다', '접수되었습니다', '처리되었습니다'];
+    const msgIsFailure = failurePatterns.some(p => msg.toLowerCase().includes(p.toLowerCase()));
+    const msgIsSuccess = successPatterns.some(p => msg.includes(p));
+    if (msgIsFailure && !msgIsSuccess) {
+      submitResponse.isError = true;
+      submitResponse.isSuccess = false;
+      submitResponse.failureReason = `론앤마스터 알림: ${msg}`;
+    } else if (msgIsSuccess && !msgIsFailure) {
+      submitResponse.isSuccess = true;
+    }
+  }
+
+  // 제출 버튼을 애초에 못 눌렀으면 실패
+  if (!submitResult.clicked) {
+    submitResponse = submitResponse || { isSuccess: false, isError: true };
+    submitResponse.isError = true;
+    submitResponse.isSuccess = false;
+    submitResponse.failureReason = submitResponse.failureReason || '제출 버튼을 찾을 수 없습니다.';
   }
 
   const pageUrl = page.url();

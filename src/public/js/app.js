@@ -1254,33 +1254,39 @@ async function submitLoanRegister() {
       alert(data.message || '동일 접수가 진행 중입니다.');
       return;
     }
+    if (res.status === 400) {
+      alert(data.message || '요청이 올바르지 않습니다.');
+      return;
+    }
     if (data.success) {
       const result = data.data;
       const sr = result.submitResponse;
+      const submitOk = !!(sr?.isSuccess && !sr?.isError);
 
-      if (result.submitResult?.clicked) {
-        let msg = `론앤마스터 접수 완료!\n\n`;
-        msg += `입력 필드: ${result.filledCount}개\n`;
-        msg += `미매칭 필드: ${(result.notFoundFields||[]).length}개\n`;
-        msg += `제출 버튼: ${result.submitResult.buttonText}\n`;
-        if (sr?.alertMessage) msg += `\n응답: ${sr.alertMessage}`;
-        if (sr?.isSuccess) msg += `\n✓ 접수 성공`;
-        if (sr?.isError) msg += `\n✗ 접수 오류 발생`;
-        msg += `\n\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
-        alert(msg);
+      let msg = '';
+      if (submitOk) {
+        msg += `✅ 론앤마스터 접수 완료\n\n`;
+      } else {
+        msg += `❌ 론앤마스터 접수 실패\n\n`;
+      }
+      msg += `입력 필드: ${result.filledCount}개\n`;
+      msg += `미매칭 필드: ${(result.notFoundFields||[]).length}개\n`;
+      if (result.submitResult?.buttonText) msg += `클릭 버튼: ${result.submitResult.buttonText}\n`;
+      if (sr?.failureReason) msg += `\n실패 사유: ${sr.failureReason}\n`;
+      if (sr?.alertMessage) msg += `\n알림 메시지: ${sr.alertMessage}\n`;
+      msg += `\n미매칭: ${(result.notFoundFields||[]).join(', ') || '없음'}`;
+      alert(msg);
 
+      if (submitOk) {
         addSubmitLog(productName, fidx, result.filledCount);
-
-        // 고객 상태를 '접수'로 변경 (실제 성공 응답일 때만)
-        if (loanRegisterCustomerId && sr?.isSuccess && !sr?.isError) {
+        // 고객 상태를 '접수'로 변경 (실제 성공 시에만)
+        if (loanRegisterCustomerId) {
           await fetch(`/api/customers/${loanRegisterCustomerId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...loanRegisterCustomerDB, status: '접수' })
           });
         }
-      } else {
-        alert(`폼 입력은 완료했으나 제출 버튼을 찾지 못했습니다.\n미매칭: ${(result.notFoundFields||[]).join(', ')}`);
       }
     } else {
       alert('접수 실패: ' + (data.message || '알 수 없는 오류'));

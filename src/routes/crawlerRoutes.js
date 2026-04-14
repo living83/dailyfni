@@ -105,15 +105,34 @@ router.post('/crawler/submit-loan', async (req, res) => {
 
     const isDryRun = !!dryRun;
 
-    // 실제 제출만 중복 방지 락 적용
+    // 실제 제출만 필수 필드 검증 + 중복 방지 락 적용
     let lockKey = null;
     if (!isDryRun) {
-      _pruneSubmitLocks();
-      const name = (formData.name || '').trim();
-      const fidx = String(formData.fidx || '').trim();
-      if (!name || !fidx) {
-        return res.status(400).json({ success: false, message: '실제 제출에는 name과 fidx가 필수입니다.' });
+      // 필수 필드 검증 (고객명/생년월일/전화1/대출요청액/상품fidx)
+      const required = {
+        name: '고객명',
+        birth: '생년월일',
+        phone1: '전화번호',
+        loanAmount: '대출요청액',
+        fidx: '상품(fidx)'
+      };
+      const missing = [];
+      for (const [key, label] of Object.entries(required)) {
+        const val = formData[key];
+        if (val === undefined || val === null || String(val).trim() === '' || String(val).trim() === '0') {
+          missing.push(label);
+        }
       }
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `실제 제출에는 필수 필드가 모두 입력되어야 합니다: ${missing.join(', ')}`
+        });
+      }
+
+      _pruneSubmitLocks();
+      const name = String(formData.name).trim();
+      const fidx = String(formData.fidx).trim();
       lockKey = `${name}_${fidx}`;
       const lastAt = _submitLocks.get(lockKey);
       if (lastAt && Date.now() - lastAt < SUBMIT_LOCK_WINDOW_MS) {
