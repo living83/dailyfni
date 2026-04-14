@@ -1102,7 +1102,7 @@ async function saveLoanRegisterMemo(customerId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customerId, channel: '메모', content: textarea.value.trim(),
-        performedBy: user.name || '', performedById: user.id || 0
+        consultedBy: user.name || ''
       })
     });
     const data = await res.json();
@@ -3745,6 +3745,9 @@ function openAddrSearch(prefix) {
   }).open();
 }
 
+// 고객 등록 중 입력한 메모를 담아두는 큐 (customerId 확보 후 submitCustomerRegister 에서 일괄 저장)
+window._pendingRegisterMemos = window._pendingRegisterMemos || [];
+
 function saveRegisterMemo() {
   const memo = document.getElementById('regMemo');
   const channel = document.getElementById('regChannel');
@@ -3753,17 +3756,27 @@ function saveRegisterMemo() {
 
   const now = new Date();
   const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const ch = channel.value !== '선택' ? channel.value : '메모';
+  const ch = (channel?.value && channel.value !== '선택') ? channel.value : '메모';
+  const user = (() => { try { return JSON.parse(sessionStorage.getItem('loggedInUser')||'{}'); } catch { return {}; } })();
 
+  // 큐에 적재 — 고객 등록 완료 시 /api/consultations 로 일괄 전송됨
+  window._pendingRegisterMemos.push({ channel: ch, content, consultedBy: user.name || '' });
+
+  // 타임라인에 즉시 표시 (임시 — 등록 완료 후 실제 DB에서 다시 로드됨)
   const timeline = document.getElementById('regConsultTimeline');
   if (timeline) {
     if (timeline.querySelector('div[style]')) timeline.innerHTML = '';
     const newItem = document.createElement('div');
     newItem.className = 'timeline-item';
-    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">${content}</div><div class="tl-user">${ch} | 김대리</div>`;
+    newItem.innerHTML = `<div class="tl-date">${ts}</div><div class="tl-content">${escapeHtml(content)}</div><div class="tl-user">${escapeHtml(ch)} | ${escapeHtml(user.name || '')} <span style="color:#94a3b8;font-size:10px;">(등록 완료 시 저장됩니다)</span></div>`;
     timeline.insertBefore(newItem, timeline.firstChild);
   }
   memo.value = '';
+}
+
+// 간단한 HTML 이스케이프
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 function cancelLedgerEdit() {
@@ -4294,6 +4307,36 @@ async function submitCustomerRegister() {
     const result = await res.json();
     if (result.success) {
       intakePrefill = null;
+
+      // 등록 중 쌓인 메모 큐를 실제 /api/consultations 로 flush
+      const newCustomerId = result.data?.id || result.id || result.customerId;
+      const queue = Array.isArray(window._pendingRegisterMemos) ? window._pendingRegisterMemos : [];
+      if (newCustomerId && queue.length > 0) {
+        let ok = 0;
+        for (const m of queue) {
+          try {
+            const r = await fetch('/api/consultations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                customerId: newCustomerId,
+                channel: m.channel || '메모',
+                content: m.content,
+                consultedBy: m.consultedBy || ''
+              })
+            });
+            const d = await r.json();
+            if (d.success) ok++;
+          } catch (e) { console.error('consultation save error', e); }
+        }
+        window._pendingRegisterMemos = [];
+        if (ok < queue.length) {
+          console.warn(`[고객등록] 메모 ${queue.length}건 중 ${ok}건 저장 성공`);
+        }
+      } else {
+        window._pendingRegisterMemos = [];
+      }
+
       alert(`${data.name} 고객이 등록되었습니다.`);
       navigate('customers');
     } else {
