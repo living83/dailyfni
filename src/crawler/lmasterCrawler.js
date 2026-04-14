@@ -502,31 +502,65 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     setInput('brt_month_repay_amt', data.monthlyPayment, '월변제금');
 
     // === 기타 (메모) ===
-    // 론앤마스터는 상품별로 call_memo1/2/3 중 하나만 가시화하는 케이스가 있어 가시 요소에 우선 입력
+    // 실제 화면에 보이는 textarea 에 우선 기재해야 접수원이 확인 가능.
+    // call_memo1/2/3 는 상품별로 hidden 이 많아 화면 반영이 안 되는 케이스 있음.
     if (data.memo) {
       const memoVal = String(data.memo);
-      const candidates = ['call_memo1', 'call_memo2', 'call_memo3', 'call_memo'];
+      const isVisible = (el) => {
+        if (!el) return false;
+        if (el.offsetParent === null) return false;
+        const st = window.getComputedStyle(el);
+        if (st.display === 'none' || st.visibility === 'hidden') return false;
+        if (el.type === 'hidden') return false;
+        return true;
+      };
+      const getLabel = (el) => el.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim()
+        || el.closest('label')?.textContent?.trim() || '';
+
+      const memoCandidateNames = ['call_memo1', 'call_memo2', 'call_memo3', 'call_memo',
+        'memo', 'etc', 'etc1', 'bigo', 'remark', 'note', 'content', 'detail'];
+
       let memoTarget = null;
-      // 1) 가시 상태인 call_memo* 우선
-      for (const n of candidates) {
-        const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
-        if (el && el.offsetParent !== null) { memoTarget = { el, name: n, via: 'visible-call_memo' }; break; }
-      }
-      // 2) 가시 없으면 존재하는 첫 call_memo*
-      if (!memoTarget) {
-        for (const n of candidates) {
-          const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
-          if (el) { memoTarget = { el, name: n, via: 'hidden-call_memo' }; break; }
+
+      // 1) 이름이 후보 목록인 **가시** textarea/input 우선
+      for (const n of memoCandidateNames) {
+        const els = document.querySelectorAll(`textarea[name="${n}"], input[name="${n}"]`);
+        for (const el of els) {
+          if (isVisible(el)) { memoTarget = { el, name: n, via: 'visible-candidate-name' }; break; }
         }
+        if (memoTarget) break;
       }
-      // 3) 그래도 없으면 label/th 가 "기타/메모/비고/특이사항" 인 textarea
+
+      // 2) 이름은 달라도 라벨에 "기타/메모/비고/특이/상담" 들어가는 **가시** textarea
       if (!memoTarget) {
         const allTas = document.querySelectorAll('textarea');
         for (const ta of allTas) {
-          const label = ta.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim() || '';
-          if (/기타|메모|비고|특이/.test(label)) { memoTarget = { el: ta, name: ta.name || `(textarea:${label})`, via: 'label-match' }; break; }
+          if (!isVisible(ta)) continue;
+          const label = getLabel(ta);
+          if (/기타|메모|비고|특이|상담|call_memo|상세/.test(label)) {
+            memoTarget = { el: ta, name: ta.name || `(textarea:${label.substring(0,20)})`, via: 'visible-label-match' };
+            break;
+          }
         }
       }
+
+      // 3) 그래도 없으면: **마지막 가시 textarea** (보통 기타사항이 폼 하단)
+      if (!memoTarget) {
+        const allVisTas = Array.from(document.querySelectorAll('textarea')).filter(isVisible);
+        if (allVisTas.length > 0) {
+          const ta = allVisTas[allVisTas.length - 1];
+          memoTarget = { el: ta, name: ta.name || '(last-visible-textarea)', via: 'last-visible-textarea' };
+        }
+      }
+
+      // 4) 최후 폴백: 존재하는 아무 call_memo* (hidden 이라도) - 최소 백엔드 전송 보장
+      if (!memoTarget) {
+        for (const n of ['call_memo1', 'call_memo2', 'call_memo3']) {
+          const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
+          if (el) { memoTarget = { el, name: n, via: 'hidden-call_memo-fallback' }; break; }
+        }
+      }
+
       if (memoTarget) {
         memoTarget.el.value = memoVal;
         memoTarget.el.dispatchEvent(new Event('input', { bubbles: true }));
