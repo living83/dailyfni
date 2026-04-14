@@ -1356,6 +1356,22 @@ async function submitLoanRegister() {
     if (data.success) {
       const result = data.data;
       const sr = result.submitResponse;
+
+      // 🔍 전체 응답 콘솔 출력 (실패 원인 추적용)
+      console.group('[접수] 제출 응답');
+      console.log('  clicked:', result.submitResult?.clicked);
+      console.log('  buttonText:', result.submitResult?.buttonText);
+      console.log('  via:', result.submitResult?.via);
+      console.log('  reason:', result.submitResult?.reason);
+      console.log('  sample:', result.submitResult?.sample);
+      console.log('  productSelect:', result.productSelectResult);
+      console.log('  filledCount:', result.filledCount);
+      console.log('  notFound:', result.notFoundFields);
+      console.log('  submitResponse:', sr);
+      console.log('  pageUrl:', result.pageUrl);
+      console.log('  raw:', result);
+      console.groupEnd();
+
       const chosenText = result.submitResult?.buttonText || '';
       // 클릭된 버튼이 '조회/임시저장/수정/목록' 등 접수가 아닌 관리 버튼이면 실패로 판정
       const looksWrong = /조회|검색|찾기|임시|수정|삭제|취소|닫기|목록|리스트|업체|회사|지점|관리|보기|상세/.test(chosenText);
