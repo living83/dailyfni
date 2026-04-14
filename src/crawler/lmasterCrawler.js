@@ -461,9 +461,42 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     // 통신사: SK→S, KT→K, LGU+→L, 알뜰→T, SK알뜰→TS, KT알뜰→TK, LG알뜰→TL
     const carrierMap = {'SK':'S','KT':'K','LGU+':'L','알뜰':'T','SK알뜰':'TS','KT알뜰':'TK','LG알뜰':'TL','기타':'E'};
     setSelect('hpon_company', carrierMap[data.carrier] || data.carrier, '통신사');
+
+    // 휴대폰: hpon1/2/3 가 '연락처수정' 같은 버튼 뒤에 가려져 있는 경우가 있어 먼저 노출시킴
+    (function unmaskPhone() {
+      try {
+        // 이미 가시 상태면 skip
+        const test = document.querySelector('input[name="hpon1"]');
+        const isVisible = (el) => el && el.offsetParent !== null;
+        if (isVisible(test) && test.type !== 'hidden') return;
+        // 연락처수정/휴대폰수정/편집 등 버튼 찾아 클릭
+        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a, span'));
+        for (const b of btns) {
+          const t = (b.value || b.textContent || '').trim();
+          if (/연락처\s*수정|휴대폰\s*수정|전화\s*수정|핸드폰\s*수정|phone.*edit/i.test(t)) {
+            try { b.click(); } catch {}
+            break;
+          }
+        }
+      } catch {}
+    })();
+
     setInput('hpon1', data.phone1, '전화1');
     setInput('hpon2', data.phone2, '전화2');
     setInput('hpon3', data.phone3, '전화3');
+
+    // 채운 뒤 실제로 DOM 에 반영됐는지 검증 (hidden 이거나 값이 안 들어갔으면 명시)
+    (function verifyPhone() {
+      ['hpon1','hpon2','hpon3'].forEach(n => {
+        const el = document.querySelector(`input[name="${n}"]`);
+        if (!el) { notFound.push(n + ' [미존재]'); return; }
+        if (el.offsetParent === null || el.type === 'hidden') {
+          notFound.push(n + ' [여전히 hidden — 연락처수정 버튼 필요]');
+        } else if (!el.value) {
+          notFound.push(n + ' [값 미반영]');
+        }
+      });
+    })();
     setInput('p_pay', data.loanAmount, '대출요청액');
 
     // === 주소 ===
