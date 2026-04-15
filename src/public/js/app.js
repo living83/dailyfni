@@ -148,6 +148,7 @@ const pages = {
   notifications: { title: '알림', render: renderNotifications },
   audit: { title: '감사로그', render: renderAudit },
   'doc-convert': { title: '문서 변환', render: renderDocConvert },
+  'lmaster-notice': { title: '론앤마스터 공지', render: renderLmasterNotice },
 };
 
 // --- 초기화 ---
@@ -181,6 +182,61 @@ document.addEventListener('DOMContentLoaded', () => {
   // 로그인 후 당일 론앤마스터 공지 팝업 (1초 뒤 비동기, 화면 로딩 방해 X)
   setTimeout(() => { showLmasterNoticePopupIfAny(); }, 1000);
 });
+
+// 사이드바 → 론앤마스터 공지 페이지
+function renderLmasterNotice() {
+  // 비동기 로드 + placeholder
+  setTimeout(() => loadLmasterNoticePage(false), 50);
+  return `
+    <div class="filter-bar">
+      <button class="btn btn-primary" onclick="loadLmasterNoticePage(false)">새로고침</button>
+      <button class="btn btn-outline" onclick="loadLmasterNoticePage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
+      <span id="lmasterNoticeMeta" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <h2>론앤마스터 당일 공지</h2>
+        <span style="font-size:11px;color:#94a3b8;">서버에서 1시간 캐시 — 새 공지는 자동 갱신</span>
+      </div>
+      <div class="panel-body" id="lmasterNoticeBody" style="padding:12px 16px;">
+        <div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중...</div>
+      </div>
+    </div>`;
+}
+
+async function loadLmasterNoticePage(force) {
+  const body = document.getElementById('lmasterNoticeBody');
+  const meta = document.getElementById('lmasterNoticeMeta');
+  if (!body) return;
+  body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중... (10~20초 소요)</div>';
+  if (meta) meta.textContent = '';
+  try {
+    const res = await fetch('/api/crawler/notices' + (force ? '?force=1' : ''));
+    const data = await res.json();
+    if (!data.success) {
+      body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">조회 실패: ${data.message || '알 수 없는 오류'}</div>`;
+      return;
+    }
+    const d = data.data || {};
+    const notices = d.notices || [];
+    if (meta) meta.textContent = `${d.todayStr || ''} 기준 / ${notices.length}건 / ${d.cached ? '캐시 ('+(d.cachedAgeSec||0)+'초 전)' : '실시간'}`;
+    if (notices.length === 0) {
+      body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">오늘 등록된 공지가 없습니다.</div>';
+      return;
+    }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    body.innerHTML = notices.map(n => `
+      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;margin-bottom:10px;background:#fafafa;">
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;">
+          <strong style="color:#0f172a;font-size:13px;">${esc(n.title)}</strong>
+          <span style="color:#64748b;font-size:11px;white-space:nowrap;">${esc(n.date)}</span>
+        </div>
+        ${n.body ? `<div style="font-size:12px;color:#334155;white-space:pre-wrap;line-height:1.5;max-height:300px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;">${esc(n.body)}</div>` : '<div style="font-size:11px;color:#94a3b8;">본문을 불러오지 못했습니다.</div>'}
+      </div>`).join('');
+  } catch (e) {
+    body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">서버 연결 실패: ${e.message}</div>`;
+  }
+}
 
 // 론앤마스터 당일 공지 팝업 — 로그인 직후 1회 실행
 async function showLmasterNoticePopupIfAny() {
