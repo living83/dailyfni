@@ -179,9 +179,11 @@ document.addEventListener('DOMContentLoaded', () => {
   bindNav();
   bindToggle();
 
-  // 로그인 후 당일 론앤마스터 공지 팝업 (1초 뒤 시도, 미로그인이면 5초 뒤 재시도)
+  // 로그인 후 당일 론앤마스터 공지 팝업
+  // 1초 즉시 + 론앤마스터 연동 지연 대비 10초/30초 재시도
   setTimeout(() => { showLmasterNoticePopupIfAny(); }, 1000);
-  setTimeout(() => { showLmasterNoticePopupIfAny(); }, 8000);
+  setTimeout(() => { showLmasterNoticePopupIfAny(); }, 10000);
+  setTimeout(() => { showLmasterNoticePopupIfAny(); }, 30000);
 });
 
 // 팝업 "오늘 그만 보기" 상태 해제 (콘솔/버튼에서 호출)
@@ -4840,6 +4842,8 @@ async function crawlerLogin() {
       crawlerLoggedIn = true;
       updateCrawlerUI(true);
       alert('론앤마스터 로그인 성공');
+      // 연동 성공 즉시 당일 공지 팝업 시도
+      setTimeout(() => { showLmasterNoticePopupIfAny(); }, 500);
     } else {
       alert('연동 실패: ' + (data.message || '알 수 없는 오류'));
     }
