@@ -558,9 +558,11 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     setInput('car_joinown_name', data.vehicleCoOwner, '공동명의자');
 
     // === 회파복 ===
-    // 회파복: 회생→1, 파산→2, 회복→3, 무→99
-    const brtMap = {'회생':'1','파산':'2','회복':'3','무':'99','==선택==':'','선택':''};
-    setSelect('brt_tp', brtMap[data.recoveryType] || data.recoveryType, '회파복구분');
+    // 사용자가 미선택(==선택==) 또는 빈값으로 보낸 경우 '무' 로 자동 보정 — placeholder 채로 제출하면 lmaster 가 접수실패 처리
+    const recoveryRaw = String(data.recoveryType || '').trim();
+    const isRecoveryPlaceholder = !recoveryRaw || /^==.*==$/.test(recoveryRaw) || /^선택$/.test(recoveryRaw);
+    const recoveryFinal = isRecoveryPlaceholder ? '무' : recoveryRaw;
+    setSelect('brt_tp', recoveryFinal, '회파복구분');
     setInput('brt_court_name', data.courtName, '법원명');
     // 사건번호: 연도/종류/번호 분리
     if (data.caseNoYear) setSelect('brt_no1', data.caseNoYear, '사건연도');
