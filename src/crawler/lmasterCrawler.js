@@ -515,17 +515,22 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     // 직업구분: 직장인(4대가입)→1, 직장인(미가입)→2, 개인사업자→3, 프리랜서→4, 무직→7, 주부→8, 학생→9
     const jobMap = {'직장인(4대가입)':'1','직장인(미가입)':'2','개인사업자':'3','프리랜서':'4','무직':'7','주부':'8','학생':'9'};
     setSelect('j_sel', jobMap[data.jobType] || data.jobType, '직업구분');
-    // 4대보험: 가입→Y, 미가입→N
-    const insuMap = {'가입':'Y','미가입':'N'};
-    setSelect('j_IsInsu', insuMap[data.insurance4] || data.insurance4, '4대보험');
-    setInput('j_name', data.company, '직장명');
-    setInput('j_date', normalizeDate(data.joinDate), '입사일자');
-    setInput('j_no1', data.bizNo1, '사업자번호1');
-    setInput('j_no2', data.bizNo2, '사업자번호2');
-    setInput('j_no3', data.bizNo3, '사업자번호3');
-    setInput('j_pay1', data.salary, '연소득');
-    setInput('j_pay2', data.monthlySalary, '월소득');
-    setInput('j_insu_money', data.healthInsurance, '건강보험납부금');
+
+    // 무직/주부/학생 일 때는 직장·4대보험 계열을 건너뜀 (론앤마스터에서도 필수 아님)
+    const isNoJob = /^(무직|주부|학생)$/.test(String(data.jobType || '').trim());
+    if (!isNoJob) {
+      // 4대보험: 가입→Y, 미가입→N
+      const insuMap = {'가입':'Y','미가입':'N'};
+      setSelect('j_IsInsu', insuMap[data.insurance4] || data.insurance4, '4대보험');
+      setInput('j_name', data.company, '직장명');
+      setInput('j_date', normalizeDate(data.joinDate), '입사일자');
+      setInput('j_no1', data.bizNo1, '사업자번호1');
+      setInput('j_no2', data.bizNo2, '사업자번호2');
+      setInput('j_no3', data.bizNo3, '사업자번호3');
+      setInput('j_pay1', data.salary, '연소득');
+      setInput('j_pay2', data.monthlySalary, '월소득');
+      setInput('j_insu_money', data.healthInsurance, '건강보험납부금');
+    }
     // 직장 주소
     setInput('j_zonecode', data.workZipcode, '직장우편번호');
     setInput('j_addr1', data.workAddress, '직장주소');

@@ -1449,15 +1449,18 @@ async function submitLoanRegister() {
   };
 
   // 제출 전 클라이언트 검증: placeholder 선택 상태 / 필수 누락 감지
-  // (아직 버튼 상태 변경 전이라 여기서 return 해도 복구 불필요)
+  // 직업구분이 무직/주부/학생이면 직장·4대보험 계열은 필수에서 제외 (론앤마스터와 동일)
   const isPlaceholder = (v) => !v || /^-.*-$/.test(String(v).trim()) || /^==.*==$/.test(String(v).trim()) || /항목\s*선택|선택\s*하세요|선택해?주세요/.test(String(v).trim());
+  const NO_JOB_TYPES = /^(무직|주부|학생)$/;
+  const isNoJob = NO_JOB_TYPES.test(String(jobType || '').trim());
   const blockers = [];
   if (!name) blockers.push('이름');
   if (!birth) blockers.push('생년월일');
   if (!phone1 || !phone2 || !phone3) blockers.push('전화번호(3칸)');
   if (!loanAmount || String(loanAmount).replace(/[^\d]/g,'') === '0') blockers.push('대출요청액');
   if (isPlaceholder(jobType)) blockers.push('직업구분');
-  if (isPlaceholder(insurance4)) blockers.push('4대보험');
+  // 무직/주부/학생이 아닌 경우만 4대보험 검증
+  if (!isNoJob && isPlaceholder(insurance4)) blockers.push('4대보험');
   if (productName && !fidx) blockers.push('상품 fidx 매핑');
   if (blockers.length) {
     alert('⚠ 제출 전 필수 항목을 채워주세요:\n\n- ' + blockers.join('\n- ') + '\n\n(placeholder 상태로 제출하면 론앤마스터가 "알 수 없는 오류"로 반려합니다)');
