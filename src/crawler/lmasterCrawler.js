@@ -1206,10 +1206,32 @@ async function getNotices(agentNo, upw, options = {}) {
             out.push({ date: dateStr, title, idx, href });
           }
         }
+        // Fallback 파서: innerText 에서 [번호]\n[제목]\n[글쓴이]\n[날짜] 4줄 패턴 스캔
+        // lmaster 게시판이 table 로 안 그려지거나 우리 td 셀렉터가 놓치는 케이스 방어
+        if (out.length === 0) {
+          const bodyText = (document.body?.innerText || '');
+          const lines = bodyText.split(/\n+/).map(s => s.trim()).filter(Boolean);
+          for (let i = 0; i + 3 < lines.length; i++) {
+            const num = lines[i];
+            const title = lines[i+1];
+            const author = lines[i+2];
+            const dateLine = lines[i+3];
+            if (!/^\d{3,6}$/.test(num)) continue;                           // 번호: 3~6자리 숫자만
+            if (!title || title.length < 3) continue;
+            if (!author || author.length > 20) continue;                    // 글쓴이 짧음
+            const m = dateLine.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+            if (!m) continue;
+            const date = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+            out.push({ date, title: title.replace(/\s+/g, ' ').trim(), idx: num, href: '' });
+            debug.dateMatched++;
+          }
+          debug.textFallback = out.length;
+        }
+
         return {
           items: out, debug,
           url: location.href,
-          innerText: (document.body?.innerText || '').substring(0, 1500),
+          innerText: (document.body?.innerText || '').substring(0, 3000),
           htmlSnippet: document.body ? document.body.innerHTML.substring(0, 1500) : ''
         };
       });
