@@ -179,8 +179,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bindNav();
   bindToggle();
 
-  // 로그인 후 당일 론앤마스터 공지 팝업 (1초 뒤 비동기, 화면 로딩 방해 X)
+  // 로그인 후 당일 론앤마스터 공지 팝업 (1초 뒤 시도, 미로그인이면 5초 뒤 재시도)
   setTimeout(() => { showLmasterNoticePopupIfAny(); }, 1000);
+  setTimeout(() => { showLmasterNoticePopupIfAny(); }, 8000);
 });
 
 // 팝업 "오늘 그만 보기" 상태 해제 (콘솔/버튼에서 호출)
@@ -191,16 +192,14 @@ function resetLmasterNoticeSeen() {
   console.log('[공지 팝업] 오늘 그만 보기 해제됨. 다음 로그인 시 다시 표시됩니다.');
 }
 
-// 사이드바 → 론앤마스터 공지 페이지 (가로 50% 중앙 정렬)
+// 사이드바 → 론앤마스터 공지 페이지 (가로 50% 좌측 정렬)
 function renderLmasterNotice() {
   setTimeout(() => loadLmasterNoticePage(false), 50);
   return `
-    <div style="max-width:50%;margin:0 auto;">
+    <div style="max-width:50%;">
       <div class="filter-bar">
         <button class="btn btn-primary" onclick="loadLmasterNoticePage(false)">새로고침</button>
         <button class="btn btn-outline" onclick="loadLmasterNoticePage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
-        <button class="btn btn-outline" onclick="showLmasterNoticePopupIfAny(true)" title="팝업을 지금 바로 띄워서 확인">팝업 미리보기</button>
-        <button class="btn btn-outline" onclick="resetLmasterNoticeSeen()" title="오늘 그만 보기를 해제">팝업 초기화</button>
         <span id="lmasterNoticeMeta" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
       </div>
       <div class="panel">
@@ -269,14 +268,16 @@ async function loadLmasterNoticePage(force) {
   }
 }
 
-// 론앤마스터 당일 공지 팝업 — 로그인 직후 1회 실행 또는 수동 호출
-// force=true 면 오늘 안 보기 체크와 상관 없이 강제로 띄움 (디버그용)
+// 론앤마스터 당일 공지 팝업 — 로그인 직후 자동 + 5초 뒤 재시도
+// 이 세션에서 이미 한 번 띄웠으면 중복 방지
 async function showLmasterNoticePopupIfAny(force = false) {
   try {
+    if (window._lmasterNoticeShown) return;
+
     const today = new Date(); const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     const seenKey = 'lmasterNoticeSeen:' + ymd;
     if (!force && localStorage.getItem(seenKey) === '1') {
-      console.log('[공지 팝업] 오늘 그만 보기 상태 → skip (해제하려면 resetLmasterNoticeSeen() 호출)');
+      console.log('[공지 팝업] 오늘 그만 보기 상태 → skip');
       return;
     }
 
@@ -284,6 +285,8 @@ async function showLmasterNoticePopupIfAny(force = false) {
     const data = await res.json();
     console.log('[공지 팝업] 응답:', { success: data.success, count: data.data?.count });
     if (!data.success || !data.data || data.data.count === 0) return;
+
+    window._lmasterNoticeShown = true;
 
     const notices = data.data.notices || [];
     if (notices.length === 0) return;
