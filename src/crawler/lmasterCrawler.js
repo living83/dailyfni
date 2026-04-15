@@ -1147,57 +1147,88 @@ async function getNotices(agentNo, upw, options = {}) {
   const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000) + now.getTimezoneOffset() * 60 * 1000);
   const todayStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
 
-  // 공지 목록 파싱 — 게시판 구조 추정 (대부분 ASP 게시판은 <table> 또는 <ul>)
+  // 공지 목록 파싱 — table/tr 기반 + iframe 안도 같이 스캔
   const items = await page.evaluate((todayStr) => {
     const out = [];
     const seen = new Set();
-    const tables = document.querySelectorAll('table');
-    for (const t of tables) {
-      const rows = t.querySelectorAll('tr');
-      for (const r of rows) {
-        const tds = r.querySelectorAll('td');
-        if (tds.length < 2) continue;
-        // 모든 td 텍스트 합쳐서 날짜 패턴 찾기
-        const cellTexts = [...tds].map(td => (td.textContent || '').trim());
-        // YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD 검색
-        let dateStr = '';
-        for (const ct of cellTexts) {
-          const m = ct.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
-          if (m) { dateStr = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`; break; }
-        }
-        if (!dateStr) continue;
+    const debug = { tableCount: 0, rowCount: 0, dateMatched: 0, frames: 0 };
 
-        // 제목 후보: 가장 긴 텍스트가 들어있는 셀(보통)
-        const linkEl = r.querySelector('a[href]');
-        const title = (linkEl ? linkEl.textContent : cellTexts.find(s => s.length > 5) || '').trim();
-        if (!title) continue;
+    function parseDoc(doc) {
+      const tables = doc.querySelectorAll('table');
+      debug.tableCount += tables.length;
+      for (const t of tables) {
+        const rows = t.querySelectorAll('tr');
+        debug.rowCount += rows.length;
+        for (const r of rows) {
+          const tds = r.querySelectorAll('td, th');
+          if (tds.length < 2) continue;
+          const cellTexts = [...tds].map(td => (td.textContent || '').trim());
+          // YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD — '오전 10:30:27' 같은 시간이 뒤에 붙어도 OK
+          let dateStr = '';
+          for (const ct of cellTexts) {
+            const m = ct.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+            if (m) { dateStr = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`; break; }
+          }
+          if (!dateStr) continue;
+          debug.dateMatched++;
 
-        // 링크 추출
-        let href = linkEl ? linkEl.getAttribute('href') : '';
-        // onclick="goView(idx, ...)" 형태 처리
-        let idx = '';
-        if (linkEl) {
-          const onclick = linkEl.getAttribute('onclick') || '';
-          const m = onclick.match(/[\(,'"\s](\d{2,})[\)'"\s,]/);
-          if (m) idx = m[1];
-        }
-        if (!idx && href) {
-          const m = href.match(/idx=(\d+)/i) || href.match(/no=(\d+)/i);
-          if (m) idx = m[1];
-        }
+          const linkEl = r.querySelector('a[href], a[onclick]');
+          // 제목은 link 텍스트 우선, 없으면 가장 긴 셀
+          let title = '';
+          if (linkEl) title = (linkEl.textContent || '').trim();
+          if (!title) title = cellTexts.find(s => s.length > 5) || '';
+          // [NEW] 같은 라벨 정리
+          title = title.replace(/\s+/g, ' ').trim();
+          if (!title || title.length < 3) continue;
 
-        const key = `${dateStr}_${title}_${idx}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ date: dateStr, title, idx, href });
+          let href = linkEl ? (linkEl.getAttribute('href') || '') : '';
+          let idx = '';
+          if (linkEl) {
+            const onclick = linkEl.getAttribute('onclick') || '';
+            // viewNotice(4679) / goView('4679') / fn_view(4679, ...)
+            const m = onclick.match(/[\(,'"\s](\d{2,})[\)'"\s,]/);
+            if (m) idx = m[1];
+          }
+          if (!idx && href) {
+            const m = href.match(/idx=(\d+)/i) || href.match(/no=(\d+)/i) || href.match(/(\d{3,})/);
+            if (m) idx = m[1];
+          }
+          // 행 첫 셀이 숫자만이면 그게 글번호일 확률 높음 (idx 보조)
+          if (!idx && /^\d{2,}$/.test(cellTexts[0])) idx = cellTexts[0];
+
+          const key = `${dateStr}_${title}_${idx}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ date: dateStr, title, idx, href });
+        }
       }
     }
-    return { items: out, todayStr };
+
+    parseDoc(document);
+    // iframe 도 스캔 (같은 origin 인 경우만)
+    const ifrs = document.querySelectorAll('iframe');
+    debug.frames = ifrs.length;
+    for (const f of ifrs) {
+      try { if (f.contentDocument) parseDoc(f.contentDocument); } catch {}
+    }
+
+    return { items: out, todayStr, debug, htmlSnippet: document.body ? document.body.innerHTML.substring(0, 800) : '' };
   }, todayStr);
 
-  let list = (items.items || []).filter(n => !todayOnly || n.date === todayStr);
+  const allItems = items.items || [];
+  let list = allItems.filter(n => !todayOnly || n.date === todayStr);
   // 최신순
   list.sort((a, b) => (b.date + (b.idx || '')).localeCompare(a.date + (a.idx || '')));
+
+  // 디버그: 파싱 통계
+  const debugInfo = {
+    parsedTotal: allItems.length,
+    parsedTodayOnly: list.length,
+    todayStr,
+    pageDebug: items.debug,
+    pageUrl: page.url(),
+    htmlSnippet: items.htmlSnippet
+  };
 
   // 본문 fetch (옵션)
   if (fetchBodies && list.length > 0) {
@@ -1230,7 +1261,7 @@ async function getNotices(agentNo, upw, options = {}) {
     }
   }
 
-  return { todayStr, count: list.length, notices: list };
+  return { todayStr, count: list.length, notices: list, debug: debugInfo };
 }
 
 // 공지 캐시 (1시간 TTL — 론앤마스터가 시간당 1건 올린다는 사용자 메모 기준)
