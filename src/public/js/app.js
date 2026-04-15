@@ -1003,7 +1003,7 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>직업구분 <span class="required">*</span></th>
-              <td colspan="5"><select>${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], (c?.employment_type) || (c?.has_4_insurance === '가입' ? '직장인(4대가입)' : (c?.has_4_insurance === '미가입' ? '직장인(미가입)' : '')))}</select></td>
+              <td colspan="5"><select id="lr-jobType">${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], (c?.employment_type) || (c?.has_4_insurance === '가입' ? '직장인(4대가입)' : (c?.has_4_insurance === '미가입' ? '직장인(미가입)' : '')))}</select></td>
             </tr>
             <tr>
               <th>직장명 <span class="required">*</span></th>
@@ -1013,7 +1013,7 @@ function renderLoanRegister() {
             </tr>
             <tr>
               <th>4대보험 여부 <span class="required">*</span></th>
-              <td colspan="2"><select>${sel(['- 4대보험 여부 항목 선택 -','가입','미가입'], (c?.has_4_insurance === '가입' || c?.has_4_insurance === '미가입') ? c.has_4_insurance : '')}</select></td>
+              <td colspan="2"><select id="lr-insurance4">${sel(['- 4대보험 여부 항목 선택 -','가입','미가입'], (c?.has_4_insurance === '가입' || c?.has_4_insurance === '미가입') ? c.has_4_insurance : '')}</select></td>
               <th>(직장)사업자번호</th>
               <td colspan="2">
                 <div style="display:flex;gap:4px;">
@@ -1360,16 +1360,17 @@ async function submitLoanRegister() {
   const housingType = r4[0]?.tagName === 'SELECT' ? r4[0].options[r4[0].selectedIndex]?.text : '';
   const housingOwnership = r4[1]?.tagName === 'SELECT' ? r4[1].options[r4[1].selectedIndex]?.text : '';
 
-  // 직장 정보 테이블 (index 2)
+  // 직장 정보 테이블 (index 2) — 직업구분/4대보험은 id 로 직접 (positional 의존 제거)
   const jobTable = tables[2];
   const jobRows = jobTable?.querySelectorAll('tr') || [];
-  const j0 = getInputsInRow(jobRows[0]);
-  const jobType = j0[0]?.tagName === 'SELECT' ? j0[0].options[j0[0].selectedIndex]?.text : '';
+  const jobTypeEl = document.getElementById('lr-jobType');
+  const jobType = jobTypeEl ? (jobTypeEl.options[jobTypeEl.selectedIndex]?.text || '').trim() : '';
   const j1 = getInputsInRow(jobRows[1]);
   const company = j1[0]?.value || '';
   const joinDate = j1[1]?.value || '';
   const j2 = getInputsInRow(jobRows[2]);
-  const insurance4 = j2[0]?.tagName === 'SELECT' ? j2[0].options[j2[0].selectedIndex]?.text : '';
+  const insurance4El = document.getElementById('lr-insurance4');
+  const insurance4 = insurance4El ? (insurance4El.options[insurance4El.selectedIndex]?.text || '').trim() : (j2[0]?.tagName === 'SELECT' ? j2[0].options[j2[0].selectedIndex]?.text : '');
   const bizNo1 = j2[1]?.value || '';
   const bizNo2 = j2[2]?.value || '';
   const bizNo3 = j2[3]?.value || '';
