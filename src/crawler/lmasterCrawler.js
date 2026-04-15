@@ -9,6 +9,7 @@ const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
 const PRODUCT_INFO_URL = LMASTER_BASE + '/admin/agent/win_fininfo.asp';
 const LOAN_APP_URL = LMASTER_BASE + '/admin/agent/loanlist_app.asp';
 const LOAN_LIST_URL = LMASTER_BASE + '/admin/agent/list_loanlist.asp';
+const NOTICE_LIST_URL = LMASTER_BASE + '/admin/bbs/notice/list.asp';
 
 // 브라우저 인스턴스 (싱글톤)
 let browser = null;
@@ -1130,6 +1131,123 @@ async function getPageHtml() {
   });
 }
 
+// 론앤마스터 공지사항 목록 + 본문 가져오기
+// options.todayOnly=true 면 오늘 등록된 공지만 반환 (KST 기준)
+// options.fetchBodies=true 면 각 공지의 본문도 함께 가져옴 (느림, 당일분에 한해 권장)
+async function getNotices(agentNo, upw, options = {}) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+  const { todayOnly = true, fetchBodies = true } = options;
+
+  const url = `${NOTICE_LIST_URL}?no=${agentNo || '12'}&upw=${upw || '1'}`;
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(500, 1000);
+
+  // KST 기준 오늘 날짜 (YYYY-MM-DD)
+  const now = new Date();
+  const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000) + now.getTimezoneOffset() * 60 * 1000);
+  const todayStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
+
+  // 공지 목록 파싱 — 게시판 구조 추정 (대부분 ASP 게시판은 <table> 또는 <ul>)
+  const items = await page.evaluate((todayStr) => {
+    const out = [];
+    const seen = new Set();
+    const tables = document.querySelectorAll('table');
+    for (const t of tables) {
+      const rows = t.querySelectorAll('tr');
+      for (const r of rows) {
+        const tds = r.querySelectorAll('td');
+        if (tds.length < 2) continue;
+        // 모든 td 텍스트 합쳐서 날짜 패턴 찾기
+        const cellTexts = [...tds].map(td => (td.textContent || '').trim());
+        // YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD 검색
+        let dateStr = '';
+        for (const ct of cellTexts) {
+          const m = ct.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+          if (m) { dateStr = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`; break; }
+        }
+        if (!dateStr) continue;
+
+        // 제목 후보: 가장 긴 텍스트가 들어있는 셀(보통)
+        const linkEl = r.querySelector('a[href]');
+        const title = (linkEl ? linkEl.textContent : cellTexts.find(s => s.length > 5) || '').trim();
+        if (!title) continue;
+
+        // 링크 추출
+        let href = linkEl ? linkEl.getAttribute('href') : '';
+        // onclick="goView(idx, ...)" 형태 처리
+        let idx = '';
+        if (linkEl) {
+          const onclick = linkEl.getAttribute('onclick') || '';
+          const m = onclick.match(/[\(,'"\s](\d{2,})[\)'"\s,]/);
+          if (m) idx = m[1];
+        }
+        if (!idx && href) {
+          const m = href.match(/idx=(\d+)/i) || href.match(/no=(\d+)/i);
+          if (m) idx = m[1];
+        }
+
+        const key = `${dateStr}_${title}_${idx}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ date: dateStr, title, idx, href });
+      }
+    }
+    return { items: out, todayStr };
+  }, todayStr);
+
+  let list = (items.items || []).filter(n => !todayOnly || n.date === todayStr);
+  // 최신순
+  list.sort((a, b) => (b.date + (b.idx || '')).localeCompare(a.date + (a.idx || '')));
+
+  // 본문 fetch (옵션)
+  if (fetchBodies && list.length > 0) {
+    for (const n of list.slice(0, 10)) {  // 안전상 최대 10건
+      try {
+        // 상세 페이지 URL 추정: list.asp 와 같은 폴더의 view.asp + idx
+        if (n.idx) {
+          const viewUrl = `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${n.idx}`;
+          await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+          await delay(200, 500);
+          n.body = await page.evaluate(() => {
+            // 가장 큰 텍스트 블록 추출
+            const candidates = document.querySelectorAll('td, div, article, section');
+            let best = '';
+            for (const el of candidates) {
+              const t = (el.textContent || '').trim();
+              if (t.length > best.length && t.length < 5000) best = t;
+            }
+            return best.substring(0, 3000);
+          });
+        } else if (n.href) {
+          const viewUrl = n.href.startsWith('http') ? n.href : `${LMASTER_BASE}/admin/bbs/notice/${n.href}`;
+          await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+          await delay(200, 500);
+          n.body = await page.evaluate(() => (document.body.innerText || '').substring(0, 3000));
+        }
+      } catch (e) {
+        n.bodyError = e.message;
+      }
+    }
+  }
+
+  return { todayStr, count: list.length, notices: list };
+}
+
+// 공지 캐시 (1시간 TTL — 론앤마스터가 시간당 1건 올린다는 사용자 메모 기준)
+let _noticeCache = { ts: 0, data: null };
+const NOTICE_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+
+async function getCachedNotices(agentNo, upw, options = {}) {
+  const force = options.force === true;
+  const now = Date.now();
+  if (!force && _noticeCache.data && (now - _noticeCache.ts < NOTICE_CACHE_TTL_MS)) {
+    return { ..._noticeCache.data, cached: true, cachedAgeSec: Math.floor((now - _noticeCache.ts)/1000) };
+  }
+  const data = await getNotices(agentNo, upw, options);
+  _noticeCache = { ts: now, data };
+  return { ...data, cached: false };
+}
+
 // 상태 확인
 function getStatus() {
   return {
@@ -1151,5 +1269,7 @@ module.exports = {
   getStatus,
   getPageHtml,
   uploadDocuments,
-  scanProductFileSlots
+  scanProductFileSlots,
+  getNotices,
+  getCachedNotices
 };

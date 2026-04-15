@@ -177,7 +177,66 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   bindNav();
   bindToggle();
+
+  // 로그인 후 당일 론앤마스터 공지 팝업 (1초 뒤 비동기, 화면 로딩 방해 X)
+  setTimeout(() => { showLmasterNoticePopupIfAny(); }, 1000);
 });
+
+// 론앤마스터 당일 공지 팝업 — 로그인 직후 1회 실행
+async function showLmasterNoticePopupIfAny() {
+  try {
+    // 오늘 이미 본 사용자면 skip
+    const today = new Date(); const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const seenKey = 'lmasterNoticeSeen:' + ymd;
+    if (localStorage.getItem(seenKey) === '1') return;
+
+    const res = await fetch('/api/crawler/notices');
+    const data = await res.json();
+    if (!data.success || !data.data || data.data.count === 0) return;
+
+    const notices = data.data.notices || [];
+    if (notices.length === 0) return;
+
+    // 모달 생성
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:8px;width:90%;max-width:760px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.3);';
+    const itemsHtml = notices.map((n, i) => `
+      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#fafafa;">
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;">
+          <strong style="color:#0f172a;font-size:13px;">${esc(n.title)}</strong>
+          <span style="color:#94a3b8;font-size:11px;white-space:nowrap;">${esc(n.date)}</span>
+        </div>
+        ${n.body ? `<div style="font-size:12px;color:#334155;white-space:pre-wrap;max-height:160px;overflow:auto;">${esc(n.body)}</div>` : ''}
+      </div>`).join('');
+    box.innerHTML = `
+      <div style="padding:14px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:18px;">📢</span>
+        <h3 style="margin:0;font-size:15px;">론앤마스터 오늘 공지 (${notices.length}건)</h3>
+        <span style="margin-left:auto;font-size:11px;color:#94a3b8;">${data.data.cached ? '캐시(' + (data.data.cachedAgeSec || 0) + 's)' : '실시간'}</span>
+      </div>
+      <div style="padding:12px 16px;overflow-y:auto;flex:1;">${itemsHtml}</div>
+      <div style="padding:10px 16px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+        <label style="margin-right:auto;font-size:12px;color:#64748b;cursor:pointer;">
+          <input type="checkbox" id="_noticeSeen"> 오늘 다시 보지 않기
+        </label>
+        <button id="_noticeClose" style="padding:6px 16px;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;">확인</button>
+      </div>
+    `;
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+    const close = () => {
+      if (box.querySelector('#_noticeSeen')?.checked) localStorage.setItem(seenKey, '1');
+      document.body.removeChild(modal);
+    };
+    box.querySelector('#_noticeClose').onclick = close;
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  } catch (e) {
+    console.warn('[공지] 가져오기 실패:', e.message);
+  }
+}
 
 function bindNav() {
   document.querySelectorAll('[data-page]').forEach(el => {

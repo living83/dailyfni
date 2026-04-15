@@ -170,6 +170,17 @@ router.post('/crawler/submit-loan', async (req, res) => {
   }
 });
 
+// 론앤마스터 공지 (당일분 + 본문) — 1시간 캐시
+router.get('/crawler/notices', async (req, res) => {
+  try {
+    const { agentNo, upw, force } = req.query;
+    const data = await crawler.getCachedNotices(agentNo || '12', upw || '1', { force: force === '1' });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 브라우저 종료
 router.post('/crawler/close', async (req, res) => {
   try {
