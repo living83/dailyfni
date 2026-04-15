@@ -1371,6 +1371,17 @@ async function submitLoanRegister() {
   const j2 = getInputsInRow(jobRows[2]);
   const insurance4El = document.getElementById('lr-insurance4');
   const insurance4 = insurance4El ? (insurance4El.options[insurance4El.selectedIndex]?.text || '').trim() : (j2[0]?.tagName === 'SELECT' ? j2[0].options[j2[0].selectedIndex]?.text : '');
+
+  // 🔍 디버그: 직업구분/4대보험 수집 결과 콘솔 출력 (운영자가 UI 와 비교 가능)
+  console.group('[대출접수] 직업/4대보험 수집');
+  console.log('  lr-jobType 존재?', !!jobTypeEl);
+  console.log('  jobTypeEl.value:', jobTypeEl?.value);
+  console.log('  jobTypeEl.selectedIndex:', jobTypeEl?.selectedIndex);
+  console.log('  수집된 jobType:', jobType);
+  console.log('  lr-insurance4 존재?', !!insurance4El);
+  console.log('  수집된 insurance4:', insurance4);
+  console.log('  페이지 내 select 총수:', document.querySelectorAll('select').length);
+  console.groupEnd();
   const bizNo1 = j2[1]?.value || '';
   const bizNo2 = j2[2]?.value || '';
   const bizNo3 = j2[3]?.value || '';
