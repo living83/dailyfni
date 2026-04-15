@@ -1140,7 +1140,19 @@ async function getNotices(agentNo, upw, options = {}) {
 
   const url = `${NOTICE_LIST_URL}?no=${agentNo || '12'}&upw=${upw || '1'}`;
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
-  await delay(500, 1000);
+  // 동적 로드 대비 — 게시판 테이블이 나올 때까지 최대 8초 대기
+  await page.waitForFunction(() => {
+    const frames = [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } }).filter(Boolean)];
+    for (const d of frames) {
+      const rows = d.querySelectorAll('table tr');
+      for (const r of rows) {
+        const text = (r.textContent || '');
+        if (/\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2}/.test(text)) return true;
+      }
+    }
+    return false;
+  }, { timeout: 8000 }).catch(() => {});
+  await delay(1500, 2500);
 
   // KST 기준 오늘 날짜 (YYYY-MM-DD)
   const now = new Date();
@@ -1197,7 +1209,8 @@ async function getNotices(agentNo, upw, options = {}) {
         return {
           items: out, debug,
           url: location.href,
-          htmlSnippet: document.body ? document.body.innerHTML.substring(0, 300) : ''
+          innerText: (document.body?.innerText || '').substring(0, 1500),
+          htmlSnippet: document.body ? document.body.innerHTML.substring(0, 1500) : ''
         };
       });
     } catch (e) {
@@ -1230,7 +1243,14 @@ async function getNotices(agentNo, upw, options = {}) {
     todayStr,
     debug: {
       frameCount: allFrames.length,
-      frames: frameResults.map(fr => ({ url: fr.url, tableCount: fr.debug?.tableCount, rowCount: fr.debug?.rowCount, dateMatched: fr.debug?.dateMatched, snippet: (fr.htmlSnippet || '').substring(0,200) }))
+      frames: frameResults.map(fr => ({
+        url: fr.url,
+        tableCount: fr.debug?.tableCount,
+        rowCount: fr.debug?.rowCount,
+        dateMatched: fr.debug?.dateMatched,
+        innerText: (fr.innerText || '').substring(0, 500),
+        snippet: (fr.htmlSnippet || '').substring(0, 600)
+      }))
     },
     htmlSnippet: ''
   };
