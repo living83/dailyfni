@@ -1292,30 +1292,48 @@ async function getNotices(agentNo, upw, options = {}) {
     htmlSnippet: items.htmlSnippet
   };
 
-  // 본문 fetch (옵션)
+  // 본문 fetch (옵션) — 사이드바/헤더 같은 네비게이션 텍스트는 걸러냄
+  const NAV_PATTERNS = /(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|\(지점\)\s*직원관리|QnA|로그아웃|팝업검색|검색조건)/;
+  const extractBody = async () => {
+    // 모든 frame 을 훑으면서 "네비게이션이 아닌" 가장 큰 텍스트 블록 선택
+    let best = '';
+    for (const fr of page.frames()) {
+      try {
+        const text = await fr.evaluate((NAV_PATTERNS_STR) => {
+          const NAV = new RegExp(NAV_PATTERNS_STR);
+          // 본문 후보: td, div, article, section, pre
+          const candidates = document.querySelectorAll('td, div, article, section, pre');
+          let localBest = '';
+          for (const el of candidates) {
+            const t = (el.innerText || el.textContent || '').trim();
+            if (t.length < 20 || t.length > 4000) continue;
+            // 네비게이션 텍스트가 많이 포함되면 제외
+            const navHits = (t.match(new RegExp(NAV.source, 'g')) || []).length;
+            if (navHits >= 3) continue;
+            if (t.length > localBest.length) localBest = t;
+          }
+          return localBest;
+        }, NAV_PATTERNS.source);
+        if (text && text.length > best.length) best = text;
+      } catch {}
+    }
+    // 마지막 안전장치: 줄 단위로 네비 키워드만 있는 줄 제거
+    return best.split(/\n+/).map(l => l.trim()).filter(l => l && !(/^(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|QnA)$/.test(l))).join('\n').substring(0, 3000);
+  };
+
   if (fetchBodies && list.length > 0) {
     for (const n of list.slice(0, 10)) {  // 안전상 최대 10건
       try {
-        // 상세 페이지 URL 추정: list.asp 와 같은 폴더의 view.asp + idx
         if (n.idx) {
           const viewUrl = `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${n.idx}`;
           await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-          await delay(200, 500);
-          n.body = await page.evaluate(() => {
-            // 가장 큰 텍스트 블록 추출
-            const candidates = document.querySelectorAll('td, div, article, section');
-            let best = '';
-            for (const el of candidates) {
-              const t = (el.textContent || '').trim();
-              if (t.length > best.length && t.length < 5000) best = t;
-            }
-            return best.substring(0, 3000);
-          });
+          await delay(300, 700);
+          n.body = await extractBody();
         } else if (n.href) {
           const viewUrl = n.href.startsWith('http') ? n.href : `${LMASTER_BASE}/admin/bbs/notice/${n.href}`;
           await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-          await delay(200, 500);
-          n.body = await page.evaluate(() => (document.body.innerText || '').substring(0, 3000));
+          await delay(300, 700);
+          n.body = await extractBody();
         }
       } catch (e) {
         n.bodyError = e.message;
