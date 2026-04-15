@@ -100,9 +100,23 @@ if (hasSSL) {
   https.createServer(sslOptions, app).listen(443, async () => {
     console.log(`\n=== 대부중개 전산시스템 ===`);
     console.log(`서버: https://work.dailyfni.co.kr`);
-    const { testConnection } = require('./database/db');
+    const { testConnection, query } = require('./database/db');
     const dbOk = await testConnection();
     console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    if (dbOk) {
+      try {
+        await query(`CREATE TABLE IF NOT EXISTS lmaster_notices (
+          idx VARCHAR(20) PRIMARY KEY,
+          notice_date DATE,
+          title VARCHAR(500),
+          body TEXT,
+          author VARCHAR(50) DEFAULT '',
+          fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_date (notice_date)
+        )`);
+        console.log('lmaster_notices 테이블 준비됨');
+      } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
+    }
     console.log(`==========================\n`);
   });
   // HTTP → HTTPS 리다이렉트
@@ -114,9 +128,22 @@ if (hasSSL) {
   app.listen(PORT, async () => {
     console.log(`\n=== 대부중개 전산시스템 ===`);
     console.log(`서버: http://localhost:${PORT}`);
-    const { testConnection } = require('./database/db');
+    const { testConnection, query } = require('./database/db');
     const dbOk = await testConnection();
     console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    if (dbOk) {
+      try {
+        await query(`CREATE TABLE IF NOT EXISTS lmaster_notices (
+          idx VARCHAR(20) PRIMARY KEY,
+          notice_date DATE,
+          title VARCHAR(500),
+          body TEXT,
+          author VARCHAR(50) DEFAULT '',
+          fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_date (notice_date)
+        )`);
+      } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
+    }
     console.log(`==========================\n`);
   });
 }

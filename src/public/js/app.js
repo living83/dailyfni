@@ -183,25 +183,50 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => { showLmasterNoticePopupIfAny(); }, 1000);
 });
 
-// 사이드바 → 론앤마스터 공지 페이지
+// 팝업 "오늘 그만 보기" 상태 해제 (콘솔/버튼에서 호출)
+function resetLmasterNoticeSeen() {
+  const today = new Date();
+  const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  localStorage.removeItem('lmasterNoticeSeen:' + ymd);
+  console.log('[공지 팝업] 오늘 그만 보기 해제됨. 다음 로그인 시 다시 표시됩니다.');
+}
+
+// 사이드바 → 론앤마스터 공지 페이지 (가로 50% 중앙 정렬)
 function renderLmasterNotice() {
-  // 비동기 로드 + placeholder
   setTimeout(() => loadLmasterNoticePage(false), 50);
   return `
-    <div class="filter-bar">
-      <button class="btn btn-primary" onclick="loadLmasterNoticePage(false)">새로고침</button>
-      <button class="btn btn-outline" onclick="loadLmasterNoticePage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
-      <span id="lmasterNoticeMeta" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <h2>론앤마스터 당일 공지</h2>
-        <span style="font-size:11px;color:#94a3b8;">서버에서 1시간 캐시 — 새 공지는 자동 갱신</span>
+    <div style="max-width:50%;margin:0 auto;">
+      <div class="filter-bar">
+        <button class="btn btn-primary" onclick="loadLmasterNoticePage(false)">새로고침</button>
+        <button class="btn btn-outline" onclick="loadLmasterNoticePage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
+        <button class="btn btn-outline" onclick="showLmasterNoticePopupIfAny(true)" title="팝업을 지금 바로 띄워서 확인">팝업 미리보기</button>
+        <button class="btn btn-outline" onclick="resetLmasterNoticeSeen()" title="오늘 그만 보기를 해제">팝업 초기화</button>
+        <span id="lmasterNoticeMeta" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
       </div>
-      <div class="panel-body" id="lmasterNoticeBody" style="padding:12px 16px;">
-        <div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중...</div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>론앤마스터 당일 공지</h2>
+          <span style="font-size:11px;color:#94a3b8;">서버에서 1시간 캐시 — 새 공지는 자동 갱신</span>
+        </div>
+        <div class="panel-body" id="lmasterNoticeBody" style="padding:12px 16px;">
+          <div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중...</div>
+        </div>
       </div>
     </div>`;
+}
+
+// 공지 카드 펼침/접힘
+function toggleNoticeCard(idx) {
+  const body = document.getElementById('noticeBody-' + idx);
+  const arrow = document.getElementById('noticeArrow-' + idx);
+  if (!body) return;
+  if (body.style.display === 'none' || body.style.display === '') {
+    body.style.display = 'block';
+    if (arrow) arrow.textContent = '▼';
+  } else {
+    body.style.display = 'none';
+    if (arrow) arrow.textContent = '▶';
+  }
 }
 
 async function loadLmasterNoticePage(force) {
@@ -225,29 +250,39 @@ async function loadLmasterNoticePage(force) {
       return;
     }
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    body.innerHTML = notices.map(n => `
-      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;margin-bottom:10px;background:#fafafa;">
-        <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;">
-          <strong style="color:#0f172a;font-size:13px;">${esc(n.title)}</strong>
+    body.innerHTML = notices.map((n, i) => {
+      const id = n.idx || String(i);
+      return `
+      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:0;margin-bottom:8px;background:#fafafa;overflow:hidden;">
+        <div onclick="toggleNoticeCard('${esc(id)}')" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+          <span id="noticeArrow-${esc(id)}" style="color:#64748b;font-size:10px;width:10px;">▶</span>
+          <strong style="color:#0f172a;font-size:13px;flex:1;">${esc(n.title)}</strong>
           <span style="color:#64748b;font-size:11px;white-space:nowrap;">${esc(n.date)}</span>
         </div>
-        ${n.body ? `<div style="font-size:12px;color:#334155;white-space:pre-wrap;line-height:1.5;max-height:300px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;">${esc(n.body)}</div>` : '<div style="font-size:11px;color:#94a3b8;">본문을 불러오지 못했습니다.</div>'}
-      </div>`).join('');
+        <div id="noticeBody-${esc(id)}" style="display:none;padding:0 14px 12px 32px;">
+          ${n.body ? `<div style="font-size:12px;color:#334155;white-space:pre-wrap;line-height:1.5;max-height:400px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:10px 12px;">${esc(n.body)}</div>` : '<div style="font-size:11px;color:#94a3b8;">본문을 불러오지 못했습니다.</div>'}
+        </div>
+      </div>`;
+    }).join('');
   } catch (e) {
     body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">서버 연결 실패: ${e.message}</div>`;
   }
 }
 
-// 론앤마스터 당일 공지 팝업 — 로그인 직후 1회 실행
-async function showLmasterNoticePopupIfAny() {
+// 론앤마스터 당일 공지 팝업 — 로그인 직후 1회 실행 또는 수동 호출
+// force=true 면 오늘 안 보기 체크와 상관 없이 강제로 띄움 (디버그용)
+async function showLmasterNoticePopupIfAny(force = false) {
   try {
-    // 오늘 이미 본 사용자면 skip
     const today = new Date(); const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     const seenKey = 'lmasterNoticeSeen:' + ymd;
-    if (localStorage.getItem(seenKey) === '1') return;
+    if (!force && localStorage.getItem(seenKey) === '1') {
+      console.log('[공지 팝업] 오늘 그만 보기 상태 → skip (해제하려면 resetLmasterNoticeSeen() 호출)');
+      return;
+    }
 
     const res = await fetch('/api/crawler/notices');
     const data = await res.json();
+    console.log('[공지 팝업] 응답:', { success: data.success, count: data.data?.count });
     if (!data.success || !data.data || data.data.count === 0) return;
 
     const notices = data.data.notices || [];

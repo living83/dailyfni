@@ -170,12 +170,45 @@ router.post('/crawler/submit-loan', async (req, res) => {
   }
 });
 
-// 론앤마스터 공지 (당일분 + 본문) — 1시간 캐시
+// 론앤마스터 공지 (당일분 + 본문) — 1시간 캐시 + 오늘 공지는 DB 저장
 router.get('/crawler/notices', async (req, res) => {
   try {
     const { agentNo, upw, force } = req.query;
     const data = await crawler.getCachedNotices(agentNo || '12', upw || '1', { force: force === '1' });
+
+    // 오늘 공지만 DB 에 upsert (중복은 title/body 만 갱신)
+    try {
+      const { query } = require('../database/db');
+      for (const n of (data.notices || [])) {
+        if (!n.idx || !n.date) continue;
+        await query(
+          `INSERT INTO lmaster_notices (idx, notice_date, title, body, author)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE title=VALUES(title), body=VALUES(body), author=VALUES(author)`,
+          [n.idx, n.date, (n.title || '').substring(0, 500), n.body || '', n.author || '관리자']
+        );
+      }
+    } catch (e) { console.error('[공지] DB 저장 실패:', e.message); }
+
     res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DB 저장된 공지 조회 (날짜별, 기본 최근 30일)
+router.get('/crawler/notices/history', async (req, res) => {
+  try {
+    const { query } = require('../database/db');
+    const { days = 30 } = req.query;
+    const rows = await query(
+      `SELECT idx, DATE_FORMAT(notice_date, '%Y-%m-%d') AS date, title, body, author, fetched_at
+       FROM lmaster_notices
+       WHERE notice_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       ORDER BY notice_date DESC, idx DESC
+       LIMIT 200`, [parseInt(days) || 30]
+    );
+    res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
