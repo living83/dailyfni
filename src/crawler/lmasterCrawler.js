@@ -1306,13 +1306,11 @@ async function getNotices(agentNo, upw, options = {}) {
       try {
         const text = await fr.evaluate((NAV_PATTERNS_STR) => {
           const NAV = new RegExp(NAV_PATTERNS_STR);
-          // 본문 후보: td, div, article, section, pre
           const candidates = document.querySelectorAll('td, div, article, section, pre');
           let localBest = '';
           for (const el of candidates) {
             const t = (el.innerText || el.textContent || '').trim();
             if (t.length < 20 || t.length > 4000) continue;
-            // 네비게이션 텍스트가 많이 포함되면 제외
             const navHits = (t.match(new RegExp(NAV.source, 'g')) || []).length;
             if (navHits >= 3) continue;
             if (t.length > localBest.length) localBest = t;
@@ -1322,24 +1320,41 @@ async function getNotices(agentNo, upw, options = {}) {
         if (text && text.length > best.length) best = text;
       } catch {}
     }
-    // 마지막 안전장치: 줄 단위로 네비 키워드만 있는 줄 제거
     return best.split(/\n+/).map(l => l.trim()).filter(l => l && !(/^(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|QnA)$/.test(l))).join('\n').substring(0, 3000);
   };
 
   if (fetchBodies && list.length > 0) {
-    for (const n of list.slice(0, 10)) {  // 안전상 최대 10건
+    // 상세 페이지 URL 패턴 후보 (lmaster 게시판 버전별)
+    const buildViewUrls = (idx) => [
+      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+      `${LMASTER_BASE}/admin/bbs/notice/read.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&bbs_no=${idx}`,
+      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&seq=${idx}`
+    ];
+
+    for (const n of list.slice(0, 10)) {
       try {
-        if (n.idx) {
-          const viewUrl = `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${n.idx}`;
-          await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-          await delay(300, 700);
-          n.body = await extractBody();
-        } else if (n.href) {
-          const viewUrl = n.href.startsWith('http') ? n.href : `${LMASTER_BASE}/admin/bbs/notice/${n.href}`;
-          await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 15000 });
-          await delay(300, 700);
-          n.body = await extractBody();
+        if (!n.idx) continue;
+        let bestBody = '';
+        let usedUrl = '';
+
+        for (const viewUrl of buildViewUrls(n.idx)) {
+          try {
+            await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 12000 });
+            await delay(300, 600);
+            const body = await extractBody();
+            // 이 공지의 제목 핵심 키워드가 본문에 나오면 올바른 URL
+            const titleKey = (n.title || '').replace(/[◈⚠️\s\[\]]/g, '').substring(0, 6);
+            if (titleKey && body.includes(titleKey.substring(0, 4))) {
+              bestBody = body; usedUrl = viewUrl; break;
+            }
+            // 아니면 가장 긴 결과 keep
+            if (body.length > bestBody.length) { bestBody = body; usedUrl = viewUrl; }
+          } catch { continue; }
         }
+
+        n.body = bestBody;
+        n.viewUrlTried = usedUrl;
       } catch (e) {
         n.bodyError = e.message;
       }
