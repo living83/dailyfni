@@ -421,36 +421,48 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
 
     function setSelect(name, value, label) {
       if (!value && value !== 0) return;
-      // 전산에서 placeholder 상태로 넘어온 경우 setSelect 실행 안 함 → 명시적 notFound
       const vs = String(value).trim();
       const looksPlaceholder = /^-.*-$/.test(vs) || /^==.*==$/.test(vs) ||
                                /항목\s*선택|선택\s*하세요|선택해?주세요/.test(vs);
       if (looksPlaceholder) { notFound.push((label || name) + ' [값이 placeholder]'); return; }
 
       const el = document.querySelector(`select[name="${name}"]`);
-      if (el) {
-        // 정확한 value 매칭
-        for (const opt of el.options) {
-          if (opt.value === vs) {
-            el.value = opt.value;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            filled.push({ field: label || name, target: name, value: opt.text.trim() });
-            return;
-          }
+      if (!el) { notFound.push(label || name); return; }
+
+      const isPlaceholderText = (t) => /^-.*-$/.test(t) || /^==.*==$/.test(t) || /항목\s*선택|선택\s*하세요/.test(t);
+
+      // 1) 정확한 text 매칭 — 우리가 보낸 숫자 value 매핑이 론앤마스터와 달라 엉뚱한 옵션이 선택되던 버그 방지
+      for (const opt of el.options) {
+        const ot = opt.text.trim();
+        if (isPlaceholderText(ot)) continue;
+        if (ot === vs) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: ot });
+          return;
         }
-        // 텍스트 포함 매칭 - 단, 매칭된 옵션이 placeholder 면 거부
-        for (const opt of el.options) {
-          const ot = opt.text.trim();
-          if (/^-.*-$/.test(ot) || /^==.*==$/.test(ot) || /항목\s*선택|선택\s*하세요/.test(ot)) continue;
-          if (opt.text.includes(vs) || vs.includes(ot)) {
-            el.value = opt.value;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            filled.push({ field: label || name, target: name, value: ot });
-            return;
-          }
+      }
+      // 2) 정확한 value 매칭
+      for (const opt of el.options) {
+        if (opt.value === vs) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: opt.text.trim() });
+          return;
         }
-        notFound.push(label || name);
-      } else { notFound.push(label || name); }
+      }
+      // 3) 텍스트 부분 매칭 (양방향)
+      for (const opt of el.options) {
+        const ot = opt.text.trim();
+        if (isPlaceholderText(ot)) continue;
+        if (ot.includes(vs) || vs.includes(ot)) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: ot });
+          return;
+        }
+      }
+      notFound.push(label || name);
     }
 
     // === 고객 기본정보 ===
@@ -512,16 +524,15 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     setSelect('h_sel', ownMap[data.housingOwnership] || data.housingOwnership, '주택소유');
 
     // === 직장 정보 ===
-    // 직업구분: 직장인(4대가입)→1, 직장인(미가입)→2, 개인사업자→3, 프리랜서→4, 무직→7, 주부→8, 학생→9
-    const jobMap = {'직장인(4대가입)':'1','직장인(미가입)':'2','개인사업자':'3','프리랜서':'4','무직':'7','주부':'8','학생':'9'};
-    setSelect('j_sel', jobMap[data.jobType] || data.jobType, '직업구분');
+    // 직업구분은 텍스트 매칭에 맡김 — 숫자 value 매핑이 론앤마스터와 달라 엉뚱한 옵션이
+    // 선택되던 이슈(무직을 선택했는데 프리랜서로 제출되는 현상)의 근본 원인
+    setSelect('j_sel', data.jobType, '직업구분');
 
     // 무직/주부/학생 일 때는 직장·4대보험 계열을 건너뜀 (론앤마스터에서도 필수 아님)
     const isNoJob = /^(무직|주부|학생)$/.test(String(data.jobType || '').trim());
     if (!isNoJob) {
-      // 4대보험: 가입→Y, 미가입→N
-      const insuMap = {'가입':'Y','미가입':'N'};
-      setSelect('j_IsInsu', insuMap[data.insurance4] || data.insurance4, '4대보험');
+      // 4대보험도 텍스트 매칭 (가입/미가입)
+      setSelect('j_IsInsu', data.insurance4, '4대보험');
       setInput('j_name', data.company, '직장명');
       setInput('j_date', normalizeDate(data.joinDate), '입사일자');
       setInput('j_no1', data.bizNo1, '사업자번호1');
