@@ -2054,10 +2054,7 @@ function renderSettlementSales() {
       <select id="salesSource"><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select>
       <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
       ${isAdmin() ? `
-        <button class="btn btn-outline" style="margin-left:auto;" onclick="recalculateFees()" title="최신 정산 정책으로 기존 승인건의 수수료율/수수료 재계산">💱 수수료 재계산</button>
-        <button class="btn btn-outline" onclick="cleanupSettlementNoise()" title="승인 아닌 상태(가승인 등) + 제외 담당자(윤장호) 실행건을 삭제">🧼 정산 데이터 정리</button>
-        <button class="btn btn-outline" onclick="dedupeExecutions()" title="동일 고객+상품+일자+상태의 중복 실행건을 정리">🧹 중복 정리</button>
-        <button class="btn btn-outline" onclick="showAddExecution()">+ 실행 건 등록</button>
+        <button class="btn btn-outline" style="margin-left:auto;" onclick="showAddExecution()">+ 실행 건 등록</button>
       ` : ''}
     </div>
     <div class="stat-cards">
@@ -2123,140 +2120,6 @@ async function loadSalesSummary() {
   } catch (e) { console.error(e); }
 }
 
-// 수수료 재계산 (관리자용) — dry-run 으로 먼저 변경 대상 확인 후 실제 UPDATE
-async function recalculateFees() {
-  try {
-    const month = document.getElementById('salesMonth')?.value || '';
-    // 1) dry-run
-    const dryRes = await fetch('/api/settlement/recalculate-fees', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false, month })
-    });
-    const dry = await dryRes.json();
-    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
-    const d = dry.data || {};
-
-    if (d.total === 0) { alert('대상 승인 건이 없습니다.'); return; }
-    if (d.updated === 0 && d.unmatched === 0) { alert('변경 사항이 없습니다. (이미 최신 정책 반영됨)'); return; }
-
-    const previewLines = (d.preview || []).map(p =>
-      `- ${p.customer} / ${p.product} → 정책: ${p.matchedPolicy}\n   요율 ${p.before.rateUnder||0}%/${p.before.rateOver||0}% → ${p.after.rateUnder}%/${p.after.rateOver}%, 수수료 ${p.before.fee||0} → ${p.after.fee}`
-    ).join('\n');
-
-    const ok = confirm(
-      '💱 수수료 재계산 미리보기\n\n' +
-      `- 대상(승인): ${d.total}건\n` +
-      `- 정책 매칭 성공: ${d.matched}건\n` +
-      `- 매칭 실패(정책 없음): ${d.unmatched}건\n` +
-      `- 변경 예정: ${d.updated}건\n\n` +
-      (previewLines ? '변경 샘플(최대 15개):\n' + previewLines + '\n\n' : '') +
-      '정말 적용할까요?'
-    );
-    if (!ok) return;
-
-    // 2) 실제 적용
-    const res = await fetch('/api/settlement/recalculate-fees', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true, month })
-    });
-    const data = await res.json();
-    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
-
-    alert(`✅ 재계산 완료\n\n- 갱신: ${data.data.updated}건\n- 매칭 실패(그대로 0%): ${data.data.unmatched}건`);
-    if (typeof loadSalesSummary === 'function') loadSalesSummary();
-  } catch (e) {
-    alert('서버 연결 실패: ' + e.message);
-  }
-}
-
-// 매출집계 노이즈 정리 (관리자용) — 가승인/부결 등 상태 이상 건 + 제외 담당자(윤장호) 건 삭제
-async function cleanupSettlementNoise() {
-  try {
-    // 1) dry-run
-    const dryRes = await fetch('/api/settlement/cleanup-noise', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false })
-    });
-    const dry = await dryRes.json();
-    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
-    const d = dry.data || {};
-
-    if (!d.statusToDelete && !d.assigneeToDelete) {
-      alert('정리할 데이터가 없습니다.');
-      return;
-    }
-
-    const statusLines = (d.statusSample || []).slice(0, 8)
-      .map(r => `- [${r.status}] ${r.customer_name} / ${r.product_name} / ${r.d} (담당:${r.assigned_to || '-'})`).join('\n');
-    const assigneeLines = (d.assigneeSample || []).slice(0, 8)
-      .map(r => `- [${r.status}] ${r.customer_name} / ${r.product_name} / ${r.d} (담당:${r.assigned_to})`).join('\n');
-
-    const ok = confirm(
-      '🧼 정산 데이터 정리 미리보기\n\n' +
-      `- 상태 != '승인' (가승인/부결/진행후부결 등): ${d.statusToDelete}건\n` +
-      (statusLines ? statusLines + '\n' : '') +
-      `\n- 제외 담당자 [${(d.excludedAssignees||[]).join(', ')}] 건: ${d.assigneeToDelete}건\n` +
-      (assigneeLines ? assigneeLines + '\n' : '') +
-      '\n두 조건 모두 삭제합니다. 감사 로그에 기록됨.\n정말 실행할까요?'
-    );
-    if (!ok) return;
-
-    // 2) 실제 적용
-    const res = await fetch('/api/settlement/cleanup-noise', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true })
-    });
-    const data = await res.json();
-    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
-
-    alert(`✅ 정리 완료\n\n- 상태 이상 삭제: ${data.data.deleted.status}건\n- 제외 담당자 삭제: ${data.data.deleted.assignee}건`);
-    if (typeof loadSalesSummary === 'function') loadSalesSummary();
-  } catch (e) {
-    alert('서버 연결 실패: ' + e.message);
-  }
-}
-
-// 실행 건 중복 정리 (관리자용) — dry-run 으로 먼저 영향 범위 보여주고 확인 받아 실제 삭제
-async function dedupeExecutions() {
-  try {
-    // 1) dry-run
-    const dryRes = await fetch('/api/settlement/dedupe-executions', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false })
-    });
-    const dry = await dryRes.json();
-    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
-
-    if (dry.totalToDelete === 0) {
-      alert('정리할 중복이 없습니다.\n\n총 ' + (dry.totalRows || 0) + '건 / 중복 그룹 0');
-      return;
-    }
-
-    // 샘플 프리뷰 (상위 몇 건)
-    const rowsHtml = (dry.sampleGroups || []).slice(0, 10).map(g =>
-      `- ${g.customer_name} / ${g.product_name} / ${g.executed_date} / ${g.status} → ${g.cnt}건 (id ${g.ids_preview}, 남길 id: ${g.keep_id})`
-    ).join('\n');
-
-    const ok = confirm(
-      '⚠ 실행 건 중복 정리 미리보기\n\n' +
-      `- 총 행 수: ${dry.totalRows || 0}\n` +
-      `- 중복 그룹: ${dry.totalDupeGroups}\n` +
-      `- 삭제 예정: ${dry.totalToDelete}건\n\n` +
-      '각 그룹에서 가장 최근 id 1건만 남기고 나머지가 삭제됩니다. (감사로그 기록됨)\n\n' +
-      '상위 10개 그룹:\n' + rowsHtml + '\n\n' +
-      '정말 실행할까요?'
-    );
-    if (!ok) return;
-
-    // 2) 실제 적용
-    const res = await fetch('/api/settlement/dedupe-executions', {
-      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true })
-    });
-    const data = await res.json();
-    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
-
-    alert(`✅ 정리 완료\n\n- 상품명 정규화: ${data.normalizedRows || 0}건\n- 중복 그룹: ${data.totalDupeGroups}\n- 삭제: ${data.deleted}건`);
-    // 매출/수당 정산 페이지 새로고침
-    if (typeof loadSalesSummary === 'function') loadSalesSummary();
-  } catch (e) {
-    alert('서버 연결 실패: ' + e.message);
-  }
-}
 
 function showAddExecution() {
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
@@ -2411,34 +2274,23 @@ function renderSettlementPolicy() {
     months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
   }
 
+  // 적용월 = 조회월 (선택한 월로 업로드 저장 → 같은 월의 데이터를 바로 보여줌)
   return `
     <div class="panel">
       <div class="panel-header">
-        <h2>정산 정책 엑셀 업로드</h2>
-      </div>
-      <div class="panel-body" style="padding:16px;">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
-          <label style="font-size:12px;font-weight:600;">적용월:</label>
-          <select id="policyMonth" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+        <h2>정산 정책 (${settlementPolicyData.length}건)</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="font-size:12px;font-weight:600;">적용월</label>
+          <select id="policyMonth" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;" onchange="loadPolicyByMonth()">
             ${months.map(m => `<option value="${m}" ${m===curMonth?'selected':''}>${m}</option>`).join('')}
           </select>
-          ${isAdmin() ? '<input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)">' : '<span style="font-size:12px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
-          <span style="font-size:11px;color:#94a3b8;">적용월을 선택 후 엑셀 업로드</span>
-        </div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <h2>정산 정책 (${settlementPolicyData.length}건)</h2>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <select id="policyViewMonth" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;" onchange="loadPolicyByMonth()">
-            <option value="">전체</option>
-            ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
-          </select>
-          <button class="btn btn-outline btn-sm" onclick="loadPolicyByMonth()">조회</button>
+          ${isAdmin() ? '<input type="file" id="policyFile" accept=".xlsx,.xls,.csv" multiple onchange="parsePolicyExcel(this)" style="font-size:11px;">' : '<span style="font-size:11px;color:#94a3b8;">관리자만 업로드 가능합니다.</span>'}
         </div>
       </div>
       <div class="panel-body" style="overflow-x:auto;">
+        <div style="font-size:11px;color:#64748b;padding:8px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;">
+          월을 선택한 뒤 엑셀을 업로드하면 해당 월 정책이 DB 에 저장됩니다. 월을 바꾸면 해당 월 정책을 조회합니다.
+        </div>
         <table>
           <thead><tr><th>상품구분</th><th>금융사</th><th>지급수당(500만이하)</th><th>지급수당(500만초과)</th><th>인증</th></tr></thead>
           <tbody id="policyTableBody">
@@ -2450,7 +2302,7 @@ function renderSettlementPolicy() {
                 <td>${p.rateOver||''}</td>
                 <td>${p.auth||''}</td>
               </tr>`).join('') :
-              '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8;">엑셀 파일을 업로드하면 정책이 표시됩니다.</td></tr>'
+              '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8;">선택한 월에 등록된 정책이 없습니다. 엑셀을 업로드하세요.</td></tr>'
             }
           </tbody>
         </table>
@@ -2510,7 +2362,7 @@ async function loadRebateByMonth() {
 }
 
 async function loadPolicyByMonth() {
-  const month = document.getElementById('policyViewMonth')?.value || '';
+  const month = document.getElementById('policyMonth')?.value || '';
   try {
     const res = await fetch(`/api/settlement/policies${month ? '?month='+month : ''}`);
     const data = await res.json();
@@ -2526,14 +2378,18 @@ async function loadPolicyByMonth() {
 
 async function loadSettlementFromDB() {
   try {
+    // 선택된 적용월 우선, 없으면 현재 월
+    const now = new Date();
+    const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const month = document.getElementById('policyMonth')?.value || curMonth;
     const [pRes, aRes] = await Promise.all([
-      fetch('/api/settlement/policies'),
+      fetch('/api/settlement/policies?month=' + encodeURIComponent(month)),
       fetch('/api/settlement/adjustments')
     ]);
     const pData = await pRes.json();
     const aData = await aRes.json();
-    if (pData.success && pData.data.length > 0) {
-      settlementPolicyData = pData.data.map(r => ({
+    if (pData.success) {
+      settlementPolicyData = (pData.data || []).map(r => ({
         category: r.category, product: r.product,
         rateUnder: r.rate_under, rateOver: r.rate_over, auth: r.auth
       }));
