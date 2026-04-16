@@ -5245,6 +5245,14 @@ async function openProductGuide(el) {
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch { showGuideModal(productName, null); return; }
+
+      // 세션 만료는 재로그인 유도 (로그아웃 페이지 텍스트가 가이드로 렌더되는 문제 방지)
+      if (res.status === 401 && data.code === 'LMASTER_SESSION_EXPIRED') {
+        crawlerLoggedIn = false;
+        showGuideModal(productName, null);
+        return;
+      }
+
       if (data.success && data.data && data.data.body) {
         showGuideModal(productName, data.data);
       } else {

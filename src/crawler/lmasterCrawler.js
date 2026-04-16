@@ -114,7 +114,7 @@ async function login(userId, password) {
 
 // 상품 상세 가이드 가져오기 (1건, 사용자 행동 모방)
 async function getProductGuide(fidx) {
-  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
 
   const url = `${PRODUCT_INFO_URL}?fidx=${fidx}`;
 
@@ -123,6 +123,22 @@ async function getProductGuide(fidx) {
 
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(1000, 2000);
+
+  // 세션 만료 감지 — "ACCESS_Deny / InValid_LoginInfo / 로그아웃되었습니다" 등이 본문에 잡히면
+  // 가이드가 아니라 로그인 튕긴 페이지를 받은 것. 오류로 던져 프론트가 재로그인 유도하도록.
+  const sessionCheck = await page.evaluate(() => {
+    const body = document.body?.innerText || '';
+    const href = location.href || '';
+    const patterns = ['ACCESS_Deny', 'InValid_LoginInfo', '로그아웃되었습니다', '로그아웃 되었습니다', '세션이 만료', 'Session Timeout', 'login.asp'];
+    const matched = patterns.find(p => body.includes(p) || href.includes(p));
+    return matched ? { kicked: true, reason: matched } : { kicked: false };
+  });
+  if (sessionCheck.kicked) {
+    isLoggedIn = false;
+    const err = new Error(`론앤마스터 세션이 만료되어 로그아웃되었습니다 (감지: "${sessionCheck.reason}"). 상단의 [론앤마스터 연동] 버튼으로 재로그인하세요.`);
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    throw err;
+  }
 
   // 페이지 내용 추출
   const data = await page.evaluate(() => {

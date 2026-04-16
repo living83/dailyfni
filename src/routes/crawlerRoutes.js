@@ -56,6 +56,13 @@ router.get('/crawler/product-guide/:fidx', async (req, res) => {
     const data = await crawler.getProductGuide(fidx);
     res.json({ success: true, data });
   } catch (err) {
+    if (err && err.code === 'LMASTER_SESSION_EXPIRED') {
+      return res.status(401).json({
+        success: false,
+        code: 'LMASTER_SESSION_EXPIRED',
+        message: err.message,
+      });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });
