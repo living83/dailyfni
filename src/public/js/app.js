@@ -2469,8 +2469,12 @@ async function savePolicyToDB(data) {
       body: JSON.stringify({ policies: data, month })
     });
     const result = await res.json();
-    if (!result.success) alert(result.message);
-  } catch (e) { console.error('정산 정책 저장 실패:', e); }
+    if (!result.success) console.error('정산 정책 저장 실패:', result.message);
+    return { ...result, month };
+  } catch (e) {
+    console.error('정산 정책 저장 실패:', e);
+    return { success: false, message: e.message };
+  }
 }
 
 async function saveAdjustmentsToDB(data) {
@@ -2482,8 +2486,12 @@ async function saveAdjustmentsToDB(data) {
       body: JSON.stringify({ adjustments: data, month })
     });
     const result = await res.json();
-    if (!result.success) alert(result.message);
-  } catch (e) { console.error('리베이트/환수 저장 실패:', e); }
+    if (!result.success) console.error('리베이트/환수 저장 실패:', result.message);
+    return { ...result, month };
+  } catch (e) {
+    console.error('리베이트/환수 저장 실패:', e);
+    return { success: false, message: e.message };
+  }
 }
 
 async function loadRebateByMonth() {
@@ -2716,7 +2724,7 @@ function parseRebateExcel(input) {
       alert('엑셀(.xlsx) 또는 CSV 파일만 지원합니다.');
       continue;
     }
-    readSpreadsheetFile(file, function(text) {
+    readSpreadsheetFile(file, async function(text) {
       const lines = text.split('\n').filter(l => l.trim());
       if (lines.length >= 2) {
         lines.slice(1).forEach(line => {
@@ -2733,10 +2741,18 @@ function parseRebateExcel(input) {
       }
       processed++;
       if (processed === files.length) {
-        settlementRebateData = allData;
-        saveAdjustmentsToDB(allData);
+        if (allData.length === 0) {
+          alert('엑셀에서 파싱된 항목이 0건입니다.');
+          return;
+        }
+        const saveResult = await saveAdjustmentsToDB(allData);
+        if (!saveResult.success) {
+          alert(`⚠ 저장 실패: ${saveResult.message || '알 수 없는 오류'}\n화면만 반영된 상태입니다. 다시 시도해 주세요.`);
+          return;
+        }
+        await loadSettlementFromDB();
         navigate('settlement');
-        alert(`${allData.length}건 로드 및 저장 완료 (${files.length}개 파일)`);
+        alert(`${allData.length}건 저장 완료 (${files.length}개 파일)`);
       }
     });
   }
@@ -2754,7 +2770,7 @@ function parsePolicyExcel(input) {
       alert('엑셀(.xlsx) 또는 CSV 파일만 지원합니다.');
       continue;
     }
-    readSpreadsheetFile(file, function(text) {
+    readSpreadsheetFile(file, async function(text) {
       const lines = text.split('\n').filter(l => l.trim());
       let currentCategory = '';
 
@@ -2812,11 +2828,23 @@ function parsePolicyExcel(input) {
       });
       processed++;
       if (processed === files.length) {
-        settlementPolicyData = allData;
-        // MySQL에 저장
-        savePolicyToDB(allData);
+        // 저장이 실제로 성공했는지 확인한 뒤에만 표시/알림 진행
+        // (과거에는 await 없이 alert 가 먼저 떠서 저장 실패 시에도 성공처럼 보여
+        //  로그아웃 후 재로그인 시 데이터가 사라지는 문제가 있었음)
+        if (allData.length === 0) {
+          alert('엑셀에서 파싱된 정책이 0건입니다. 파일 형식이나 컬럼 배치를 확인해 주세요.');
+          return;
+        }
+        const monthInput = document.getElementById('policyMonth')?.value || '';
+        const saveResult = await savePolicyToDB(allData);
+        if (!saveResult.success) {
+          alert(`⚠ 정책 저장 실패: ${saveResult.message || '알 수 없는 오류'}\n화면만 반영된 상태라 재로그인 시 사라집니다. 다시 시도해 주세요.`);
+          return;
+        }
+        // DB 에서 실제 저장된 값으로 다시 로드해 표시 — 화면-DB 불일치 방지
+        await loadSettlementFromDB();
         navigate('settlement');
-        alert(`${allData.length}건 로드 및 저장 완료 (${files.length}개 파일)`);
+        alert(`${allData.length}건 저장 완료 (${files.length}개 파일, 적용월 ${saveResult.month || monthInput})`);
       }
     });
   }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
+const { buildApprovedAndVisibleClauseLiteral } = require('../config/settlementFilters');
 
 // 대시보드 요약 데이터
 router.get('/dashboard/summary', async (req, res) => {
@@ -77,40 +78,47 @@ router.get('/dashboard/performance', async (req, res) => {
     const custParams = [];
 
     if (month) {
-      monthFilter = ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
+      // e.executed_date 로 명시 — buildApprovedAndVisibleClauseLiteral 이 e.* 별칭 쓰므로 일관성 유지
+      monthFilter = ' AND DATE_FORMAT(e.executed_date, "%Y-%m") = ?';
       custMonthFilter = ' AND DATE_FORMAT(created_at, "%Y-%m") = ?';
       params.push(month);
       custParams.push(month);
     }
 
+    // 매출 집계에는 '승인' 건 + 제외 담당자(윤장호) 제외 필터 필수.
+    // 상관 서브쿼리라 params 전달이 까다로워 리터럴 버전 사용 (상수 기반 → SQL 인젝션 위험 없음).
+    const settleFilter = buildApprovedAndVisibleClauseLiteral();
+
     // 출처별 성과: 유입(고객수), 실행건수, 매출
     const bySource = await query(`
       SELECT c.db_source,
         COUNT(DISTINCT c.id) as intake_count,
-        (SELECT COUNT(*) FROM settlement_executions e WHERE e.db_source = c.db_source ${monthFilter}) as exec_count,
-        (SELECT COALESCE(SUM(e.loan_amount),0) FROM settlement_executions e WHERE e.db_source = c.db_source ${monthFilter}) as total_amount,
-        (SELECT COALESCE(SUM(e.fee_amount),0) FROM settlement_executions e WHERE e.db_source = c.db_source ${monthFilter}) as total_fee
+        (SELECT COUNT(*) FROM settlement_executions e WHERE e.db_source = c.db_source ${settleFilter} ${monthFilter}) as exec_count,
+        (SELECT COALESCE(SUM(e.loan_amount),0) FROM settlement_executions e WHERE e.db_source = c.db_source ${settleFilter} ${monthFilter}) as total_amount,
+        (SELECT COALESCE(SUM(e.fee_amount),0) FROM settlement_executions e WHERE e.db_source = c.db_source ${settleFilter} ${monthFilter}) as total_fee
       FROM customers c
       WHERE c.db_source != '' ${custMonthFilter}
       GROUP BY c.db_source
       ORDER BY intake_count DESC
-    `, [...params, ...custParams]);
+    `, [...params, ...params, ...params, ...custParams]);
 
     // 담당자별 성과
     const byAssigned = await query(`
       SELECT c.assigned_to,
         COUNT(DISTINCT c.id) as customer_count,
-        (SELECT COUNT(*) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${monthFilter}) as exec_count,
-        (SELECT COALESCE(SUM(e.loan_amount),0) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${monthFilter}) as total_amount,
-        (SELECT COALESCE(SUM(e.fee_amount),0) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${monthFilter}) as total_fee
+        (SELECT COUNT(*) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${settleFilter} ${monthFilter}) as exec_count,
+        (SELECT COALESCE(SUM(e.loan_amount),0) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${settleFilter} ${monthFilter}) as total_amount,
+        (SELECT COALESCE(SUM(e.fee_amount),0) FROM settlement_executions e WHERE e.assigned_to = c.assigned_to ${settleFilter} ${monthFilter}) as total_fee
       FROM customers c
       WHERE c.assigned_to != '' ${custMonthFilter}
       GROUP BY c.assigned_to
       ORDER BY customer_count DESC
-    `, [...params, ...custParams]);
+    `, [...params, ...params, ...params, ...custParams]);
 
-    // 전체 요약
-    const [totalExec] = await query(`SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as amount, COALESCE(SUM(fee_amount),0) as fee FROM settlement_executions WHERE 1=1 ${monthFilter}`, params);
+    // 전체 요약 — 같은 필터 적용
+    // buildApprovedAndVisibleClauseLiteral 은 e.status / e.assigned_to 기준이므로 테이블 별칭 e 사용
+    const totalSql = `SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as amount, COALESCE(SUM(fee_amount),0) as fee FROM settlement_executions e WHERE 1=1 ${settleFilter} ${monthFilter}`;
+    const [totalExec] = await query(totalSql, params);
     const [totalCust] = await query(`SELECT COUNT(*) as cnt FROM customers WHERE 1=1 ${custMonthFilter}`, custParams);
 
     res.json({

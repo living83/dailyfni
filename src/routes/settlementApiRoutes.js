@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
 const { logAudit } = require('../database/auditHelper');
+const {
+  EXCLUDED_ASSIGNEES: SETTLEMENT_EXCLUDED_ASSIGNEES,
+  buildApprovedAndVisibleClause,
+} = require('../config/settlementFilters');
 
 // === 정산 정책 ===
 
@@ -141,8 +145,16 @@ router.post('/settlement/close-month', async (req, res) => {
       return res.status(400).json({ success: false, message: `${month}은 이미 마감되었습니다.` });
     }
 
-    // 실행 건수/매출 집계
-    const [stats] = await query('SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as total FROM settlement_executions WHERE DATE_FORMAT(executed_date, "%Y-%m") = ?', [month]);
+    // 실행 건수/매출 집계 — 월 마감도 "승인 + 제외담당자 제외" 기준으로 계산
+    const closeParams = [];
+    const closeClause = buildApprovedAndVisibleClause(closeParams);
+    closeParams.push(month);
+    const [stats] = await query(
+      `SELECT COUNT(*) as cnt, COALESCE(SUM(loan_amount),0) as total
+       FROM settlement_executions
+       WHERE 1=1 ${closeClause} AND DATE_FORMAT(executed_date, "%Y-%m") = ?`,
+      closeParams
+    );
 
     if (existing.length > 0) {
       await query('UPDATE monthly_closes SET is_closed=1, closed_by=?, closed_at=NOW(), execution_count=?, total_sales=? WHERE target_month=?',
@@ -745,28 +757,14 @@ router.post('/settlement/executions', async (req, res) => {
   }
 });
 
-// 실행 건 목록 조회
-// 매출집계에서 제외할 담당자 목록 (대표/본사 직원 등).
-// TRIM 비교로 공백 변형("윤장호 ") 까지 걸러지도록.
-const SETTLEMENT_EXCLUDED_ASSIGNEES = ['윤장호'];
-
-// 제외 담당자 WHERE 조각 생성 — `AND (assigned_to IS NULL OR TRIM(assigned_to) NOT IN (?,?,...))`
-function buildExcludedAssigneeClause(params) {
-  if (!SETTLEMENT_EXCLUDED_ASSIGNEES.length) return '';
-  const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
-  params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
-  return ` AND (assigned_to IS NULL OR TRIM(assigned_to) NOT IN (${placeholders}))`;
-}
-
+// 실행 건 목록 조회 — 기본 '승인' + 제외 담당자 필터. 제외 담당자 상수는 config/settlementFilters.js.
 router.get('/settlement/executions', async (req, res) => {
   try {
     const { month, dbSource, assignedTo, customerName, includeAll } = req.query;
     let sql = 'SELECT * FROM settlement_executions WHERE 1=1';
     const params = [];
-    // 매출집계는 기본적으로 '승인' 건만 표시. includeAll=1 로 넘기면 전체 반환 (감사/디버그용)
     if (!includeAll || includeAll === '0') {
-      sql += " AND TRIM(status) = '승인'";
-      sql += buildExcludedAssigneeClause(params);
+      sql += buildApprovedAndVisibleClause(params);
     }
     if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
     if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
@@ -784,15 +782,13 @@ router.get('/settlement/executions', async (req, res) => {
 router.get('/settlement/summary', async (req, res) => {
   try {
     const { month } = req.query;
-    // 기본 필터: status = '승인' + 제외 담당자
-    let whereClause = " WHERE TRIM(status) = '승인'";
     const params = [];
-    whereClause += buildExcludedAssigneeClause(params);
+    let whereClause = ' WHERE 1=1' + buildApprovedAndVisibleClause(params);
     if (month) {
       whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
       params.push(month);
     }
-    const monthFilter = whereClause; // 이름은 유지하되 의미는 "승인 + 제외담당자 + (옵션)월" 필터
+    const monthFilter = whereClause; // "승인 + 제외담당자 + (옵션)월" 필터
 
     // 총 매출 (대출금액 합계)
     const [totalSales] = await query(`SELECT COALESCE(SUM(loan_amount),0) as total FROM settlement_executions${monthFilter}`, params);
