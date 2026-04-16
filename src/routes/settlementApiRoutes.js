@@ -41,6 +41,10 @@ router.post('/settlement/policies/upload', async (req, res) => {
     if (!policies || !Array.isArray(policies)) {
       return res.status(400).json({ success: false, message: 'policies 배열이 필요합니다.' });
     }
+    if (policies.length === 0) {
+      // 0 건으로 올리면 DELETE 만 돌아 해당 월 데이터가 전부 날아감 — 사고 방지
+      return res.status(400).json({ success: false, message: '업로드할 정책이 0건입니다. 기존 데이터를 보호하려면 빈 업로드를 거부합니다.' });
+    }
     if (!month) {
       return res.status(400).json({ success: false, message: '적용월을 선택하세요.' });
     }
@@ -51,19 +55,37 @@ router.post('/settlement/policies/upload', async (req, res) => {
       return res.status(400).json({ success: false, message: `${month}은 마감 완료되어 수정할 수 없습니다.` });
     }
 
-    // 해당 월 데이터만 삭제
+    // 해당 월 데이터만 삭제 + 재삽입 (동일 커넥션에서 수행하면 더 안전하지만
+    //   현재 query() 풀 구조에서는 커넥션 별도 획득이 어려워 순차 실행만 보장.
+    //   실패 시 sum 이 어긋나면 클라이언트가 감지해 경고 모달로 표시.)
     await query('DELETE FROM settlement_policies WHERE target_month = ?', [month]);
 
-    // 새 데이터 삽입
+    let inserted = 0;
     for (const p of policies) {
-      await query(
+      const r = await query(
         'INSERT INTO settlement_policies (category, product, rate_under, rate_over, auth, target_month) VALUES (?, ?, ?, ?, ?, ?)',
         [p.category || '', p.product || '', p.rateUnder || '', p.rateOver || '', p.auth || '', month]
       );
+      if (r && r.affectedRows) inserted += r.affectedRows;
     }
 
-    await logAudit({ eventType: 'settlement_change', targetType: 'policy', afterValue: `${month} 정산 정책 ${policies.length}건 업로드`, performedBy: 'admin' });
-    res.json({ success: true, message: `${month} 정산 정책 ${policies.length}건 저장 완료` });
+    // 사후 확인 — 실제로 DB 에 저장된 건수를 조회해 클라이언트에 돌려준다
+    const [{ cnt: dbCount }] = await query(
+      'SELECT COUNT(*) AS cnt FROM settlement_policies WHERE target_month = ?', [month]
+    );
+
+    await logAudit({
+      eventType: 'settlement_change',
+      targetType: 'policy',
+      afterValue: `${month} 정산 정책 ${inserted}건 저장 (DB 확인 ${dbCount}건)`,
+      performedBy: 'admin',
+    });
+
+    res.json({
+      success: true,
+      message: `${month} 정산 정책 ${inserted}건 저장 완료 (DB 확인 ${dbCount}건)`,
+      data: { uploaded: policies.length, inserted, dbCount, month },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -94,6 +116,9 @@ router.post('/settlement/adjustments/upload', async (req, res) => {
     if (!adjustments || !Array.isArray(adjustments)) {
       return res.status(400).json({ success: false, message: 'adjustments 배열이 필요합니다.' });
     }
+    if (adjustments.length === 0) {
+      return res.status(400).json({ success: false, message: '업로드할 항목이 0건입니다. 기존 데이터를 보호하려면 빈 업로드를 거부합니다.' });
+    }
     if (!month) {
       return res.status(400).json({ success: false, message: '적용월을 선택하세요.' });
     }
@@ -107,15 +132,31 @@ router.post('/settlement/adjustments/upload', async (req, res) => {
     // 해당 월 데이터만 삭제
     await query('DELETE FROM settlement_adjustments WHERE target_month = ?', [month]);
 
+    let inserted = 0;
     for (const a of adjustments) {
-      await query(
+      const r = await query(
         'INSERT INTO settlement_adjustments (type, amount, reason, target_month, manager) VALUES (?, ?, ?, ?, ?)',
         [a.type || '리베이트', a.amount || 0, a.reason || '', month, a.manager || '']
       );
+      if (r && r.affectedRows) inserted += r.affectedRows;
     }
 
-    await logAudit({ eventType: 'settlement_change', targetType: 'adjustment', afterValue: `${month} 리베이트/환수 ${adjustments.length}건 업로드`, performedBy: 'admin' });
-    res.json({ success: true, message: `${month} 리베이트/환수 ${adjustments.length}건 저장 완료` });
+    const [{ cnt: dbCount }] = await query(
+      'SELECT COUNT(*) AS cnt FROM settlement_adjustments WHERE target_month = ?', [month]
+    );
+
+    await logAudit({
+      eventType: 'settlement_change',
+      targetType: 'adjustment',
+      afterValue: `${month} 리베이트/환수 ${inserted}건 저장 (DB 확인 ${dbCount}건)`,
+      performedBy: 'admin',
+    });
+
+    res.json({
+      success: true,
+      message: `${month} 리베이트/환수 ${inserted}건 저장 완료 (DB 확인 ${dbCount}건)`,
+      data: { uploaded: adjustments.length, inserted, dbCount, month },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -237,14 +278,13 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
     }
 
-    // 확정 상태만 싱크. 가승인/접수/심사/조회중 등은 변동 가능성 있어 제외.
-    //   - 승인: 최종 승인 (매출집계 집계 대상)
-    //   - 부결 / 진행후부결: 감사 목적으로 저장 (매출집계에는 표시 안 됨)
-    //   - 완납: 실행 완료 — 승인과 동일하게 집계
-    //   - 가승인: 제외 (아직 확정 아님)
-    const FINAL_STATUSES = ['승인', '부결', '진행후부결', '완납'];
+    // 매출집계는 오직 '승인' 또는 '완납' 상태만. 그 외(가승인/접수/심사/부결/조회중…)는
+    // 아예 settlement_executions 에 INSERT 조차 하지 않는다.
+    //   - 예전 버그: loan.status.includes('승인') 이 '가승인' 도 매칭시켜 '승인' 으로 저장
+    //   - 현재 규칙: exact match 로 '승인' 또는 '완납' 만 허용, '완납' 은 '승인' 으로 정규화
+    const APPROVED_STATUSES = ['승인', '완납'];
     const targetLoans = loanData
-      .filter(r => r.status && FINAL_STATUSES.includes(r.status.trim()))
+      .filter(r => r.status && APPROVED_STATUSES.includes(r.status.trim()))
       .map(r => ({ ...r, productName: normalizeProductName(r.productName) }));
 
     // 정산 정책 조회 (최신 월)
@@ -269,10 +309,9 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 
     for (const loan of targetLoans) {
       const amount = parseInt(String(loan.approvedAmount).replace(/[^0-9]/g, '')) || 0;
-      // 상태는 원본 그대로 저장 — 매출집계 쿼리가 status='승인' 으로 필터.
-      // (기존 코드는 includes('승인') 으로 '가승인' 도 '승인' 으로 변환하던 버그)
-      const rawStatus = (loan.status || '').trim();
-      const loanStatus = (rawStatus === '완납') ? '승인' : rawStatus;
+      // APPROVED_STATUSES 를 통과했으므로 rawStatus 는 '승인' 또는 '완납'.
+      // 모두 '승인' 으로 정규화해서 저장. DB 에 가승인/부결 등 다른 값은 절대 들어가지 않음.
+      const loanStatus = '승인';
 
       // 실행일: 처리일시에서 날짜 추출
       const dateMatch = (loan.processDate || loan.applyDate || '').match(/(\d{4}-\d{2}-\d{2})/);

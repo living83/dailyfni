@@ -41,7 +41,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true
 }));
-app.use(express.json());
+// 정책 엑셀(수백 건) 업로드 시 기본 100kb 한도에 걸리는 문제 방지
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API 인증 미들웨어
