@@ -594,10 +594,12 @@ function buildLoanRowHtml(r, i, statusBadge) {
 }
 
 // 심사메모 전체 내용 모달 (론앤마스터 statuswin.asp 대체)
-// - 전산에 이미 등재된 reviewMemo 전체 내용을 별도 팝업 없이 모달로 표시
-// - ESC / 배경 클릭 / 닫기 버튼으로 닫힘
-function openReviewMemoModal(idx) {
-  const r = loanListData[idx];
+// 흐름: 모달 즉시 오픈 (목록의 요약 메모 + 로딩 표시) →
+//       백엔드(/api/crawler/loan-memo)로 statuswin.asp 전체 메모 fetch →
+//       결과를 본문에 교체
+// ESC / 배경 클릭 / 닫기 버튼으로 닫힘.
+function openReviewMemoModal(rowIndex) {
+  const r = loanListData[rowIndex];
   if (!r) return;
   const old = document.getElementById('reviewMemoModal');
   if (old) old.remove();
@@ -615,9 +617,13 @@ function openReviewMemoModal(idx) {
       <div style="color:#0f172a;">${escLoanAttr(value) || '-'}</div>
     </div>`;
 
+  // 목록에서 가져온 요약 메모 (첫 줄만 오는 경우가 많음)
+  const summaryHtml = escLoanAttr(r.reviewMemo) || '<span style="color:#94a3b8;">등록된 심사메모가 없습니다.</span>';
+
   box.innerHTML = `
     <div style="padding:12px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;">
       <h3 style="margin:0;font-size:14px;color:#0f172a;">심사메모 상세</h3>
+      <span id="_memoSrc" style="margin-left:10px;font-size:11px;color:#94a3b8;">${r.idx ? '전체 내용 불러오는 중…' : '요약만 표시 (idx 없음)'}</span>
       <button id="_memoClose" style="margin-left:auto;background:none;border:none;font-size:18px;color:#94a3b8;cursor:pointer;line-height:1;">&times;</button>
     </div>
     <div style="padding:14px 18px;border-bottom:1px solid #f1f5f9;background:#fafafa;">
@@ -630,8 +636,11 @@ function openReviewMemoModal(idx) {
       ${infoRow('승인액', r.approvedAmount)}
     </div>
     <div style="padding:14px 18px;overflow-y:auto;flex:1;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:6px;">심사메모 (전체 내용)</div>
-      <div style="font-size:12px;color:#0f172a;line-height:1.6;white-space:pre-wrap;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#fff;min-height:120px;">${escLoanAttr(r.reviewMemo) || '<span style="color:#94a3b8;">등록된 심사메모가 없습니다.</span>'}</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+        <span>심사메모 (전체 내용)</span>
+        <button id="_memoReload" style="margin-left:auto;font-size:11px;color:#2563eb;background:none;border:none;cursor:pointer;text-decoration:underline;">새로고침</button>
+      </div>
+      <div id="_memoBody" style="font-size:12px;color:#0f172a;line-height:1.6;white-space:pre-wrap;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#fff;min-height:120px;">${summaryHtml}</div>
     </div>
     <div style="padding:10px 16px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">
       <button id="_memoCloseBtn" style="padding:6px 16px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:12px;">닫기</button>
@@ -651,6 +660,32 @@ function openReviewMemoModal(idx) {
   box.querySelector('#_memoCloseBtn').onclick = close;
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
   document.addEventListener('keydown', onKey);
+
+  // statuswin.asp 에서 전체 심사메모 fetch
+  async function loadFullMemo() {
+    if (!r.idx) return; // idx 없으면 목록 요약본만 표시
+    const srcEl = box.querySelector('#_memoSrc');
+    const bodyEl = box.querySelector('#_memoBody');
+    if (srcEl) srcEl.textContent = '전체 내용 불러오는 중…';
+    try {
+      const res = await fetch('/api/crawler/loan-memo?idx=' + encodeURIComponent(r.idx) + '&upw=1');
+      const data = await res.json();
+      if (data.success && data.data?.memo) {
+        bodyEl.textContent = data.data.memo; // 텍스트로 안전하게 주입 (개행 보존)
+        if (srcEl) srcEl.textContent = '전체 내용 (statuswin.asp)';
+        // 목록 캐시에도 반영해 두면 다음 오픈이 빠름
+        r.reviewMemo = data.data.memo;
+      } else {
+        if (srcEl) srcEl.textContent = '전체 내용 실패 — 요약만 표시';
+      }
+    } catch (e) {
+      if (srcEl) srcEl.textContent = '네트워크 오류 — 요약만 표시';
+    }
+  }
+
+  const reloadBtn = box.querySelector('#_memoReload');
+  if (reloadBtn) reloadBtn.onclick = loadFullMemo;
+  loadFullMemo();
 }
 
 async function loadDbCustomers() {

@@ -65,6 +65,27 @@ router.post('/crawler/product-map', async (req, res) => {
   }
 });
 
+// 심사메모 전체 내용 조회 (statuswin.asp)
+// 목록 페이지는 첫 줄만 내려오기 때문에 상세 팝업 URL 을 서버 사이드에서 긁어온다.
+router.get('/crawler/loan-memo', async (req, res) => {
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) res.status(504).json({ success: false, message: '조회 시간 초과 (20초)' });
+  }, 20000);
+  try {
+    const { idx, upw } = req.query;
+    if (!idx) {
+      clearTimeout(timeout);
+      return res.status(400).json({ success: false, message: 'idx 파라미터가 필요합니다.' });
+    }
+    const data = await crawler.getLoanReviewMemo(String(idx), upw || '1');
+    clearTimeout(timeout);
+    if (!res.headersSent) res.json({ success: true, data });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (!res.headersSent) res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 대출신청내역 목록 조회
 router.get('/crawler/loan-list', async (req, res) => {
   // 30초 타임아웃

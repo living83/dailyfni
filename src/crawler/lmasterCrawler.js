@@ -9,6 +9,7 @@ const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
 const PRODUCT_INFO_URL = LMASTER_BASE + '/admin/agent/win_fininfo.asp';
 const LOAN_APP_URL = LMASTER_BASE + '/admin/agent/loanlist_app.asp';
 const LOAN_LIST_URL = LMASTER_BASE + '/admin/agent/list_loanlist.asp';
+const STATUS_WIN_URL = LMASTER_BASE + '/admin/agent/statuswin.asp';
 const NOTICE_LIST_URL = LMASTER_BASE + '/admin/bbs/notice/list.asp';
 
 // 브라우저 인스턴스 (싱글톤)
@@ -1061,7 +1062,28 @@ async function getLoanList(agentNo, upw, filters = {}) {
           // 제거하지 않으면 동일 상품이 다른 이름으로 중복 저장됨
           const rawProduct = tds[3]?.textContent?.trim() || '';
           const productName = rawProduct.replace(/[\s.,·…ㆍ]+$/u, '').trim();
+
+          // 심사메모 셀: innerText 로 <br> 개행 유지 (textContent 는 개행 소실)
+          const memoCell = tds[13];
+          const reviewMemo = (memoCell?.innerText || memoCell?.textContent || '').trim();
+
+          // 각 행의 application idx 추출: 행/셀의 onclick, href, data-* 속성에서
+          // statuswin.asp?idx=... 혹은 숫자성 idx 를 찾는다.
+          // 예) onclick="statuswin('2026041599346')", href="statuswin.asp?upw=1&idx=2026041599346"
+          let idx = '';
+          const rowHtml = trs[i].outerHTML || '';
+          const idxPatterns = [
+            /statuswin[^\d]+(\d{10,})/i,   // statuswin(...) / statuswin.asp?idx=...
+            /[?&]idx=(\d{10,})/i,           // ?idx=1234567890
+            /data-idx=["'](\d{10,})["']/i,  // data-idx="..."
+          ];
+          for (const rx of idxPatterns) {
+            const m = rowHtml.match(rx);
+            if (m) { idx = m[1]; break; }
+          }
+
           rows.push({
+            idx,
             applyDate: tds[0]?.textContent?.trim() || '',
             processDate: tds[1]?.textContent?.trim() || '',
             productName,
@@ -1072,7 +1094,7 @@ async function getLoanList(agentNo, upw, filters = {}) {
             jobType: tds[10]?.textContent?.trim() || '',
             status: tds[11]?.textContent?.trim() || '',
             approvedAmount: tds[12]?.textContent?.trim() || '',
-            reviewMemo: tds[13]?.textContent?.trim() || '',
+            reviewMemo,
             branchMemo: tds[14]?.textContent?.trim() || '',
           });
         }
@@ -1102,6 +1124,55 @@ async function getLoanList(agentNo, upw, filters = {}) {
 }
 
 // 대출신청 상세 정보 1건 가져오기
+// 심사메모 전체 내용 조회: 론앤마스터 statuswin.asp 팝업 페이지를
+// 서버 사이드에서 읽어 심사메모 전체 텍스트를 추출한다.
+// - upw 기본값 1 (기본 에이전트 권한)
+// - 페이지의 '심사메모' 라벨 주변 영역을 찾고, 없으면 body 전체 innerText 를 반환
+async function getLoanReviewMemo(idx, upw = '1') {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!idx) throw new Error('idx 가 필요합니다.');
+
+  const url = `${STATUS_WIN_URL}?upw=${encodeURIComponent(upw)}&idx=${encodeURIComponent(idx)}`;
+  console.log('[크롤러] 심사메모 상세 조회:', url);
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(300, 700);
+
+  const result = await page.evaluate(() => {
+    // 전체 body 텍스트 확보 (개행 포함)
+    const fullText = (document.body.innerText || '').trim();
+
+    // '심사메모' 라벨 기준으로 본문 섹션 추출 시도
+    //   1) th/td/label/strong 요소에서 '심사메모' 포함 요소를 찾고 인접 블록 텍스트 사용
+    //   2) 실패 시 fullText 를 그대로 돌려줌
+    let memoText = '';
+    const labelEls = [...document.querySelectorAll('th, td, label, strong, b, span, dt')]
+      .filter(el => /심사\s*메모/.test(el.textContent || ''));
+    for (const labelEl of labelEls) {
+      // 인접 셀 (td 의 경우 형제, th 의 경우 같은 tr 의 다음 td)
+      let target = null;
+      if (labelEl.tagName === 'TH' || labelEl.tagName === 'DT') {
+        target = labelEl.parentElement?.querySelector('td, dd');
+      } else if (labelEl.tagName === 'TD') {
+        target = labelEl.nextElementSibling;
+      } else {
+        // 라벨 바로 다음 형제 또는 부모의 다음 형제
+        target = labelEl.nextElementSibling || labelEl.parentElement?.nextElementSibling;
+      }
+      const text = (target?.innerText || '').trim();
+      if (text && text.length > memoText.length) memoText = text;
+    }
+
+    if (!memoText) memoText = fullText;
+    return { memo: memoText, rawLength: fullText.length };
+  });
+
+  return {
+    idx,
+    memo: result.memo,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
 async function getLoanDetail(detailUrl) {
   if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
 
@@ -1409,6 +1480,7 @@ module.exports = {
   submitLoanApplication,
   getLoanList,
   getLoanDetail,
+  getLoanReviewMemo,
   closeBrowser,
   getStatus,
   getPageHtml,
