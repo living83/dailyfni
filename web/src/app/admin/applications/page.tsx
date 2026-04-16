@@ -3,30 +3,39 @@ import ApplicationsTable from "./ApplicationsTable";
 
 /**
  * 관리자: 대출신청내역.
- * 각 행을 더블클릭하면 심사메모가 별도 창(팝업)으로 뜨고,
- * 팝업이 차단된 환경에서는 동일 내용이 모달로 표시된다.
- * (론앤마스터 admin/agent/statuswin.asp 와 같은 동작)
+ * 행을 더블클릭하면 심사메모 전체 내용이 모달로 표시된다.
+ * (외부 팝업/크롤링 없이 우리 전산에 등재된 데이터만 사용)
  */
 export default async function ApplicationsPage() {
   const applications = await prisma.application.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
-    select: {
-      id: true,
-      name: true,
-      phone: true,
-      carrier: true,
-      status: true,
-      reviewer: true,
-      reviewMemo: true,
-      createdAt: true,
+    include: {
+      submissions: { orderBy: { createdAt: "asc" } },
     },
   });
 
   // Date 를 직렬화 가능한 문자열로 변환해 클라이언트 컴포넌트에 전달
   const rows = applications.map((a) => ({
-    ...a,
+    id: a.id,
+    name: a.name,
+    phone: a.phone,
+    carrier: a.carrier,
+    isEmployee: a.isEmployee,
+    has4Insurance: a.has4Insurance,
+    status: a.status,
+    reviewer: a.reviewer,
+    reviewMemo: a.reviewMemo,
     createdAt: a.createdAt.toISOString(),
+    updatedAt: a.updatedAt.toISOString(),
+    submissions: a.submissions.map((s) => ({
+      id: s.id,
+      transmissionType: s.transmissionType,
+      status: s.status,
+      failReason: s.failReason,
+      retryCount: s.retryCount,
+      createdAt: s.createdAt.toISOString(),
+    })),
   }));
 
   return (

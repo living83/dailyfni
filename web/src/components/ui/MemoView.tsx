@@ -4,10 +4,10 @@ type SubmissionLite = {
   status: string;
   failReason: string | null;
   retryCount: number;
-  createdAt: Date;
+  createdAt: string; // ISO
 };
 
-type ApplicationLite = {
+export type MemoApplication = {
   id: string;
   name: string;
   carrier: string;
@@ -17,42 +17,36 @@ type ApplicationLite = {
   status: string;
   reviewer: string | null;
   reviewMemo: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
   submissions: SubmissionLite[];
 };
 
-const fmt = (d: Date) =>
-  new Intl.DateTimeFormat("ko-KR", {
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString("ko-KR", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(d);
+  });
 
 const maskPhone = (phone: string) => {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 8) return phone;
-  return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
+  const d = phone.replace(/\D/g, "");
+  if (d.length < 8) return phone;
+  return `${d.slice(0, 3)}-****-${d.slice(-4)}`;
 };
 
 /**
- * 심사메모 본문. 팝업/모달 양쪽에서 재사용한다.
+ * 심사메모 본문. 모달 내부에서 렌더된다.
+ * 전산에 이미 전체 내용이 등재돼 있으므로 외부 팝업 없이 우리 DB 데이터로만 구성.
  */
-export default function MemoView({ application }: { application: ApplicationLite }) {
+export default function MemoView({ application }: { application: MemoApplication }) {
   return (
-    <div className="max-w-2xl mx-auto text-sm">
-      <header className="mb-4 pb-3 border-b border-gray-200">
-        <h1 className="text-lg font-bold">심사메모</h1>
-        <p className="text-xs text-gray-500 mt-1">
-          신청번호 <span className="font-mono">{application.id}</span>
-        </p>
-      </header>
-
+    <div className="text-sm">
       <section className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-2">신청 정보</h2>
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">신청 정보</h3>
         <dl className="grid grid-cols-[90px_1fr] gap-y-1.5 gap-x-3">
           <dt className="text-gray-500">이름</dt>
           <dd>{application.name}</dd>
@@ -78,8 +72,8 @@ export default function MemoView({ application }: { application: ApplicationLite
       </section>
 
       <section className="mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-2">심사메모</h2>
-        <div className="p-3 bg-gray-50 border border-gray-200 rounded whitespace-pre-wrap min-h-[80px]">
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">심사메모</h3>
+        <div className="p-3 bg-gray-50 border border-gray-200 rounded whitespace-pre-wrap min-h-[100px]">
           {application.reviewMemo?.trim() ? application.reviewMemo : (
             <span className="text-gray-400">등록된 심사메모가 없습니다.</span>
           )}
@@ -91,7 +85,7 @@ export default function MemoView({ application }: { application: ApplicationLite
 
       {application.submissions.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">전송 이력</h2>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">전송 이력</h3>
           <table className="w-full border border-gray-200 text-xs">
             <thead className="bg-gray-50">
               <tr>
