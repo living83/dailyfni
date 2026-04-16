@@ -2014,7 +2014,8 @@ function renderSettlementSales() {
       <select id="salesSource"><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select>
       <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
       ${isAdmin() ? `
-        <button class="btn btn-outline" style="margin-left:auto;" onclick="dedupeExecutions()" title="동일 고객+상품+일자+상태의 중복 실행건을 정리">🧹 중복 정리</button>
+        <button class="btn btn-outline" style="margin-left:auto;" onclick="recalculateFees()" title="최신 정산 정책으로 기존 승인건의 수수료율/수수료 재계산">💱 수수료 재계산</button>
+        <button class="btn btn-outline" onclick="dedupeExecutions()" title="동일 고객+상품+일자+상태의 중복 실행건을 정리">🧹 중복 정리</button>
         <button class="btn btn-outline" onclick="showAddExecution()">+ 실행 건 등록</button>
       ` : ''}
     </div>
@@ -2079,6 +2080,50 @@ async function loadSalesSummary() {
 
     if (document.getElementById('salesMonth')) navigate('settlement');
   } catch (e) { console.error(e); }
+}
+
+// 수수료 재계산 (관리자용) — dry-run 으로 먼저 변경 대상 확인 후 실제 UPDATE
+async function recalculateFees() {
+  try {
+    const month = document.getElementById('salesMonth')?.value || '';
+    // 1) dry-run
+    const dryRes = await fetch('/api/settlement/recalculate-fees', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false, month })
+    });
+    const dry = await dryRes.json();
+    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
+    const d = dry.data || {};
+
+    if (d.total === 0) { alert('대상 승인 건이 없습니다.'); return; }
+    if (d.updated === 0 && d.unmatched === 0) { alert('변경 사항이 없습니다. (이미 최신 정책 반영됨)'); return; }
+
+    const previewLines = (d.preview || []).map(p =>
+      `- ${p.customer} / ${p.product} → 정책: ${p.matchedPolicy}\n   요율 ${p.before.rateUnder||0}%/${p.before.rateOver||0}% → ${p.after.rateUnder}%/${p.after.rateOver}%, 수수료 ${p.before.fee||0} → ${p.after.fee}`
+    ).join('\n');
+
+    const ok = confirm(
+      '💱 수수료 재계산 미리보기\n\n' +
+      `- 대상(승인): ${d.total}건\n` +
+      `- 정책 매칭 성공: ${d.matched}건\n` +
+      `- 매칭 실패(정책 없음): ${d.unmatched}건\n` +
+      `- 변경 예정: ${d.updated}건\n\n` +
+      (previewLines ? '변경 샘플(최대 15개):\n' + previewLines + '\n\n' : '') +
+      '정말 적용할까요?'
+    );
+    if (!ok) return;
+
+    // 2) 실제 적용
+    const res = await fetch('/api/settlement/recalculate-fees', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true, month })
+    });
+    const data = await res.json();
+    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
+
+    alert(`✅ 재계산 완료\n\n- 갱신: ${data.data.updated}건\n- 매칭 실패(그대로 0%): ${data.data.unmatched}건`);
+    if (typeof loadSalesSummary === 'function') loadSalesSummary();
+  } catch (e) {
+    alert('서버 연결 실패: ' + e.message);
+  }
 }
 
 // 실행 건 중복 정리 (관리자용) — dry-run 으로 먼저 영향 범위 보여주고 확인 받아 실제 삭제
@@ -2654,14 +2699,24 @@ function parsePolicyExcel(input) {
         let rateOver = '';
         let auth = '';
 
-        if (col0 && !['%',''].includes(col0) && col0.length > 1 && (col2 || col3)) {
-          // 상품구분 없이 col0=금융사, col1=수수료1, col2=수수료2, col3=인증
+        // 수수료율처럼 보이는지 판별 — 빈 문자열, %, 숫자(소수점 OK) 를 rate 로 본다.
+        // 이전 로직은 col0 에 "오토론"(카테고리) 이 들어와도 1번 분기로 빠져
+        // product=오토론, rateUnder=A1차량(마이카론) 처럼 컬럼이 밀리는 버그가 있었다.
+        const isRateLike = (s) => {
+          const t = String(s || '').replace('%', '').trim();
+          if (!t) return true;              // 빈 칸은 요율로 간주
+          return /^[\d.]+$/.test(t);        // 숫자/소수점만
+        };
+
+        if (isRateLike(col1) && (col2 === '' || isRateLike(col2))) {
+          // col0=금융사, col1=수수료1, col2=수수료2, col3=인증
           product = col0;
           rateUnder = col1;
           rateOver = col2;
           auth = col3;
         } else if (col1 && col1.length > 1 && col1 !== '지급수당' && (col2 || col3)) {
-          // col0=상품구분(or빈칸), col1=금융사, col2=수수료1, col3=수수료2, col4=인증
+          // col0=상품구분, col1=금융사, col2=수수료1, col3=수수료2, col4=인증
+          if (col0) currentCategory = col0;
           product = col1;
           rateUnder = col2;
           rateOver = col3;

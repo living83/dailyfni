@@ -180,6 +180,44 @@ function normalizeProductName(name) {
   return String(name).trim().replace(/[\s.,·…ㆍ]+$/u, '').trim();
 }
 
+// 매칭용 키 정규화: 괄호/공백/특수기호 제거 후 소문자화.
+//   '유노스(회생/파산)' ↔ '유노스 회생'  양방향 substring 매칭이 되도록.
+function matchKey(name) {
+  return String(name || '')
+    .replace(/[()（）\[\]【】]/g, ' ')
+    .replace(/[\s.,·…ㆍ\-_/\\]+/g, '')
+    .toLowerCase();
+}
+
+// 상품명 ↔ 정책의 금융사명 매칭 (양방향 substring + 최장일치)
+//   예) 론앤마스터 "A1차량(마이카론)" ↔ 정책 "A1차량"  → 매칭
+//       론앤마스터 "유노스" ↔ 정책 "유노스(회생/파산)" → 매칭
+function findMatchingPolicy(productName, policies) {
+  const key = matchKey(productName);
+  if (!key) return null;
+  let best = null;
+  let bestLen = 0;
+  for (const p of policies) {
+    const pKey = matchKey(p.product);
+    if (!pKey) continue;
+    const matched = key.includes(pKey) || pKey.includes(key);
+    if (matched && pKey.length > bestLen) {
+      best = p;
+      bestLen = pKey.length;
+    }
+  }
+  return best;
+}
+
+// 수수료 계산 (500만 기준)
+function calcFee(amount, rateUnder, rateOver) {
+  const u = parseFloat(rateUnder) || 0;
+  const o = parseFloat(rateOver) || 0;
+  if (!amount || amount <= 0) return 0;
+  const fee = amount <= 500 ? amount * (u || o) / 100 : amount * (o || u) / 100;
+  return Math.round(fee * 10) / 10;
+}
+
 router.post('/settlement/sync-from-loans', async (req, res) => {
   try {
     const { loanData, performedBy } = req.body;
@@ -226,22 +264,13 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 
       let rateUnder = 0, rateOver = 0, feeAmount = 0;
       if (loanStatus === '승인' && amount > 0) {
-        // 정산 정책에서 수수료율 찾기
-        const productClean = (loan.productName || '').replace(/\(.*\)/, '').trim();
-        for (const p of policies) {
-          if (loan.productName.includes(p.product) || p.product.includes(productClean)) {
-            rateUnder = parseFloat(p.rate_under) || 0;
-            rateOver = parseFloat(p.rate_over) || 0;
-            break;
-          }
+        // 정산 정책에서 수수료율 찾기 (정규화 + 양방향 substring 매칭)
+        const matched = findMatchingPolicy(loan.productName, policies);
+        if (matched) {
+          rateUnder = parseFloat(matched.rate_under) || 0;
+          rateOver = parseFloat(matched.rate_over) || 0;
         }
-        // 수수료 계산 (500만 기준)
-        if (amount <= 500) {
-          feeAmount = amount * (rateUnder || rateOver) / 100;
-        } else {
-          feeAmount = amount * (rateOver || rateUnder) / 100;
-        }
-        feeAmount = Math.round(feeAmount * 10) / 10;
+        feeAmount = calcFee(amount, rateUnder, rateOver);
       }
 
       await query(
@@ -261,6 +290,72 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 
     await logAudit({ eventType: 'settlement_change', targetType: 'execution', afterValue: `론앤마스터 동기화: ${added}건 등록, ${skipped}건 스킵`, performedBy: 'system' });
     res.json({ success: true, data: { added, skipped, total: targetLoans.length } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// === 수수료 재계산 (관리자용) ===
+// 기존 '승인' 실행 건에 대해 최신 정산 정책으로 수수료율과 수수료를 다시 계산.
+// 정책을 새로 올렸거나 상품명 매칭 버그로 0 으로 비어있던 레코드를 일괄 보정하는 용도.
+//   body.apply=false → dry-run (변경 예정 건수만)
+//   body.apply=true  → 실제 UPDATE
+router.post('/settlement/recalculate-fees', async (req, res) => {
+  try {
+    const { apply = false, month } = req.body || {};
+    const policies = await query('SELECT * FROM settlement_policies ORDER BY id');
+    if (!policies.length) {
+      return res.json({ success: true, data: { updated: 0, matched: 0, unmatched: 0, total: 0, message: '등록된 정산 정책이 없습니다.' } });
+    }
+
+    let whereClause = " WHERE status = '승인'";
+    const params = [];
+    if (month) { whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
+
+    const rows = await query(`SELECT id, customer_name, product_name, loan_amount, fee_rate_under, fee_rate_over, fee_amount FROM settlement_executions${whereClause}`, params);
+    let matched = 0, unmatched = 0, updated = 0;
+    const preview = [];
+
+    for (const r of rows) {
+      const amount = parseInt(r.loan_amount) || 0;
+      const pol = findMatchingPolicy(r.product_name, policies);
+      if (!pol) {
+        unmatched++;
+        continue;
+      }
+      matched++;
+      const rateUnder = parseFloat(pol.rate_under) || 0;
+      const rateOver = parseFloat(pol.rate_over) || 0;
+      const fee = calcFee(amount, rateUnder, rateOver);
+
+      const changed = (Number(r.fee_rate_under) !== rateUnder) || (Number(r.fee_rate_over) !== rateOver) || (Number(r.fee_amount) !== fee);
+      if (!changed) continue;
+
+      if (preview.length < 15) {
+        preview.push({
+          id: r.id,
+          customer: r.customer_name,
+          product: r.product_name,
+          matchedPolicy: pol.product,
+          before: { rateUnder: r.fee_rate_under, rateOver: r.fee_rate_over, fee: r.fee_amount },
+          after: { rateUnder, rateOver, fee },
+        });
+      }
+
+      if (apply) {
+        await query('UPDATE settlement_executions SET fee_rate_under = ?, fee_rate_over = ?, fee_amount = ? WHERE id = ?', [rateUnder, rateOver, fee, r.id]);
+        updated++;
+      }
+    }
+
+    if (apply) {
+      await logAudit({ eventType: 'settlement_change', targetType: 'execution', afterValue: `수수료 재계산: ${updated}건 갱신, ${unmatched}건 매칭 실패`, performedBy: req.user?.name || 'system' });
+    }
+
+    res.json({
+      success: true,
+      data: { apply, total: rows.length, matched, unmatched, updated: apply ? updated : preview.length, preview },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -570,9 +665,13 @@ router.post('/settlement/executions', async (req, res) => {
 // 실행 건 목록 조회
 router.get('/settlement/executions', async (req, res) => {
   try {
-    const { month, dbSource, assignedTo, customerName } = req.query;
+    const { month, dbSource, assignedTo, customerName, includeAll } = req.query;
     let sql = 'SELECT * FROM settlement_executions WHERE 1=1';
     const params = [];
+    // 매출집계는 기본적으로 '승인' 건만 표시. includeAll=1 로 넘기면 전체 반환 (감사/디버그용)
+    if (!includeAll || includeAll === '0') {
+      sql += " AND status = '승인'";
+    }
     if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
     if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
     if (dbSource && dbSource !== '전체 출처') { sql += ' AND db_source = ?'; params.push(dbSource); }
@@ -585,16 +684,18 @@ router.get('/settlement/executions', async (req, res) => {
   }
 });
 
-// 매출 요약 (월별)
+// 매출 요약 (월별) — '승인' 건만 집계 (부결/기타 상태 제외)
 router.get('/settlement/summary', async (req, res) => {
   try {
     const { month } = req.query;
-    let monthFilter = '';
+    // 기본 필터: status = '승인'
+    let whereClause = " WHERE status = '승인'";
     const params = [];
     if (month) {
-      monthFilter = ' WHERE DATE_FORMAT(executed_date, "%Y-%m") = ?';
+      whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
       params.push(month);
     }
+    const monthFilter = whereClause; // 이름은 유지하되 의미는 "승인 + (옵션)월" 필터
 
     // 총 매출 (대출금액 합계)
     const [totalSales] = await query(`SELECT COALESCE(SUM(loan_amount),0) as total FROM settlement_executions${monthFilter}`, params);
