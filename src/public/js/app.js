@@ -3182,7 +3182,9 @@ function renderDocConvert() {
         </table>
         <div style="margin-top:12px;">
           <button class="btn btn-primary" onclick="startDocConvert()" style="padding:8px 24px;">변환 시작</button>
+          <button class="btn btn-outline" onclick="checkDocConvertEnv()" style="padding:8px 16px;margin-left:6px;">서버 환경 진단</button>
         </div>
+        <div id="docConvertDiag" style="margin-top:10px;"></div>
         <div id="docConvertProgress" style="margin-top:12px;display:none;">
           <div style="font-size:12px;font-weight:600;margin-bottom:6px;">변환 진행 중...</div>
           <div id="docConvertStatus" style="font-size:11px;color:#64748b;"></div>
@@ -3228,7 +3230,7 @@ async function startDocConvert() {
       if (res.ok) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        const outName = file.name.replace(/\.pdf$/i, '.' + format);
+        const outName = file.name.replace(/\.(pdf|jpg|jpeg|png|bmp|gif|tif|tiff)$/i, '') + '.' + format;
         const size = (blob.size / 1024).toFixed(0);
         html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;margin-bottom:4px;">
           <span style="font-size:12px;"><span style="color:#16a34a;font-weight:700;">✓</span> ${outName} (${size}KB)</span>
@@ -3236,8 +3238,11 @@ async function startDocConvert() {
         </div>`;
       } else {
         const err = await res.json().catch(() => ({ message: '변환 실패' }));
+        // 서버에서 내려오는 힌트 개행 보존
+        const safeMsg = String(err.message || '변환 실패').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         html += `<div style="padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;margin-bottom:4px;font-size:12px;">
-          <span style="color:#991b1b;">✗ ${file.name}: ${err.message}</span>
+          <div style="color:#991b1b;font-weight:600;">✗ ${file.name}</div>
+          <pre style="margin:4px 0 0;color:#7f1d1d;font-size:11px;white-space:pre-wrap;font-family:inherit;">${safeMsg}</pre>
         </div>`;
       }
     } catch (e) {
@@ -3249,6 +3254,42 @@ async function startDocConvert() {
 
   progressDiv.style.display = 'none';
   resultsDiv.innerHTML = `<div style="font-size:12px;font-weight:600;margin-bottom:6px;">변환 완료 (${fileInput.files.length}건)</div>` + html;
+}
+
+// 서버 환경 진단: ImageMagick / Ghostscript / policy.xml 상태 확인
+async function checkDocConvertEnv() {
+  const diagDiv = document.getElementById('docConvertDiag');
+  if (!diagDiv) return;
+  diagDiv.innerHTML = '<span style="font-size:11px;color:#64748b;">진단 중...</span>';
+  try {
+    const res = await fetch('/api/doc-convert/check');
+    const data = await res.json();
+    if (!data.success) throw new Error('진단 실패');
+    const d = data.data;
+    const row = (label, item) => {
+      const ok = item.ok;
+      const badge = ok
+        ? '<span style="color:#16a34a;font-weight:700;">✓</span>'
+        : '<span style="color:#dc2626;font-weight:700;">✗</span>';
+      const detail = ok
+        ? (item.command || item.version || item.path || item.note || 'OK')
+        : (item.hint || '미설치/미설정');
+      return `<tr>
+        <td style="padding:4px 8px;font-size:12px;white-space:nowrap;">${badge} ${label}</td>
+        <td style="padding:4px 8px;font-size:11px;color:${ok ? '#334155' : '#991b1b'};white-space:pre-wrap;">${detail}</td>
+      </tr>`;
+    };
+    diagDiv.innerHTML = `
+      <table style="border-collapse:collapse;border:1px solid #e2e8f0;background:#fafafa;width:100%;max-width:720px;">
+        <tbody>
+          ${row('ImageMagick', d.imagemagick)}
+          ${row('Ghostscript', d.ghostscript)}
+          ${row('PDF 정책 (policy.xml)', d.pdfPolicy)}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    diagDiv.innerHTML = `<span style="font-size:11px;color:#dc2626;">진단 실패: ${e.message}</span>`;
+  }
 }
 
 let auditData = [];
