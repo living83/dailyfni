@@ -573,6 +573,86 @@ function renderCustomers() {
 let loanListData = [];
 let loanListSummary = null;
 
+// HTML 속성 이스케이프
+function escLoanAttr(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// 대출 신청 내역 행 빌더 (renderLoans/syncLoanList 공용)
+function buildLoanRowHtml(r, i, statusBadge) {
+  const memo = r.reviewMemo || '';
+  const memoCell = memo
+    ? `<td class="loan-memo-cell" ondblclick="openReviewMemoModal(${i})" style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="더블클릭: 심사메모 전체 내용 보기">${escLoanAttr(memo)}</td>`
+    : `<td style="font-size:10px;color:#cbd5e1;">-</td>`;
+  return `<tr>
+    <td>${escLoanAttr(r.applyDate)}</td><td>${escLoanAttr(r.processDate)}</td><td>${escLoanAttr(r.productName)}</td>
+    <td>${escLoanAttr(r.recruiter)}</td><td>${escLoanAttr(r.customerName)}</td><td>${escLoanAttr(r.birthDate)}</td>
+    <td>${escLoanAttr(r.gender)}</td><td>${escLoanAttr(r.jobType)}</td><td>${statusBadge(r.status)}</td>
+    <td>${escLoanAttr(r.approvedAmount)}</td>${memoCell}
+    <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${escLoanAttr(r.customerName)}','${escLoanAttr(r.productName)}','${escLoanAttr(r.fidx||'')}')">첨부</button></td>
+  </tr>`;
+}
+
+// 심사메모 전체 내용 모달 (론앤마스터 statuswin.asp 대체)
+// - 전산에 이미 등재된 reviewMemo 전체 내용을 별도 팝업 없이 모달로 표시
+// - ESC / 배경 클릭 / 닫기 버튼으로 닫힘
+function openReviewMemoModal(idx) {
+  const r = loanListData[idx];
+  if (!r) return;
+  const old = document.getElementById('reviewMemoModal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'reviewMemoModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:8px;width:90%;max-width:680px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.3);';
+
+  const infoRow = (label, value) => `
+    <div style="display:flex;gap:8px;font-size:12px;padding:3px 0;">
+      <div style="width:70px;color:#64748b;flex-shrink:0;">${label}</div>
+      <div style="color:#0f172a;">${escLoanAttr(value) || '-'}</div>
+    </div>`;
+
+  box.innerHTML = `
+    <div style="padding:12px 18px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;">
+      <h3 style="margin:0;font-size:14px;color:#0f172a;">심사메모 상세</h3>
+      <button id="_memoClose" style="margin-left:auto;background:none;border:none;font-size:18px;color:#94a3b8;cursor:pointer;line-height:1;">&times;</button>
+    </div>
+    <div style="padding:14px 18px;border-bottom:1px solid #f1f5f9;background:#fafafa;">
+      ${infoRow('이름', r.customerName)}
+      ${infoRow('상품명', r.productName)}
+      ${infoRow('모집인', r.recruiter)}
+      ${infoRow('접수일시', r.applyDate)}
+      ${infoRow('처리일시', r.processDate)}
+      ${infoRow('처리상태', r.status)}
+      ${infoRow('승인액', r.approvedAmount)}
+    </div>
+    <div style="padding:14px 18px;overflow-y:auto;flex:1;">
+      <div style="font-size:12px;color:#64748b;margin-bottom:6px;">심사메모 (전체 내용)</div>
+      <div style="font-size:12px;color:#0f172a;line-height:1.6;white-space:pre-wrap;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#fff;min-height:120px;">${escLoanAttr(r.reviewMemo) || '<span style="color:#94a3b8;">등록된 심사메모가 없습니다.</span>'}</div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;">
+      <button id="_memoCloseBtn" style="padding:6px 16px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;cursor:pointer;font-size:12px;">닫기</button>
+    </div>
+  `;
+
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+
+  const close = () => {
+    document.removeEventListener('keydown', onKey);
+    if (modal.parentNode) modal.parentNode.removeChild(modal);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+  box.querySelector('#_memoClose').onclick = close;
+  box.querySelector('#_memoCloseBtn').onclick = close;
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', onKey);
+}
+
 async function loadDbCustomers() {
   try {
     const search = document.getElementById('custSearch')?.value || '';
@@ -644,14 +724,7 @@ function renderLoans() {
 
   let rowsHtml = '';
   if (loanListData.length > 0) {
-    rowsHtml = loanListData.map(r => `
-      <tr>
-        <td>${r.applyDate}</td><td>${r.processDate}</td><td>${r.productName}</td>
-        <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
-        <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
-        <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
-        <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${r.customerName}','${r.productName}','${r.fidx||''}')">첨부</button></td>
-      </tr>`).join('');
+    rowsHtml = loanListData.map((r, i) => buildLoanRowHtml(r, i, statusBadge)).join('');
   } else {
     rowsHtml = '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">론앤마스터 연동 후 [동기화] 버튼을 클릭하세요.</td></tr>';
   }
@@ -716,13 +789,7 @@ async function syncLoanList() {
           const map = {'접수':'badge-submit','전송':'badge-submit','심사':'badge-review','가승인':'badge-review','승인':'badge-approved','부결':'badge-rejected','진행후부결':'badge-rejected','완납':'badge-executed','본인취소':'badge-closed','진행불가':'badge-closed','조회중':'badge-lead','정상접수':'badge-submit','상담중':'badge-consult','진행중':'badge-consult','서류안내':'badge-consult','서류받음':'badge-consult','인증대기':'badge-lead'};
           return `<span class="badge ${map[s]||'badge-lead'}">${s}</span>`;
         };
-        tbody.innerHTML = loanListData.map(r => `<tr>
-          <td>${r.applyDate}</td><td>${r.processDate}</td><td>${r.productName}</td>
-          <td>${r.recruiter}</td><td>${r.customerName}</td><td>${r.birthDate}</td>
-          <td>${r.gender}</td><td>${r.jobType}</td><td>${statusBadge(r.status)}</td>
-          <td>${r.approvedAmount}</td><td style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reviewMemo}">${r.reviewMemo}</td>
-          <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${r.customerName}','${r.productName}','${r.fidx||''}')">첨부</button></td>
-        </tr>`).join('') || '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">데이터가 없습니다.</td></tr>';
+        tbody.innerHTML = loanListData.map((r, i) => buildLoanRowHtml(r, i, statusBadge)).join('') || '<tr><td colspan="12" style="text-align:center;padding:30px;color:#94a3b8;">데이터가 없습니다.</td></tr>';
       }
     } else {
       if (statusEl) statusEl.textContent = '동기화 실패: ' + (data.message || '');
