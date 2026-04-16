@@ -866,6 +866,8 @@ async function openUploadModal(customerName, productName, fidx) {
     } catch (e) {}
   }
 
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
   const modal = document.createElement('div');
   modal.id = 'uploadModal';
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
@@ -873,37 +875,64 @@ async function openUploadModal(customerName, productName, fidx) {
     <div style="background:#fff;border-radius:8px;width:500px;max-width:90%;padding:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <strong style="font-size:14px;">서류 첨부</strong>
-        <button onclick="document.getElementById('uploadModal').remove()" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748b;">&times;</button>
+        <button type="button" id="uploadCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;color:#64748b;">&times;</button>
       </div>
       <div style="font-size:12px;color:#64748b;margin-bottom:12px;">
-        <div><strong>고객:</strong> ${customerName}</div>
-        <div><strong>상품:</strong> ${productName}</div>
+        <div><strong>고객:</strong> ${esc(customerName)}</div>
+        <div><strong>상품:</strong> ${esc(productName)}</div>
         <div><strong>파일 슬롯:</strong> ${slotCount}개</div>
       </div>
       <div style="margin-bottom:12px;">
-        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">${slot1Label} ${slotCount >= 1 ? '<span style="color:#ef4444;">*</span>' : ''}</label>
+        <label for="uploadFile1" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;cursor:pointer;">${esc(slot1Label)} <span style="color:#ef4444;">*</span></label>
         <input type="file" id="uploadFile1" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png" style="width:100%;font-size:12px;">
       </div>
       ${slotCount >= 2 ? `<div style="margin-bottom:12px;">
-        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">${slot2Label}</label>
+        <label for="uploadFile2" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;cursor:pointer;">${esc(slot2Label)}</label>
         <input type="file" id="uploadFile2" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png" style="width:100%;font-size:12px;">
       </div>` : ''}
       <div id="uploadStatus" style="font-size:11px;color:#64748b;margin:8px 0;"></div>
       <div style="display:flex;gap:8px;margin-top:16px;">
-        <button class="btn btn-primary" style="flex:1;" onclick="submitUpload('${customerName}','${productName}','${fidx}')">업로드</button>
-        <button class="btn btn-outline" onclick="document.getElementById('uploadModal').remove()">취소</button>
+        <button type="button" class="btn btn-primary" id="uploadSubmitBtn" style="flex:1;">업로드</button>
+        <button type="button" class="btn btn-outline" id="uploadCancelBtn">취소</button>
       </div>
     </div>
   `;
+
+  // 배경 클릭으로 닫기
   modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
+
+  // 모달 내부 버튼들에 이벤트 바인딩 (인라인 onclick 사용 시 고객명/상품명에 따옴표가 들어가면 JS 가 깨지므로 주입 X)
+  const closeBtn = modal.querySelector('#uploadCloseBtn');
+  const cancelBtn = modal.querySelector('#uploadCancelBtn');
+  const submitBtn = modal.querySelector('#uploadSubmitBtn');
+
+  const closeModal = () => { if (modal.parentNode) modal.parentNode.removeChild(modal); };
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+  // 업로드 버튼: 클로저로 인자 캡처 (인라인 onclick X → 문자열 이스케이프 불필요)
+  if (submitBtn) {
+    submitBtn.addEventListener('click', () => submitUpload(customerName, productName, fidx, modal));
+  }
 }
 
-async function submitUpload(customerName, productName, fidx) {
-  const f1 = document.getElementById('uploadFile1')?.files?.[0];
-  const f2 = document.getElementById('uploadFile2')?.files?.[0];
-  const statusEl = document.getElementById('uploadStatus');
-  if (!f1) { alert('첫 번째 파일은 필수입니다.'); return; }
+async function submitUpload(customerName, productName, fidx, modal) {
+  // modal 컨텍스트 내에서만 input 을 찾는다 — 페이지 어딘가에 동명 id 가 있어도 안전
+  const root = modal || document.getElementById('uploadModal') || document;
+  const input1 = root.querySelector('#uploadFile1');
+  const input2 = root.querySelector('#uploadFile2');
+  const statusEl = root.querySelector('#uploadStatus');
+
+  const f1 = input1?.files?.[0];
+  const f2 = input2?.files?.[0];
+
+  if (!f1) {
+    if (statusEl) statusEl.textContent = '첫 번째 파일을 선택해 주세요.';
+    alert('첫 번째 파일은 필수입니다.');
+    console.warn('[업로드] input1=', input1, 'files=', input1?.files);
+    return;
+  }
 
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
   const formData = new FormData();
@@ -914,21 +943,22 @@ async function submitUpload(customerName, productName, fidx) {
   formData.append('file1', f1);
   if (f2) formData.append('file2', f2);
 
-  statusEl.textContent = '업로드 중...';
+  if (statusEl) statusEl.textContent = '업로드 중...';
   try {
     const res = await fetch('/api/documents/upload', { method: 'POST', body: formData });
     const data = await res.json();
     if (data.success) {
-      const results = data.data.uploadResults;
+      const results = data.data.uploadResults || [];
       const ok = results.filter(r => r.success).length;
       const fail = results.length - ok;
       alert(`업로드 완료!\n성공: ${ok}개, 실패: ${fail}개${data.data.submitResult?.clicked ? '\n작성완료 버튼 클릭됨' : ''}`);
-      document.getElementById('uploadModal').remove();
+      if (modal?.parentNode) modal.parentNode.removeChild(modal);
+      else document.getElementById('uploadModal')?.remove();
     } else {
-      statusEl.textContent = '업로드 실패: ' + (data.message || '');
+      if (statusEl) statusEl.textContent = '업로드 실패: ' + (data.message || '');
     }
   } catch (e) {
-    statusEl.textContent = '오류: ' + e.message;
+    if (statusEl) statusEl.textContent = '오류: ' + e.message;
   }
 }
 
