@@ -378,7 +378,8 @@ function navigate(page) {
       loadLedgerLoanList(ledgerCustomer?.name);
     }, 200);
   }
-  // 대출 신청 관리 진입 시 자동 동기화 + 1분마다 자동 갱신
+  // 대출 신청 관리 진입 시 자동 동기화 + 5분마다 자동 갱신
+  // (수동 [동기화] 버튼은 항상 사용 가능)
   if (page === 'loans') {
     setTimeout(() => syncLoanList(), 100);
     if (window._loansRefreshInterval) clearInterval(window._loansRefreshInterval);
@@ -389,7 +390,7 @@ function navigate(page) {
         clearInterval(window._loansRefreshInterval);
         window._loansRefreshInterval = null;
       }
-    }, 60 * 1000); // 1분
+    }, 5 * 60 * 1000); // 5분
   } else if (window._loansRefreshInterval) {
     clearInterval(window._loansRefreshInterval);
     window._loansRefreshInterval = null;
