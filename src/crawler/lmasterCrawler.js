@@ -113,19 +113,31 @@ async function login(userId, password) {
 }
 
 // 상품 상세 가이드 가져오기 (1건, 사용자 행동 모방)
-async function getProductGuide(fidx) {
+// 주의: 크롤러는 단일 puppeteer page 싱글톤이라 직전에 어떤 페이지에 있었는지가 결과에 영향.
+//   - scanProductRequirements 가 loanlist_app.asp?w=w (windowed 모드) 로 이동시키고
+//     상품을 클릭해 두면, 이어서 win_fininfo.asp 로 가도 론앤마스터가 메인 접수 폼을
+//     다시 반환하는 문제가 있었다 (대출접수 메뉴에서만 가이드가 이상하게 나오던 원인).
+//   - 그래서 가이드 요청 시작할 때 puppeteer 를 list_loanlist.asp (목록 페이지) 로
+//     리셋해 windowed 모드를 털어낸 뒤 win_fininfo.asp 로 이동한다.
+async function getProductGuide(fidx, options = {}) {
   if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
+  const { agentNo = '12', upw = '1' } = options;
 
-  const url = `${PRODUCT_INFO_URL}?fidx=${fidx}`;
+  // 1) puppeteer 상태 리셋 — 깨끗한 목록 페이지로 이동
+  try {
+    await page.goto(`${LOAN_LIST_URL}?no=${agentNo}&upw=${upw}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await delay(400, 800);
+  } catch (e) {
+    // 실패해도 그냥 진행 — 어차피 아래에서 세션/리다이렉트 체크함
+  }
 
-  // 사람처럼 딜레이
-  await delay(2000, 3500);
-
+  // 2) 상품 가이드 URL (no/upw 포함 — 없으면 리다이렉트 되는 환경 보호)
+  const url = `${PRODUCT_INFO_URL}?fidx=${fidx}&no=${agentNo}&upw=${upw}`;
+  await delay(800, 1500);
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(1000, 2000);
 
-  // 세션 만료 감지 — "ACCESS_Deny / InValid_LoginInfo / 로그아웃되었습니다" 등이 본문에 잡히면
-  // 가이드가 아니라 로그인 튕긴 페이지를 받은 것. 오류로 던져 프론트가 재로그인 유도하도록.
+  // 세션 만료 감지
   const sessionCheck = await page.evaluate(() => {
     const body = document.body?.innerText || '';
     const href = location.href || '';
@@ -137,6 +149,21 @@ async function getProductGuide(fidx) {
     isLoggedIn = false;
     const err = new Error(`론앤마스터 세션이 만료되어 로그아웃되었습니다 (감지: "${sessionCheck.reason}"). 상단의 [론앤마스터 연동] 버튼으로 재로그인하세요.`);
     err.code = 'LMASTER_SESSION_EXPIRED';
+    throw err;
+  }
+
+  // 접수 메인 페이지로 리다이렉트됐는지 감지 — 가이드 팝업에는 없는 메인 키워드로 판별.
+  const redirectedToMain = await page.evaluate(() => {
+    const body = document.body?.innerText || '';
+    const href = location.href || '';
+    const mainKeywords = ['대출신청서입력', '고객 정보', '==선택==', '통계메뉴'];
+    const hitCount = mainKeywords.reduce((n, k) => n + (body.includes(k) ? 1 : 0), 0);
+    const isWinPopup = href.includes('win_fininfo');
+    return { redirected: !isWinPopup || hitCount >= 3, href, hitCount };
+  });
+  if (redirectedToMain.redirected) {
+    const err = new Error(`상품 가이드 팝업이 아닌 다른 페이지로 이동되었습니다 (URL: ${redirectedToMain.href}, 메인 키워드 ${redirectedToMain.hitCount}개). fidx 가 잘못되었거나 론앤마스터 UI 가 변경되었을 수 있습니다.`);
+    err.code = 'LMASTER_GUIDE_NOT_FOUND';
     throw err;
   }
 
