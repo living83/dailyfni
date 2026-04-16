@@ -369,6 +369,81 @@ router.post('/settlement/recalculate-fees', async (req, res) => {
   }
 });
 
+// === 매출집계 노이즈 정리 (관리자용) ===
+//   삭제 대상:
+//     1) 상태가 '승인' 이 아닌 실행 건 (가승인/부결/진행후부결 — 오래 전 sync 버그로 남은 잔여분 포함)
+//     2) 제외 담당자(SETTLEMENT_EXCLUDED_ASSIGNEES) 와 TRIM 일치하는 실행 건
+//   dry-run (apply=false) 로 먼저 건수/샘플 확인 후 적용.
+router.post('/settlement/cleanup-noise', async (req, res) => {
+  try {
+    const { apply = false } = req.body || {};
+
+    // 1) 상태 != '승인'
+    const statusRows = await query(
+      "SELECT id, customer_name, product_name, DATE_FORMAT(executed_date,'%Y-%m-%d') AS d, status, assigned_to FROM settlement_executions WHERE TRIM(status) <> '승인' ORDER BY id DESC LIMIT 30"
+    );
+    const [{ cnt: statusCount }] = await query(
+      "SELECT COUNT(*) AS cnt FROM settlement_executions WHERE TRIM(status) <> '승인'"
+    );
+
+    // 2) 제외 담당자
+    let assigneeSample = [];
+    let assigneeCount = 0;
+    if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
+      const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
+      assigneeSample = await query(
+        `SELECT id, customer_name, product_name, DATE_FORMAT(executed_date,'%Y-%m-%d') AS d, status, assigned_to
+         FROM settlement_executions
+         WHERE TRIM(assigned_to) IN (${placeholders})
+         ORDER BY id DESC LIMIT 30`,
+        SETTLEMENT_EXCLUDED_ASSIGNEES
+      );
+      const [{ cnt }] = await query(
+        `SELECT COUNT(*) AS cnt FROM settlement_executions WHERE TRIM(assigned_to) IN (${placeholders})`,
+        SETTLEMENT_EXCLUDED_ASSIGNEES
+      );
+      assigneeCount = cnt;
+    }
+
+    // 실행
+    let deletedStatus = 0, deletedAssignee = 0;
+    if (apply) {
+      const r1 = await query("DELETE FROM settlement_executions WHERE TRIM(status) <> '승인'");
+      deletedStatus = r1.affectedRows || 0;
+
+      if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
+        const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
+        const r2 = await query(
+          `DELETE FROM settlement_executions WHERE TRIM(assigned_to) IN (${placeholders})`,
+          SETTLEMENT_EXCLUDED_ASSIGNEES
+        );
+        deletedAssignee = r2.affectedRows || 0;
+      }
+      await logAudit({
+        eventType: 'settlement_change',
+        targetType: 'execution',
+        afterValue: `정산 정리: 상태 ${deletedStatus}건, 담당자 ${deletedAssignee}건 삭제`,
+        performedBy: req.user?.name || 'system',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        apply,
+        excludedAssignees: SETTLEMENT_EXCLUDED_ASSIGNEES,
+        statusToDelete: statusCount,
+        statusSample: statusRows,
+        assigneeToDelete: assigneeCount,
+        assigneeSample,
+        deleted: apply ? { status: deletedStatus, assignee: deletedAssignee } : null,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // === 실행 건 중복 정리 (관리자용) ===
 // 동일 (customer_name, product_name, executed_date, status) 그룹에서 MAX(id) 1건만 남기고 삭제.
 // 대량 데이터에서도 안전하도록 SQL 레벨에서 직접 삭제 (GROUP_CONCAT truncation 위험 없음).
@@ -671,8 +746,17 @@ router.post('/settlement/executions', async (req, res) => {
 });
 
 // 실행 건 목록 조회
-// 매출집계에서 제외할 담당자 목록 (대표/본사 직원 등)
+// 매출집계에서 제외할 담당자 목록 (대표/본사 직원 등).
+// TRIM 비교로 공백 변형("윤장호 ") 까지 걸러지도록.
 const SETTLEMENT_EXCLUDED_ASSIGNEES = ['윤장호'];
+
+// 제외 담당자 WHERE 조각 생성 — `AND (assigned_to IS NULL OR TRIM(assigned_to) NOT IN (?,?,...))`
+function buildExcludedAssigneeClause(params) {
+  if (!SETTLEMENT_EXCLUDED_ASSIGNEES.length) return '';
+  const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
+  params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
+  return ` AND (assigned_to IS NULL OR TRIM(assigned_to) NOT IN (${placeholders}))`;
+}
 
 router.get('/settlement/executions', async (req, res) => {
   try {
@@ -681,13 +765,8 @@ router.get('/settlement/executions', async (req, res) => {
     const params = [];
     // 매출집계는 기본적으로 '승인' 건만 표시. includeAll=1 로 넘기면 전체 반환 (감사/디버그용)
     if (!includeAll || includeAll === '0') {
-      sql += " AND status = '승인'";
-      // 제외 담당자 (윤장호 등) 매출 집계 제외
-      if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
-        const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
-        sql += ` AND (assigned_to IS NULL OR assigned_to NOT IN (${placeholders}))`;
-        params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
-      }
+      sql += " AND TRIM(status) = '승인'";
+      sql += buildExcludedAssigneeClause(params);
     }
     if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
     if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
@@ -706,13 +785,9 @@ router.get('/settlement/summary', async (req, res) => {
   try {
     const { month } = req.query;
     // 기본 필터: status = '승인' + 제외 담당자
-    let whereClause = " WHERE status = '승인'";
+    let whereClause = " WHERE TRIM(status) = '승인'";
     const params = [];
-    if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
-      const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
-      whereClause += ` AND (assigned_to IS NULL OR assigned_to NOT IN (${placeholders}))`;
-      params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
-    }
+    whereClause += buildExcludedAssigneeClause(params);
     if (month) {
       whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
       params.push(month);

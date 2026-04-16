@@ -2055,6 +2055,7 @@ function renderSettlementSales() {
       <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
       ${isAdmin() ? `
         <button class="btn btn-outline" style="margin-left:auto;" onclick="recalculateFees()" title="최신 정산 정책으로 기존 승인건의 수수료율/수수료 재계산">💱 수수료 재계산</button>
+        <button class="btn btn-outline" onclick="cleanupSettlementNoise()" title="승인 아닌 상태(가승인 등) + 제외 담당자(윤장호) 실행건을 삭제">🧼 정산 데이터 정리</button>
         <button class="btn btn-outline" onclick="dedupeExecutions()" title="동일 고객+상품+일자+상태의 중복 실행건을 정리">🧹 중복 정리</button>
         <button class="btn btn-outline" onclick="showAddExecution()">+ 실행 건 등록</button>
       ` : ''}
@@ -2160,6 +2161,51 @@ async function recalculateFees() {
     if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
 
     alert(`✅ 재계산 완료\n\n- 갱신: ${data.data.updated}건\n- 매칭 실패(그대로 0%): ${data.data.unmatched}건`);
+    if (typeof loadSalesSummary === 'function') loadSalesSummary();
+  } catch (e) {
+    alert('서버 연결 실패: ' + e.message);
+  }
+}
+
+// 매출집계 노이즈 정리 (관리자용) — 가승인/부결 등 상태 이상 건 + 제외 담당자(윤장호) 건 삭제
+async function cleanupSettlementNoise() {
+  try {
+    // 1) dry-run
+    const dryRes = await fetch('/api/settlement/cleanup-noise', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: false })
+    });
+    const dry = await dryRes.json();
+    if (!dry.success) { alert('미리보기 실패: ' + (dry.message || '알 수 없는 오류')); return; }
+    const d = dry.data || {};
+
+    if (!d.statusToDelete && !d.assigneeToDelete) {
+      alert('정리할 데이터가 없습니다.');
+      return;
+    }
+
+    const statusLines = (d.statusSample || []).slice(0, 8)
+      .map(r => `- [${r.status}] ${r.customer_name} / ${r.product_name} / ${r.d} (담당:${r.assigned_to || '-'})`).join('\n');
+    const assigneeLines = (d.assigneeSample || []).slice(0, 8)
+      .map(r => `- [${r.status}] ${r.customer_name} / ${r.product_name} / ${r.d} (담당:${r.assigned_to})`).join('\n');
+
+    const ok = confirm(
+      '🧼 정산 데이터 정리 미리보기\n\n' +
+      `- 상태 != '승인' (가승인/부결/진행후부결 등): ${d.statusToDelete}건\n` +
+      (statusLines ? statusLines + '\n' : '') +
+      `\n- 제외 담당자 [${(d.excludedAssignees||[]).join(', ')}] 건: ${d.assigneeToDelete}건\n` +
+      (assigneeLines ? assigneeLines + '\n' : '') +
+      '\n두 조건 모두 삭제합니다. 감사 로그에 기록됨.\n정말 실행할까요?'
+    );
+    if (!ok) return;
+
+    // 2) 실제 적용
+    const res = await fetch('/api/settlement/cleanup-noise', {
+      method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ apply: true })
+    });
+    const data = await res.json();
+    if (!data.success) { alert('실행 실패: ' + (data.message || '알 수 없는 오류')); return; }
+
+    alert(`✅ 정리 완료\n\n- 상태 이상 삭제: ${data.data.deleted.status}건\n- 제외 담당자 삭제: ${data.data.deleted.assignee}건`);
     if (typeof loadSalesSummary === 'function') loadSalesSummary();
   } catch (e) {
     alert('서버 연결 실패: ' + e.message);
