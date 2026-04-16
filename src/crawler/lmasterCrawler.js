@@ -124,85 +124,30 @@ async function getProductGuide(fidx) {
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(1000, 2000);
 
-  // 페이지 내용 추출 — 네비게이션/메뉴 같은 보일러플레이트 제거 + 가이드 본문 정확 타겟팅
+  // 페이지 내용 추출
   const data = await page.evaluate(() => {
-    // --- 제목 후보들 ---
-    const titleCandidates = [
-      document.querySelector('td[bgcolor] font b'),
-      document.querySelector('td.title, td.subject'),
-      document.querySelector('h1, h2, h3'),
-    ].filter(Boolean);
-    const title = (titleCandidates[0]?.textContent || '').trim() || document.title || '';
+    const title = document.querySelector('td[bgcolor] font b')?.textContent?.trim() || '';
+    const body = document.body.innerText;
 
-    // --- 본문 컨테이너 후보 (우선순위 순) ---
-    // 1) 가이드 마커("★", "▣", "기본가이드", "참고사항") 가 포함된 가장 큰 <td>
-    // 2) <pre>, <textarea>
-    // 3) 본문이 가장 많은 <td>
-    // 4) 마지막 수단: document.body
-    const markers = ['★', '▣', '기본가이드', '참고사항', '📢', '📌', '※'];
-    const hasMarker = (text) => markers.some(m => text.includes(m));
-
-    const tds = [...document.querySelectorAll('td')];
-    let best = null;
-    let bestScore = 0;
-    for (const td of tds) {
-      const text = (td.innerText || '').trim();
-      if (text.length < 50) continue; // 너무 짧은 TD 는 탐색 대상 외
-      // td 안에 또 다른 큰 table 이 중첩돼 있으면 skip (최내곽 TD 우선)
-      if (td.querySelector('table td')) continue;
-      const score = text.length + (hasMarker(text) ? 5000 : 0);
-      if (score > bestScore) { bestScore = score; best = td; }
-    }
-
-    let body = '';
-    let via = '';
-    if (best) {
-      body = (best.innerText || '').trim();
-      via = 'td-best';
-    } else {
-      const pre = document.querySelector('pre, textarea');
-      if (pre && (pre.innerText || pre.value || '').trim().length > 100) {
-        body = (pre.innerText || pre.value || '').trim();
-        via = 'pre-or-textarea';
-      } else {
-        body = (document.body.innerText || '').trim();
-        via = 'body-fallback';
-      }
-    }
-
-    // 보일러플레이트 라인 제거 (론앤마스터 popup 공통 네비/버튼 텍스트)
-    const dropLines = ['닫기', 'close', 'Loading', '메뉴', '로그아웃', '로그인', '홈'];
-    const cleaned = body.split('\n')
-      .map(l => l.trim())
-      .filter(l => l)
-      .filter(l => !dropLines.some(d => l === d))
-      .join('\n');
-
-    // --- 파일 링크 수집 (첨부 양식/서식) ---
+    // 파일 링크 수집
     const files = [];
     document.querySelectorAll('a').forEach(a => {
       const href = a.href;
-      const text = (a.textContent || '').trim();
+      const text = a.textContent.trim();
       if (href && (href.includes('.pdf') || href.includes('.xlsx') || href.includes('.xls') || href.includes('.hwp') || href.includes('download'))) {
         files.push({ name: text, url: href });
       }
     });
 
-    // --- 버튼 (인증방법, 스크래핑방법 등) ---
+    // 버튼 (인증방법, 스크래핑방법 등)
     const buttons = [];
     document.querySelectorAll('input[type="button"], button').forEach(btn => {
-      const t = (btn.value || btn.textContent || '').trim();
-      if (t) buttons.push(t);
+      if (btn.value || btn.textContent) {
+        buttons.push(btn.value || btn.textContent.trim());
+      }
     });
 
-    return {
-      title,
-      body: cleaned,
-      bodyVia: via,
-      bodyLength: cleaned.length,
-      files,
-      buttons,
-    };
+    return { title, body, files, buttons };
   });
 
   return {

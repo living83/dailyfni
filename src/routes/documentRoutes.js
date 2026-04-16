@@ -8,13 +8,68 @@ const crawler = require('../crawler/lmasterCrawler');
 
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB
 
+// --- product_file_slots 스키마 자동 감지/복구 ---
+// 서비스 첫 호출 시 case_type / checkbox_* 컬럼 유무를 검사해서:
+//   - 없으면 ALTER TABLE 로 자동 추가 시도
+//   - 권한 등으로 ALTER 가 실패해도 에러 던지지 않고 "구 스키마 모드" 로 동작
+// (add_product_requirements.sql 마이그레이션을 못 돌린 환경에서도
+//  '요건 조회 실패: Unknown column case_type' 에러가 나지 않도록 하는 안전장치)
+let schemaReady = false;            // 한 번 체크 끝났나
+let hasExtendedColumns = false;     // case_type 등 확장 컬럼 있나
+async function ensureProductSlotsSchema() {
+  if (schemaReady) return hasExtendedColumns;
+  try {
+    const cols = await query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = 'product_file_slots'"
+    );
+    const names = new Set((cols || []).map(c => c.COLUMN_NAME));
+    if (names.size === 0) {
+      // 테이블 자체가 없으면 생성
+      await query(
+        `CREATE TABLE IF NOT EXISTS product_file_slots (
+          fidx INT PRIMARY KEY,
+          slot_count INT DEFAULT 0,
+          case_type VARCHAR(20) DEFAULT 'file',
+          slot1_label VARCHAR(200) DEFAULT NULL,
+          slot2_label VARCHAR(200) DEFAULT NULL,
+          checkbox_name VARCHAR(200) DEFAULT NULL,
+          checkbox_label VARCHAR(300) DEFAULT NULL,
+          scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+      );
+      hasExtendedColumns = true;
+    } else {
+      // 없는 컬럼만 추가
+      if (!names.has('case_type')) {
+        try { await query("ALTER TABLE product_file_slots ADD COLUMN case_type VARCHAR(20) DEFAULT 'file' AFTER slot_count"); } catch (e) { /* 무시 */ }
+      }
+      if (!names.has('checkbox_name')) {
+        try { await query("ALTER TABLE product_file_slots ADD COLUMN checkbox_name VARCHAR(200) DEFAULT NULL AFTER slot2_label"); } catch (e) {}
+      }
+      if (!names.has('checkbox_label')) {
+        try { await query("ALTER TABLE product_file_slots ADD COLUMN checkbox_label VARCHAR(300) DEFAULT NULL AFTER checkbox_name"); } catch (e) {}
+      }
+      // 재확인
+      const cols2 = await query(
+        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = DATABASE() AND table_name = 'product_file_slots'"
+      );
+      const names2 = new Set((cols2 || []).map(c => c.COLUMN_NAME));
+      hasExtendedColumns = names2.has('case_type') && names2.has('checkbox_name') && names2.has('checkbox_label');
+    }
+  } catch (e) {
+    console.warn('[documents] product_file_slots 스키마 점검 실패 — 구 스키마 모드로 동작:', e.message);
+    hasExtendedColumns = false;
+  }
+  schemaReady = true;
+  return hasExtendedColumns;
+}
+
 // DB row 를 프론트용 표준 포맷으로 변환
 function normalizeRequirementRow(row) {
   const slot_count = Number(row.slot_count || 0);
   const hasCheckbox = !!(row.checkbox_name || row.checkbox_label);
   let caseType = row.case_type;
   if (!caseType) {
-    // 기존 레코드(신규 컬럼 NULL)는 슬롯 수로 추론
     if (slot_count > 0 && hasCheckbox) caseType = 'both';
     else if (slot_count > 0) caseType = 'file';
     else if (hasCheckbox) caseType = 'checkbox';
@@ -31,34 +86,54 @@ function normalizeRequirementRow(row) {
   };
 }
 
-// 스캔 결과를 DB 에 upsert
+// 스캔 결과를 DB 에 upsert — 확장 컬럼 유무에 따라 INSERT 형태 자동 선택
 async function upsertRequirement(req) {
-  await query(
-    `INSERT INTO product_file_slots
-       (fidx, slot_count, case_type, slot1_label, slot2_label, checkbox_name, checkbox_label)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       slot_count=VALUES(slot_count),
-       case_type=VALUES(case_type),
-       slot1_label=VALUES(slot1_label),
-       slot2_label=VALUES(slot2_label),
-       checkbox_name=VALUES(checkbox_name),
-       checkbox_label=VALUES(checkbox_label)`,
-    [
-      req.fidx,
-      req.fileSlots.length,
-      req.caseType,
-      req.fileSlots[0]?.label || null,
-      req.fileSlots[1]?.label || null,
-      req.checkbox?.name || null,
-      req.checkbox?.label || null,
-    ]
-  );
+  const extended = await ensureProductSlotsSchema();
+  if (extended) {
+    await query(
+      `INSERT INTO product_file_slots
+         (fidx, slot_count, case_type, slot1_label, slot2_label, checkbox_name, checkbox_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         slot_count=VALUES(slot_count),
+         case_type=VALUES(case_type),
+         slot1_label=VALUES(slot1_label),
+         slot2_label=VALUES(slot2_label),
+         checkbox_name=VALUES(checkbox_name),
+         checkbox_label=VALUES(checkbox_label)`,
+      [
+        req.fidx,
+        req.fileSlots.length,
+        req.caseType,
+        req.fileSlots[0]?.label || null,
+        req.fileSlots[1]?.label || null,
+        req.checkbox?.name || null,
+        req.checkbox?.label || null,
+      ]
+    );
+  } else {
+    // 구 스키마 (case_type / checkbox_* 없음) — 파일 슬롯만 저장
+    await query(
+      `INSERT INTO product_file_slots (fidx, slot_count, slot1_label, slot2_label)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         slot_count=VALUES(slot_count),
+         slot1_label=VALUES(slot1_label),
+         slot2_label=VALUES(slot2_label)`,
+      [
+        req.fidx,
+        req.fileSlots.length,
+        req.fileSlots[0]?.label || null,
+        req.fileSlots[1]?.label || null,
+      ]
+    );
+  }
 }
 
 // 상품 요건 조회 (DB 캐시 → 없거나 rescan=1 이면 스캔)
 router.get('/documents/slots/:fidx', async (req, res) => {
   try {
+    await ensureProductSlotsSchema(); // 첫 호출 시 자동 마이그레이션 시도
     const fidx = parseInt(req.params.fidx);
     const rescan = req.query.rescan === '1';
     const productNameHint = (req.query.productName || '').toString();
