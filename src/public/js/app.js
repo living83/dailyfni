@@ -578,18 +578,36 @@ function escLoanAttr(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// 상품명으로 fidx 찾기 (products.js 의 productCategories 전역 활용)
+function findFidxByProductName(productName) {
+  if (!productName || typeof productCategories === 'undefined') return '';
+  for (const cat of productCategories) {
+    for (const p of (cat.products || [])) {
+      if (productName.includes(p.name) || p.name.includes(productName)) return p.fidx || '';
+    }
+  }
+  return '';
+}
+
 // 대출 신청 내역 행 빌더 (renderLoans/syncLoanList 공용)
 function buildLoanRowHtml(r, i, statusBadge) {
   const memo = r.reviewMemo || '';
   const memoCell = memo
     ? `<td class="loan-memo-cell" ondblclick="openReviewMemoModal(${i})" style="font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="더블클릭: 심사메모 전체 내용 보기">${escLoanAttr(memo)}</td>`
     : `<td style="font-size:10px;color:#cbd5e1;">-</td>`;
+
+  // 상품명 셀: 더블클릭 시 상품 가이드 모달 (대출접수의 openProductGuide 재사용)
+  const resolvedFidx = r.fidx || findFidxByProductName(r.productName);
+  const productCell = r.productName
+    ? `<td class="loan-product-cell" ondblclick="openProductGuide(this)" data-product-name="${escLoanAttr(r.productName)}" data-fidx="${escLoanAttr(resolvedFidx)}" style="cursor:pointer;color:#2563eb;text-decoration:underline dotted;text-underline-offset:2px;" title="더블클릭: 상품 가이드 보기">${escLoanAttr(r.productName)}</td>`
+    : `<td style="color:#cbd5e1;">-</td>`;
+
   return `<tr>
-    <td>${escLoanAttr(r.applyDate)}</td><td>${escLoanAttr(r.processDate)}</td><td>${escLoanAttr(r.productName)}</td>
+    <td>${escLoanAttr(r.applyDate)}</td><td>${escLoanAttr(r.processDate)}</td>${productCell}
     <td>${escLoanAttr(r.recruiter)}</td><td>${escLoanAttr(r.customerName)}</td><td>${escLoanAttr(r.birthDate)}</td>
     <td>${escLoanAttr(r.gender)}</td><td>${escLoanAttr(r.jobType)}</td><td>${statusBadge(r.status)}</td>
     <td>${escLoanAttr(r.approvedAmount)}</td>${memoCell}
-    <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${escLoanAttr(r.customerName)}','${escLoanAttr(r.productName)}','${escLoanAttr(r.fidx||'')}')">첨부</button></td>
+    <td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="openUploadModal('${escLoanAttr(r.customerName)}','${escLoanAttr(r.productName)}','${escLoanAttr(resolvedFidx)}')">첨부</button></td>
   </tr>`;
 }
 

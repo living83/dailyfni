@@ -231,9 +231,10 @@ tbody td {
 tbody tr:hover { background: #f8fafc; }
 tbody tr:last-child td { border-bottom: none; }
 
-/* 심사메모 셀: 더블클릭 가능 힌트 */
+/* 심사메모 / 상품명 셀: 더블클릭 가능 힌트 */
 .loan-memo-cell { color: #2563eb; text-decoration: underline dotted; text-underline-offset: 2px; }
-.loan-memo-cell:hover { background: #eff6ff; }
+.loan-memo-cell:hover,
+.loan-product-cell:hover { background: #eff6ff; }
 
 /* === 상태 뱃지 === */
 .badge {
