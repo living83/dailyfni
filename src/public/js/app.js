@@ -1324,6 +1324,9 @@ function renderLoanRegister() {
       </div>
     </div>
 
+    <!-- 상품 접수 요건 (파일/체크박스) — 상품 선택 시 동적 렌더 -->
+    <div id="lr-requirements" style="margin-top:12px;"></div>
+
     <!-- 하단 버튼 -->
     <div style="display:flex;gap:8px;margin-top:16px;">
       <button class="btn btn-primary" style="padding:10px 32px;font-size:14px;" onclick="submitLoanRegister()">접수 등록</button>
@@ -1642,11 +1645,49 @@ async function submitLoanRegister() {
   const origBtnText = submitBtn?.textContent;
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '미리보기 중...'; }
 
+  // 접수 요건 수집 (파일 / 체크박스) — currentProductRequirement 는 selectProduct 에서 세팅됨
+  const req = currentProductRequirement || {};
+  const caseType = req.caseType || 'file';
+  const file1 = document.getElementById('lr-file1')?.files?.[0] || null;
+  const file2 = document.getElementById('lr-file2')?.files?.[0] || null;
+  const checkboxConfirmed = !!document.getElementById('lr-checkbox-confirm')?.checked;
+
+  // 필수 요건 차단 (관리자 강행은 별도 확장 예정)
+  if (caseType === 'file' || caseType === 'both') {
+    if (!file1) {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origBtnText; }
+      window._loanSubmitInFlight = false;
+      alert('⚠ 이 상품은 서류 첨부가 필수입니다. 파일을 선택해 주세요.\n(미첨부 시 론앤마스터가 자동 거절합니다)');
+      return;
+    }
+  }
+  if (caseType === 'checkbox' || caseType === 'both') {
+    if (!checkboxConfirmed) {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origBtnText; }
+      window._loanSubmitInFlight = false;
+      alert('⚠ 이 상품은 무서류 체크박스 확인이 필요합니다. 체크 후 접수해 주세요.');
+      return;
+    }
+  }
+
+  // FormData 빌더 — 한 번 만들어 dry-run/실제 제출에 모두 재사용
+  const buildSubmitFormData = (dryRun) => {
+    const fd = new FormData();
+    fd.append('formData', JSON.stringify(formData));
+    fd.append('dryRun', dryRun ? '1' : '0');
+    if (checkboxConfirmed && req.checkbox_name) {
+      fd.append('checkboxConfirmed', '1');
+      fd.append('checkboxName', req.checkbox_name);
+    }
+    if (file1) fd.append('file1', file1);
+    if (file2) fd.append('file2', file2);
+    return fd;
+  };
+
   try {
     const previewRes = await fetch('/api/crawler/submit-loan', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ formData, dryRun: true })
+      body: buildSubmitFormData(true)
     });
     const preview = await previewRes.json();
     if (previewRes.status === 401 && preview.code === 'LMASTER_SESSION_EXPIRED') {
@@ -1680,8 +1721,7 @@ async function submitLoanRegister() {
     if (submitBtn) submitBtn.textContent = '접수 중...';
     const res = await fetch('/api/crawler/submit-loan', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ formData, dryRun: false })
+      body: buildSubmitFormData(false)
     });
     const data = await res.json();
     if (res.status === 429) {
@@ -5066,9 +5106,112 @@ function renderRecommendations() {
   container.innerHTML = html;
 }
 
+// 현재 선택된 상품의 접수 요건 (대출접수 제출 시 참조)
+let currentProductRequirement = null;
+
 function selectProduct(el) {
   document.querySelectorAll('.product-item').forEach(p => p.classList.remove('selected'));
   el.classList.add('selected');
+
+  // 요건 영역은 대출접수 페이지에서만 존재
+  const reqBox = document.getElementById('lr-requirements');
+  if (!reqBox) return;
+
+  const fidx = el.getAttribute('data-fidx') || '';
+  const productName = el.getAttribute('data-product-name') || '';
+  currentProductRequirement = null;
+  reqBox.innerHTML = `<div style="padding:10px;font-size:12px;color:#94a3b8;">상품 접수 요건 확인 중...</div>`;
+
+  if (!fidx || fidx === 'undefined') {
+    reqBox.innerHTML = `<div class="panel" style="border-color:#fbbf24;background:#fffbeb;padding:10px;">
+      <div style="font-size:12px;color:#b45309;">⚠ 이 상품의 fidx 가 없어 접수 요건을 확인할 수 없습니다. 관리자에게 문의하세요.</div>
+    </div>`;
+    return;
+  }
+
+  loadProductRequirement(fidx, productName, reqBox);
+}
+
+async function loadProductRequirement(fidx, productName, reqBox, { forceRescan = false } = {}) {
+  try {
+    const qs = new URLSearchParams();
+    if (productName) qs.set('productName', productName);
+    if (forceRescan) qs.set('rescan', '1');
+    const res = await fetch(`/api/documents/slots/${fidx}?` + qs.toString());
+    const data = await res.json();
+    if (!data.success) {
+      reqBox.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:10px;">요건 조회 실패: ${data.message || ''}</div>`;
+      return;
+    }
+    currentProductRequirement = data.data;
+    renderRequirementUI(reqBox, data.data, productName, fidx);
+  } catch (e) {
+    reqBox.innerHTML = `<div style="color:#dc2626;font-size:12px;padding:10px;">요건 조회 오류: ${e.message}</div>`;
+  }
+}
+
+function renderRequirementUI(reqBox, req, productName, fidx) {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const caseType = req.caseType || 'none';
+
+  const header = `
+    <div class="panel-header" style="display:flex;align-items:center;">
+      <h2 style="font-size:13px;">접수 요건 <span style="font-size:11px;color:#64748b;margin-left:6px;">${esc(productName)}</span></h2>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-left:auto;font-size:11px;" onclick="rescanProductRequirement('${esc(fidx)}','${esc(productName)}')">요건 재스캔</button>
+    </div>`;
+
+  let body = '';
+
+  if (caseType === 'file' || caseType === 'both') {
+    const slot1 = esc(req.slot1_label || '파일1');
+    const slot2 = req.slot_count >= 2 ? esc(req.slot2_label || '파일2') : null;
+    body += `
+      <div style="padding:10px;border-bottom:1px solid #f1f5f9;">
+        <div style="font-size:12px;color:#c53030;margin-bottom:6px;">
+          ⚠ 이 상품은 <b>서류 첨부 필수</b>입니다. 미첨부 시 론앤마스터가 자동 거절합니다.
+        </div>
+        <table class="form-table" style="margin:0;">
+          <tbody>
+            <tr>
+              <th style="width:120px;">${slot1} <span style="color:#ef4444;">*</span></th>
+              <td><input type="file" id="lr-file1" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png"></td>
+            </tr>
+            ${slot2 ? `<tr>
+              <th>${slot2}</th>
+              <td><input type="file" id="lr-file2" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png"></td>
+            </tr>` : ''}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  if (caseType === 'checkbox' || caseType === 'both') {
+    const label = esc(req.checkbox_label || '무서류 확인 (전송시체크)');
+    body += `
+      <div style="padding:10px;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px;">이 상품은 무서류 상품입니다. 접수 전 아래 체크박스를 반드시 선택해 주세요.</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="lr-checkbox-confirm">
+          <span>${label}<span style="color:#ef4444;"> *</span></span>
+        </label>
+      </div>`;
+  }
+
+  if (caseType === 'none') {
+    body += `
+      <div style="padding:10px;font-size:12px;color:#64748b;">별도 서류 요건이 없는 상품입니다. 바로 접수해 주세요.
+      <button type="button" class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;" onclick="rescanProductRequirement('${esc(fidx)}','${esc(productName)}')">요건 다시 확인</button>
+      </div>`;
+  }
+
+  reqBox.innerHTML = `<div class="panel">${header}<div class="panel-body" style="padding:0;">${body}</div></div>`;
+}
+
+async function rescanProductRequirement(fidx, productName) {
+  const reqBox = document.getElementById('lr-requirements');
+  if (!reqBox) return;
+  reqBox.innerHTML = `<div style="padding:10px;font-size:12px;color:#94a3b8;">론앤마스터에서 요건 재스캔 중... (5~10초 소요)</div>`;
+  await loadProductRequirement(fidx, productName, reqBox, { forceRescan: true });
 }
 
 // ========================================

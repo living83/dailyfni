@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const fs = require('fs');
+const os = require('os');
 const crawler = require('../crawler/lmasterCrawler');
+
+// 대출접수 파일 첨부용 multer (최대 20MB × 2 슬롯)
+const submitUpload = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 // 실제 제출 중복 방지 락 (name+fidx, 10초 윈도우)
 // key: `${name}_${fidx}` → value: timestamp(ms)
@@ -117,11 +123,46 @@ router.post('/crawler/scan-form', async (req, res) => {
 // 대출 접수 폼 자동 입력
 // body.dryRun=true  → 폼 채우기만 + 스크린샷 반환 (미리보기)
 // body.dryRun=false → 실제 제출 (중복 방지 락 적용)
-router.post('/crawler/submit-loan', async (req, res) => {
+//
+// 요청 포맷 (2가지 모두 지원):
+//   A) application/json:
+//      { formData: {...}, dryRun: bool, checkboxConfirmed: bool, checkboxName: '...' }
+//   B) multipart/form-data:
+//      - formData (JSON stringified), dryRun, checkboxConfirmed, checkboxName (text fields)
+//      - file1, file2 (파일)
+//      론앤마스터가 서류 미첨부 시 자동 거절하는 상품에 대응.
+router.post(
+  '/crawler/submit-loan',
+  // Content-Type 이 multipart/form-data 일 때만 multer 가 파싱. JSON 은 통과.
+  submitUpload.fields([{ name: 'file1', maxCount: 1 }, { name: 'file2', maxCount: 1 }]),
+  async (req, res) => {
+  const tempPaths = [];
   try {
-    const { agentNo, upw, formData, dryRun } = req.body;
-    if (!formData) {
+    // multipart 에서는 formData 가 JSON 문자열로 옴. JSON 요청은 object 그대로.
+    let formData = req.body.formData;
+    if (typeof formData === 'string') {
+      try { formData = JSON.parse(formData); } catch { formData = null; }
+    }
+    if (!formData || typeof formData !== 'object') {
       return res.status(400).json({ success: false, message: 'formData가 필요합니다.' });
+    }
+
+    const agentNo = req.body.agentNo;
+    const upw = req.body.upw;
+    // boolean 값이 문자열로 올 수 있음 (multipart)
+    const dryRun = req.body.dryRun === true || req.body.dryRun === 'true' || req.body.dryRun === '1';
+    const checkboxConfirmed = req.body.checkboxConfirmed === true || req.body.checkboxConfirmed === 'true' || req.body.checkboxConfirmed === '1';
+    const checkboxName = req.body.checkboxName || null;
+
+    // 업로드된 파일 수집
+    const files = [];
+    if (req.files?.file1?.[0]) {
+      files.push({ slot: 1, path: req.files.file1[0].path, originalName: req.files.file1[0].originalname });
+      tempPaths.push(req.files.file1[0].path);
+    }
+    if (req.files?.file2?.[0]) {
+      files.push({ slot: 2, path: req.files.file2[0].path, originalName: req.files.file2[0].originalname });
+      tempPaths.push(req.files.file2[0].path);
     }
 
     const isDryRun = !!dryRun;
@@ -171,7 +212,11 @@ router.post('/crawler/submit-loan', async (req, res) => {
         agentNo || '12',
         upw || '1',
         formData,
-        { dryRun: isDryRun }
+        {
+          dryRun: isDryRun,
+          files,
+          checkboxName: checkboxConfirmed ? checkboxName : null,
+        }
       );
       res.json({ success: true, data: result });
     } finally {
@@ -188,6 +233,11 @@ router.post('/crawler/submit-loan', async (req, res) => {
       });
     }
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    // 업로드된 임시 파일 정리 (크롤러가 이미 읽어서 브라우저에 주입했으므로 즉시 삭제 가능)
+    for (const p of tempPaths) {
+      try { fs.unlinkSync(p); } catch (e) {}
+    }
   }
 });
 

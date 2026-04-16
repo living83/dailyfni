@@ -8,24 +8,99 @@ const crawler = require('../crawler/lmasterCrawler');
 
 const upload = multer({ dest: os.tmpdir(), limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB
 
-// 상품 파일 슬롯 조회 (DB 캐시 → 없으면 스캔)
+// DB row 를 프론트용 표준 포맷으로 변환
+function normalizeRequirementRow(row) {
+  const slot_count = Number(row.slot_count || 0);
+  const hasCheckbox = !!(row.checkbox_name || row.checkbox_label);
+  let caseType = row.case_type;
+  if (!caseType) {
+    // 기존 레코드(신규 컬럼 NULL)는 슬롯 수로 추론
+    if (slot_count > 0 && hasCheckbox) caseType = 'both';
+    else if (slot_count > 0) caseType = 'file';
+    else if (hasCheckbox) caseType = 'checkbox';
+    else caseType = 'none';
+  }
+  return {
+    fidx: row.fidx,
+    caseType,
+    slot_count,
+    slot1_label: row.slot1_label || null,
+    slot2_label: row.slot2_label || null,
+    checkbox_name: row.checkbox_name || null,
+    checkbox_label: row.checkbox_label || null,
+  };
+}
+
+// 스캔 결과를 DB 에 upsert
+async function upsertRequirement(req) {
+  await query(
+    `INSERT INTO product_file_slots
+       (fidx, slot_count, case_type, slot1_label, slot2_label, checkbox_name, checkbox_label)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       slot_count=VALUES(slot_count),
+       case_type=VALUES(case_type),
+       slot1_label=VALUES(slot1_label),
+       slot2_label=VALUES(slot2_label),
+       checkbox_name=VALUES(checkbox_name),
+       checkbox_label=VALUES(checkbox_label)`,
+    [
+      req.fidx,
+      req.fileSlots.length,
+      req.caseType,
+      req.fileSlots[0]?.label || null,
+      req.fileSlots[1]?.label || null,
+      req.checkbox?.name || null,
+      req.checkbox?.label || null,
+    ]
+  );
+}
+
+// 상품 요건 조회 (DB 캐시 → 없거나 rescan=1 이면 스캔)
 router.get('/documents/slots/:fidx', async (req, res) => {
   try {
     const fidx = parseInt(req.params.fidx);
-    const rows = await query('SELECT * FROM product_file_slots WHERE fidx = ?', [fidx]);
-    if (rows.length > 0) {
-      return res.json({ success: true, data: rows[0], cached: true });
+    const rescan = req.query.rescan === '1';
+    const productNameHint = (req.query.productName || '').toString();
+
+    if (!rescan) {
+      const rows = await query('SELECT * FROM product_file_slots WHERE fidx = ?', [fidx]);
+      if (rows.length > 0) {
+        return res.json({ success: true, data: normalizeRequirementRow(rows[0]), cached: true });
+      }
     }
-    // 캐시 없음 → 크롤러로 스캔
-    const slots = await crawler.scanProductFileSlots('12', '1', fidx);
-    const slotCount = slots.length;
-    if (slotCount > 0) {
-      await query(
-        'INSERT INTO product_file_slots (fidx, slot_count, slot1_label, slot2_label) VALUES (?, ?, ?, ?)',
-        [fidx, slotCount, slots[0]?.label || '파일1', slots[1]?.label || null]
-      );
+
+    // 캐시 없음 (또는 rescan) → 크롤러로 스캔
+    const scanned = await crawler.scanProductRequirements('12', '1', fidx, { productNameHint });
+    if (scanned.fileSlots.length > 0 || scanned.checkbox) {
+      await upsertRequirement(scanned);
     }
-    res.json({ success: true, data: { fidx, slot_count: slotCount, slot1_label: slots[0]?.label, slot2_label: slots[1]?.label }, cached: false });
+    res.json({
+      success: true,
+      data: {
+        fidx,
+        caseType: scanned.caseType,
+        slot_count: scanned.fileSlots.length,
+        slot1_label: scanned.fileSlots[0]?.label || null,
+        slot2_label: scanned.fileSlots[1]?.label || null,
+        checkbox_name: scanned.checkbox?.name || null,
+        checkbox_label: scanned.checkbox?.label || null,
+      },
+      cached: false,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 관리자: 특정 상품의 요건을 강제로 재스캔 (POST 로 별도 엔드포인트 제공)
+router.post('/documents/slots/:fidx/rescan', async (req, res) => {
+  try {
+    const fidx = parseInt(req.params.fidx);
+    const productNameHint = (req.body?.productName || '').toString();
+    const scanned = await crawler.scanProductRequirements('12', '1', fidx, { productNameHint });
+    await upsertRequirement(scanned);
+    res.json({ success: true, data: scanned });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

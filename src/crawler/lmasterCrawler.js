@@ -257,8 +257,10 @@ async function scanFormFields(agentNo, upw) {
 
 // 대출 신청서 자동 입력
 // options.dryRun=true 면 폼 채우기까지만 하고 제출 직전에 멈춤 (스크린샷 반환)
+// options.files = [{ slot: 1|2, path, originalName }]  ← 폼 채움 후 파일 input 에 주입
+// options.checkboxName = '...'  ← '전송시체크' 계열 체크박스 이름 (ON 처리)
 async function submitLoanApplication(agentNo, upw, formData, options = {}) {
-  const { dryRun = false } = options;
+  const { dryRun = false, files = [], checkboxName = null } = options;
   if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
 
   const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
@@ -713,6 +715,14 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     return { filled, notFound };
   }, formData);
 
+  // === 접수 요건 적용: 파일 업로드 + "전송시체크" 체크박스 ON ===
+  // dryRun 에서도 수행해서 미리보기 스크린샷에 파일명/체크 상태가 보이게 한다.
+  const requirementResult = await applySubmitRequirements({
+    fidx: formData.fidx,
+    files,
+    checkboxName,
+  });
+
   // === Dry-run: 제출 직전에 멈추고 스크린샷/미매칭 필드 반환 ===
   if (dryRun) {
     let screenshot = '';
@@ -730,6 +740,7 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
       filledFields: fillResult.filled,
       notFoundFields: fillResult.notFound,
       productSelectResult,
+      requirementResult,
       screenshot,
       pageUrl: page.url()
     };
@@ -914,10 +925,68 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     filledFields: fillResult.filled,
     notFoundFields: fillResult.notFound,
     productSelectResult,
+    requirementResult,
     submitResult,
     submitResponse,
     pageUrl
   };
+}
+
+// 상품 접수 요건 적용 (파일 업로드 + 체크박스 ON).
+//   - fidx 에 바인딩된 파일 input 을 찾아 uploadFile()
+//   - checkboxName 과 매칭되는 체크박스를 찾아 ON 처리
+//   - 미완료/실패는 결과 배열에 기록하고 예외는 던지지 않음 (접수 자체는 진행시킴)
+async function applySubmitRequirements({ fidx, files = [], checkboxName = null }) {
+  const result = { fileUploads: [], checkbox: null };
+
+  // 1) 파일 업로드
+  for (const f of (files || [])) {
+    try {
+      // 우선순위 셀렉터: file(fidx), file2(fidx), 없으면 슬롯 순번 fallback
+      const primary = f.slot === 2
+        ? `input[type="file"][name="file2(${fidx})"]`
+        : `input[type="file"][name="file(${fidx})"]`;
+      let el = await page.$(primary);
+      let via = primary;
+      if (!el) {
+        const all = await page.$$('input[type="file"]');
+        const target = all[(f.slot || 1) - 1];
+        if (target) { el = target; via = `fallback:index ${f.slot - 1}`; }
+      }
+      if (!el) {
+        result.fileUploads.push({ slot: f.slot, success: false, message: '파일 input 미발견' });
+        continue;
+      }
+      await el.uploadFile(f.path);
+      result.fileUploads.push({ slot: f.slot, success: true, via, originalName: f.originalName });
+    } catch (e) {
+      result.fileUploads.push({ slot: f.slot, success: false, message: e.message });
+    }
+  }
+
+  // 2) 체크박스 ON
+  if (checkboxName) {
+    try {
+      const cbResult = await page.evaluate((targetName) => {
+        // name 이 정확히 일치하는 체크박스 우선, 없으면 name/id 에 포함되면 매칭
+        const all = [...document.querySelectorAll('input[type="checkbox"]')];
+        let cb = all.find(c => c.name === targetName || c.id === targetName);
+        if (!cb) cb = all.find(c => (c.name || '').includes(targetName) || (c.id || '').includes(targetName));
+        if (!cb) return { success: false, reason: '체크박스 미발견', targetName };
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('click', { bubbles: true }));
+        }
+        return { success: true, name: cb.name, alreadyChecked: cb.checked && false };
+      }, checkboxName);
+      result.checkbox = cbResult;
+    } catch (e) {
+      result.checkbox = { success: false, reason: e.message };
+    }
+  }
+
+  return result;
 }
 
 // 서류 첨부 업로드 (다중 파일 지원)
@@ -994,14 +1063,29 @@ async function uploadDocuments(agentNo, upw, fidx, files) {
   return { uploadResults, submitResult, pageUrl: page.url() };
 }
 
-// 상품별 파일 슬롯 개수 스캔
+// 상품별 파일 슬롯 개수 스캔 (하위 호환: fileSlots 배열만 반환)
 async function scanProductFileSlots(agentNo, upw, fidx) {
+  const req = await scanProductRequirements(agentNo, upw, fidx);
+  return req.fileSlots;
+}
+
+// 상품 접수 요건 전체 스캔 — 파일 슬롯 + "전송시체크" 류 체크박스까지.
+// 반환:
+//   {
+//     fidx,
+//     caseType: 'file' | 'checkbox' | 'both' | 'none',
+//     fileSlots: [{ slot, name, label }],
+//     checkbox:  { name, label } | null,
+//   }
+async function scanProductRequirements(agentNo, upw, fidx, options = {}) {
   if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  const { productNameHint = '' } = options;
 
   const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await delay(500, 1000);
 
+  // 상품 클릭 (파일 input 과 체크박스가 상품 클릭 후에만 노출됨)
   await page.evaluate((f) => {
     const els = document.querySelectorAll('a, input[type="button"], button, span, td');
     for (const el of els) {
@@ -1014,17 +1098,80 @@ async function scanProductFileSlots(agentNo, upw, fidx) {
   }, fidx);
   await delay(500, 1000);
 
-  const slots = await page.evaluate((f) => {
-    const inputs = document.querySelectorAll(`input[type="file"][name*="(${f})"]`);
-    const result = [];
-    inputs.forEach((inp, idx) => {
-      const label = inp.closest('tr')?.querySelector('td:first-child, th')?.textContent?.trim() || `파일${idx+1}`;
-      result.push({ slot: idx + 1, name: inp.name, label });
+  const scanned = await page.evaluate(({ f, hint }) => {
+    // --- 파일 슬롯 ---
+    const fileInputs = document.querySelectorAll(`input[type="file"][name*="(${f})"]`);
+    const fileSlots = [];
+    fileInputs.forEach((inp, idx) => {
+      const label = inp.closest('tr')?.querySelector('td:first-child, th')?.textContent?.trim()
+        || inp.getAttribute('title')
+        || `파일${idx + 1}`;
+      fileSlots.push({ slot: idx + 1, name: inp.name, label });
     });
-    return result;
-  }, fidx);
 
-  return slots;
+    // --- 체크박스 탐지 ---
+    // fidx 를 숨긴 input 형태로도 자주 씀. 상품 선택 후 나타나는 "전송시체크" 계열 체크박스를 찾음.
+    const checkboxes = [];
+    const allCb = document.querySelectorAll('input[type="checkbox"]');
+    const hintKeywords = ['전송시체크', '전송 시체크', '무서류', '무서류체크'];
+
+    const readLabel = (inp) => {
+      // 1) label[for=id]
+      if (inp.id) {
+        const lab = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
+        if (lab && lab.textContent.trim()) return lab.textContent.trim();
+      }
+      // 2) 감싸는 label
+      const parentLabel = inp.closest('label');
+      if (parentLabel && parentLabel.textContent.trim()) return parentLabel.textContent.trim();
+      // 3) 인접 td/th 텍스트 (같은 행의 첫 셀)
+      const tr = inp.closest('tr');
+      if (tr) {
+        const tds = [...tr.querySelectorAll('td, th')].map(t => t.textContent.trim()).filter(Boolean);
+        if (tds.length) return tds.join(' / ');
+      }
+      // 4) 바로 뒤 텍스트 노드/형제
+      const nextText = (inp.nextSibling?.textContent || inp.parentElement?.textContent || '').trim();
+      return nextText;
+    };
+
+    for (const inp of allCb) {
+      const name = inp.name || inp.id || '';
+      const labelText = readLabel(inp) || '';
+      const combined = `${name} ${labelText}`;
+
+      // 우선 순위: 키워드 매칭 > 상품명(hint) 매칭 > fidx 포함
+      const matchKeyword = hintKeywords.some(k => combined.includes(k));
+      const matchHint = hint && labelText && labelText.includes(hint);
+      const matchFidx = name.includes(String(f));
+
+      if (matchKeyword || matchHint || matchFidx) {
+        checkboxes.push({
+          name,
+          label: labelText.substring(0, 250),
+          score: (matchKeyword ? 3 : 0) + (matchHint ? 2 : 0) + (matchFidx ? 1 : 0),
+        });
+      }
+    }
+    checkboxes.sort((a, b) => b.score - a.score);
+
+    return {
+      fileSlots,
+      checkbox: checkboxes[0] ? { name: checkboxes[0].name, label: checkboxes[0].label } : null,
+    };
+  }, { f: fidx, hint: productNameHint || '' });
+
+  let caseType = 'none';
+  if (scanned.fileSlots.length > 0 && scanned.checkbox) caseType = 'both';
+  else if (scanned.fileSlots.length > 0) caseType = 'file';
+  else if (scanned.checkbox) caseType = 'checkbox';
+
+  return {
+    fidx,
+    caseType,
+    fileSlots: scanned.fileSlots,
+    checkbox: scanned.checkbox,
+  };
 }
 
 // 브라우저 종료
@@ -1486,6 +1633,7 @@ module.exports = {
   getPageHtml,
   uploadDocuments,
   scanProductFileSlots,
+  scanProductRequirements,
   getNotices,
   getCachedNotices
 };
