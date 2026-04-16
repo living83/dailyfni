@@ -2671,66 +2671,57 @@ function parsePolicyExcel(input) {
     readSpreadsheetFile(file, function(text) {
       const lines = text.split('\n').filter(l => l.trim());
       let currentCategory = '';
+
+      // 숫자/요율 셀 판별. "2.60%", "1.85", "0.5" 모두 true.
+      const isNumericCell = (s) => {
+        const t = String(s || '').replace(/%/g, '').trim();
+        if (!t) return false;
+        return /^[\d.]+$/.test(t);
+      };
+      const isHeaderWord = (s) => {
+        const t = String(s || '').trim();
+        return ['금융사','상품구분','지급수당','수수료','인증','대출구분','카테고리'].some(k => t.includes(k));
+      };
+
       lines.forEach(line => {
         const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        const col0 = (cols[0] || '').replace(/%$/,'');
-        const col1 = (cols[1] || '').replace(/%$/,'');
-        const col2 = cols[2] || '';
-        const col3 = cols[3] || '';
-        const col4 = cols[4] || '';
 
         // 헤더/설명 행 스킵
-        if (['금융사별 수수료','소비자 금융사별 수수료','수수료 색상','금융사','상품구분'].some(k => col0.includes(k) || col1.includes(k))) return;
+        if (cols.some(c => ['금융사별 수수료','소비자 금융사별 수수료','수수료 색상'].some(k => c.includes(k)))) return;
+        // 모든 셀이 헤더 키워드면 스킵 (예: '상품구분,금융사,지급수당,인증')
+        if (cols.filter(c => c).every(c => isHeaderWord(c))) return;
 
-        // 상품구분이 있으면 카테고리 업데이트
-        if (col0 && col0.length > 1 && col0 !== '%') {
-          // 카테고리만 있는 행 (금융사 컬럼이 비어있거나 '금융사'인 경우)
-          if (!col1 || col1 === '금융사' || col1 === '지급수당') {
-            currentCategory = col0;
-            return;
-          }
-          // 상품구분 + 금융사 같이 있는 행
-          currentCategory = col0;
+        // 첫 번째 숫자(요율) 셀 인덱스 탐색. 앞쪽은 텍스트 영역, 뒤쪽은 수수료/인증 영역.
+        const firstRateIdx = cols.findIndex(c => isNumericCell(c));
+
+        if (firstRateIdx === -1) {
+          // 텍스트만 있는 행 = 카테고리 정의 행. 가장 의미있는 마지막 텍스트를 카테고리로 기억.
+          const texts = cols.filter(c => c && c.length > 1 && !isHeaderWord(c));
+          if (texts.length > 0) currentCategory = texts[texts.length - 1];
+          return;
         }
 
-        // 금융사명 결정 (col0에 있거나 col1에 있음)
-        let product = '';
-        let rateUnder = '';
-        let rateOver = '';
-        let auth = '';
+        // 요율 앞쪽의 텍스트 셀들: [카테고리들..., 금융사]
+        const leftTexts = cols.slice(0, firstRateIdx).filter(c => c && c !== '%' && !isHeaderWord(c));
+        // 같은 텍스트 연속 중복 제거 ('오토론','오토론' → '오토론' 한 번)
+        const dedup = leftTexts.filter((v, i, a) => i === 0 || v !== a[i - 1]);
+        if (dedup.length === 0) return;
 
-        // 수수료율처럼 보이는지 판별 — 빈 문자열, %, 숫자(소수점 OK) 를 rate 로 본다.
-        // 이전 로직은 col0 에 "오토론"(카테고리) 이 들어와도 1번 분기로 빠져
-        // product=오토론, rateUnder=A1차량(마이카론) 처럼 컬럼이 밀리는 버그가 있었다.
-        const isRateLike = (s) => {
-          const t = String(s || '').replace('%', '').trim();
-          if (!t) return true;              // 빈 칸은 요율로 간주
-          return /^[\d.]+$/.test(t);        // 숫자/소수점만
-        };
+        const product = dedup[dedup.length - 1]; // 마지막 = 금융사
+        if (dedup.length > 1) currentCategory = dedup[dedup.length - 2]; // 그 앞 = 상품구분
 
-        if (isRateLike(col1) && (col2 === '' || isRateLike(col2))) {
-          // col0=금융사, col1=수수료1, col2=수수료2, col3=인증
-          product = col0;
-          rateUnder = col1;
-          rateOver = col2;
-          auth = col3;
-        } else if (col1 && col1.length > 1 && col1 !== '지급수당' && (col2 || col3)) {
-          // col0=상품구분, col1=금융사, col2=수수료1, col3=수수료2, col4=인증
-          if (col0) currentCategory = col0;
-          product = col1;
-          rateUnder = col2;
-          rateOver = col3;
-          auth = col4;
-        }
+        const rateUnder = (cols[firstRateIdx] || '').replace(/%$/,'').trim();
+        const rateOver  = (cols[firstRateIdx + 1] || '').replace(/%$/,'').trim();
+        const auth      = cols[firstRateIdx + 2] || '';
 
-        if (!product || product === '%') return;
+        if (!product || isNumericCell(product)) return;
 
         allData.push({
           category: currentCategory,
-          product: product,
-          rateUnder: rateUnder,
-          rateOver: rateOver,
-          auth: auth
+          product,
+          rateUnder,
+          rateOver,
+          auth,
         });
       });
       processed++;

@@ -225,9 +225,14 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
       return res.status(400).json({ success: false, message: 'loanData 배열 필요' });
     }
 
-    // 승인 + 부결 건 필터 (접수/심사 제외) + 상품명 정규화
+    // 확정 상태만 싱크. 가승인/접수/심사/조회중 등은 변동 가능성 있어 제외.
+    //   - 승인: 최종 승인 (매출집계 집계 대상)
+    //   - 부결 / 진행후부결: 감사 목적으로 저장 (매출집계에는 표시 안 됨)
+    //   - 완납: 실행 완료 — 승인과 동일하게 집계
+    //   - 가승인: 제외 (아직 확정 아님)
+    const FINAL_STATUSES = ['승인', '부결', '진행후부결', '완납'];
     const targetLoans = loanData
-      .filter(r => r.status && (r.status.includes('승인') || r.status.includes('부결')))
+      .filter(r => r.status && FINAL_STATUSES.includes(r.status.trim()))
       .map(r => ({ ...r, productName: normalizeProductName(r.productName) }));
 
     // 정산 정책 조회 (최신 월)
@@ -247,7 +252,10 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
 
     for (const loan of targetLoans) {
       const amount = parseInt(String(loan.approvedAmount).replace(/[^0-9]/g, '')) || 0;
-      const loanStatus = loan.status.includes('승인') ? '승인' : '부결';
+      // 상태는 원본 그대로 저장 — 매출집계 쿼리가 status='승인' 으로 필터.
+      // (기존 코드는 includes('승인') 으로 '가승인' 도 '승인' 으로 변환하던 버그)
+      const rawStatus = (loan.status || '').trim();
+      const loanStatus = (rawStatus === '완납') ? '승인' : rawStatus;
 
       // 실행일: 처리일시에서 날짜 추출
       const dateMatch = (loan.processDate || loan.applyDate || '').match(/(\d{4}-\d{2}-\d{2})/);
@@ -663,6 +671,9 @@ router.post('/settlement/executions', async (req, res) => {
 });
 
 // 실행 건 목록 조회
+// 매출집계에서 제외할 담당자 목록 (대표/본사 직원 등)
+const SETTLEMENT_EXCLUDED_ASSIGNEES = ['윤장호'];
+
 router.get('/settlement/executions', async (req, res) => {
   try {
     const { month, dbSource, assignedTo, customerName, includeAll } = req.query;
@@ -671,6 +682,12 @@ router.get('/settlement/executions', async (req, res) => {
     // 매출집계는 기본적으로 '승인' 건만 표시. includeAll=1 로 넘기면 전체 반환 (감사/디버그용)
     if (!includeAll || includeAll === '0') {
       sql += " AND status = '승인'";
+      // 제외 담당자 (윤장호 등) 매출 집계 제외
+      if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
+        const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
+        sql += ` AND (assigned_to IS NULL OR assigned_to NOT IN (${placeholders}))`;
+        params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
+      }
     }
     if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
     if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
@@ -684,18 +701,23 @@ router.get('/settlement/executions', async (req, res) => {
   }
 });
 
-// 매출 요약 (월별) — '승인' 건만 집계 (부결/기타 상태 제외)
+// 매출 요약 (월별) — '승인' 건만 집계, 제외 담당자(윤장호) 제외
 router.get('/settlement/summary', async (req, res) => {
   try {
     const { month } = req.query;
-    // 기본 필터: status = '승인'
+    // 기본 필터: status = '승인' + 제외 담당자
     let whereClause = " WHERE status = '승인'";
     const params = [];
+    if (SETTLEMENT_EXCLUDED_ASSIGNEES.length) {
+      const placeholders = SETTLEMENT_EXCLUDED_ASSIGNEES.map(() => '?').join(',');
+      whereClause += ` AND (assigned_to IS NULL OR assigned_to NOT IN (${placeholders}))`;
+      params.push(...SETTLEMENT_EXCLUDED_ASSIGNEES);
+    }
     if (month) {
       whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
       params.push(month);
     }
-    const monthFilter = whereClause; // 이름은 유지하되 의미는 "승인 + (옵션)월" 필터
+    const monthFilter = whereClause; // 이름은 유지하되 의미는 "승인 + 제외담당자 + (옵션)월" 필터
 
     // 총 매출 (대출금액 합계)
     const [totalSales] = await query(`SELECT COALESCE(SUM(loan_amount),0) as total FROM settlement_executions${monthFilter}`, params);
