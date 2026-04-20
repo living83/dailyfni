@@ -4082,20 +4082,19 @@ async function loadLedgerLoanList(customerName) {
 
 async function loadLedgerTimelines(customerId) {
   try {
-    const [cRes, aRes] = await Promise.all([
-      fetch(`/api/consultations?customerId=${customerId}`),
+    // 통합 타임라인 (상담 + 문자) + 감사로그는 별도
+    const [tRes, aRes] = await Promise.all([
+      fetch(`/api/customers/${customerId}/timeline`),
       fetch(`/api/audit-logs?targetId=${customerId}&targetType=customer`)
     ]);
-    const cData = await cRes.json();
+    const tData = await tRes.json();
     const aData = await aRes.json();
 
-    // 상담이력
+    // 통합 타임라인 렌더
     const consultTimeline = document.getElementById('ledgerConsultTimeline');
-    if (consultTimeline && cData.success) {
-      consultTimeline.innerHTML = cData.data.length > 0 ? cData.data.map(c => {
-        const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
-        return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${c.content}</div><div class="tl-user">${c.channel||'메모'} | ${c.consulted_by||'-'}</div></div>`;
-      }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">상담 기록이 없습니다.</div>';
+    if (consultTimeline && tData.success) {
+      consultTimeline.innerHTML = tData.data.length > 0 ? tData.data.map(ev => renderTimelineItem(ev)).join('')
+        : '<div style="font-size:11px;color:#94a3b8;padding:8px;">기록이 없습니다.</div>';
     }
 
     // 변경이력 (감사로그)
@@ -4106,7 +4105,111 @@ async function loadLedgerTimelines(customerId) {
         return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${a.after_value||a.event_type}</div><div class="tl-user">처리: ${a.performed_by||'-'}</div></div>`;
       }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">변경 이력이 없습니다.</div>';
     }
+
+    // 문자 템플릿 드롭다운 + 수신동의 상태 로드
+    loadSmsTemplatesForLedger();
+    loadLedgerSmsConsent(customerId);
   } catch (e) { console.error(e); }
+}
+
+// 통합 타임라인 아이템 렌더 (상담 / 문자)
+function renderTimelineItem(ev) {
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const date = ev.occurred_at ? new Date(ev.occurred_at).toLocaleString('ko-KR') : '';
+  if (ev.event_type === 'sms') {
+    const statusMap = { pending: '대기', sent: '발송중', done: '성공', failed: '실패' };
+    const statusLabel = statusMap[ev.status] || ev.status;
+    const statusColor = ev.status === 'done' ? '#16a34a' : ev.status === 'failed' ? '#dc2626' : '#94a3b8';
+    return `<div class="timeline-item">
+      <div class="tl-date">${date} <span style="color:#2563eb;font-weight:600;">📤 ${esc(ev.sub_type || 'SMS')}</span></div>
+      <div class="tl-content">${esc(ev.content || '(템플릿 발송)')}${ev.template_name ? ` <span style="color:#64748b;font-size:10px;">[${esc(ev.template_name)}]</span>` : ''}</div>
+      <div class="tl-user">${esc(ev.phone || '')} · 발송:${esc(ev.actor || '-')} · <span style="color:${statusColor};">${statusLabel}</span>${ev.done_code && ev.done_code !== '10000' ? ` (${esc(ev.done_code)})` : ''}</div>
+    </div>`;
+  }
+  // consultation (메모/상담)
+  return `<div class="timeline-item">
+    <div class="tl-date">${date}</div>
+    <div class="tl-content">${esc(ev.content || '')}</div>
+    <div class="tl-user">${esc(ev.sub_type || '메모')} | ${esc(ev.actor || '-')}</div>
+  </div>`;
+}
+
+// 입력 모드 전환 (메모 ↔ 문자)
+function setLedgerInputMode(mode) {
+  const memoBox = document.getElementById('ledgerMemoBox');
+  const smsBox = document.getElementById('ledgerSmsBox');
+  const memoBtn = document.getElementById('ledgerModeMemo');
+  const smsBtn = document.getElementById('ledgerModeSms');
+  if (!memoBox || !smsBox) return;
+  if (mode === 'sms') {
+    memoBox.style.display = 'none';
+    smsBox.style.display = '';
+    memoBtn.classList.remove('btn-primary'); memoBtn.classList.add('btn-outline');
+    smsBtn.classList.remove('btn-outline'); smsBtn.classList.add('btn-primary');
+  } else {
+    memoBox.style.display = '';
+    smsBox.style.display = 'none';
+    smsBtn.classList.remove('btn-primary'); smsBtn.classList.add('btn-outline');
+    memoBtn.classList.remove('btn-outline'); memoBtn.classList.add('btn-primary');
+  }
+}
+
+// 고객원장용 SMS 템플릿 드롭다운 로드
+async function loadSmsTemplatesForLedger() {
+  const sel = document.getElementById('ledgerSmsTemplate');
+  const preview = document.getElementById('ledgerSmsPreview');
+  if (!sel) return;
+  try {
+    const res = await fetch('/api/sms/templates');
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message);
+    sel.innerHTML = '<option value="">-- 템플릿 선택 --</option>' +
+      data.data.map(t => `<option value="${t.id}" data-content="${encodeURIComponent(t.content || '')}">[${t.category || ''}] ${t.name}</option>`).join('');
+    sel.onchange = () => {
+      const opt = sel.selectedOptions[0];
+      if (preview) preview.value = opt && opt.dataset.content ? decodeURIComponent(opt.dataset.content) : '';
+    };
+  } catch (e) {
+    sel.innerHTML = '<option value="">템플릿 로드 실패</option>';
+  }
+}
+
+// 고객 수신동의 상태 표시
+async function loadLedgerSmsConsent(customerId) {
+  const el = document.getElementById('ledgerSmsConsent');
+  if (!el) return;
+  try {
+    const res = await fetch(`/api/customers/${customerId}?raw=1`);
+    const data = await res.json();
+    const ok = data?.data?.sms_consent;
+    el.innerHTML = ok ? '<span style="color:#16a34a;">✓ 수신동의</span>' : '<span style="color:#dc2626;">✗ 수신동의 미동의 — 발송 불가</span>';
+  } catch (e) {
+    el.textContent = '수신동의 상태 확인 실패';
+  }
+}
+
+// 문자 발송 실행
+async function sendLedgerSms(customerId) {
+  const sel = document.getElementById('ledgerSmsTemplate');
+  const templateId = sel?.value;
+  if (!templateId) { alert('템플릿을 선택하세요.'); return; }
+  if (!confirm('이 고객에게 문자를 발송하시겠습니까?')) return;
+
+  const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+  try {
+    const res = await fetch(`/api/customers/${customerId}/sms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ templateId: Number(templateId), sentBy: user.name || '' })
+    });
+    const data = await res.json();
+    if (!data.success) { alert('발송 실패: ' + (data.message || '')); return; }
+    alert('✓ 발송 요청 완료');
+    // 타임라인 리로드
+    setTimeout(() => loadLedgerTimelines(customerId), 500);
+  } catch (e) {
+    alert('서버 오류: ' + e.message);
+  }
 }
 
 // ========================================
@@ -4336,9 +4439,34 @@ function renderCustomerLedger() {
           <button class="btn btn-outline btn-sm" id="ledgerCancelBtn" style="display:none;flex:1;" onclick="cancelLedgerEdit()">취소</button>
           <button class="btn btn-outline btn-sm" onclick="goLoanRegister(${currentLedgerId})" style="flex:1;">대출 접수</button>
         </div>
-        <div class="panel"><div class="panel-header"><h2>메모 / 상담 이력</h2><button class="btn btn-primary btn-sm" onclick="saveLedgerMemo(${currentLedgerId})">기록 저장</button></div>
-          <div class="panel-body" style="padding:8px 12px;">
-            <textarea id="ledgerMemo" rows="3" placeholder="메모를 입력하면 상담 이력에 기록됩니다..." style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;"></textarea>
+        <div class="panel"><div class="panel-header"><h2>메모 / 상담 이력</h2>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-outline btn-sm" id="ledgerModeMemo" onclick="setLedgerInputMode('memo')" style="padding:2px 8px;font-size:11px;">📝 메모</button>
+            <button class="btn btn-outline btn-sm" id="ledgerModeSms" onclick="setLedgerInputMode('sms')" style="padding:2px 8px;font-size:11px;">📤 문자</button>
+          </div>
+        </div>
+          <div class="panel-body" id="ledgerInputArea" style="padding:8px 12px;">
+            <!-- 메모 모드 (기본) -->
+            <div id="ledgerMemoBox">
+              <textarea id="ledgerMemo" rows="3" placeholder="메모를 입력하면 상담 이력에 기록됩니다..." style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;"></textarea>
+              <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+                <button class="btn btn-primary btn-sm" onclick="saveLedgerMemo(${currentLedgerId})">기록 저장</button>
+              </div>
+            </div>
+            <!-- 문자 모드 (토글 시 노출) -->
+            <div id="ledgerSmsBox" style="display:none;">
+              <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                <label style="font-size:11px;color:#64748b;">템플릿:</label>
+                <select id="ledgerSmsTemplate" style="flex:1;padding:4px 6px;font-size:11px;border:1px solid #e2e8f0;border-radius:4px;">
+                  <option value="">로딩중...</option>
+                </select>
+              </div>
+              <textarea id="ledgerSmsPreview" rows="3" readonly placeholder="템플릿을 선택하면 미리보기가 표시됩니다" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;background:#f8fafc;"></textarea>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+                <span id="ledgerSmsConsent" style="font-size:11px;color:#64748b;"></span>
+                <button class="btn btn-primary btn-sm" onclick="sendLedgerSms(${currentLedgerId})">문자 발송</button>
+              </div>
+            </div>
           </div>
           <div class="panel-body" style="padding:8px 12px;border-top:1px solid #e2e8f0;max-height:300px;overflow-y:auto;">
             <div class="timeline" id="ledgerConsultTimeline">

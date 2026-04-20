@@ -28,6 +28,7 @@ const consultationApiRoutes = require('./routes/consultationApiRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const docConvertRoutes = require('./routes/docConvertRoutes');
 const documentRoutes = require('./routes/documentRoutes');
+const smsRoutes = require('./routes/smsRoutes');
 
 const path = require('path');
 const cors = require('cors');
@@ -81,6 +82,7 @@ app.use('/api', consultationApiRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', docConvertRoutes);
 app.use('/api', documentRoutes);
+app.use('/api', smsRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);

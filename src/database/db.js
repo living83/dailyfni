@@ -1,6 +1,7 @@
 const mysql = require('mysql2/promise');
 
 let pool = null;
+let hubPool = null;
 
 function getPool() {
   if (!pool) {
@@ -18,8 +19,32 @@ function getPool() {
   return pool;
 }
 
+// hub_client DB 커넥션 풀 (LGU+ msghub-agent 와 공유하는 UMS 발송 테이블)
+function getHubPool() {
+  if (!hubPool) {
+    hubPool = mysql.createPool({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 3306,
+      user: process.env.HUB_DB_USER || 'msghub',
+      password: process.env.HUB_DB_PASSWORD || '',
+      database: process.env.HUB_DB_NAME || 'hub_client',
+      waitForConnections: true,
+      connectionLimit: 5,
+      queueLimit: 0
+    });
+  }
+  return hubPool;
+}
+
 async function query(sql, params) {
   const pool = getPool();
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+}
+
+// hub_client DB 쿼리
+async function hubQuery(sql, params) {
+  const pool = getHubPool();
   const [rows] = await pool.execute(sql, params);
   return rows;
 }
@@ -37,4 +62,4 @@ async function testConnection() {
   }
 }
 
-module.exports = { getPool, query, testConnection };
+module.exports = { getPool, getHubPool, query, hubQuery, testConnection };
