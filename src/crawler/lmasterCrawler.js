@@ -3,6 +3,9 @@
 // 상품 클릭 시 1건만 가져옴 (일괄 수집 X)
 // ========================================
 const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const LMASTER_BASE = 'https://lmaster.kr';
 const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
@@ -775,6 +778,9 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
       // 스크린샷 실패 시에도 필수 데이터는 반환
       screenshot = '';
     }
+    // dryRun 은 실제 제출 안 하므로 스크린샷 직후 stage 정리
+    for (const s of (requirementResult._stages || [])) { try { s.cleanup(); } catch (e) {} }
+    delete requirementResult._stages;
     return {
       success: true,
       dryRun: true,
@@ -959,6 +965,10 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
 
   const pageUrl = page.url();
 
+  // 제출 버튼 클릭 + 네비게이션 완료 후 stage 파일 정리
+  for (const s of (requirementResult._stages || [])) { try { s.cleanup(); } catch (e) {} }
+  delete requirementResult._stages;
+
   return {
     success: submitResult.clicked,
     message: submitResult.clicked
@@ -975,15 +985,43 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
   };
 }
 
+// 파일명만 안전하게 정제 (경로 구분자 제거, 한글/숫자/일반 문자 보존)
+function sanitizeFileName(name) {
+  const base = path.basename(String(name || '')).replace(/[\\/:*?"<>|]/g, '_').trim();
+  return base || 'file';
+}
+
+// multer 랜덤 경로 → 원본 파일명으로 임시 복사본 생성.
+// puppeteer 의 uploadFile 은 해당 파일 경로의 basename 을 폼 파일명으로 사용하므로,
+// 사전에 원본 이름으로 복사해야 lmaster 가 "김형준.tiff" 같은 원본명을 받는다.
+//
+// 반환: { path, cleanup() } — cleanup 을 finally 에서 호출
+function stageFileWithOriginalName(srcPath, originalName) {
+  const safeName = sanitizeFileName(originalName);
+  // 충돌/동시업로드 방지 — 임시 폴더 하나 만들어서 그 안에 원본 이름으로 복사
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lmaster-upload-'));
+  const targetPath = path.join(stageDir, safeName);
+  fs.copyFileSync(srcPath, targetPath);
+  return {
+    path: targetPath,
+    cleanup() {
+      try { fs.unlinkSync(targetPath); } catch (e) {}
+      try { fs.rmdirSync(stageDir); } catch (e) {}
+    },
+  };
+}
+
 // 상품 접수 요건 적용 (파일 업로드 + 체크박스 ON).
 //   - fidx 에 바인딩된 파일 input 을 찾아 uploadFile()
 //   - checkboxName 과 매칭되는 체크박스를 찾아 ON 처리
 //   - 미완료/실패는 결과 배열에 기록하고 예외는 던지지 않음 (접수 자체는 진행시킴)
 async function applySubmitRequirements({ fidx, files = [], checkboxName = null }) {
   const result = { fileUploads: [], checkbox: null };
+  const stages = []; // 업로드 후 정리할 임시 복사본
 
   // 1) 파일 업로드
   for (const f of (files || [])) {
+    let stage = null;
     try {
       // 우선순위 셀렉터: file(fidx), file2(fidx), 없으면 슬롯 순번 fallback
       const primary = f.slot === 2
@@ -1000,12 +1038,20 @@ async function applySubmitRequirements({ fidx, files = [], checkboxName = null }
         result.fileUploads.push({ slot: f.slot, success: false, message: '파일 input 미발견' });
         continue;
       }
-      await el.uploadFile(f.path);
+      // 원본 파일명 보존을 위해 임시 복사 후 업로드
+      stage = stageFileWithOriginalName(f.path, f.originalName);
+      stages.push(stage);
+      await el.uploadFile(stage.path);
       result.fileUploads.push({ slot: f.slot, success: true, via, originalName: f.originalName });
     } catch (e) {
       result.fileUploads.push({ slot: f.slot, success: false, message: e.message });
     }
   }
+
+  // 업로드 후 stage 파일은 바로 정리해도 무방하지만,
+  // 브라우저가 submit 시점에 파일 읽기를 다시 할 수 있어
+  // 함수 리턴 시점까지는 유지. 호출부의 흐름 종료 후 정리되도록 result 에 cleanup 부착.
+  result._stages = stages;
 
   // 2) 체크박스 ON
   if (checkboxName) {
@@ -1059,9 +1105,15 @@ async function uploadDocuments(agentNo, upw, fidx, files) {
   }
 
   // 파일 input 찾기 (file(fidx), file2(fidx) 패턴)
+  // puppeteer uploadFile 은 path 의 basename 을 폼 파일명으로 쓰므로
+  // 원본 파일명으로 임시 복사한 뒤 업로드 (김형준.tiff 가 f1d5d... 로 뜨던 문제 해결)
   const uploadResults = [];
+  const stages = [];
   for (const f of files) {
+    let stage = null;
     try {
+      stage = stageFileWithOriginalName(f.path, f.originalName);
+      stages.push(stage);
       const selector = f.slot === 2
         ? `input[type="file"][name="file2(${fidx})"]`
         : `input[type="file"][name="file(${fidx})"]`;
@@ -1071,14 +1123,14 @@ async function uploadDocuments(agentNo, upw, fidx, files) {
         const allFileInputs = await page.$$(`input[type="file"]`);
         const targetEl = allFileInputs[f.slot - 1];
         if (targetEl) {
-          await targetEl.uploadFile(f.path);
+          await targetEl.uploadFile(stage.path);
           uploadResults.push({ slot: f.slot, success: true, selector: 'fallback' });
           continue;
         }
         uploadResults.push({ slot: f.slot, success: false, message: '파일 슬롯 미발견' });
         continue;
       }
-      await el.uploadFile(f.path);
+      await el.uploadFile(stage.path);
       uploadResults.push({ slot: f.slot, success: true, selector });
     } catch (e) {
       uploadResults.push({ slot: f.slot, success: false, message: e.message });
@@ -1102,6 +1154,9 @@ async function uploadDocuments(agentNo, upw, fidx, files) {
   });
 
   await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
+
+  // 제출 완료 후 임시 복사본 정리
+  for (const s of stages) { try { s.cleanup(); } catch (e) {} }
 
   return { uploadResults, submitResult, pageUrl: page.url() };
 }
