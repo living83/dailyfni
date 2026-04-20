@@ -447,39 +447,56 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     const notFound = [];
 
     // === 등록직원 SELECT 자동 선택 ===
-    // 론앤마스터 폼 상단의 "등록직원" 드롭다운: 기본값이 "==선택==" 이고
-    // 미선택 시 접수가 누락됨. 라벨("등록직원") 기준으로 같은 행의 SELECT 를 찾고
-    // 첫 번째 비-placeholder 옵션을 선택한다.
+    // 론앤마스터 폼의 "등록직원" 드롭다운. 기본값 "==선택==" 상태로 제출되면 누락됨.
+    // 3단계 탐지:
+    //   1) 모든 SELECT 를 훑어서 "데일리에프앤아이" 옵션이 있으면 그걸 선택 (우리 회사 고유)
+    //   2) 라벨("등록직원") 기준 같은 행 SELECT → 첫 비-placeholder 옵션
+    //   3) 흔한 필드명(s_staff, reg_staff 등) fallback
     (function selectRegisteredStaff() {
-      // 1) label text "등록직원" 이 있는 th/td 를 찾고, 같은 행의 select 탐색
-      const allCells = document.querySelectorAll('th, td, label');
-      let targetSelect = null;
-      for (const cell of allCells) {
-        if ((cell.textContent || '').trim().includes('등록직원')) {
-          const row = cell.closest('tr') || cell.parentElement;
-          if (row) {
-            targetSelect = row.querySelector('select');
-            if (targetSelect) break;
+      const isPlaceholder = (t) => !t || /^==.*==$/.test(t) || /^-.*-$/.test(t) || /^선택$/.test(t);
+
+      // 1) "데일리에프앤아이" 옵션 직접 매칭 (가장 정확)
+      for (const sel of document.querySelectorAll('select')) {
+        for (const opt of sel.options) {
+          if (opt.text && opt.text.trim().includes('데일리에프앤아이')) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: '등록직원', target: sel.name || '(데일리매칭)', value: opt.text.trim() });
+            return;
           }
         }
       }
-      // 2) 못 찾으면 흔한 필드명 시도
+
+      // 2) 라벨 "등록직원" 기준 탐색
+      let targetSelect = null;
+      const cells = document.querySelectorAll('th, td, label, span, div');
+      for (const cell of cells) {
+        const txt = (cell.textContent || '').trim();
+        if (!/등록\s*직원/.test(txt)) continue;
+        // 셀 내부, 같은 행, 인접 셀 순으로 탐색
+        targetSelect = cell.querySelector('select')
+          || (cell.closest('tr')?.querySelector('select'))
+          || (cell.nextElementSibling?.querySelector('select'))
+          || (cell.parentElement?.querySelector('select'));
+        if (targetSelect) break;
+      }
+
+      // 3) 흔한 이름 fallback
       if (!targetSelect) {
-        const candidates = ['s_staff', 'reg_staff', 'agent_staff', 'staff', 'member_sel', 'staff_sel'];
-        for (const n of candidates) {
+        for (const n of ['s_staff','reg_staff','agent_staff','staff','member_sel','staff_sel','user_sel','mng_sel']) {
           const el = document.querySelector(`select[name="${n}"]`);
           if (el) { targetSelect = el; break; }
         }
       }
+
       if (!targetSelect) { notFound.push('등록직원'); return; }
 
-      // 3) 첫 번째 비-placeholder 옵션 선택
-      const isPlaceholder = (t) => !t || /^==.*==$/.test(t) || /^-.*-$/.test(t) || /선택/.test(t);
+      // 첫 비-placeholder 옵션 선택
       for (const opt of targetSelect.options) {
         if (!isPlaceholder(opt.text.trim()) && opt.value) {
           targetSelect.value = opt.value;
           targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          filled.push({ field: '등록직원', target: targetSelect.name || '(label매칭)', value: opt.text.trim() });
+          filled.push({ field: '등록직원', target: targetSelect.name || '(라벨매칭)', value: opt.text.trim() });
           return;
         }
       }

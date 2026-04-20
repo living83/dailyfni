@@ -187,16 +187,21 @@ router.post('/documents/upload', upload.fields([
   { name: 'file2', maxCount: 1 }
 ]), async (req, res) => {
   const tempPaths = [];
+  // multer 가 originalname 을 latin1 로 디코드 → 한글 깨짐. UTF-8 로 복원.
+  const fixFileName = (name) => {
+    if (!name) return '';
+    try { return Buffer.from(name, 'latin1').toString('utf8'); } catch { return name; }
+  };
   try {
     const { customerName, productName, fidx, uploadedBy } = req.body;
     const files = [];
 
     if (req.files?.file1?.[0]) {
-      files.push({ slot: 1, path: req.files.file1[0].path, originalName: req.files.file1[0].originalname, size: req.files.file1[0].size, type: req.files.file1[0].mimetype });
+      files.push({ slot: 1, path: req.files.file1[0].path, originalName: fixFileName(req.files.file1[0].originalname), size: req.files.file1[0].size, type: req.files.file1[0].mimetype });
       tempPaths.push(req.files.file1[0].path);
     }
     if (req.files?.file2?.[0]) {
-      files.push({ slot: 2, path: req.files.file2[0].path, originalName: req.files.file2[0].originalname, size: req.files.file2[0].size, type: req.files.file2[0].mimetype });
+      files.push({ slot: 2, path: req.files.file2[0].path, originalName: fixFileName(req.files.file2[0].originalname), size: req.files.file2[0].size, type: req.files.file2[0].mimetype });
       tempPaths.push(req.files.file2[0].path);
     }
 

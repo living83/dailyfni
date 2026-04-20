@@ -162,13 +162,19 @@ router.post(
     const checkboxName = req.body.checkboxName || null;
 
     // 업로드된 파일 수집
+    // multer 는 originalname 을 latin1 로 디코드해서 저장 → 한글 파일명이 깨져서 들어옴
+    // (예: '김형준.tiff' → 'ê¹€í˜•ì¤€.tiff'). UTF-8 로 재디코딩해 원본 복원.
+    const fixFileName = (name) => {
+      if (!name) return '';
+      try { return Buffer.from(name, 'latin1').toString('utf8'); } catch { return name; }
+    };
     const files = [];
     if (req.files?.file1?.[0]) {
-      files.push({ slot: 1, path: req.files.file1[0].path, originalName: req.files.file1[0].originalname });
+      files.push({ slot: 1, path: req.files.file1[0].path, originalName: fixFileName(req.files.file1[0].originalname) });
       tempPaths.push(req.files.file1[0].path);
     }
     if (req.files?.file2?.[0]) {
-      files.push({ slot: 2, path: req.files.file2[0].path, originalName: req.files.file2[0].originalname });
+      files.push({ slot: 2, path: req.files.file2[0].path, originalName: fixFileName(req.files.file2[0].originalname) });
       tempPaths.push(req.files.file2[0].path);
     }
 
