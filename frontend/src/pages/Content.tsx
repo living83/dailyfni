@@ -110,7 +110,7 @@ export default function Content() {
     if (pendingCount === 0) return toast('info', '대기 중인 콘텐츠가 없습니다.')
     setGenerating(true)
     try {
-      const { data } = await api.post('/contents/generate-all')
+      const { data } = await api.post('/contents/generate-all', { concurrency: 5 })
       toast('success', data.message || 'AI 생성이 시작되었습니다.')
       let polls = 0
       const pid = window.setInterval(() => { fetchQueue(); polls++; if (polls >= 60) clearInterval(pid) }, 5000)

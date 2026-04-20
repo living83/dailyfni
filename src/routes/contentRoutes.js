@@ -121,10 +121,17 @@ router.post('/contents/generate-all', async (req, res) => {
     return res.json({ success: true, message: '대기 중인 콘텐츠가 없습니다.', count: 0 });
   }
 
-  res.json({ success: true, message: `${pending.length}개 콘텐츠 AI 생성을 시작합니다.`, count: pending.length });
+  const CONCURRENCY = parseInt(req.body?.concurrency || req.query?.concurrency || '5', 10);
 
-  // 백그라운드 순차 생성
-  for (const item of pending) {
+  res.json({
+    success: true,
+    message: `${pending.length}개 콘텐츠 AI 생성 시작 (동시 ${CONCURRENCY}개 병렬)`,
+    count: pending.length,
+    concurrency: CONCURRENCY,
+  });
+
+  // 단일 아이템 생성 함수
+  async function generateOne(item) {
     Content.updateContent(item.id, { status: '생성중' });
     try {
       const result = await requestGenerate({
@@ -142,19 +149,30 @@ router.post('/contents/generate-all', async (req, res) => {
           grade: result.grade || 'B',
           status: result.grade === 'D' ? '저품질' : '검수완료',
         });
-        console.log(`[Content] AI 생성 완료: ${item.keyword} → ${result.title}`);
+        console.log(`[Content] ✓ ${item.keyword} → ${result.title}`);
       } else {
         Content.updateContent(item.id, { status: '대기' });
-        console.log(`[Content] AI 생성 실패: ${item.keyword} — ${result?.error || 'unknown'}`);
+        console.log(`[Content] ✗ ${item.keyword} — ${result?.error || 'unknown'}`);
       }
     } catch (err) {
       Content.updateContent(item.id, { status: '대기' });
-      console.error(`[Content] AI 생성 에러: ${item.keyword}`, err.message);
+      console.error(`[Content] ✗ ${item.keyword}:`, err.message);
     }
-    // 다음 생성까지 2초 대기 (API 과부하 방지)
-    await new Promise(r => setTimeout(r, 2000));
   }
-  console.log(`[Content] 일괄 생성 완료`);
+
+  // 병렬 풀 — CONCURRENCY개씩 동시 실행
+  (async () => {
+    const queue = [...pending];
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) break;
+        await generateOne(item);
+      }
+    });
+    await Promise.all(workers);
+    console.log(`[Content] 병렬 일괄 생성 완료 (총 ${pending.length}건)`);
+  })();
 });
 
 // POST /api/contents/reset-stuck — 발행중 상태 잠긴 콘텐츠를 검수완료로 복원
