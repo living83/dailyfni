@@ -49,12 +49,13 @@ const TIER_CYCLES = {
   5: { general: 1, ad: 1 },  // 1번 일반 → 1번 광고 (2회 주기)
 };
 
-// ── 티어 업그레이드 기준 (일수) ──
-const TIER_UPGRADE_DAYS = {
-  1: 14,
-  2: 14,
-  3: 14,
-  4: 14,
+// ── 티어 업그레이드 누적 기준 (계정 생성일로부터 총 경과일) ──
+// 각 티어 N에 도달하려면 계정 생성 후 총 N*14일이 필요 (2주마다 단계)
+const TIER_UPGRADE_CUMULATIVE_DAYS = {
+  2: 14,   // Tier 1 → 2: 생성 후 14일
+  3: 28,   // Tier 2 → 3: 생성 후 28일 (추가 14일)
+  4: 42,   // Tier 3 → 4: 생성 후 42일
+  5: 56,   // Tier 4 → 5: 생성 후 56일
 };
 
 // ── 요일 매핑 (JS getDay → 한국어) ──
@@ -185,16 +186,24 @@ function checkTierUpgrades() {
       const currentTier = account.tier || 1;
       if (currentTier >= 5) continue; // 최대 티어
 
-      const requiredDays = TIER_UPGRADE_DAYS[currentTier];
-      if (!requiredDays) continue;
+      const nextTier = currentTier + 1;
+      const requiredCumulative = TIER_UPGRADE_CUMULATIVE_DAYS[nextTier];
+      if (!requiredCumulative) continue;
 
-      const days = daysBetween(account.createdAt);
-      if (days >= requiredDays) {
-        const newTier = currentTier + 1;
-        updateAccount(account.id, { tier: newTier });
-        console.log(`[Scheduler] 티어 업그레이드: ${account.accountName} (Tier ${currentTier} → ${newTier}, ${days}일 경과)`);
-        telegram.notifyTierUpgrade(account.accountName, currentTier, newTier);
-      }
+      // 조건 1: 계정 생성일로부터 누적 기준일 경과
+      const daysSinceCreation = daysBetween(account.createdAt);
+      if (daysSinceCreation < requiredCumulative) continue;
+
+      // 조건 2: 마지막 업데이트(=이전 업그레이드)로부터 14일 경과
+      //   첫 업그레이드 시 updatedAt ≈ createdAt이라 자연스럽게 통과
+      //   이후 업그레이드는 각 단계 사이 최소 14일 보장
+      const daysSinceLastUpdate = daysBetween(account.updatedAt || account.createdAt);
+      if (daysSinceLastUpdate < 14) continue;
+
+      updateAccount(account.id, { tier: nextTier });
+      console.log(`[Scheduler] 티어 업그레이드: ${account.accountName} (Tier ${currentTier} → ${nextTier}, 생성 후 ${daysSinceCreation}일, 최종 변경 후 ${daysSinceLastUpdate}일)`);
+      telegram.notifyTierUpgrade(account.accountName, currentTier, nextTier);
+      // 이 계정은 다음 체크부터 updatedAt이 오늘이 되어 14일간 스킵됨
     }
   } catch (err) {
     console.error('[Scheduler] 티어 업그레이드 확인 중 오류:', err.message);
