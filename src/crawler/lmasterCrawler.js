@@ -446,6 +446,46 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     const filled = [];
     const notFound = [];
 
+    // === 등록직원 SELECT 자동 선택 ===
+    // 론앤마스터 폼 상단의 "등록직원" 드롭다운: 기본값이 "==선택==" 이고
+    // 미선택 시 접수가 누락됨. 라벨("등록직원") 기준으로 같은 행의 SELECT 를 찾고
+    // 첫 번째 비-placeholder 옵션을 선택한다.
+    (function selectRegisteredStaff() {
+      // 1) label text "등록직원" 이 있는 th/td 를 찾고, 같은 행의 select 탐색
+      const allCells = document.querySelectorAll('th, td, label');
+      let targetSelect = null;
+      for (const cell of allCells) {
+        if ((cell.textContent || '').trim().includes('등록직원')) {
+          const row = cell.closest('tr') || cell.parentElement;
+          if (row) {
+            targetSelect = row.querySelector('select');
+            if (targetSelect) break;
+          }
+        }
+      }
+      // 2) 못 찾으면 흔한 필드명 시도
+      if (!targetSelect) {
+        const candidates = ['s_staff', 'reg_staff', 'agent_staff', 'staff', 'member_sel', 'staff_sel'];
+        for (const n of candidates) {
+          const el = document.querySelector(`select[name="${n}"]`);
+          if (el) { targetSelect = el; break; }
+        }
+      }
+      if (!targetSelect) { notFound.push('등록직원'); return; }
+
+      // 3) 첫 번째 비-placeholder 옵션 선택
+      const isPlaceholder = (t) => !t || /^==.*==$/.test(t) || /^-.*-$/.test(t) || /선택/.test(t);
+      for (const opt of targetSelect.options) {
+        if (!isPlaceholder(opt.text.trim()) && opt.value) {
+          targetSelect.value = opt.value;
+          targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: '등록직원', target: targetSelect.name || '(label매칭)', value: opt.text.trim() });
+          return;
+        }
+      }
+      notFound.push('등록직원 [선택 가능한 옵션 없음]');
+    })();
+
     // 날짜 정규화: 'YYYYMMDD' / 'YYYY-MM-DD' / 'YYYY/MM/DD' / 'YYYY.MM.DD' 모두 'YYYY-MM-DD'
     // 론앤마스터 date picker 는 YYYY-MM-DD 만 인식 (빨간 박스 방지)
     function normalizeDate(s) {
