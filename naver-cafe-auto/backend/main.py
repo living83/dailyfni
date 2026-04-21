@@ -58,7 +58,7 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.on_event("startup")
 async def startup():
-    db.init_db()
+    await asyncio.to_thread(db.init_db)
     # uvicorn reload 시 dictConfig가 핸들러를 덮어쓸 수 있으므로 검증
     for _name in ("cafe_publisher", "scheduler"):
         _lg = logging.getLogger(_name)
@@ -329,12 +329,15 @@ def list_keywords():
 
 @app.post("/api/keywords")
 def create_keyword(req: KeywordCreate):
+    logger.info(f"[API] POST /api/keywords text='{req.text}' desc='{req.description}'")
     if not req.text.strip():
         raise HTTPException(400, "키워드를 입력하세요.")
     try:
         kid = db.add_keyword(req.text.strip(), req.description.strip())
+        logger.info(f"[API] 키워드 등록 완료 id={kid}")
         return {"id": kid, "message": "키워드 등록 완료"}
     except Exception as e:
+        logger.error(f"[API] 키워드 등록 실패: {e}", exc_info=True)
         if "UNIQUE" in str(e):
             raise HTTPException(400, "이미 등록된 키워드입니다.")
         raise HTTPException(500, str(e))
@@ -342,7 +345,13 @@ def create_keyword(req: KeywordCreate):
 
 @app.delete("/api/keywords/{keyword_id}")
 def delete_keyword(keyword_id: int):
-    db.delete_keyword(keyword_id)
+    logger.info(f"[API] DELETE /api/keywords/{keyword_id}")
+    try:
+        db.delete_keyword(keyword_id)
+        logger.info(f"[API] 키워드 삭제 완료 id={keyword_id}")
+    except Exception as e:
+        logger.error(f"[API] 키워드 삭제 실패: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
     return {"message": "키워드 삭제됨"}
 
 
