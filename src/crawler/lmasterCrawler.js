@@ -634,11 +634,23 @@ async function submitLoanApplication(agentNo, upw, formData, options = {}) {
     // 선택되던 이슈(무직을 선택했는데 프리랜서로 제출되는 현상)의 근본 원인
     setSelect('j_sel', data.jobType, '직업구분');
 
-    // 무직/주부/학생 일 때는 직장·4대보험 계열을 건너뜀 (론앤마스터에서도 필수 아님)
-    const isNoJob = /^(무직|주부|학생)$/.test(String(data.jobType || '').trim());
+    // 직업 유형별 4대보험/직장 정보 처리
+    //   - 무직/주부/학생: 직장·4대보험 계열 전부 skip
+    //   - 개인사업자/프리랜서/기타: 4대보험은 '미가입' 으로 강제 (4대보험 대상 아님)
+    //     단, 사업자번호/소득 등은 채움
+    //   - 직장인(4대가입/미가입): 원래대로 전부 채움
+    const jobStr = String(data.jobType || '').trim();
+    const isNoJob = /^(무직|주부|학생)$/.test(jobStr);
+    const isNon4Insurance = /개인사업자|프리랜서|기타|법인사업자/.test(jobStr);
+
     if (!isNoJob) {
-      // 4대보험도 텍스트 매칭 (가입/미가입)
-      setSelect('j_IsInsu', data.insurance4, '4대보험');
+      if (isNon4Insurance) {
+        // 4대보험 대상 아닌 직종 → 미가입 강제
+        setSelect('j_IsInsu', '미가입', '4대보험');
+      } else {
+        // 직장인 → 사용자 선택값 그대로
+        setSelect('j_IsInsu', data.insurance4, '4대보험');
+      }
       setInput('j_name', data.company, '직장명');
       setInput('j_date', normalizeDate(data.joinDate), '입사일자');
       setInput('j_no1', data.bizNo1, '사업자번호1');
