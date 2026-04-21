@@ -857,7 +857,7 @@ function KeywordTab({ keywords, boards, cafes, templates, reload }) {
   const addKeyword = async () => {
     if (!text.trim()) return;
     const items = text.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
-    let failed = [];
+    let added = 0, skipped = [], errors = [];
     for (const item of items) {
       try {
         const res = await fetch(`${API}/api/keywords`, {
@@ -865,15 +865,21 @@ function KeywordTab({ keywords, boards, cafes, templates, reload }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: item, description: desc.trim() })
         });
-        if (!res.ok) {
+        if (res.ok) { added++; }
+        else if (res.status === 400) { skipped.push(item); }
+        else {
           const err = await res.json().catch(() => ({}));
-          failed.push(item + ': ' + (err.detail || res.status));
+          errors.push(item + ': ' + (err.detail || res.status));
         }
       } catch (e) {
-        failed.push(item + ': ' + e.message);
+        errors.push(item + ': ' + e.message);
       }
     }
-    if (failed.length > 0) alert(failed.join('\n'));
+    let msg = [];
+    if (added > 0) msg.push(added + '개 등록 완료');
+    if (skipped.length > 0) msg.push(skipped.length + '개 중복 건너뜀');
+    if (errors.length > 0) msg.push('오류: ' + errors.join(', '));
+    if (skipped.length > 0 || errors.length > 0) alert(msg.join('\n'));
     setText('');
     setDesc('');
     reload();
