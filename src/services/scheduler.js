@@ -177,36 +177,59 @@ function sleep(ms) {
 
 /**
  * 자동 티어 업그레이드 확인 및 실행
+ *
+ * 3단계 가드로 과도한 업그레이드 방지:
+ *   1) 하루 1회만 전체 체크 (DB에 lastTierCheckDate 저장)
+ *   2) 계정당 +1 단계만 (한 체크에 여러 단계 상승 불가)
+ *   3) 누적 경과일 + 14일 쿨다운 모두 충족해야 상승
  */
 function checkTierUpgrades() {
   try {
+    // ── 하루 1회 가드 ──
+    const today = todayStr();
+    const row = db.prepare(`SELECT value FROM settings WHERE key = 'tier_check_date'`).get();
+    if (row && row.value === today) {
+      return; // 오늘 이미 체크함
+    }
+
+    log('info', `티어 업그레이드 체크 시작 (${today})`);
     const accounts = listAccounts();
+    let upgraded = 0;
+
     for (const account of accounts) {
       if (!account.isActive) continue;
       const currentTier = account.tier || 1;
-      if (currentTier >= 5) continue; // 최대 티어
+      if (currentTier >= 5) continue;
 
       const nextTier = currentTier + 1;
       const requiredCumulative = TIER_UPGRADE_CUMULATIVE_DAYS[nextTier];
       if (!requiredCumulative) continue;
 
-      // 조건 1: 계정 생성일로부터 누적 기준일 경과
+      // 조건 1: 생성일로부터 누적 기준일 경과
       const daysSinceCreation = daysBetween(account.createdAt);
-      if (daysSinceCreation < requiredCumulative) continue;
+      if (daysSinceCreation < requiredCumulative) {
+        log('info', `${account.accountName}: Tier ${currentTier} 유지 (생성 ${daysSinceCreation}일 < ${requiredCumulative}일)`);
+        continue;
+      }
 
-      // 조건 2: 마지막 업데이트(=이전 업그레이드)로부터 14일 경과
-      //   첫 업그레이드 시 updatedAt ≈ createdAt이라 자연스럽게 통과
-      //   이후 업그레이드는 각 단계 사이 최소 14일 보장
+      // 조건 2: 마지막 변경 후 14일 경과
       const daysSinceLastUpdate = daysBetween(account.updatedAt || account.createdAt);
-      if (daysSinceLastUpdate < 14) continue;
+      if (daysSinceLastUpdate < 14) {
+        log('info', `${account.accountName}: Tier ${currentTier} 유지 (최근 변경 ${daysSinceLastUpdate}일 전 < 14일)`);
+        continue;
+      }
 
       updateAccount(account.id, { tier: nextTier });
-      console.log(`[Scheduler] 티어 업그레이드: ${account.accountName} (Tier ${currentTier} → ${nextTier}, 생성 후 ${daysSinceCreation}일, 최종 변경 후 ${daysSinceLastUpdate}일)`);
+      upgraded++;
+      log('success', `티어 업 ${account.accountName}: Tier ${currentTier} → ${nextTier} (생성 ${daysSinceCreation}일, 최근변경 ${daysSinceLastUpdate}일)`);
       telegram.notifyTierUpgrade(account.accountName, currentTier, nextTier);
-      // 이 계정은 다음 체크부터 updatedAt이 오늘이 되어 14일간 스킵됨
     }
+
+    // 오늘 체크 완료 표시 (다음 날까지 재실행 방지)
+    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('tier_check_date', ?)`).run(today);
+    log('info', `티어 체크 완료: ${upgraded}개 계정 업그레이드 / 다음 체크는 내일`);
   } catch (err) {
-    console.error('[Scheduler] 티어 업그레이드 확인 중 오류:', err.message);
+    log('error', `티어 업그레이드 오류: ${err.message}`);
   }
 }
 
