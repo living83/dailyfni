@@ -857,13 +857,23 @@ function KeywordTab({ keywords, boards, cafes, templates, reload }) {
   const addKeyword = async () => {
     if (!text.trim()) return;
     const items = text.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+    let failed = [];
     for (const item of items) {
-      await fetch(`${API}/api/keywords`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: item, description: desc.trim() })
-      });
+      try {
+        const res = await fetch(`${API}/api/keywords`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: item, description: desc.trim() })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          failed.push(item + ': ' + (err.detail || res.status));
+        }
+      } catch (e) {
+        failed.push(item + ': ' + e.message);
+      }
     }
+    if (failed.length > 0) alert(failed.join('\n'));
     setText('');
     setDesc('');
     reload();
