@@ -393,16 +393,17 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     """
     global _last_published_cafe
 
-    # 1. 키워드 선택
-    keyword = _get_next_keyword(config)
+    # 1. 키워드 선택 (스레드에서 실행하여 이벤트 루프 차단 방지)
+    keyword = await asyncio.to_thread(_get_next_keyword, config)
     if not keyword:
         logger.info("등록된 키워드 없음")
         await _notify_progress("info", {"message": "등록된 키워드가 없습니다"})
         return
 
     # 2. 게시판 선택 (카페 그룹 필터 적용)
-    board = _get_next_board(keyword_id=keyword["id"], keyword_text=keyword["text"],
-                            cafe_group_id=cafe_group_id)
+    board = await asyncio.to_thread(
+        _get_next_board, keyword_id=keyword["id"], keyword_text=keyword["text"],
+        cafe_group_id=cafe_group_id)
     if not board:
         logger.info(f"키워드 '{keyword['text']}'에 매핑된 활성 게시판 없음 (카페 {cafe_group_id})")
         await _notify_progress("info", {"message": f"⚠️ 키워드 '{keyword['text']}'에 매핑된 게시판이 없어 건너뜁니다 (카페 그룹 ID: {cafe_group_id})"})
@@ -411,7 +412,7 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     # 2-1. 계정-카페 매핑 검증: 선택된 게시판의 카페에 계정이 등록되어 있는지 확인
     board_cafe_id = board.get("cafe_group_id")
     if board_cafe_id is not None:
-        assigned_ids = db.get_cafe_accounts(board_cafe_id)
+        assigned_ids = await asyncio.to_thread(db.get_cafe_accounts, board_cafe_id)
         if assigned_ids and account["id"] not in assigned_ids:
             _slog(f"[{account['username']}] 카페 {board_cafe_id}에 등록되지 않은 계정 — 발행 건너뜀", "WARNING")
             await _notify_progress("error", {
@@ -438,8 +439,8 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     title, content = content_to_plain_text(structured)
 
     # 5. DB에 발행 기록 생성
-    publish_id = db.add_publish_record(
-        keyword["id"], board["id"], account["id"], title, content
+    publish_id = await asyncio.to_thread(
+        db.add_publish_record, keyword["id"], board["id"], account["id"], title, content
     )
 
     await _notify_progress("publishing", {
@@ -464,14 +465,14 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
 
     # 7. 결과 처리
     if result["success"]:
-        db.update_publish_status(publish_id, "성공", result["url"])
-        db.update_account_last_published(account["id"])
-        db.update_board_last_published(board["id"])
-        db.increment_keyword_usage(keyword["id"])
+        await asyncio.to_thread(db.update_publish_status, publish_id, "성공", result["url"])
+        await asyncio.to_thread(db.update_account_last_published, account["id"])
+        await asyncio.to_thread(db.update_board_last_published, board["id"])
+        await asyncio.to_thread(db.increment_keyword_usage, keyword["id"])
         _last_published_cafe = board["cafe_url"]
 
         if result.get("cookies"):
-            db.update_account_cookie(account["id"], result["cookies"])
+            await asyncio.to_thread(db.update_account_cookie, account["id"], result["cookies"])
 
         await _notify_progress("published", {
             "message": f"✅ 발행 성공 — {account['username']} → {board['board_name']} | {result['url']}",
@@ -498,7 +499,7 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
                 cafe_group_id=board.get("cafe_group_id")
             )
     else:
-        db.update_publish_status(publish_id, "실패", error_message=result.get("error"))
+        await asyncio.to_thread(db.update_publish_status, publish_id, "실패", error_message=result.get("error"))
         await _notify_progress("error", {
             "message": f"❌ 발행 실패 — {account['username']} → {board['board_name']} | {result.get('error', '알 수 없는 오류')}",
             "publish_id": publish_id
@@ -529,7 +530,7 @@ async def execute_batch_job():
     if not _is_running:
         return
 
-    global_config = db.get_schedule_config()
+    global_config = await asyncio.to_thread(db.get_schedule_config)
 
     # 1. 오늘 요일 체크
     today_dow = datetime.now().weekday()  # 0=월 ~ 6=일
@@ -557,7 +558,7 @@ async def execute_batch_job():
         return
 
     # 3. 활성 카페 목록
-    cafes = db.get_cafes()
+    cafes = await asyncio.to_thread(db.get_cafes)
     active_cafes = [c for c in cafes if c.get("active", 1)]
 
     if not active_cafes:
@@ -572,7 +573,7 @@ async def execute_batch_job():
     tasks = []
     for cafe in active_cafes:
         cafe_cfg = _get_cafe_config(cafe, global_config)
-        eligible = _get_eligible_accounts(global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
+        eligible = await asyncio.to_thread(_get_eligible_accounts, global_config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
         # 계정당 카페당 1건만 (eligible은 이미 일일 한도 미달 계정만 포함)
         cafe_task_count = 0
         for acc in eligible:
@@ -629,7 +630,7 @@ async def execute_batch_job():
                 # 일일 한도 재확인
                 daily_limit = cafe_cfg.get("daily_post_limit", 3)
                 if daily_limit > 0:
-                    current_count = db.get_today_post_count(account["id"], cafe_group_id=cafe_gid)
+                    current_count = await asyncio.to_thread(db.get_today_post_count, account["id"], cafe_group_id=cafe_gid)
                     if current_count >= daily_limit:
                         logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
                         continue
@@ -739,13 +740,13 @@ async def execute_comment_job(
         logger.error(f"정상적인 게시글 URL이 아님 — 댓글 작성 중단: {post_url}")
         return
 
-    all_accounts = db.get_accounts()
+    all_accounts = await asyncio.to_thread(db.get_accounts)
 
     # 키워드에 매핑된 템플릿 사용 (매핑 없으면 전체 활성 템플릿)
     if keyword_id:
-        active_templates = db.get_comments_for_keyword(keyword_id)
+        active_templates = await asyncio.to_thread(db.get_comments_for_keyword, keyword_id)
     else:
-        templates = db.get_comment_templates()
+        templates = await asyncio.to_thread(db.get_comment_templates)
         active_templates = [t for t in templates if t["active"]]
 
     if not active_templates:
@@ -753,7 +754,8 @@ async def execute_comment_job(
         return
 
     # 댓글 작성 계정 선택 (카페별 일일 댓글 한도 적용)
-    comment_accounts = _select_comment_accounts(
+    comment_accounts = await asyncio.to_thread(
+        _select_comment_accounts,
         all_accounts, author_id, comments_per_post, comment_order, exclude_author,
         daily_comment_limit=daily_comment_limit,
         cafe_group_id=cafe_group_id
@@ -783,7 +785,7 @@ async def execute_comment_job(
 
         template = shuffled_templates[i % len(shuffled_templates)]
         comment_text = template["text"]
-        comment_id = db.add_comment_record(publish_id, acc["id"], template["id"])
+        comment_id = await asyncio.to_thread(db.add_comment_record, publish_id, acc["id"], template["id"])
 
         # 동시 로그인 집중 방지: 소폭 랜덤 스태거 (0~10초)
         stagger = random.uniform(0, min(10, i * 2))
@@ -806,12 +808,12 @@ async def execute_comment_job(
             )
 
         if result["success"]:
-            db.update_comment_status(comment_id, "성공")
+            await asyncio.to_thread(db.update_comment_status, comment_id, "성공")
             if result.get("cookies"):
-                db.update_account_cookie(acc["id"], result["cookies"])
+                await asyncio.to_thread(db.update_account_cookie, acc["id"], result["cookies"])
             logger.info(f"댓글 성공: {acc['username']}")
         else:
-            db.update_comment_status(comment_id, "실패", result.get("error"))
+            await asyncio.to_thread(db.update_comment_status, comment_id, "실패", result.get("error"))
             logger.warning(f"댓글 실패: {acc['username']} — {result.get('error')}")
 
     # 모든 계정 병렬 실행
@@ -851,7 +853,7 @@ async def start_scheduler():
     """스케줄러 시작 — 일시중지된 잡이 있으면 resume, 없으면 새로 등록"""
     global _is_running
 
-    config = db.get_schedule_config()
+    config = await asyncio.to_thread(db.get_schedule_config)
     trigger = build_cron_trigger(config)
 
     existing_job = scheduler.get_job("batch_publish_job")
@@ -932,10 +934,10 @@ async def run_once_now(cafe_group_id: int = None):
     _is_publishing = True
     try:
         _slog("=== 수동 1회 발행 시작 ===")
-        config = db.get_schedule_config()
+        config = await asyncio.to_thread(db.get_schedule_config)
 
         # 활성 카페 목록에서 카페-계정 매핑을 존중하여 첫 번째 적격 조합 선택
-        cafes = db.get_cafes()
+        cafes = await asyncio.to_thread(db.get_cafes)
         active_cafes = [c for c in cafes if c.get("active", 1)]
 
         # cafe_group_id 지정 시 해당 카페만 필터
@@ -948,7 +950,8 @@ async def run_once_now(cafe_group_id: int = None):
         selected_cafe_id = None
         for cafe in active_cafes:
             cafe_cfg = _get_cafe_config(cafe, config)
-            eligible = _get_eligible_accounts(config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
+            eligible = await asyncio.to_thread(
+                _get_eligible_accounts, config, cafe_group_id=cafe["id"], cafe_config=cafe_cfg)
             if eligible:
                 account = eligible[0]
                 selected_cafe_id = cafe["id"]
@@ -957,7 +960,7 @@ async def run_once_now(cafe_group_id: int = None):
 
         # 폴백: 매핑 없는 카페가 있을 수 있으므로 전체 활성 계정 시도
         if not account:
-            accounts = db.get_accounts()
+            accounts = await asyncio.to_thread(db.get_accounts)
             fallback = [a for a in accounts if a["active"]]
             if fallback:
                 account = fallback[0]

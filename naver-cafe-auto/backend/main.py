@@ -79,7 +79,7 @@ async def startup():
 
 
 @app.get("/")
-async def serve_frontend():
+def serve_frontend():
     return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
@@ -191,7 +191,7 @@ def _mask_proxy_server(server: str) -> str:
 # ─── Accounts API ──────────────────────────────────────────
 
 @app.get("/api/accounts")
-async def list_accounts():
+def list_accounts():
     accounts = db.get_accounts()
     for acc in accounts:
         # 비밀번호 마스킹
@@ -210,7 +210,7 @@ async def list_accounts():
 
 
 @app.post("/api/accounts")
-async def create_account(req: AccountCreate):
+def create_account(req: AccountCreate):
     if not req.username.strip() or not req.password.strip():
         raise HTTPException(400, "아이디와 비밀번호를 입력하세요.")
     try:
@@ -224,14 +224,14 @@ async def create_account(req: AccountCreate):
 
 
 @app.put("/api/accounts/{account_id}/toggle")
-async def toggle_account(account_id: int):
+def toggle_account(account_id: int):
     db.toggle_account(account_id)
     return {"message": "계정 상태 변경됨"}
 
 
 
 @app.delete("/api/accounts/{account_id}")
-async def delete_account(account_id: int):
+def delete_account(account_id: int):
     try:
         db.delete_account(account_id)
     except Exception as e:
@@ -242,12 +242,12 @@ async def delete_account(account_id: int):
 # ─── Cafes API ────────────────────────────────────────────
 
 @app.get("/api/cafes")
-async def list_cafes():
+def list_cafes():
     return db.get_cafes()
 
 
 @app.post("/api/cafes")
-async def create_cafe(req: CafeCreate):
+def create_cafe(req: CafeCreate):
     if not req.cafe_id.strip():
         raise HTTPException(400, "카페 ID를 입력하세요.")
     try:
@@ -260,7 +260,7 @@ async def create_cafe(req: CafeCreate):
 
 
 @app.put("/api/cafes/{cafe_id}")
-async def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
+def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if updates:
         db.update_cafe_settings(cafe_id, **updates)
@@ -268,24 +268,24 @@ async def update_cafe(cafe_id: int, req: CafeSettingsUpdate):
 
 
 @app.delete("/api/cafes/{cafe_id}")
-async def delete_cafe(cafe_id: int):
+def delete_cafe(cafe_id: int):
     db.delete_cafe(cafe_id)
     return {"message": "카페 삭제됨"}
 
 
 @app.get("/api/cafes/{cafe_id}/accounts")
-async def get_cafe_accounts(cafe_id: int):
+def get_cafe_accounts(cafe_id: int):
     return db.get_cafe_accounts(cafe_id)
 
 
 @app.put("/api/cafes/{cafe_id}/accounts")
-async def set_cafe_accounts(cafe_id: int, req: CafeAccountMapping):
+def set_cafe_accounts(cafe_id: int, req: CafeAccountMapping):
     db.set_cafe_accounts(cafe_id, req.account_ids)
     return {"message": "카페 계정 매핑 업데이트됨"}
 
 
 @app.put("/api/cafes/{cafe_id}/default_board")
-async def set_default_board(cafe_id: int, req: dict):
+def set_default_board(cafe_id: int, req: dict):
     board_id = req.get("board_id")
     conn = db.get_connection()
     try:
@@ -299,12 +299,12 @@ async def set_default_board(cafe_id: int, req: dict):
 # ─── Cafe Boards API ──────────────────────────────────────
 
 @app.get("/api/boards")
-async def list_boards():
+def list_boards():
     return db.get_cafe_boards()
 
 
 @app.post("/api/boards")
-async def create_board(req: CafeBoardCreate):
+def create_board(req: CafeBoardCreate):
     if not req.cafe_url.strip() or not req.board_name.strip():
         raise HTTPException(400, "카페 ID와 게시판 이름을 입력하세요.")
     bid = db.add_cafe_board(
@@ -315,7 +315,7 @@ async def create_board(req: CafeBoardCreate):
 
 
 @app.delete("/api/boards/{board_id}")
-async def delete_board(board_id: int):
+def delete_board(board_id: int):
     db.delete_cafe_board(board_id)
     return {"message": "게시판 삭제됨"}
 
@@ -323,12 +323,12 @@ async def delete_board(board_id: int):
 # ─── Keywords API ──────────────────────────────────────────
 
 @app.get("/api/keywords")
-async def list_keywords():
+def list_keywords():
     return db.get_keywords()
 
 
 @app.post("/api/keywords")
-async def create_keyword(req: KeywordCreate):
+def create_keyword(req: KeywordCreate):
     if not req.text.strip():
         raise HTTPException(400, "키워드를 입력하세요.")
     try:
@@ -341,29 +341,29 @@ async def create_keyword(req: KeywordCreate):
 
 
 @app.delete("/api/keywords/{keyword_id}")
-async def delete_keyword(keyword_id: int):
+def delete_keyword(keyword_id: int):
     db.delete_keyword(keyword_id)
     return {"message": "키워드 삭제됨"}
 
 
 @app.get("/api/keywords/{keyword_id}/boards")
-async def get_keyword_boards(keyword_id: int):
+def get_keyword_boards(keyword_id: int):
     return db.get_keyword_boards(keyword_id)
 
 
 @app.put("/api/keywords/{keyword_id}/boards")
-async def set_keyword_boards(keyword_id: int, req: KeywordBoardMapping):
+def set_keyword_boards(keyword_id: int, req: KeywordBoardMapping):
     db.set_keyword_boards(keyword_id, req.board_ids)
     return {"message": "키워드-게시판 매핑 업데이트됨"}
 
 
 @app.get("/api/keywords/{keyword_id}/comments")
-async def get_keyword_comments(keyword_id: int):
+def get_keyword_comments(keyword_id: int):
     return db.get_keyword_comments(keyword_id)
 
 
 @app.put("/api/keywords/{keyword_id}/comments")
-async def set_keyword_comments(keyword_id: int, req: KeywordCommentMapping):
+def set_keyword_comments(keyword_id: int, req: KeywordCommentMapping):
     db.set_keyword_comments(keyword_id, req.template_ids)
     return {"message": "키워드-댓글 템플릿 매핑 업데이트됨"}
 
@@ -371,12 +371,12 @@ async def set_keyword_comments(keyword_id: int, req: KeywordCommentMapping):
 # ─── Comment Templates API ────────────────────────────────
 
 @app.get("/api/comments/templates")
-async def list_comment_templates():
+def list_comment_templates():
     return db.get_comment_templates()
 
 
 @app.post("/api/comments/templates")
-async def create_comment_template(req: CommentTemplateCreate):
+def create_comment_template(req: CommentTemplateCreate):
     if not req.text.strip():
         raise HTTPException(400, "댓글 문구를 입력하세요.")
     cid = db.add_comment_template(req.text.strip())
@@ -384,13 +384,13 @@ async def create_comment_template(req: CommentTemplateCreate):
 
 
 @app.put("/api/comments/templates/{template_id}/toggle")
-async def toggle_comment_template(template_id: int):
+def toggle_comment_template(template_id: int):
     db.toggle_comment_template(template_id)
     return {"message": "댓글 템플릿 상태 변경됨"}
 
 
 @app.delete("/api/comments/templates/{template_id}")
-async def delete_comment_template(template_id: int):
+def delete_comment_template(template_id: int):
     db.delete_comment_template(template_id)
     return {"message": "댓글 템플릿 삭제됨"}
 
@@ -398,7 +398,7 @@ async def delete_comment_template(template_id: int):
 # ─── Seed Reset API ──────────────────────────────────────
 
 @app.post("/api/seed/reset")
-async def reset_seed():
+def reset_seed():
     """키워드·댓글을 모두 삭제하고 초기화"""
     from seed_data import reseed as reseed_db
     conn = db.get_connection()
@@ -412,7 +412,7 @@ async def reset_seed():
 # ─── Schedule API ──────────────────────────────────────────
 
 @app.get("/api/schedule")
-async def get_schedule():
+def get_schedule():
     config = db.get_schedule_config()
     config["is_running"] = sched.is_running()
     return config
@@ -449,7 +449,7 @@ async def run_once(cafe_group_id: int = None):
 
 
 @app.get("/api/scheduler/jobs")
-async def get_scheduler_jobs():
+def get_scheduler_jobs():
     """등록된 APScheduler 잡 목록 및 다음 실행 시간 확인"""
     jobs = []
     for job in sched.scheduler.get_jobs():
@@ -474,7 +474,7 @@ async def get_scheduler_jobs():
 # ─── History API ───────────────────────────────────────────
 
 @app.get("/api/history")
-async def get_history(limit: int = 50):
+def get_history(limit: int = 50):
     records = db.get_publish_history(limit)
     # 각 발행 기록에 댓글 정보 추가
     for record in records:
@@ -515,7 +515,7 @@ async def event_stream():
 # ─── 통계 API ─────────────────────────────────────────────
 
 @app.get("/api/stats")
-async def get_stats():
+def get_stats():
     history = db.get_publish_history(1000)
     total_posts = len(history)
     success_posts = sum(1 for h in history if h["status"] == "성공")
@@ -543,7 +543,7 @@ async def get_stats():
 # ─── Telegram API ─────────────────────────────────────────
 
 @app.get("/api/telegram")
-async def get_telegram_config():
+def get_telegram_config():
     try:
         config = tg.get_telegram_config()
         # 봇 토큰 마스킹 (앞 5자만 표시)
@@ -560,7 +560,7 @@ async def get_telegram_config():
 
 
 @app.put("/api/telegram")
-async def update_telegram_config(req: TelegramConfigUpdate):
+def update_telegram_config(req: TelegramConfigUpdate):
     try:
         updates = {k: v for k, v in req.model_dump().items() if v is not None}
         if updates:
@@ -582,7 +582,7 @@ async def test_telegram():
 # ─── Proxy API ─────────────────────────────────────────────
 
 @app.get("/api/proxy/status")
-async def get_proxy_status():
+def get_proxy_status():
     """계정별 프록시 설정 상태 조회"""
     accounts = db.get_accounts()
     result = []
@@ -603,7 +603,7 @@ async def get_proxy_status():
 
 
 @app.get("/api/accounts/{account_id}/proxy")
-async def get_account_proxy(account_id: int):
+def get_account_proxy(account_id: int):
     """계정 프록시 정보 조회 (서버 주소 표시, 비밀번호 마스킹)"""
     proxy = db.get_account_proxy(account_id)
     if not proxy:
@@ -617,7 +617,7 @@ async def get_account_proxy(account_id: int):
 
 
 @app.put("/api/accounts/{account_id}/proxy")
-async def set_account_proxy(account_id: int, req: dict):
+def set_account_proxy(account_id: int, req: dict):
     """계정 프록시 설정 (AES-256 암호화 저장)"""
     server = req.get("server", "").strip()
     if not server:
@@ -634,7 +634,7 @@ async def set_account_proxy(account_id: int, req: dict):
 
 
 @app.delete("/api/accounts/{account_id}/proxy")
-async def remove_account_proxy(account_id: int):
+def remove_account_proxy(account_id: int):
     """계정 프록시 제거"""
     db.delete_account_proxy(account_id)
     return {"message": "프록시가 제거되었습니다.", "account_id": account_id}
@@ -671,7 +671,7 @@ async def test_proxy_connection(account_id: int):
 # ─── Claude API 설정 ──────────────────────────────────────
 
 @app.get("/api/api-config")
-async def get_api_config():
+def get_api_config():
     """Claude API 설정 조회 (키 마스킹)"""
     try:
         conn = db.get_connection()
@@ -693,7 +693,7 @@ async def get_api_config():
 
 
 @app.put("/api/api-config")
-async def update_api_config(req: dict):
+def update_api_config(req: dict):
     """Claude API 설정 업데이트"""
     try:
         conn = db.get_connection()
@@ -718,7 +718,7 @@ async def update_api_config(req: dict):
 
 
 @app.delete("/api/api-config/key")
-async def delete_api_key():
+def delete_api_key():
     """Claude API 키 삭제"""
     try:
         conn = db.get_connection()
@@ -734,7 +734,7 @@ async def delete_api_key():
 # ─── Health ────────────────────────────────────────────────
 
 @app.get("/api/health")
-async def health():
+def health():
     return {"status": "ok", "scheduler_running": sched.is_running()}
 
 
