@@ -15,11 +15,13 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cafe_macro.db"
 
 def get_connection():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)  # 락 충돌 시 최대 30초 대기
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")  # 30초 busy timeout (ms 단위)
     return conn
+
 
 
 def init_db():
@@ -69,6 +71,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS keywords (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             text TEXT NOT NULL UNIQUE,
+            description TEXT DEFAULT '',
             used_count INTEGER DEFAULT 0,
             last_used_at TEXT,
             created_at TEXT DEFAULT (datetime('now', 'localtime'))
@@ -199,6 +202,7 @@ def init_db():
         ("schedule_config", "daily_comment_limit", "10"),
         ("cafe_boards", "cafe_group_id", "NULL"),
         ("cafes", "default_board_id", "NULL"),        # 기본 게시판 ID
+        ("keywords", "description", "TEXT_EMPTY"),    # 키워드 특징/맥락 필드
 
         ("schedule_config", "footer_link", "TEXT_DEFAULT"),
         ("schedule_config", "footer_link_text", "TEXT_DEFAULT_LINK_TEXT"),
@@ -208,6 +212,8 @@ def init_db():
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT 'http://pf.kakao.com/_XEUIX/chat'")
             elif default == "TEXT_DEFAULT_LINK_TEXT":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT '카카오톡 상담하기'")
+            elif default == "TEXT_EMPTY":
+                cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT ''")
             elif default == "TEXT_NULL":
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
             elif default == "NULL":
@@ -216,6 +222,7 @@ def init_db():
                 cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} INTEGER DEFAULT {default}")
         except sqlite3.OperationalError:
             pass  # 이미 존재
+
 
     # 기존 설정값을 새 기본값으로 업데이트 (이전 기본값인 경우에만)
     cursor.execute("UPDATE schedule_config SET interval_min = 5 WHERE id = 1 AND interval_min = 30")
@@ -536,10 +543,13 @@ def update_board_last_published(board_id: int):
 
 # ─── Keywords CRUD ─────────────────────────────────────────
 
-def add_keyword(text: str) -> int:
+def add_keyword(text: str, description: str = "") -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO keywords (text) VALUES (?)", (text,))
+    cursor.execute(
+        "INSERT INTO keywords (text, description) VALUES (?, ?)",
+        (text, description.strip())
+    )
     conn.commit()
     kid = cursor.lastrowid
     conn.close()
@@ -569,9 +579,19 @@ def get_keywords():
 
 def delete_keyword(keyword_id: int):
     conn = get_connection()
-    conn.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM keyword_comment_mapping WHERE keyword_id = ?", (keyword_id,))
+        conn.execute("DELETE FROM keyword_board_mapping WHERE keyword_id = ?", (keyword_id,))
+        # 참조 무결성 오류를 피하기 위해 남은 히스토리 기록의 외래키를 해제합니다.
+        conn.execute("UPDATE publish_history SET keyword_id = NULL WHERE keyword_id = ?", (keyword_id,))
+        conn.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # 삭제가 차단되는 경우
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_keyword_boards(keyword_id: int):

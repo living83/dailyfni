@@ -1049,8 +1049,12 @@ async def async_publish_to_cafe(
                     result["success"] = True
                     result["url"] = final_url
                 else:
-                    result["success"] = False
-                    result["error"] = "게시글 발행은 되었으나, 실제 게시글 주소를 확인하지 못했습니다. (리다이렉트 지연)"
+                    # pub_ok=True면 발행 버튼 클릭은 성공 → 글은 실제로 올라간 상태
+                    # URL만 확인 못한 것이므로 성공으로 처리 (현재 페이지 URL or 게시판 URL 사용)
+                    fallback_url = page.url if page.url and "cafe.naver.com" in page.url else f"https://cafe.naver.com/{cafe_alias}"
+                    result["success"] = True
+                    result["url"] = fallback_url
+                    logger.warning(f"리다이렉트 URL 확인 실패 — 성공으로 처리 (fallback URL: {fallback_url})")
                 logger.info(f"글 발행 완료! URL: {final_url}")
                 if on_progress: on_progress("success", f"발행 성공 ({final_url})")
 

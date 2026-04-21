@@ -114,6 +114,7 @@ class CafeSettingsUpdate(BaseModel):
 
 class KeywordCreate(BaseModel):
     text: str
+    description: str = ""
 
 class CommentTemplateCreate(BaseModel):
     text: str
@@ -331,7 +332,7 @@ async def create_keyword(req: KeywordCreate):
     if not req.text.strip():
         raise HTTPException(400, "키워드를 입력하세요.")
     try:
-        kid = db.add_keyword(req.text.strip())
+        kid = db.add_keyword(req.text.strip(), req.description.strip())
         return {"id": kid, "message": "키워드 등록 완료"}
     except Exception as e:
         if "UNIQUE" in str(e):
@@ -398,14 +399,14 @@ async def delete_comment_template(template_id: int):
 
 @app.post("/api/seed/reset")
 async def reset_seed():
-    """키워드·댓글을 시드 데이터(300개 키워드)로 초기화"""
+    """키워드·댓글을 모두 삭제하고 초기화"""
     from seed_data import reseed as reseed_db
     conn = db.get_connection()
     try:
         reseed_db(conn)
     finally:
         conn.close()
-    return {"message": "시드 데이터 초기화 완료 (300개 키워드, 102개 댓글)"}
+    return {"message": "데이터 일괄 삭제 초기화 완료"}
 
 
 # ─── Schedule API ──────────────────────────────────────────

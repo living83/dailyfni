@@ -433,7 +433,8 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
 
     # 4. 글 제목/내용 생성
     footer_link = config.get("footer_link", "")
-    structured = await async_generate_content(keyword["text"], cta_link=footer_link)
+    keyword_desc = keyword.get("description", "")
+    structured = await async_generate_content(keyword["text"], cta_link=footer_link, description=keyword_desc)
     title, content = content_to_plain_text(structured)
 
     # 5. DB에 발행 기록 생성
@@ -687,6 +688,16 @@ async def execute_batch_job():
 
     # 텔레그램 배치 요약 알림
     await tg.notify_batch_complete(success_count, fail_count, total)
+
+    # ── 배치 완료 후 스케줄러 상태 자동 복구 ─────────────────────────────────
+    # 배치 실행 중 pause된 잡이 있으면 resume하여 내일 실행을 보장
+    try:
+        job = scheduler.get_job("batch_publish_job")
+        if job and job.next_run_time is None:
+            job.resume()
+            logger.info("배치 완료 후 잡 자동 resume 완료 — 내일 재실행 예약됨")
+    except Exception as e:
+        logger.warning(f"배치 완료 후 잡 resume 실패: {e}")
 
 
 def _interleave_tasks(tasks: list) -> list:

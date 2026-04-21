@@ -32,7 +32,7 @@ STICKER_OPTIONS = [
 ]
 
 
-async def async_generate_content(keyword: str, tone: str = "공감", cta_link: str = "") -> dict:
+async def async_generate_content(keyword: str, tone: str = "공감", cta_link: str = "", description: str = "") -> dict:
     """
     Claude API를 사용하여 네이버 카페에 적합한 자연스러운 글을 생성.
     기존 구조화된 dict 포맷을 반환하여 publisher와 호환성을 유지함.
@@ -44,6 +44,15 @@ async def async_generate_content(keyword: str, tone: str = "공감", cta_link: s
     client = anthropic.AsyncAnthropic(api_key=api_key)
     tone_guide = get_tone_instructions(tone)
 
+    # 특징/맥락이 있으면 프롬프트에 추가
+    description_section = ""
+    if description and description.strip():
+        description_section = f"""
+[추가 특징 / 맥락]
+{description.strip()}
+→ 위 특징을 관련 사실이나 경험, 또는 정보로 자연스럽게 글 내용에 녹여 다시세요.
+"""
+
     prompt = f"""
 당신은 네이버 카페 회원입니다. 특정 목적(광고/홍보)이 있더라도 최대한 자연스럽고 진짜 회원이 쓴 후기나 고민글, 정보공유글처럼 생생하게 작성해야 합니다.
 
@@ -52,6 +61,7 @@ async def async_generate_content(keyword: str, tone: str = "공감", cta_link: s
 2. 글의 목적: 해당 키워드를 알아보고 있거나 해결한 경험담 공유.
 3. 문체 가이드: {tone_guide}
 4. 길이는 1000자 ~ 1500자 사이로 작성.
+{description_section}
 
 [포맷 규칙 - 반드시 준수]
 - content_paragraphs의 각 항목은 반드시 한 문장만 넣으세요.
@@ -152,7 +162,7 @@ async def async_generate_content(keyword: str, tone: str = "공감", cta_link: s
         raise
 
 
-def generate_content(keyword: str, tone: str = "공감", cta_link: str = "") -> dict:
+def generate_content(keyword: str, tone: str = "공감", cta_link: str = "", description: str = "") -> dict:
     """동기 래퍼 - 별도 스레드에서 새 이벤트 루프 실행 (이벤트 루프 충돌 방지)."""
     import concurrent.futures
 
@@ -160,7 +170,7 @@ def generate_content(keyword: str, tone: str = "공감", cta_link: str = "") -> 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(async_generate_content(keyword, tone, cta_link))
+            return loop.run_until_complete(async_generate_content(keyword, tone, cta_link, description))
         finally:
             loop.close()
 

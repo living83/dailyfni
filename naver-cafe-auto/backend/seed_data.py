@@ -443,11 +443,10 @@ def seed(conn: sqlite3.Connection):
 
 
 def reseed(conn: sqlite3.Connection):
-    """기존 키워드·댓글·매핑을 모두 삭제하고 시드 데이터를 재삽입"""
+    """기존 키워드·댓글·매핑을 모두 삭제하고 초기화"""
     cursor = conn.cursor()
     cursor.execute("DELETE FROM keyword_comment_mapping")
     cursor.execute("DELETE FROM keyword_board_mapping")
     cursor.execute("DELETE FROM comment_templates")
     cursor.execute("DELETE FROM keywords")
     conn.commit()
-    seed(conn)
