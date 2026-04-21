@@ -58,7 +58,7 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.on_event("startup")
 async def startup():
-    await asyncio.to_thread(db.init_db)
+    db.init_db()
     # uvicorn reload 시 dictConfig가 핸들러를 덮어쓸 수 있으므로 검증
     for _name in ("cafe_publisher", "scheduler"):
         _lg = logging.getLogger(_name)
