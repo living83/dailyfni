@@ -387,22 +387,24 @@ async function checkAndRun() {
           log('warn', `발행 타임아웃 (확인필요): ${account.accountName}`);
         } else {
           Posting.updatePosting(posting.id, { status: '실패', error: result.error || '발행 실패' });
-          Content.updateContent(pendingContent.id, { status: '대기' });
+          Content.updateContent(pendingContent.id, { status: '검수완료' });
+          todayPostedAccounts.add(account.id);
           Posting.addError({
             accountName: account.accountName,
             message: `[자동] ${result.error || '발행 실패'}`,
             severity: '오류',
           });
-          log('error', `발행 실패: ${account.accountName} — ${result.error}`);
+          log('error', `발행 실패: ${account.accountName} — ${result.error} (오늘 재시도 안 함)`);
           telegram.notifyPublishFail(account.accountName, pendingContent.keyword, result.error);
         }
       } catch (err) {
+        todayPostedAccounts.add(account.id);
         Posting.addError({
           accountName: account.accountName,
           message: `[자동] ${err.message}`,
           severity: '오류',
         });
-        log('error', `${account.accountName} 처리 중 예외: ${err.message}`);
+        log('error', `${account.accountName} 예외: ${err.message} (오늘 재시도 안 함)`);
       }
 
       // 다음 계정 발행 전 랜덤 간격 대기
