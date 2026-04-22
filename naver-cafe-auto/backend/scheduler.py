@@ -429,7 +429,7 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
         await _notify_progress("delay", {"message": f"🕐 발행 전 대기 중... ({delay}초) — {account['username']} → {board['board_name']}", "seconds": delay})
         await asyncio.sleep(delay)
 
-    if not _is_running:
+    if not _is_running and not _is_publishing:
         return
 
     # 4. 글 제목/내용 생성
@@ -780,7 +780,7 @@ async def execute_comment_job(
 
     async def _write_one(i: int, acc: dict):
         """단일 계정 댓글 작성 코루틴"""
-        if not _is_running:
+        if not _is_running and not _is_publishing:
             return
 
         template = shuffled_templates[i % len(shuffled_templates)]
