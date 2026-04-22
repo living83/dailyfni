@@ -84,14 +84,11 @@ router.post('/customers/:id/sms', async (req, res) => {
 
     // 고객 정보 조회
     const [customer] = await query(
-      'SELECT id, name, phone, sms_consent FROM customers WHERE id = ?',
+      'SELECT id, name, phone FROM customers WHERE id = ?',
       [customerId]
     );
     if (!customer) {
       return res.status(404).json({ success: false, message: '고객을 찾을 수 없습니다.' });
-    }
-    if (!customer.sms_consent) {
-      return res.status(400).json({ success: false, message: '수신동의 미동의 고객입니다.' });
     }
 
     // 템플릿 코드 결정 (templateId 우선)
@@ -149,25 +146,18 @@ router.post('/sms/send-bulk', async (req, res) => {
       return res.status(400).json({ success: false, message: 'templateId 또는 templateCode 필요' });
     }
 
-    // 고객 정보 + 수신동의 필터링
+    // 고객 정보 조회
     const placeholders = customerIds.map(() => '?').join(',');
     const customers = await query(
-      `SELECT id, name, phone, sms_consent FROM customers WHERE id IN (${placeholders})`,
+      `SELECT id, name, phone FROM customers WHERE id IN (${placeholders})`,
       customerIds
     );
 
-    const consented = customers.filter(c => c.sms_consent);
-    const skipped = customers.filter(c => !c.sms_consent);
-
-    if (consented.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: '수신동의 고객이 없습니다.',
-        data: { skippedCount: skipped.length },
-      });
+    if (customers.length === 0) {
+      return res.status(400).json({ success: false, message: '고객을 찾을 수 없습니다.' });
     }
 
-    const recipients = consented.map(c => ({
+    const recipients = customers.map(c => ({
       customerId: c.id,
       customerName: c.name,
       phone: String(c.phone || '').replace(/[^0-9]/g, ''),
@@ -182,13 +172,7 @@ router.post('/sms/send-bulk', async (req, res) => {
       sentBy,
     });
 
-    res.json({
-      success: true,
-      data: {
-        ...result,
-        skippedByConsent: skipped.map(c => ({ id: c.id, name: c.name })),
-      },
-    });
+    res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

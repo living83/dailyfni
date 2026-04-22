@@ -4134,9 +4134,8 @@ async function loadLedgerTimelines(customerId) {
       }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">변경 이력이 없습니다.</div>';
     }
 
-    // 문자 템플릿 드롭다운 + 수신동의 상태 로드
+    // 문자 템플릿 드롭다운 로드
     loadSmsTemplatesForLedger();
-    loadLedgerSmsConsent(customerId);
   } catch (e) { console.error(e); }
 }
 
@@ -4199,20 +4198,6 @@ async function loadSmsTemplatesForLedger() {
     };
   } catch (e) {
     sel.innerHTML = '<option value="">템플릿 로드 실패</option>';
-  }
-}
-
-// 고객 수신동의 상태 표시
-async function loadLedgerSmsConsent(customerId) {
-  const el = document.getElementById('ledgerSmsConsent');
-  if (!el) return;
-  try {
-    const res = await fetch(`/api/customers/${customerId}?raw=1`);
-    const data = await res.json();
-    const ok = data?.data?.sms_consent;
-    el.innerHTML = ok ? '<span style="color:#16a34a;">✓ 수신동의</span>' : '<span style="color:#dc2626;">✗ 수신동의 미동의 — 발송 불가</span>';
-  } catch (e) {
-    el.textContent = '수신동의 상태 확인 실패';
   }
 }
 
@@ -4490,8 +4475,7 @@ function renderCustomerLedger() {
                 </select>
               </div>
               <textarea id="ledgerSmsPreview" rows="3" readonly placeholder="템플릿을 선택하면 미리보기가 표시됩니다" style="width:100%;border:1px solid #e2e8f0;border-radius:4px;padding:6px 8px;font-size:12px;resize:none;height:70px;box-sizing:border-box;background:#f8fafc;"></textarea>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
-                <span id="ledgerSmsConsent" style="font-size:11px;color:#64748b;"></span>
+              <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:6px;">
                 <button class="btn btn-primary btn-sm" onclick="sendLedgerSms(${currentLedgerId})">문자 발송</button>
               </div>
             </div>
@@ -4874,6 +4858,7 @@ async function submitCustomerRegister() {
       }
 
       alert(`${data.name} 고객이 등록되었습니다.`);
+      dbCustomers = []; // 캐시 초기화 → 고객현황 진입 시 DB 에서 재조회
       navigate('customers');
     } else {
       alert('등록 실패: ' + (result.message || ''));
