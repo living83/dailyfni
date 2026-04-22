@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from seed_data import seed as seed_db, reseed as reseed_db
+from seed_data import seed as seed_db, reseed as reseed_db, seed_comment_templates
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "cafe_macro.db"
 
@@ -250,6 +250,9 @@ def init_db():
 
     # 시드 데이터 삽입 (키워드·댓글 비어 있을 때만)
     seed_db(conn)
+
+    # 댓글 템플릿이 비어 있으면 독립 삽입 (키워드 삭제 후에도 템플릿 보장)
+    seed_comment_templates(conn)
 
     conn.close()
 
