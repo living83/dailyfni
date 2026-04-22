@@ -402,6 +402,33 @@ function navigate(page) {
 // ========================================
 let dashboardData = null;
 
+// 상품 동기화 리마인더 (3개월마다)
+function renderProductSyncReminder() {
+  const SYNC_INTERVAL_DAYS = 90;
+  const lastSync = localStorage.getItem('productSyncDate');
+  const lastDate = lastSync ? new Date(lastSync) : null;
+  const now = new Date();
+  const daysSince = lastDate ? Math.floor((now - lastDate) / (1000 * 60 * 60 * 24)) : 999;
+
+  if (daysSince < SYNC_INTERVAL_DAYS) return '';
+
+  return `
+    <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:16px;">⚠</span>
+      <div style="flex:1;font-size:12px;">
+        <strong>상품 목록 동기화 필요</strong> —
+        ${lastDate ? `마지막 동기화: ${lastDate.toISOString().split('T')[0]} (${daysSince}일 전)` : '동기화 기록 없음'}.
+        론앤마스터 상품 변동이 있을 수 있습니다.
+      </div>
+      <button class="btn btn-outline btn-sm" style="font-size:11px;white-space:nowrap;" onclick="dismissProductSyncReminder()">확인 완료</button>
+    </div>`;
+}
+
+function dismissProductSyncReminder() {
+  localStorage.setItem('productSyncDate', new Date().toISOString());
+  navigate('dashboard');
+}
+
 function renderDashboard() {
   // DB에서 로드
   if (!dashboardData) {
@@ -433,6 +460,7 @@ function renderDashboard() {
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">등록된 고객이 없습니다.</td></tr>';
 
   return `
+    ${renderProductSyncReminder()}
     <div id="intakeCard"></div>
     <div class="stat-cards">
       <div class="stat-card">
