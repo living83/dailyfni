@@ -167,17 +167,16 @@ async function getProductGuide(fidx, options = {}) {
     throw err;
   }
 
-  // 접수 메인 페이지로 리다이렉트됐는지 감지 — 가이드 팝업에는 없는 메인 키워드로 판별.
+  // 접수 메인 페이지로 리다이렉트됐는지 감지 — URL 기반만 사용.
+  // (이전에 본문 키워드 3개 이상 매칭으로 체크했으나 가이드 내용에
+  //  "고객 정보" 등이 포함되면 오탐 발생해 제거)
   const redirectedToMain = await page.evaluate(() => {
-    const body = document.body?.innerText || '';
     const href = location.href || '';
-    const mainKeywords = ['대출신청서입력', '고객 정보', '==선택==', '통계메뉴'];
-    const hitCount = mainKeywords.reduce((n, k) => n + (body.includes(k) ? 1 : 0), 0);
-    const isWinPopup = href.includes('win_fininfo');
-    return { redirected: !isWinPopup || hitCount >= 3, href, hitCount };
+    const isGuide = href.includes('win_fininfo') || href.includes('fininfo');
+    return { redirected: !isGuide, href };
   });
   if (redirectedToMain.redirected) {
-    const err = new Error(`상품 가이드 팝업이 아닌 다른 페이지로 이동되었습니다 (URL: ${redirectedToMain.href}, 메인 키워드 ${redirectedToMain.hitCount}개). fidx 가 잘못되었거나 론앤마스터 UI 가 변경되었을 수 있습니다.`);
+    const err = new Error(`상품 가이드가 아닌 다른 페이지로 이동됨 (URL: ${redirectedToMain.href})`);
     err.code = 'LMASTER_GUIDE_NOT_FOUND';
     throw err;
   }
