@@ -432,6 +432,16 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     if not _is_running and not _is_publishing:
         return
 
+    # 3-1. 발행 직전 일일 한도 재확인 (병렬 실행 시 race condition 방지)
+    if cafe_group_id is not None:
+        daily_limit = config.get("daily_post_limit", 3)
+        if daily_limit > 0:
+            current = await asyncio.to_thread(db.get_today_post_count, account["id"], cafe_group_id=cafe_group_id)
+            if current >= daily_limit:
+                logger.info(f"[{account['username']}] 카페 {cafe_group_id} 일일 한도 도달 ({current}/{daily_limit}) — 발행 건너뜀")
+                await _notify_progress("info", {"message": f"⚠️ {account['username']} 일일 한도 도달 — 건너뜀"})
+                return
+
     # 4. 글 제목/내용 생성
     footer_link = config.get("footer_link", "")
     keyword_desc = keyword.get("description", "")
