@@ -5402,10 +5402,16 @@ async function openProductGuide(el) {
       let data;
       try { data = JSON.parse(text); } catch { showGuideModal(productName, null); return; }
 
-      // 세션 만료는 재로그인 유도 (로그아웃 페이지 텍스트가 가이드로 렌더되는 문제 방지)
+      // 세션 만료는 재로그인 유도
       if (res.status === 401 && data.code === 'LMASTER_SESSION_EXPIRED') {
         crawlerLoggedIn = false;
         showGuideModal(productName, null);
+        return;
+      }
+
+      // 가이드 페이지 로드 실패 (세션 OK 이지만 페이지 리다이렉트 등)
+      if (!data.success && data.code === 'LMASTER_GUIDE_NOT_FOUND') {
+        showGuideModal(productName, { error: data.message || '상품 가이드 페이지를 불러올 수 없습니다. 론앤마스터에서 직접 확인하세요.' });
         return;
       }
 

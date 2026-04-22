@@ -140,13 +140,25 @@ async function getProductGuide(fidx, options = {}) {
   await page.goto(url, { waitUntil: 'networkidle2' });
   await delay(1000, 2000);
 
-  // 세션 만료 감지
+  // 세션 만료 감지 — URL 리다이렉트 + 에러 전용 문자열로 판별.
+  // 주의: 정상 가이드 페이지에도 "로그아웃(S)!" 버튼이 있어서
+  //   body 에서 "로그아웃" 을 찾으면 오탐 발생 (저스트 등 특정 상품에서 걸림).
+  //   → body 체크는 ACCESS_Deny / InValid_LoginInfo 등 에러 전용 패턴만 사용.
   const sessionCheck = await page.evaluate(() => {
     const body = document.body?.innerText || '';
     const href = location.href || '';
-    const patterns = ['ACCESS_Deny', 'InValid_LoginInfo', '로그아웃되었습니다', '로그아웃 되었습니다', '세션이 만료', 'Session Timeout', 'login.asp'];
-    const matched = patterns.find(p => body.includes(p) || href.includes(p));
-    return matched ? { kicked: true, reason: matched } : { kicked: false };
+    // URL 기반 (확실한 리다이렉트)
+    if (href.includes('login.asp')) return { kicked: true, reason: 'URL→login.asp' };
+    // 에러 전용 문자열 (정상 가이드에는 절대 없는 것)
+    const errorPatterns = ['ACCESS_Deny', 'InValid_LoginInfo'];
+    const matched = errorPatterns.find(p => body.includes(p));
+    if (matched) return { kicked: true, reason: matched };
+    // "로그아웃되었습니다" 는 본문 앞 200자 이내에 있을 때만 (에러 페이지는 짧고 바로 나옴)
+    const head = body.substring(0, 200);
+    if (head.includes('로그아웃되었습니다') || head.includes('세션이 만료')) {
+      return { kicked: true, reason: '로그아웃 메시지 (상단)' };
+    }
+    return { kicked: false };
   });
   if (sessionCheck.kicked) {
     isLoggedIn = false;
