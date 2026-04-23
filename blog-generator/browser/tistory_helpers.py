@@ -11,13 +11,14 @@ from playwright.async_api import BrowserContext, Page
 
 from browser.se_helpers import (
     _get_proxy_for_account,
-    _load_encrypted_cookies,
-    _save_encrypted_cookies,
     capture_debug,
     create_stealth_context,
     random_delay,
 )
 from config import settings
+
+# se_helpers의 쿠키 함수는 내부용이라 직접 참조
+from browser.se_helpers import _load_encrypted_cookies, _save_encrypted_cookies
 
 
 async def kakao_login(
@@ -55,6 +56,9 @@ async def kakao_login(
             logger.warning(f"[티스토리 {account_id}] 쿠키 로드 실패: {e}")
 
     # ── Step 2: 카카오 로그인 페이지 ──
+    debug_dir = Path(settings.IMAGES_DIR) / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
     for attempt in range(1, 4):
         try:
             logger.info(f"[티스토리 {account_id}] 카카오 로그인 시도 {attempt}/3")
@@ -73,6 +77,13 @@ async def kakao_login(
                 await kakao_btn.click()
                 await page.wait_for_load_state("domcontentloaded", timeout=15000)
                 await random_delay(1, 2)
+
+            # 디버그: 현재 페이지 스크린샷 저장
+            try:
+                await page.screenshot(path=str(debug_dir / f"tistory_login_{account_id}_{attempt}.png"), full_page=True)
+                logger.info(f"[티스토리 {account_id}] 현재 URL: {page.url}")
+            except Exception:
+                pass
 
             # 카카오 로그인 폼이 나올 때까지 대기
             current_url = page.url
@@ -166,7 +177,7 @@ async def kakao_login(
                 # 쿠키 저장
                 try:
                     cookies = await context.cookies()
-                    _save_encrypted_cookies(cookies, cookie_path)
+                    _save_encrypted_cookies(cookie_path, cookies)
                     logger.debug(f"[티스토리 {account_id}] 쿠키 저장 완료")
                 except Exception as e:
                     logger.debug(f"쿠키 저장 실패: {e}")
