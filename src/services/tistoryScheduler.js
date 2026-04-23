@@ -169,13 +169,12 @@ async function checkAndRun() {
         const raw = TistoryAccount.getAccountRaw(account.id);
         if (!raw) continue;
 
-        // 포스팅 타입 결정
+        // 포스팅 타입 결정 — 티스토리는 Tier 5 고정 (일반1+광고1 교차)
         const publishedCount = db.prepare(
           `SELECT COUNT(1) as cnt FROM tistory_postings WHERE accountId = ? AND status IN ('발행완료', '확인필요')`
         ).get(account.id)?.cnt || 0;
-        const postType = getPostTypeForTier(account.tier || 1, publishedCount);
-        const cycle = TIER_CYCLES[account.tier || 1] || TIER_CYCLES[1];
-        log('info', `${account.accountName}: Tier ${account.tier}, 누적 ${publishedCount}회, 사이클[${cycle.general}일반+${cycle.ad}광고] → ${postType}`);
+        const postType = getPostTypeForTier(5, publishedCount);
+        log('info', `${account.accountName}: 누적 ${publishedCount}회, Tier5 고정 → ${postType}`);
 
         // 검수완료 콘텐츠 찾기
         const contents = Content.listContents();
