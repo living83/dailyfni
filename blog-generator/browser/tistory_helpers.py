@@ -68,20 +68,55 @@ async def kakao_login(
             await page.wait_for_load_state("domcontentloaded")
             await random_delay(1, 2)
 
-            # 카카오 로그인 버튼 클릭 (이미 카카오 페이지일 수도 있음)
-            kakao_btn = await page.query_selector(
-                'a[href*="kakao"], .btn_kakao, a:has-text("카카오"), '
-                'button:has-text("카카오")'
-            )
+            # 디버그: 페이지 로드 직후 HTML + 스크린샷 저장
+            try:
+                html = await page.content()
+                (debug_dir / f"tistory_login_{account_id}_{attempt}.html").write_text(html, encoding="utf-8")
+                await page.screenshot(path=str(debug_dir / f"tistory_login_{account_id}_{attempt}_before.png"), full_page=True)
+                logger.info(f"[티스토리 {account_id}] 로그인 페이지 URL: {page.url}")
+            except Exception as e:
+                logger.debug(f"디버그 저장 실패: {e}")
+
+            # 카카오 로그인 버튼 클릭
+            kakao_btn = None
+            kakao_selectors = [
+                'a[href*="kakao"]',
+                '.btn_kakao',
+                'a:has-text("카카오")',
+                'button:has-text("카카오")',
+                'a:has-text("카카오계정으로 로그인")',
+                '.link_kakao_login',
+                '[class*="kakao"]',
+                'a[class*="login"]',
+                '.btn_login',
+            ]
+            for sel in kakao_selectors:
+                try:
+                    kakao_btn = await page.query_selector(sel)
+                    if kakao_btn:
+                        logger.info(f"[티스토리 {account_id}] 카카오 버튼 발견: {sel}")
+                        break
+                except Exception:
+                    continue
+
             if kakao_btn:
                 await kakao_btn.click()
                 await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                await random_delay(1, 2)
+                await random_delay(2, 3)
+                logger.info(f"[티스토리 {account_id}] 카카오 버튼 클릭 후 URL: {page.url}")
+            else:
+                # 버튼 못 찾음 — 페이지의 모든 링크/버튼 목록 로깅
+                all_links = await page.evaluate("""
+                    () => Array.from(document.querySelectorAll('a, button')).map(el => ({
+                        tag: el.tagName, text: el.innerText?.trim().substring(0, 50),
+                        href: el.href || '', class: el.className?.substring(0, 50)
+                    })).filter(el => el.text || el.href)
+                """)
+                logger.warning(f"[티스토리 {account_id}] 카카오 버튼 미발견. 페이지 링크/버튼: {all_links[:10]}")
 
-            # 디버그: 현재 페이지 스크린샷 저장
+            # 디버그: 클릭 후 스크린샷
             try:
-                await page.screenshot(path=str(debug_dir / f"tistory_login_{account_id}_{attempt}.png"), full_page=True)
-                logger.info(f"[티스토리 {account_id}] 현재 URL: {page.url}")
+                await page.screenshot(path=str(debug_dir / f"tistory_login_{account_id}_{attempt}_after.png"), full_page=True)
             except Exception:
                 pass
 
