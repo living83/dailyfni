@@ -2,6 +2,7 @@ const { Router } = require('express');
 const TistoryAccount = require('../models/TistoryAccount');
 const { requestTistoryPublish } = require('../services/pythonBridge');
 const db = require('../db/sqlite');
+const tistoryScheduler = require('../services/tistoryScheduler');
 
 const router = Router();
 
@@ -140,7 +141,32 @@ router.put('/tistory/settings', (req, res) => {
   const current = row ? JSON.parse(row.value) : {};
   const updated = { ...current, ...req.body };
   db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('tistory', ?)`).run(JSON.stringify(updated));
+  tistoryScheduler.restartTistoryScheduler();
   res.json({ success: true, settings: updated });
+});
+
+// ── 스케줄러 제어 ──
+
+// GET /api/tistory/scheduler/status
+router.get('/tistory/scheduler/status', (req, res) => {
+  res.json({ success: true, ...tistoryScheduler.getStatus() });
+});
+
+// GET /api/tistory/scheduler/logs
+router.get('/tistory/scheduler/logs', (req, res) => {
+  res.json({ success: true, logs: tistoryScheduler.getLogs() });
+});
+
+// POST /api/tistory/scheduler/stop
+router.post('/tistory/scheduler/stop', (req, res) => {
+  tistoryScheduler.stopTistoryScheduler();
+  res.json({ success: true, running: tistoryScheduler.isRunning() });
+});
+
+// POST /api/tistory/scheduler/start
+router.post('/tistory/scheduler/start', (req, res) => {
+  tistoryScheduler.startTistoryScheduler();
+  res.json({ success: true, running: tistoryScheduler.isRunning() });
 });
 
 module.exports = router;

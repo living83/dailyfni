@@ -65,6 +65,10 @@ startEngagementScheduler();
 const { startBuddyScheduler } = require('./services/buddyAcceptScheduler');
 startBuddyScheduler();
 
+// --- 티스토리 포스팅 스케줄러 ---
+const { startTistoryScheduler } = require('./services/tistoryScheduler');
+startTistoryScheduler();
+
 app.listen(PORT, () => {
   console.log(`\n=== DailyFNI Agency System ===`);
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);

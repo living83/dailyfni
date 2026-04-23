@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BookOpen, Plus, Trash2, Edit3, Send, Loader2, Save, ExternalLink } from 'lucide-react'
+import { BookOpen, Plus, Trash2, Edit3, Send, Loader2, Save, ExternalLink, Calendar, Square, Play, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import Toggle from '../components/Toggle'
@@ -48,19 +48,94 @@ export default function Tistory() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ accountName: '', blogName: '', kakaoId: '', kakaoPassword: '' })
 
+  // 스케줄 설정
+  const [autoEngine, setAutoEngine] = useState(false)
+  const [startHour, setStartHour] = useState('09')
+  const [startMin, setStartMin] = useState('00')
+  const [endHour, setEndHour] = useState('18')
+  const [endMin, setEndMin] = useState('00')
+  const [selectedDays, setSelectedDays] = useState([true, true, true, true, true, false, false])
+  const [intervalMin, setIntervalMin] = useState(5)
+  const [intervalMax, setIntervalMax] = useState(15)
+  const [dailyMax, setDailyMax] = useState(5)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [schedulerRunning, setSchedulerRunning] = useState(false)
+  const [togglingScheduler, setTogglingScheduler] = useState(false)
+  type SchedulerLog = { time: string; level: string; message: string }
+  const [schedulerLogs, setSchedulerLogs] = useState<SchedulerLog[]>([])
+
+  const dayLabels = ['월', '화', '수', '목', '금', '토', '일']
+  const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+  const minutes = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'))
+
   const fetchData = useCallback(async () => {
     try {
-      const [accRes, postRes] = await Promise.all([
+      const [accRes, postRes, settRes, statusRes, logRes] = await Promise.all([
         api.get('/tistory/accounts'),
         api.get('/tistory/postings'),
+        api.get('/tistory/settings'),
+        api.get('/tistory/scheduler/status'),
+        api.get('/tistory/scheduler/logs'),
       ])
       if (accRes.data?.accounts) setAccounts(accRes.data.accounts)
       if (postRes.data?.postings) setPostings(postRes.data.postings)
+      if (settRes.data?.settings) {
+        const s = settRes.data.settings
+        if (s.autoEngine !== undefined) setAutoEngine(s.autoEngine)
+        if (s.startHour) setStartHour(s.startHour)
+        if (s.startMin) setStartMin(s.startMin)
+        if (s.endHour) setEndHour(s.endHour)
+        if (s.endMin) setEndMin(s.endMin)
+        if (s.selectedDays) setSelectedDays(s.selectedDays)
+        if (s.intervalMin) setIntervalMin(s.intervalMin)
+        if (s.intervalMax) setIntervalMax(s.intervalMax)
+        if (s.dailyMax) setDailyMax(s.dailyMax)
+      }
+      if (statusRes.data) setSchedulerRunning(!!statusRes.data.running)
+      if (logRes.data?.logs) setSchedulerLogs(logRes.data.logs)
     } catch {}
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // 로그 폴링
+  useEffect(() => {
+    const iv = setInterval(async () => {
+      try {
+        const [logRes, statusRes] = await Promise.all([
+          api.get('/tistory/scheduler/logs'),
+          api.get('/tistory/scheduler/status'),
+        ])
+        if (logRes.data?.logs) setSchedulerLogs(logRes.data.logs)
+        if (statusRes.data) setSchedulerRunning(!!statusRes.data.running)
+      } catch {}
+    }, 5000)
+    return () => clearInterval(iv)
+  }, [])
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true)
+    try {
+      await api.put('/tistory/settings', {
+        autoEngine, startHour, startMin, endHour, endMin, selectedDays,
+        intervalMin, intervalMax, dailyMax,
+      })
+      toast('success', '티스토리 스케줄 설정 저장됨')
+    } catch { toast('error', '저장 실패') }
+    setSavingSettings(false)
+  }
+
+  const handleStopScheduler = async () => {
+    setTogglingScheduler(true)
+    try { await api.post('/tistory/scheduler/stop'); setSchedulerRunning(false); toast('success', '스케줄러 정지') } catch {}
+    setTogglingScheduler(false)
+  }
+  const handleStartScheduler = async () => {
+    setTogglingScheduler(true)
+    try { await api.post('/tistory/scheduler/start'); setSchedulerRunning(true); toast('success', '스케줄러 시작') } catch {}
+    setTogglingScheduler(false)
+  }
 
   const handleAdd = async () => {
     if (!form.accountName || !form.blogName || !form.kakaoId) {
@@ -255,6 +330,134 @@ export default function Tistory() {
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 스케줄 설정 + 로그 */}
+      <div className="glass-panel rounded-xl p-6 space-y-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-orange-400" />
+            <h2 className="text-lg font-semibold text-foreground">티스토리 자동 포스팅 설정</h2>
+            <span className={`ml-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+              schedulerRunning ? 'bg-emerald/15 text-emerald' : 'bg-muted text-muted-foreground'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${schedulerRunning ? 'bg-emerald animate-pulse' : 'bg-muted-foreground'}`} />
+              {schedulerRunning ? '실행 중' : '정지'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {schedulerRunning ? (
+              <button onClick={handleStopScheduler} disabled={togglingScheduler}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 text-sm font-medium disabled:opacity-50">
+                {togglingScheduler ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4 fill-current" />} 정지
+              </button>
+            ) : (
+              <button onClick={handleStartScheduler} disabled={togglingScheduler}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald/15 text-emerald border border-emerald/30 text-sm font-medium disabled:opacity-50">
+                {togglingScheduler ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />} 시작
+              </button>
+            )}
+            <Toggle enabled={autoEngine} onToggle={() => setAutoEngine(!autoEngine)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 좌: 설정 */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">시작 시간</label>
+                <div className="flex items-center gap-1">
+                  <select value={startHour} onChange={e => setStartHour(e.target.value)} className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20">
+                    {hours.map(h => <option key={h} value={h}>{h}시</option>)}
+                  </select>
+                  <span className="text-muted-foreground">:</span>
+                  <select value={startMin} onChange={e => setStartMin(e.target.value)} className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20">
+                    {minutes.map(m => <option key={m} value={m}>{m}분</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">종료 시간</label>
+                <div className="flex items-center gap-1">
+                  <select value={endHour} onChange={e => setEndHour(e.target.value)} className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20">
+                    {hours.map(h => <option key={h} value={h}>{h}시</option>)}
+                  </select>
+                  <span className="text-muted-foreground">:</span>
+                  <select value={endMin} onChange={e => setEndMin(e.target.value)} className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20">
+                    {minutes.map(m => <option key={m} value={m}>{m}분</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">포스팅 요일</label>
+              <div className="flex gap-2">
+                {dayLabels.map((d, i) => (
+                  <button key={d} onClick={() => setSelectedDays(prev => prev.map((v, idx) => idx === i ? !v : v))}
+                    className={`w-9 h-9 rounded-full text-sm font-medium transition-colors ${
+                      selectedDays[i] ? 'bg-orange-500 text-white' : 'border border-border text-muted-foreground hover:border-orange-500'
+                    }`}>{d}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">포스팅 간격</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">최소</span>
+                <input type="number" value={intervalMin} onChange={e => setIntervalMin(Number(e.target.value))}
+                  className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20 text-center" />
+                <span className="text-xs text-muted-foreground">~ 최대</span>
+                <input type="number" value={intervalMax} onChange={e => setIntervalMax(Number(e.target.value))}
+                  className="rounded-lg bg-input border border-border px-3 py-2 text-foreground text-sm w-20 text-center" />
+                <span className="text-xs text-muted-foreground">분</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">일일 최대 포스팅</label>
+              <input type="number" value={dailyMax} onChange={e => setDailyMax(Number(e.target.value))} min={1}
+                className="rounded-lg bg-input border border-border px-4 py-2.5 text-foreground text-sm w-full" />
+            </div>
+
+            <button onClick={handleSaveSettings} disabled={savingSettings}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50">
+              {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              스케줄 저장
+            </button>
+          </div>
+
+          {/* 우: 스케줄러 로그 */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Terminal className="w-4 h-4 text-orange-400" /> 스케줄러 로그
+              </label>
+              <span className="text-[10px] text-muted-foreground">5초마다 갱신</span>
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 h-[320px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
+              {schedulerLogs.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                  로그 대기 중...
+                </div>
+              ) : (
+                schedulerLogs.map((l, i) => {
+                  const t = new Date(l.time)
+                  const hhmmss = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`
+                  const colors: Record<string, string> = { info: 'text-sky-300', success: 'text-emerald', warn: 'text-amber', error: 'text-rose-400', skip: 'text-muted-foreground' }
+                  return (
+                    <div key={i} className="flex items-start gap-2 px-1 py-0.5 hover:bg-white/[0.03] rounded">
+                      <span className="text-muted-foreground shrink-0">{hhmmss}</span>
+                      <span className={`${colors[l.level] || 'text-foreground'} break-all`}>{l.message}</span>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
