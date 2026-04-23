@@ -370,6 +370,27 @@ async def dashboard_buddy_pending(req: BuddyPendingRequest):
         return {"success": False, "pending_count": 0, "error": str(e)}
 
 
+# ═══════════════════════════════════════════════════════
+# 대시보드 통합 API — 티스토리 발행
+# ═══════════════════════════════════════════════════════
+
+class TistoryPublishRequest(BaseModel):
+    account: dict
+    post_data: dict
+
+@app.post("/api/dashboard/tistory/publish")
+async def dashboard_tistory_publish(req: TistoryPublishRequest):
+    """Playwright로 티스토리 블로그에 글 발행"""
+    try:
+        from browser.tistory_publisher import publish_tistory_post
+        result = await publish_tistory_post(req.account, req.post_data)
+        return result
+    except ImportError as e:
+        return {"success": False, "error": f"모듈 로드 실패: {e}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

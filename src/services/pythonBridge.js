@@ -151,6 +151,21 @@ async function checkHealth() {
 }
 
 /**
+ * 티스토리 발행 — Python tistory_publisher.publish_tistory_post 호출
+ */
+async function requestTistoryPublish(params) {
+  try {
+    const res = await axios.post(`${PYTHON_URL}/api/dashboard/tistory/publish`, params, {
+      timeout: 900000, // 15분
+    });
+    return res.data;
+  } catch (err) {
+    console.error('[PythonBridge] TistoryPublish 실패:', err.message);
+    return { success: false, error: err.response?.data?.detail || err.message };
+  }
+}
+
+/**
  * 서로이웃 수락 — Python buddy.accept_buddy_requests 호출
  */
 async function requestBuddyAccept(params) {
@@ -215,6 +230,7 @@ module.exports = {
   requestEngageBatch,
   checkDuplicate,
   checkHealth,
+  requestTistoryPublish,
   requestBuddyAccept,
   requestBuddyPending,
   requestBlogAnalyze,

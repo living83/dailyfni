@@ -18,6 +18,7 @@ const engagementRoutes = require('./routes/engagementRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const buddyRoutes = require('./routes/buddyRoutes');
 const styleRoutes = require('./routes/styleRoutes');
+const tistoryRoutes = require('./routes/tistoryRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,7 @@ app.use('/api', engagementRoutes);
 app.use('/api', statsRoutes);
 app.use('/api', buddyRoutes);
 app.use('/api', styleRoutes);
+app.use('/api', tistoryRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
