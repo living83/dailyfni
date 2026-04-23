@@ -80,15 +80,12 @@ async def kakao_login(
             # 카카오 로그인 버튼 클릭
             kakao_btn = None
             kakao_selectors = [
+                'a.link_kakao_id',
+                'a.btn_login',
+                '.link_kakao_id',
                 'a[href*="kakao"]',
                 '.btn_kakao',
-                'a:has-text("카카오")',
-                'button:has-text("카카오")',
-                'a:has-text("카카오계정으로 로그인")',
-                '.link_kakao_login',
-                '[class*="kakao"]',
-                'a[class*="login"]',
-                '.btn_login',
+                '[class*="kakao_id"]',
             ]
             for sel in kakao_selectors:
                 try:
