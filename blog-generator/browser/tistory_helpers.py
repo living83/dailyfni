@@ -68,6 +68,17 @@ async def kakao_login(
             await page.wait_for_load_state("domcontentloaded")
             await random_delay(1, 2)
 
+            # 이미 로그인된 상태면 /auth/login이 메인으로 리다이렉트됨
+            if "/auth/login" not in page.url and "tistory.com" in page.url:
+                logger.info(f"[티스토리 {account_id}] 이미 로그인 상태 (URL: {page.url})")
+                try:
+                    cookies = await context.cookies()
+                    _save_encrypted_cookies(cookie_path, cookies)
+                except Exception:
+                    pass
+                await page.close()
+                return True
+
             # 디버그: 페이지 로드 직후 HTML + 스크린샷 저장
             try:
                 html = await page.content()
