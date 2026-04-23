@@ -66,7 +66,7 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
             page = await context.new_page()
 
             # ── 2. 글쓰기 페이지 이동 ──
-            write_url = f"https://{blog_name}.tistory.com/manage/write"
+            write_url = f"https://{blog_name}.tistory.com/manage/newpost"
             logger.info(f"[{account_name}] 글쓰기 페이지: {write_url}")
             await page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
             await random_delay(2, 3)
