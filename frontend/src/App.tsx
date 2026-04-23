@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PenTool, Send, BarChart3, Heart,
-  Settings as SettingsIcon
+  Settings as SettingsIcon, BookOpen
 } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -10,6 +10,7 @@ import Posting from './pages/Posting'
 import Monitoring from './pages/Monitoring'
 import Engagement from './pages/Engagement'
 import SettingsPage from './pages/Settings'
+import TistoryPage from './pages/Tistory'
 import { type ReactNode } from 'react'
 
 /* ── Navigation items ── */
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/posting', icon: <Send size={20} />, label: '포스팅 관리' },
   { to: '/monitoring', icon: <BarChart3 size={20} />, label: '모니터링' },
   { to: '/engagement', icon: <Heart size={20} />, label: '이웃참여' },
+  { to: '/tistory', icon: <BookOpen size={20} />, label: '티스토리' },
   { to: '/settings', icon: <SettingsIcon size={20} />, label: '설정' },
 ]
 
@@ -110,6 +112,7 @@ function ProtectedLayout() {
             <Route path="/posting" element={<Posting />} />
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/engagement" element={<Engagement />} />
+            <Route path="/tistory" element={<TistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </div>

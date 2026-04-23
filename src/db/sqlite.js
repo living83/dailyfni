@@ -104,6 +104,32 @@ db.exec(`
     error TEXT DEFAULT '',
     timestamp TEXT DEFAULT (datetime('now', 'localtime'))
   );
+
+  CREATE TABLE IF NOT EXISTS tistory_accounts (
+    id TEXT PRIMARY KEY,
+    accountName TEXT NOT NULL,
+    blogName TEXT NOT NULL,
+    kakaoId TEXT NOT NULL,
+    kakaoPassword TEXT DEFAULT '',
+    tier INTEGER DEFAULT 1,
+    isActive INTEGER DEFAULT 1,
+    autoPublish INTEGER DEFAULT 1,
+    createdAt TEXT DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
+  );
+
+  CREATE TABLE IF NOT EXISTS tistory_postings (
+    id TEXT PRIMARY KEY,
+    keyword TEXT DEFAULT '',
+    accountName TEXT DEFAULT '',
+    accountId TEXT,
+    contentId TEXT,
+    status TEXT DEFAULT '대기중',
+    url TEXT,
+    error TEXT,
+    createdAt TEXT DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
+  );
 `);
 
 module.exports = db;
