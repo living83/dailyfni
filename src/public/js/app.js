@@ -4110,37 +4110,21 @@ async function loadLedgerLoanList(customerName) {
 
 async function loadLedgerTimelines(customerId) {
   try {
-    // 통합 타임라인 시도, 실패 시 기존 상담이력만 로드
-    let timelineData = [];
-    try {
-      const tRes = await fetch(`/api/customers/${customerId}/timeline`);
-      const tData = await tRes.json();
-      if (tData.success) timelineData = tData.data;
-    } catch (e) {
-      // 통합 타임라인 실패 → 기존 상담이력으로 fallback
-      try {
-        const cRes = await fetch(`/api/consultations?customerId=${customerId}`);
-        const cData = await cRes.json();
-        if (cData.success) {
-          timelineData = cData.data.map(c => ({
-            event_type: 'consultation', content: c.content,
-            sub_type: c.channel, actor: c.consulted_by,
-            occurred_at: c.consulted_at
-          }));
-        }
-      } catch (e2) {}
-    }
-
-    const consultTimeline = document.getElementById('ledgerConsultTimeline');
-    if (consultTimeline) {
-      consultTimeline.innerHTML = timelineData.length > 0
-        ? timelineData.map(ev => renderTimelineItem(ev)).join('')
-        : '<div style="font-size:11px;color:#94a3b8;padding:8px;">기록이 없습니다.</div>';
-    }
-
-    // 감사로그
-    const aRes = await fetch(`/api/audit-logs?targetId=${customerId}&targetType=customer`);
+    const [cRes, aRes] = await Promise.all([
+      fetch(`/api/consultations?customerId=${customerId}`),
+      fetch(`/api/audit-logs?targetId=${customerId}&targetType=customer`)
+    ]);
+    const cData = await cRes.json();
     const aData = await aRes.json();
+
+    // 상담이력
+    const consultTimeline = document.getElementById('ledgerConsultTimeline');
+    if (consultTimeline && cData.success) {
+      consultTimeline.innerHTML = cData.data.length > 0 ? cData.data.map(c => {
+        const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
+        return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${c.content}</div><div class="tl-user">${c.channel||'메모'} | ${c.consulted_by||'-'}</div></div>`;
+      }).join('') : '<div style="font-size:11px;color:#94a3b8;padding:8px;">기록이 없습니다.</div>';
+    }
 
     // 변경이력 (감사로그)
     const changeTimeline = document.getElementById('ledgerChangeHistory');
