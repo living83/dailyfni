@@ -101,6 +101,17 @@ async def kakao_login(
                 await page.wait_for_load_state("domcontentloaded", timeout=15000)
                 await random_delay(2, 3)
                 logger.info(f"[티스토리 {account_id}] 카카오 버튼 클릭 후 URL: {page.url}")
+
+                # 카카오 버튼 클릭만으로 로그인 완료될 수 있음 (이전 세션 쿠키)
+                if "tistory.com" in page.url and "auth" not in page.url and "login" not in page.url:
+                    logger.info(f"[티스토리 {account_id}] 카카오 세션으로 즉시 로그인 성공")
+                    try:
+                        cookies = await context.cookies()
+                        _save_encrypted_cookies(cookie_path, cookies)
+                    except Exception:
+                        pass
+                    await page.close()
+                    return True
             else:
                 # 버튼 못 찾음 — 페이지의 모든 링크/버튼 목록 로깅
                 all_links = await page.evaluate("""
@@ -204,7 +215,12 @@ async def kakao_login(
                     current_url = page.url
 
             # 티스토리로 돌아왔는지 확인
-            if "tistory.com" in current_url and "login" not in current_url:
+            is_logged_in = (
+                "tistory.com" in current_url
+                and "accounts.kakao.com" not in current_url
+                and "/auth/login" not in current_url
+            )
+            if is_logged_in:
                 logger.info(f"[티스토리 {account_id}] 카카오 로그인 성공")
                 # 쿠키 저장
                 try:
