@@ -116,7 +116,32 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
                 result["error"] = "제목 입력 필드 없음"
                 return result
 
-            # ── 4. 본문 입력 ──
+            # ── 4. 대표이미지 삽입 ──
+            post_type = post_data.get("post_type", "general")
+            is_ad_post = (post_type == "ad")
+            target_keyword = post_data.get("keyword", "")
+            target_title = post_data.get("title", target_keyword)
+
+            try:
+                from ai.image_generator import generate_image_with_gemini
+                img_description = ""
+                raw_content = post_data.get("content", "")
+                if raw_content:
+                    import re as _img_re
+                    plain = _img_re.sub(r'<[^>]+>', '', raw_content).strip()[:200]
+                    img_description = plain
+
+                logger.info(f"[{account_name}] 이미지 생성 중: '{target_title[:30]}'")
+                img_path = await generate_image_with_gemini(
+                    target_keyword, is_ad=is_ad_post,
+                    title=target_title, description=img_description,
+                )
+                if img_path:
+                    await _insert_tistory_image(page, img_path, account_name)
+            except Exception as e:
+                logger.warning(f"[{account_name}] 이미지 삽입 실패 (계속 진행): {e}")
+
+            # ── 5. 본문 입력 ──
             content = post_data.get("content", "")
             if content:
                 await _input_tistory_body(page, content, account_name)
@@ -152,6 +177,50 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
                 pass
 
     return result
+
+
+async def _insert_tistory_image(page, img_path: str, account_name: str):
+    """티스토리 에디터에 이미지 파일 삽입"""
+    try:
+        # 이미지 버튼 클릭
+        img_btn_selectors = [
+            'button[data-name="image"]',
+            'button[title*="이미지"]',
+            '.btn_image',
+            'button:has-text("사진")',
+            '[class*="image"] button',
+        ]
+        img_btn = None
+        for sel in img_btn_selectors:
+            img_btn = await page.query_selector(sel)
+            if img_btn:
+                break
+
+        # file input 직접 찾기 (버튼 없어도)
+        file_input = await page.query_selector('input[type="file"][accept*="image"]')
+        if not file_input:
+            file_input = await page.query_selector('input[type="file"]')
+
+        if file_input:
+            await file_input.set_input_files(img_path)
+            await random_delay(3, 5)
+            logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
+            return
+
+        if img_btn:
+            await img_btn.click()
+            await random_delay(1, 2)
+            # 클릭 후 file input 다시 찾기
+            file_input = await page.query_selector('input[type="file"]')
+            if file_input:
+                await file_input.set_input_files(img_path)
+                await random_delay(3, 5)
+                logger.info(f"[{account_name}] 이미지 업로드 완료 (버튼 클릭 후)")
+                return
+
+        logger.warning(f"[{account_name}] 이미지 삽입 요소를 찾지 못함 (건너뜀)")
+    except Exception as e:
+        logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
 
 
 async def _input_tistory_body(page, content: str, account_name: str):

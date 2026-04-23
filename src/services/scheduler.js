@@ -337,13 +337,13 @@ async function checkAndRun() {
         // 2. 검수완료 콘텐츠 찾기 (AI 생성 완료된 것)
         const contents = Content.listContents();
         let pendingContent = contents.find(c =>
-          c.status === '검수완료' && c.contentType === postType
+          c.status === '검수완료' && c.contentType === postType && (c.platform || 'naver') === 'naver'
         );
 
         // 검수완료가 없으면 → 발행완료 키워드 재활용 (비동기로 새 콘텐츠 AI 생성 요청)
         if (!pendingContent) {
           const usedContent = contents.find(c =>
-            c.status === '발행완료' && c.contentType === postType
+            c.status === '발행완료' && c.contentType === postType && (c.platform || 'naver') === 'naver'
           );
           if (usedContent) {
             const recycled = Content.recycleKeyword(usedContent.id);

@@ -1,8 +1,8 @@
 const { v4: uuid } = require('uuid');
 const db = require('../db/sqlite');
 
-const insert = db.prepare(`INSERT INTO contents (id, keyword, title, body, tone, contentType, productInfo, grade, status, accountId)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+const insert = db.prepare(`INSERT INTO contents (id, keyword, title, body, tone, contentType, productInfo, grade, status, accountId, platform)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const selectAll = db.prepare(`SELECT * FROM contents ORDER BY createdAt DESC`);
 const selectById = db.prepare(`SELECT * FROM contents WHERE id = ?`);
 const deleteById = db.prepare(`DELETE FROM contents WHERE id = ?`);
@@ -11,7 +11,7 @@ function createContent(data) {
   const id = uuid();
   insert.run(id, data.keyword, data.title || `${data.keyword} 관련 블로그 글`, data.body || '',
     data.tone || '친근톤', data.contentType || '일반 정보성', data.productInfo || '',
-    data.grade || null, data.status || '대기', data.accountId || null);
+    data.grade || null, data.status || '대기', data.accountId || null, data.platform || 'naver');
   return selectById.get(id);
 }
 
@@ -27,7 +27,7 @@ function updateContent(id, data) {
   const item = selectById.get(id);
   if (!item) return null;
   const sets = []; const vals = [];
-  for (const k of ['title', 'body', 'tone', 'contentType', 'productInfo', 'grade', 'status', 'accountId']) {
+  for (const k of ['title', 'body', 'tone', 'contentType', 'productInfo', 'grade', 'status', 'accountId', 'platform']) {
     if (data[k] !== undefined) { sets.push(`${k} = ?`); vals.push(data[k]); }
   }
   if (sets.length) {
@@ -54,6 +54,7 @@ function recycleKeyword(contentId) {
     tone: original.tone,
     contentType: original.contentType,
     productInfo: original.productInfo,
+    platform: original.platform || 'naver',
     status: '대기',
   });
 }

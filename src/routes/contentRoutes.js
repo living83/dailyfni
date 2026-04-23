@@ -8,7 +8,7 @@ const router = Router();
 
 // POST /api/contents — 키워드를 큐에 추가 + Python AI 생성 요청
 router.post('/contents', async (req, res) => {
-  const { keywords, tone, contentType, productInfo } = req.body;
+  const { keywords, tone, contentType, productInfo, platform } = req.body;
 
   const kwList = Array.isArray(keywords) ? keywords : [keywords];
   const created = [];
@@ -20,6 +20,7 @@ router.post('/contents', async (req, res) => {
       tone,
       contentType,
       productInfo,
+      platform: platform || 'naver',
     }));
   }
 

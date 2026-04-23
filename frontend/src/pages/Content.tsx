@@ -29,6 +29,7 @@ export default function Content() {
 
   const [tone, setTone] = useState<Tone>('친근톤')
   const [contentType, setContentType] = useState<ContentType>('일반 정보성')
+  const [platform, setPlatform] = useState<'naver' | 'tistory'>('naver')
   const [keywordInput, setKeywordInput] = useState('')
   const [keywords, setKeywords] = useState<string[]>([])
   const [productInfo, setProductInfo] = useState('')
@@ -62,7 +63,7 @@ export default function Content() {
     if (keywords.length === 0) return
     setSubmitting(true)
     try {
-      const { data } = await api.post('/contents', { keywords, tone, contentType, productInfo })
+      const { data } = await api.post('/contents', { keywords, tone, contentType, productInfo, platform })
       toast('success', `${data.count}개 키워드가 대기열에 추가되었습니다. AI 생성이 백그라운드에서 진행됩니다.`)
       setKeywords([])
       setProductInfo('')
@@ -177,13 +178,28 @@ export default function Content() {
               </div>
             </div>
 
-            {/* Content type */}
-            <div className="mb-4">
-              <label className="block text-sm text-muted-foreground mb-2">콘텐츠 유형</label>
-              <div className="flex gap-4">
-                {(['일반 정보성', '광고(대출)'] as ContentType[]).map((ct) => (
-                  <Radio key={ct} name="ct" value={ct} label={ct} checked={contentType === ct} onChange={(v) => setContentType(v as ContentType)} />
-                ))}
+            {/* Platform + Content type */}
+            <div className="mb-4 flex gap-6 flex-wrap">
+              <div>
+                <label className="block text-sm text-muted-foreground mb-2">플랫폼</label>
+                <div className="flex gap-2">
+                  {([['naver', '네이버'], ['tistory', '티스토리']] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => setPlatform(v)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        platform === v
+                          ? v === 'naver' ? 'border-emerald bg-emerald/10 text-emerald' : 'border-orange-500 bg-orange-500/10 text-orange-400'
+                          : 'border-border text-muted-foreground hover:border-primary/50'
+                      }`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-2">콘텐츠 유형</label>
+                <div className="flex gap-4">
+                  {(['일반 정보성', '광고(대출)'] as ContentType[]).map((ct) => (
+                    <Radio key={ct} name="ct" value={ct} label={ct} checked={contentType === ct} onChange={(v) => setContentType(v as ContentType)} />
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -289,6 +305,9 @@ export default function Content() {
                           {item.contentType === '광고(대출)' && (
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-destructive/15 text-destructive">AD</span>
                           )}
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            (item as any).platform === 'tistory' ? 'bg-orange-500/15 text-orange-400' : 'bg-emerald/15 text-emerald'
+                          }`}>{(item as any).platform === 'tistory' ? 'T' : 'N'}</span>
                         </div>
                         <p className="text-sm font-medium text-foreground truncate">{item.title}</p>
                       </div>

@@ -56,6 +56,7 @@ db.exec(`
     grade TEXT,
     status TEXT DEFAULT '대기',
     accountId TEXT,
+    platform TEXT DEFAULT 'naver',
     createdAt TEXT DEFAULT (datetime('now', 'localtime')),
     updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
@@ -131,5 +132,12 @@ db.exec(`
     updatedAt TEXT DEFAULT (datetime('now', 'localtime'))
   );
 `);
+
+// 기존 DB에 platform 컬럼 없으면 추가
+try {
+  db.prepare(`SELECT platform FROM contents LIMIT 1`).get();
+} catch {
+  db.exec(`ALTER TABLE contents ADD COLUMN platform TEXT DEFAULT 'naver'`);
+}
 
 module.exports = db;

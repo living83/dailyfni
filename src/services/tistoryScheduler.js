@@ -8,6 +8,7 @@ const TistoryAccount = require('../models/TistoryAccount');
 const Content = require('../models/Content');
 const { requestTistoryPublish } = require('./pythonBridge');
 const telegram = require('./telegram');
+const { processBody } = require('./postingHelper');
 const { v4: uuid } = require('uuid');
 
 // ── 상태 ──
@@ -179,7 +180,7 @@ async function checkAndRun() {
         // 검수완료 콘텐츠 찾기
         const contents = Content.listContents();
         let pendingContent = contents.find(c =>
-          c.status === '검수완료' && c.contentType === postType
+          c.status === '검수완료' && c.contentType === postType && (c.platform || 'naver') === 'tistory'
         );
 
         if (!pendingContent) {
@@ -207,7 +208,7 @@ async function checkAndRun() {
           },
           post_data: {
             title: pendingContent.title || pendingContent.keyword,
-            content: pendingContent.body || '',
+            content: processBody(pendingContent.body || '', pendingContent.contentType),
             keyword: pendingContent.keyword,
             tags: pendingContent.keyword,
             post_type: postType === '광고(대출)' ? 'ad' : 'general',
