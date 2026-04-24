@@ -101,8 +101,7 @@ function loadTodayPostedFromDB() {
   try {
     const rows = db.prepare(`
       SELECT DISTINCT accountId FROM tistory_postings
-      WHERE status IN ('발행완료', '확인필요')
-        AND date(createdAt, 'localtime') = date('now', 'localtime')
+      WHERE date(createdAt) = date('now', 'localtime')
         AND accountId IS NOT NULL
     `).all();
     return new Set(rows.map(r => r.accountId));
