@@ -242,14 +242,16 @@ router.get('/posting/scheduler-logs', (req, res) => {
   res.json({ success: true, logs: getLogs() });
 });
 
-// POST /api/posting/scheduler/stop — 스케줄러 즉시 정지
+// POST /api/posting/scheduler/stop — 스케줄러 즉시 정지 + autoEngine 끔
 router.post('/posting/scheduler/stop', (req, res) => {
   stopScheduler();
-  res.json({ success: true, running: isRunning(), message: '스케줄러가 정지되었습니다. 진행 중인 작업은 완료 후 멈춥니다.' });
+  Posting.updateSettings({ autoEngine: false });
+  res.json({ success: true, running: isRunning(), message: '스케줄러가 정지되었습니다. 서버 재시작 시에도 유지됩니다.' });
 });
 
-// POST /api/posting/scheduler/start — 스케줄러 시작
+// POST /api/posting/scheduler/start — 스케줄러 시작 + autoEngine 켬
 router.post('/posting/scheduler/start', (req, res) => {
+  Posting.updateSettings({ autoEngine: true });
   startScheduler();
   res.json({ success: true, running: isRunning(), message: '스케줄러가 시작되었습니다.' });
 });

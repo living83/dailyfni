@@ -157,16 +157,22 @@ router.get('/tistory/scheduler/logs', (req, res) => {
   res.json({ success: true, logs: tistoryScheduler.getLogs() });
 });
 
-// POST /api/tistory/scheduler/stop
+// POST /api/tistory/scheduler/stop — autoEngine도 끔
 router.post('/tistory/scheduler/stop', (req, res) => {
   tistoryScheduler.stopTistoryScheduler();
-  res.json({ success: true, running: tistoryScheduler.isRunning() });
+  const row = db.prepare(`SELECT value FROM settings WHERE key = 'tistory'`).get();
+  const current = row ? JSON.parse(row.value) : {};
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('tistory', ?)`).run(JSON.stringify({ ...current, autoEngine: false }));
+  res.json({ success: true, running: tistoryScheduler.isRunning(), message: '스케줄러가 정지되었습니다.' });
 });
 
-// POST /api/tistory/scheduler/start
+// POST /api/tistory/scheduler/start — autoEngine도 켬
 router.post('/tistory/scheduler/start', (req, res) => {
+  const row = db.prepare(`SELECT value FROM settings WHERE key = 'tistory'`).get();
+  const current = row ? JSON.parse(row.value) : {};
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('tistory', ?)`).run(JSON.stringify({ ...current, autoEngine: true }));
   tistoryScheduler.startTistoryScheduler();
-  res.json({ success: true, running: tistoryScheduler.isRunning() });
+  res.json({ success: true, running: tistoryScheduler.isRunning(), message: '스케줄러가 시작되었습니다.' });
 });
 
 module.exports = router;
