@@ -61,7 +61,7 @@ def run_seo_agent(api_key: str, research_data: dict) -> dict:
 
 # === 3. 라이터 에이전트 ===
 def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub_keywords: list, research_data: dict) -> str:
-    """톤별 블로그 글 생성"""
+    """톤별 블로그 글 생성 — 저장된 스타일 가이드가 있으면 자동 주입"""
     template_map = {
         "friendly": WRITER_FRIENDLY_PROMPT,
         "expert": WRITER_EXPERT_PROMPT,
@@ -77,6 +77,16 @@ def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub
         sub_keywords=", ".join(sub_keywords),
         research_data=json.dumps(research_data, ensure_ascii=False, indent=2),
     )
+
+    # 스타일 가이드 자동 주입 (저장된 분석 결과가 있는 경우)
+    try:
+        from ai.blog_analyzer import load_style_guide
+        guide = load_style_guide()
+        if guide:
+            prompt += f"\n\n--- 참고: 인기 블로그 분석 기반 스타일 가이드 ---\n{guide}\n위 가이드를 참고하되, 자연스럽게 반영하세요."
+    except Exception:
+        pass
+
     return _call_claude(api_key, prompt, max_tokens=4096)
 
 
