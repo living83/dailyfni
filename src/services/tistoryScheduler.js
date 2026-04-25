@@ -99,12 +99,15 @@ function getPostTypeForTier(tier, publishedCount) {
 
 function loadTodayPostedFromDB() {
   try {
+    const today = todayStr();
     const rows = db.prepare(`
       SELECT DISTINCT accountId FROM tistory_postings
-      WHERE date(createdAt) = date('now', 'localtime')
+      WHERE (date(createdAt) = ? OR date(createdAt) = date('now'))
         AND accountId IS NOT NULL
-    `).all();
-    return new Set(rows.map(r => r.accountId));
+    `).all(today);
+    const set = new Set(rows.map(r => r.accountId));
+    log('info', `DB 조회: 오늘(${today}) 포스팅 계정 ${set.size}건`);
+    return set;
   } catch (err) {
     log('error', `DB 조회 실패: ${err.message}`);
     return new Set();
