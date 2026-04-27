@@ -111,12 +111,96 @@ async def create_stealth_context(
 
     context = await browser.new_context(**context_kwargs)
 
-    # navigator.webdriver 위장 + Chrome 객체 주입
+    # 봇 탐지 우회 — 포괄적 스텔스 주입
     await context.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
-        Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR','ko','en-US','en'] });
-        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+                const arr = [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer',
+                      description: 'Portable Document Format',
+                      length: 1, item: () => null, namedItem: () => null },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai',
+                      description: '', length: 1, item: () => null, namedItem: () => null },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin',
+                      description: '', length: 1, item: () => null, namedItem: () => null }
+                ];
+                arr.item = (i) => arr[i] || null;
+                arr.namedItem = (n) => arr.find(p => p.name === n) || null;
+                arr.refresh = () => {};
+                return arr;
+            }
+        });
+
+        Object.defineProperty(navigator, 'languages', {
+            get: () => Object.freeze(['ko-KR', 'ko', 'en-US', 'en'])
+        });
+
+        window.chrome = {
+            runtime: {
+                onMessage: { addListener: function(){}, removeListener: function(){} },
+                sendMessage: function(){},
+                connect: function() {
+                    return { onMessage: { addListener: function(){} }, postMessage: function(){} };
+                },
+                PlatformOs: { MAC:'mac', WIN:'win', ANDROID:'android', CROS:'cros', LINUX:'linux', OPENBSD:'openbsd' },
+                PlatformArch: { ARM:'arm', X86_32:'x86-32', X86_64:'x86-64', MIPS:'mips', MIPS64:'mips64' },
+            },
+            csi: function() {
+                return { startE: Date.now(), onloadT: Date.now() + 281, pageT: 3947.235, tran: 15 };
+            },
+            loadTimes: function() {
+                return {
+                    commitLoadTime: Date.now() / 1000,
+                    connectionInfo: 'h2',
+                    finishDocumentLoadTime: Date.now() / 1000 + 0.357,
+                    finishLoadTime: Date.now() / 1000 + 1.2,
+                    firstPaintAfterLoadTime: 0,
+                    firstPaintTime: Date.now() / 1000 + 0.45,
+                    navigationType: 'Other',
+                    npnNegotiatedProtocol: 'h2',
+                    requestTime: Date.now() / 1000 - 0.5,
+                    startLoadTime: Date.now() / 1000 - 0.3,
+                    wasAlternateProtocolAvailable: false,
+                    wasFetchedViaSpdy: true,
+                    wasNpnNegotiated: true,
+                };
+            },
+        };
+
+        if (typeof Permissions !== 'undefined' && Permissions.prototype.query) {
+            const origQuery = Permissions.prototype.query;
+            Permissions.prototype.query = function(params) {
+                if (params && params.name === 'notifications') {
+                    return Promise.resolve({ state: Notification.permission });
+                }
+                return origQuery.call(this, params);
+            };
+        }
+
+        try {
+            const getParam = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(p) {
+                if (p === 37445) return 'Google Inc. (NVIDIA)';
+                if (p === 37446) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 SUPER, OpenGL 4.5)';
+                return getParam.call(this, p);
+            };
+        } catch(e) {}
+
+        Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+
+        if (typeof navigator.connection === 'undefined') {
+            Object.defineProperty(navigator, 'connection', {
+                get: () => ({
+                    effectiveType: '4g', rtt: 50, downlink: 10, saveData: false,
+                    addEventListener: function(){}, removeEventListener: function(){}
+                })
+            });
+        }
+
+        delete window.__playwright;
+        delete window.__pw_manual;
     """)
 
     return browser, context
@@ -198,16 +282,11 @@ async def login(
                 await random_delay(2, 4)
                 continue
 
-            # 아이디 입력 - JS nativeInputValueSetter 방식
-            await page.evaluate("""(value) => {
-                const field = document.querySelector('#id');
-                if (field) {
-                    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
-                        .set.call(field, value);
-                    field.dispatchEvent(new Event('input', {bubbles: true}));
-                    field.dispatchEvent(new Event('change', {bubbles: true}));
-                }
-            }""", naver_id)
+            # 아이디 입력 — 키보드 타이핑 (JS injection은 네이버가 탐지)
+            await id_field.click()
+            await random_delay(0.3, 0.7)
+            await id_field.fill("")
+            await id_field.type(naver_id, delay=random.randint(30, 80))
             await random_delay(0.5, 1.0)
 
             # 비밀번호 입력 - page.fill() 사용 (특수문자 안전, #pw 없으면 경고)
@@ -218,48 +297,41 @@ async def login(
                 await pw_field.type(naver_password, delay=50)
                 logger.debug(f"[계정 {account_id}] 비밀번호 입력 완료")
             else:
-                logger.warning(f"[계정 {account_id}] #pw 필드 없음 — JS fallback 시도")
-                await page.evaluate("""(value) => {
-                    const field = document.querySelector('#pw, input[type=password]');
-                    if (field) {
-                        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
-                            .set.call(field, value);
-                        field.dispatchEvent(new Event('input', {bubbles: true}));
-                        field.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                }""", naver_password)
+                logger.warning(f"[계정 {account_id}] #pw 필드 없음 — input[type=password] fallback")
+                pw_alt = await page.query_selector("input[type=password]")
+                if pw_alt:
+                    await pw_alt.click()
+                    await pw_alt.fill("")
+                    await pw_alt.type(naver_password, delay=random.randint(30, 60))
+                else:
+                    logger.error(f"[계정 {account_id}] 비밀번호 필드를 찾을 수 없음")
             await random_delay(0.5, 1.0)
 
             # 로그인 버튼 클릭 (다양한 셀렉터 시도)
             btn = await page.query_selector(
-                "#log\\.login, .btn_login, button[type='submit'], input[type='submit']"
+                "#log\\.login, .btn_login, .btn_global, "
+                "button[type='submit'], input[type='submit']"
             )
             if btn:
                 await btn.click()
             else:
-                # 버튼을 못 찾으면 Enter 키 대체
                 logger.warning(f"[계정 {account_id}] 로그인 버튼을 찾지 못해 Enter로 대체")
                 await page.keyboard.press("Enter")
 
             await page.wait_for_load_state("domcontentloaded", timeout=30000)
             await random_delay(3, 5)
 
-            # ── 본인인증 요구 감지 (허용되지 않은 지역 로그인) ─────
-            # 스크린샷: "회원님이 로그인을 허용하지 않은 지역에서 로그인 되었습니다."
+            # ── 본인인증 요구 감지 ─────────────────────────────────
             page_text = await page.evaluate("() => document.body.innerText")
             if "허용하지 않은 지역" in page_text or "본인확인이 필요" in page_text or "휴대전화 번호" in page_text:
                 logger.error(
-                    f"[계정 {account_id}] ❌ 본인인증 요구 감지! "
-                    f"네이버가 이 IP를 낯선 지역으로 차단했습니다. "
-                    f"URL: {page.url}"
+                    f"[계정 {account_id}] 본인인증 요구 감지! URL: {page.url}"
                 )
                 await capture_debug(page, f"identity_verify_required_{account_id}")
-                # 텔레그램 알림
                 try:
                     from telegram_notifier import send_telegram_message
                     await send_telegram_message(
-                        f"🚨 [계정 {account_id}] 네이버 본인인증 요구!\n"
-                        f"현재 IP가 네이버에서 차단됐습니다.\n"
+                        f"[계정 {account_id}] 네이버 본인인증 요구!\n"
                         f"네이버 보안설정에서 이 기기를 신뢰 기기로 등록하거나,\n"
                         f"쿠키를 수동으로 저장해주세요."
                     )
@@ -268,13 +340,59 @@ async def login(
                 await page.close()
                 return False
 
-            # CAPTCHA 감지
-            captcha = await page.query_selector("#captcha, .captcha_wrap, #recaptcha")
+            # ── CAPTCHA 감지 + 자동 풀이 ───────────────────────────
+            has_captcha = False
+            captcha = await page.query_selector(
+                "#captcha, .captcha_wrap, #recaptcha, .captcha_area, "
+                "#captchaimg, img[src*='captcha'], img[src*='ncaptcha'], "
+                "input[name*='captcha'], input[placeholder*='정답']"
+            )
             if captcha:
-                logger.error(f"[계정 {account_id}] CAPTCHA 감지 — 수동 개입 필요")
-                await capture_debug(page, f"captcha_account_{account_id}")
-                await page.close()
-                return False
+                has_captcha = True
+            elif "자동입력 방지" in page_text or "정답을 입력" in page_text:
+                has_captcha = True
+
+            if has_captcha:
+                logger.warning(f"[계정 {account_id}] CAPTCHA 감지 — 자동 풀이 시도")
+                await capture_debug(page, f"captcha_account_{account_id}_attempt{attempt}")
+                try:
+                    from captcha_solver import detect_and_solve_captcha
+                    result = await detect_and_solve_captcha(page)
+                    if result == "solved":
+                        logger.info(f"[계정 {account_id}] CAPTCHA 자동 풀이 성공")
+                        # 비밀번호 재입력 (CAPTCHA 출현 시 비밀번호 필드가 초기화됨)
+                        pw_retry = await page.query_selector("#pw")
+                        if pw_retry:
+                            await pw_retry.click()
+                            await pw_retry.fill("")
+                            await pw_retry.type(naver_password, delay=random.randint(30, 60))
+                            await random_delay(0.5, 1.0)
+                        # 로그인 버튼 재클릭
+                        btn2 = await page.query_selector(
+                            "#log\\.login, .btn_login, .btn_global, "
+                            "button[type='submit']"
+                        )
+                        if btn2:
+                            await btn2.click()
+                        else:
+                            await page.keyboard.press("Enter")
+                        await page.wait_for_load_state("domcontentloaded", timeout=30000)
+                        await random_delay(3, 5)
+                        # 로그인 성공 확인
+                        if "nidlogin" not in page.url:
+                            cookies = await context.cookies()
+                            _save_encrypted_cookies(cookie_path, cookies)
+                            await _share_cookies_for_cbox(context)
+                            logger.info(f"[계정 {account_id}] CAPTCHA 풀이 후 로그인 성공")
+                            await page.close()
+                            return True
+                        logger.warning(f"[계정 {account_id}] CAPTCHA 풀이 후에도 로그인 실패")
+                    else:
+                        logger.error(f"[계정 {account_id}] CAPTCHA 자동 풀이 실패: {result}")
+                except Exception as e:
+                    logger.error(f"[계정 {account_id}] CAPTCHA 풀이 예외: {e}")
+                await random_delay(3, 6)
+                continue
 
             # 로그인 실패 감지 (아직 로그인 페이지에 머무는 경우)
             if "nidlogin" in page.url:
@@ -287,7 +405,7 @@ async def login(
             cookies = await context.cookies()
             _save_encrypted_cookies(cookie_path, cookies)
             await _share_cookies_for_cbox(context)
-            logger.info(f"[계정 {account_id}] ID/PW 로그인 성공 ✅ URL: {page.url}")
+            logger.info(f"[계정 {account_id}] ID/PW 로그인 성공 URL: {page.url}")
             await page.close()
             return True
 

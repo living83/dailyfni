@@ -381,13 +381,8 @@ async def solve_captcha(page) -> bool:
         import asyncio
         await asyncio.sleep(0.3)
 
-        # JS로 값 설정 + 이벤트 발행
-        await page.evaluate("""(args) => {
-            var el = args.el;
-            el.value = args.answer;
-            el.dispatchEvent(new Event('input', {bubbles: true}));
-            el.dispatchEvent(new Event('change', {bubbles: true}));
-        }""", {"el": captcha_input, "answer": answer})
+        await captcha_input.fill("")
+        await captcha_input.type(answer, delay=50)
         logger.info(f"캡차 정답 입력 완료: '{answer}'")
 
         # 디버그 스크린샷
