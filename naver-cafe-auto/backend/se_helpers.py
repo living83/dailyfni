@@ -272,17 +272,19 @@ async def login(
                 # networkidle 타임아웃은 무시하고 진행
                 pass
 
-            await random_delay(1.0, 2.0)
+            # 네이버 암호화 모듈 로딩 대기 (2~3초 추가)
+            await random_delay(2.0, 3.5)
 
             # 입력 필드 존재 확인
             id_field = await page.query_selector("#id")
-            if not id_field:
-                logger.warning(f"[계정 {account_id}] #id 입력 필드를 찾지 못함 (시도 {attempt}/3)")
-                await capture_debug(page, f"login_no_id_field_{account_id}_attempt{attempt}")
+            pw_field = await page.query_selector("#pw")
+            if not id_field or not pw_field:
+                logger.warning(f"[계정 {account_id}] 입력 필드를 찾지 못함 (id={bool(id_field)}, pw={bool(pw_field)}) (시도 {attempt}/3)")
+                await capture_debug(page, f"login_no_field_{account_id}_attempt{attempt}")
                 await random_delay(2, 4)
                 continue
 
-            # 아이디 입력 — Ctrl+A로 선택 후 키보드 타이핑 (fill() 사용 안 함)
+            # 아이디 입력
             await id_field.click()
             await random_delay(0.3, 0.7)
             await page.keyboard.press("Control+a")
@@ -290,16 +292,25 @@ async def login(
             await page.keyboard.type(naver_id, delay=random.randint(50, 120))
             await random_delay(0.5, 1.0)
 
-            # Tab으로 비밀번호 필드 이동 (클릭보다 자연스러움)
-            await page.keyboard.press("Tab")
+            # 비밀번호 입력 — #pw 직접 클릭 (Tab은 다른 요소로 갈 수 있음)
+            await pw_field.click()
             await random_delay(0.3, 0.7)
             await page.keyboard.press("Control+a")
             await random_delay(0.1, 0.2)
             await page.keyboard.type(naver_password, delay=random.randint(30, 80))
-            logger.debug(f"[계정 {account_id}] ID/PW 입력 완료")
             await random_delay(0.5, 1.0)
 
-            # Enter로 로그인 제출 (버튼 셀렉터 의존 제거)
+            # 입력값 확인 로그
+            try:
+                id_val = await page.evaluate("() => document.querySelector('#id').value")
+                pw_len = await page.evaluate("() => document.querySelector('#pw').value.length")
+                logger.info(f"[계정 {account_id}] 입력 확인: ID='{id_val}', PW길이={pw_len}")
+            except Exception:
+                pass
+
+            await capture_debug(page, f"login_before_submit_{account_id}_attempt{attempt}")
+
+            # Enter로 로그인 제출
             await page.keyboard.press("Enter")
 
             await page.wait_for_load_state("domcontentloaded", timeout=30000)
