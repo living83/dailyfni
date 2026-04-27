@@ -608,8 +608,8 @@ async def _click_publish(page: Page, editor: Frame | Page) -> bool:
             pass
     
     submit_btn = None
-    
-    # 1단계: CSS 셀렉터 (기존 매크로 동일)
+
+    # 1단계: CSS 셀렉터 (기존 매크로 동일 + 상단 헤더 등록 버튼 패턴 추가)
     submit_selectors = [
         "button.BaseButton--skinGreen",
         "button.BaseButton--skinRed",
@@ -618,9 +618,17 @@ async def _click_publish(page: Page, editor: Frame | Page) -> bool:
         "button[class*='publish']",
         "a[class*='btn_publish']",
         "a[class*='publish']",
+        "a.btn_green",
+        "a.btn_submit",
+        "a[class*='submit']",
+        "a[class*='register']",
+        ".tool_area a",
+        ".btn_area a",
+        "header a",
+        ".toolbar a",
     ]
-    
-    for t in [editor, page]:
+
+    for t in [page, editor]:
         for sel in submit_selectors:
             try:
                 candidates = await t.query_selector_all(sel)
@@ -677,9 +685,25 @@ async def _click_publish(page: Page, editor: Frame | Page) -> bool:
             submit_btn = None
     
     if not submit_btn:
+        await capture_debug(page, "publish_btn_not_found")
         logger.error("등록 버튼을 찾을 수 없습니다.")
+        try:
+            all_btns = await page.evaluate("""() => {
+                var els = document.querySelectorAll('button, a, [role="button"]');
+                var result = [];
+                for (var i = 0; i < els.length; i++) {
+                    var txt = (els[i].textContent || '').trim();
+                    if (txt.length > 0 && txt.length < 20) {
+                        result.push({tag: els[i].tagName, text: txt, cls: els[i].className.substring(0, 80)});
+                    }
+                }
+                return result;
+            }""")
+            logger.error(f"페이지 내 모든 버튼/링크: {json.dumps(all_btns, ensure_ascii=False)[:1000]}")
+        except Exception:
+            pass
         return False
-    
+
     # dialog(alert) 핸들러 등록 — 클릭 전에 먼저 등록해야 함
     dialog_msg = []
     async def _on_dialog(dialog):
