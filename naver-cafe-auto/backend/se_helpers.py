@@ -282,41 +282,25 @@ async def login(
                 await random_delay(2, 4)
                 continue
 
-            # 아이디 입력 — 키보드 타이핑 (JS injection은 네이버가 탐지)
+            # 아이디 입력 — Ctrl+A로 선택 후 키보드 타이핑 (fill() 사용 안 함)
             await id_field.click()
             await random_delay(0.3, 0.7)
-            await id_field.fill("")
-            await id_field.type(naver_id, delay=random.randint(30, 80))
+            await page.keyboard.press("Control+a")
+            await random_delay(0.1, 0.2)
+            await page.keyboard.type(naver_id, delay=random.randint(50, 120))
             await random_delay(0.5, 1.0)
 
-            # 비밀번호 입력 - page.fill() 사용 (특수문자 안전, #pw 없으면 경고)
-            pw_field = await page.query_selector("#pw")
-            if pw_field:
-                await pw_field.click()
-                await pw_field.fill("")
-                await pw_field.type(naver_password, delay=50)
-                logger.debug(f"[계정 {account_id}] 비밀번호 입력 완료")
-            else:
-                logger.warning(f"[계정 {account_id}] #pw 필드 없음 — input[type=password] fallback")
-                pw_alt = await page.query_selector("input[type=password]")
-                if pw_alt:
-                    await pw_alt.click()
-                    await pw_alt.fill("")
-                    await pw_alt.type(naver_password, delay=random.randint(30, 60))
-                else:
-                    logger.error(f"[계정 {account_id}] 비밀번호 필드를 찾을 수 없음")
+            # Tab으로 비밀번호 필드 이동 (클릭보다 자연스러움)
+            await page.keyboard.press("Tab")
+            await random_delay(0.3, 0.7)
+            await page.keyboard.press("Control+a")
+            await random_delay(0.1, 0.2)
+            await page.keyboard.type(naver_password, delay=random.randint(30, 80))
+            logger.debug(f"[계정 {account_id}] ID/PW 입력 완료")
             await random_delay(0.5, 1.0)
 
-            # 로그인 버튼 클릭 (다양한 셀렉터 시도)
-            btn = await page.query_selector(
-                "#log\\.login, .btn_login, .btn_global, "
-                "button[type='submit'], input[type='submit']"
-            )
-            if btn:
-                await btn.click()
-            else:
-                logger.warning(f"[계정 {account_id}] 로그인 버튼을 찾지 못해 Enter로 대체")
-                await page.keyboard.press("Enter")
+            # Enter로 로그인 제출 (버튼 셀렉터 의존 제거)
+            await page.keyboard.press("Enter")
 
             await page.wait_for_load_state("domcontentloaded", timeout=30000)
             await random_delay(3, 5)
@@ -364,18 +348,11 @@ async def login(
                         pw_retry = await page.query_selector("#pw")
                         if pw_retry:
                             await pw_retry.click()
-                            await pw_retry.fill("")
-                            await pw_retry.type(naver_password, delay=random.randint(30, 60))
+                            await random_delay(0.2, 0.5)
+                            await page.keyboard.press("Control+a")
+                            await page.keyboard.type(naver_password, delay=random.randint(30, 80))
                             await random_delay(0.5, 1.0)
-                        # 로그인 버튼 재클릭
-                        btn2 = await page.query_selector(
-                            "#log\\.login, .btn_login, .btn_global, "
-                            "button[type='submit']"
-                        )
-                        if btn2:
-                            await btn2.click()
-                        else:
-                            await page.keyboard.press("Enter")
+                        await page.keyboard.press("Enter")
                         await page.wait_for_load_state("domcontentloaded", timeout=30000)
                         await random_delay(3, 5)
                         # 로그인 성공 확인
