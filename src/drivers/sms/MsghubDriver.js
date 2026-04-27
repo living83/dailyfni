@@ -30,7 +30,7 @@ async function sendSms({
   );
 
   // 2) 우리 DB 에 이력 저장
-  const [result] = await query(
+  const result = await query(
     `INSERT INTO sms_logs
        (customer_id, customer_name, phone, msg_type, content, template_name, template_code, client_key, sent_by, status)
      VALUES (?, ?, ?, 'SMS', ?, ?, ?, ?, ?, 'pending')`,
@@ -49,7 +49,7 @@ async function sendSmsBulk({
   sentBy = '',
 }) {
   // 배치 생성
-  const [batchResult] = await query(
+  const batchResult = await query(
     `INSERT INTO sms_batches (template_name, template_code, content, msg_type, total_count, sent_by)
      VALUES (?, ?, ?, 'SMS', ?, ?)`,
     [templateName, templateCode, content, recipients.length, sentBy]
@@ -159,10 +159,11 @@ async function syncSmsResults(customerId) {
   const batches = [...new Set(pending.filter(r => r.batch_id).map(r => r.batch_id))];
   for (const batchId of batches) {
     try {
-      const [s] = await query(
+      const rows = await query(
         "SELECT SUM(status='done') AS ok, SUM(status='failed') AS fail FROM sms_logs WHERE batch_id = ?",
         [batchId]
       );
+      const s = rows[0];
       await query(
         'UPDATE sms_batches SET success_count = ?, fail_count = ? WHERE id = ?',
         [s.ok || 0, s.fail || 0, batchId]
