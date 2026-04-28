@@ -14,7 +14,7 @@ module.exports = {
     },
     {
       name: 'blog-macro-python',
-      script: 'venv/bin/uvicorn',
+      script: '/opt/dailyfni-blog/blog-generator/venv/bin/uvicorn',
       args: 'main:app --host 0.0.0.0 --port 8001',
       cwd: '/opt/dailyfni-blog/blog-generator/backend',
       interpreter: 'none',
