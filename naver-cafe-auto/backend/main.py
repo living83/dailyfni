@@ -3,6 +3,7 @@ main.py - FastAPI 서버
 네이버 카페 자동 발행 시스템 API + SSE 실시간 상태 전송
 """
 
+import os
 import sys
 import json
 import asyncio
@@ -767,4 +768,5 @@ if __name__ == "__main__":
     # 핸들러 포맷을 상세 포맷으로 변경
     log_config["formatters"]["default"]["fmt"] = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=False, log_config=log_config)
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False, log_config=log_config)
