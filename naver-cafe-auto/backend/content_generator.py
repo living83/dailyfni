@@ -92,7 +92,7 @@ async def async_generate_content(keyword: str, tone: str = "공감", cta_link: s
     logger.info(f"Claude 3.5 API 요청: 키워드 '{keyword}', 톤 '{tone}'")
 
     response = await client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-haiku-4-5-20251001",
         max_tokens=4000,
         temperature=0.8,
         messages=[
