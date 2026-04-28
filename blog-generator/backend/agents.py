@@ -19,7 +19,7 @@ def _call_claude(api_key: str, prompt: str, max_tokens: int = 4096) -> str:
     """Claude API 호출 공통 함수"""
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-haiku-4-5-20251001",
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
