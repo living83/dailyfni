@@ -8,6 +8,7 @@ module.exports = {
       interpreter: "none",
       env: {
         PORT: "8002",
+        ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || "",
       },
       watch: false,
       autorestart: true,

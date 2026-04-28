@@ -7,13 +7,15 @@ import os
 import sys
 import json
 import asyncio
+import hashlib
+import secrets
 import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -51,6 +53,83 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── 세션 인증 ────────────────────────────────────────────
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+_sessions: set[str] = set()
+
+LOGIN_PAGE_HTML = """<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>로그인 - DailyFNI 카페 매크로</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Pretendard',-apple-system,sans-serif;background:#0a0f1c;color:#e0e0e0;
+display:flex;justify-content:center;align-items:center;min-height:100vh}
+.box{background:#131b2e;border:1px solid rgba(56,189,148,.2);border-radius:12px;padding:40px;width:360px}
+h2{text-align:center;margin-bottom:24px;color:#38bd94}
+input{width:100%;padding:12px;border:1px solid #2a3a5c;border-radius:8px;background:#0d1420;
+color:#e0e0e0;font-size:15px;margin-bottom:16px;outline:none}
+input:focus{border-color:#38bd94}
+button{width:100%;padding:12px;border:none;border-radius:8px;background:#38bd94;color:#fff;
+font-size:15px;font-weight:600;cursor:pointer}
+button:hover{background:#2ea67a}
+.err{color:#ff6b6b;text-align:center;margin-bottom:12px;font-size:13px}
+</style></head><body>
+<div class="box"><h2>DailyFNI 카페 매크로</h2>
+<div class="err" id="err"></div>
+<form method="POST" action="/login">
+<input type="password" name="password" placeholder="비밀번호" autofocus>
+<button type="submit">로그인</button></form></div>
+<script>
+const u=new URLSearchParams(location.search);
+if(u.get('error'))document.getElementById('err').textContent='비밀번호가 틀립니다';
+</script></body></html>"""
+
+
+@app.get("/login")
+def login_page():
+    if not ADMIN_PASSWORD:
+        return RedirectResponse("/")
+    return HTMLResponse(LOGIN_PAGE_HTML)
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    form = await request.form()
+    pw = form.get("password", "")
+    if pw == ADMIN_PASSWORD:
+        token = secrets.token_hex(32)
+        _sessions.add(token)
+        resp = RedirectResponse("/", status_code=302)
+        resp.set_cookie("session", token, httponly=True, max_age=86400 * 7)
+        return resp
+    return RedirectResponse("/login?error=1", status_code=302)
+
+
+@app.get("/logout")
+def logout(session: str = Cookie(default="")):
+    _sessions.discard(session)
+    resp = RedirectResponse("/login")
+    resp.delete_cookie("session")
+    return resp
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not ADMIN_PASSWORD:
+        return await call_next(request)
+    path = request.url.path
+    if path in ("/login", "/favicon.ico") or path.startswith("/static"):
+        return await call_next(request)
+    token = request.cookies.get("session", "")
+    if token not in _sessions:
+        if path.startswith("/api/"):
+            return Response(status_code=401, content='{"detail":"Unauthorized"}',
+                            media_type="application/json")
+        return RedirectResponse("/login")
+    return await call_next(request)
+
 
 # 프론트엔드 정적 파일
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
