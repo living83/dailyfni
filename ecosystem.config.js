@@ -8,6 +8,7 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001,
         PYTHON_API_URL: 'http://localhost:8001',
+        ADMIN_PASSWORD: 'changeme',
       },
       max_memory_restart: '500M',
       restart_delay: 5000,

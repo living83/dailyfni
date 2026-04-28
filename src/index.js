@@ -20,11 +20,19 @@ const buddyRoutes = require('./routes/buddyRoutes');
 const styleRoutes = require('./routes/styleRoutes');
 const tistoryRoutes = require('./routes/tistoryRoutes');
 
+const { sessionAuth, loginHandler, logoutHandler, checkHandler } = require('./middleware/sessionAuth');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- 미들웨어 ---
 app.use(express.json());
+app.use(sessionAuth);
+
+// --- 인증 ---
+app.post('/api/admin/login', loginHandler);
+app.get('/api/admin/logout', logoutHandler);
+app.get('/api/admin/check', checkHandler);
 
 // --- 라우트 ---
 app.get('/api/health', (req, res) => {

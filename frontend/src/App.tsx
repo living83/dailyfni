@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PenTool, Send, BarChart3, Heart,
-  Settings as SettingsIcon, BookOpen
+  Settings as SettingsIcon, BookOpen, LogOut
 } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -11,7 +11,9 @@ import Monitoring from './pages/Monitoring'
 import Engagement from './pages/Engagement'
 import SettingsPage from './pages/Settings'
 import TistoryPage from './pages/Tistory'
-import { type ReactNode } from 'react'
+import Login from './pages/Login'
+import { type ReactNode, useState, useEffect } from 'react'
+import api, { setOnUnauthorized } from './lib/api'
 
 /* ── Navigation items ── */
 const navItems = [
@@ -71,22 +73,31 @@ function Sidebar() {
         ))}
       </div>
 
-      {/* System Status */}
+      {/* System Status + Logout */}
       <div className="px-6 pt-6 border-t border-border mt-2">
-        <div className="flex items-center gap-3">
-          <span className="relative flex h-2.5 w-2.5">
-            {systemActive && (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald opacity-75" />
-            )}
-            <span
-              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
-                systemActive ? 'bg-emerald' : 'bg-muted-foreground'
-              }`}
-            />
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {systemActive ? 'System Active' : 'System Paused'}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2.5 w-2.5">
+              {systemActive && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald opacity-75" />
+              )}
+              <span
+                className={`relative inline-flex h-2.5 w-2.5 rounded-full ${
+                  systemActive ? 'bg-emerald' : 'bg-muted-foreground'
+                }`}
+              />
+            </span>
+            <span className="text-sm text-muted-foreground">
+              {systemActive ? 'System Active' : 'System Paused'}
+            </span>
+          </div>
+          <button
+            onClick={() => { api.get('/admin/logout').then(() => window.location.reload()) }}
+            className="text-muted-foreground hover:text-foreground transition"
+            title="로그아웃"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </nav>
@@ -123,6 +134,18 @@ function ProtectedLayout() {
 
 /* ── App root ── */
 export default function App() {
+  const [authed, setAuthed] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    setOnUnauthorized(() => setAuthed(false))
+    api.get('/admin/check')
+      .then(r => setAuthed(r.data.authenticated))
+      .catch(() => setAuthed(false))
+  }, [])
+
+  if (authed === null) return null
+  if (!authed) return <Login onLogin={() => setAuthed(true)} />
+
   return (
     <Router>
       <Routes>
