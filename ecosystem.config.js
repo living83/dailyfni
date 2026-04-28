@@ -22,6 +22,7 @@ module.exports = {
         VIRTUAL_ENV: '/opt/dailyfni-blog/blog-generator/venv',
         PATH: '/opt/dailyfni-blog/blog-generator/venv/bin:/usr/bin:/bin',
         PYTHON_API_PORT: '8001',
+        ADMIN_PASSWORD: 'changeme',
       },
       max_memory_restart: '1G',
       restart_delay: 5000,

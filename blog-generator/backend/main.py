@@ -5,11 +5,13 @@ SSE(Server-Sent Events)로 진행 상태를 실시간 전송합니다.
 
 import json
 import asyncio
+import os
+import secrets
 import sys
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -19,6 +21,28 @@ from agents import run_research_agent, run_seo_agent, run_writer_agent, run_revi
 BLOG_GEN_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BLOG_GEN_DIR))
 
+# ── 세션 인증 ──
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+_sessions: set[str] = set()
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>로그인 - DailyFNI Blog</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1a1d2e;font-family:sans-serif}
+.box{background:#262b4d;padding:40px;border-radius:12px;width:320px;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+h2{color:#fff;margin:0 0 24px;text-align:center}
+input{width:100%;padding:12px;border:1px solid #3a3f5c;border-radius:8px;background:#1a1d2e;color:#fff;font-size:15px;box-sizing:border-box}
+button{width:100%;padding:12px;border:none;border-radius:8px;background:#2777b0;color:#fff;font-size:15px;cursor:pointer;margin-top:16px}
+button:hover{background:#1e6090}
+.err{color:#ff6b6b;text-align:center;margin-top:12px;font-size:14px}
+</style></head>
+<body><div class="box"><h2>DailyFNI Blog</h2>
+<form method="post" action="/login">
+<input type="password" name="password" placeholder="비밀번호" autofocus>
+<button type="submit">로그인</button>
+</form>{error}</div></body></html>"""
+
 app = FastAPI(title="DailyFNI Blog Generator")
 
 app.add_middleware(
@@ -26,7 +50,56 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
+
+# ── 인증 미들웨어 ──
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not ADMIN_PASSWORD:
+        return await call_next(request)
+
+    path = request.url.path
+    if path in ("/login", "/favicon.ico") or path.startswith("/static"):
+        return await call_next(request)
+
+    session = request.cookies.get("session")
+    if session and session in _sessions:
+        return await call_next(request)
+
+    if path.startswith("/api"):
+        return Response(content='{"detail":"Unauthorized"}', status_code=401, media_type="application/json")
+    return RedirectResponse("/login", status_code=302)
+
+# ── 로그인/로그아웃 ──
+@app.get("/login")
+async def login_page():
+    if not ADMIN_PASSWORD:
+        return RedirectResponse("/", status_code=302)
+    return HTMLResponse(LOGIN_HTML.replace("{error}", ""))
+
+@app.post("/login")
+async def login_submit(request: Request):
+    if not ADMIN_PASSWORD:
+        return RedirectResponse("/", status_code=302)
+    form = await request.form()
+    password = form.get("password", "")
+    if password == ADMIN_PASSWORD:
+        token = secrets.token_hex(32)
+        _sessions.add(token)
+        resp = RedirectResponse("/", status_code=302)
+        resp.set_cookie("session", token, max_age=7*24*3600, httponly=True)
+        return resp
+    return HTMLResponse(LOGIN_HTML.replace("{error}", '<p class="err">비밀번호가 틀렸습니다</p>'))
+
+@app.get("/logout")
+async def logout(request: Request):
+    session = request.cookies.get("session")
+    if session:
+        _sessions.discard(session)
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie("session")
+    return resp
 
 # 프론트엔드 정적 파일 서빙
 FRONTEND_DIR = BLOG_GEN_DIR / "frontend"
