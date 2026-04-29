@@ -41,6 +41,7 @@ export default function Posting() {
 
   const [queue, setQueue] = useState<PostingQueueItem[]>([])
   const [errors, setErrors] = useState<ErrorLogEntry[]>([])
+  const [logs, setLogs] = useState<{time: string; level: string; message: string}[]>([])
   const [loading, setLoading] = useState(true)
   const [runningAll, setRunningAll] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
@@ -52,8 +53,12 @@ export default function Posting() {
   const fetchErrors = useCallback(async () => {
     try { const { data } = await api.get('/posting/errors'); setErrors(data.errors || []) } catch {}
   }, [])
+  const fetchLogs = useCallback(async () => {
+    try { const { data } = await api.get('/posting/scheduler-logs'); setLogs(data.logs || []) } catch {}
+  }, [])
 
-  useEffect(() => { fetchQueue(); fetchErrors() }, [fetchQueue, fetchErrors])
+  useEffect(() => { fetchQueue(); fetchErrors(); fetchLogs() }, [fetchQueue, fetchErrors, fetchLogs])
+  useEffect(() => { const id = setInterval(fetchLogs, 3000); return () => clearInterval(id) }, [fetchLogs])
 
   const handleRunAll = async () => {
     setRunningAll(true)
@@ -186,6 +191,24 @@ export default function Posting() {
               ))}
             </ul>
           )}
+        </div>
+      </div>
+
+      {/* 스케줄러 실시간 로그 */}
+      <div className="glass-panel rounded-xl p-5">
+        <h2 className="text-lg font-semibold text-foreground mb-4">스케줄러 실시간 로그 <span className="text-xs text-muted-foreground font-normal ml-2">3초마다 갱신</span></h2>
+        <div className="max-h-[400px] overflow-y-auto space-y-1 font-mono text-xs">
+          {logs.length === 0 ? (
+            <p className="text-muted-foreground text-sm">로그가 없습니다</p>
+          ) : logs.map((log, i) => {
+            const time = new Date(log.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            const color = log.level === 'error' ? 'text-red-400' : log.level === 'success' ? 'text-emerald' : log.level === 'warn' ? 'text-amber' : log.level === 'skip' ? 'text-muted-foreground/50' : 'text-muted-foreground'
+            return (
+              <div key={i} className={`${color} ${log.level === 'skip' ? 'opacity-50' : ''}`}>
+                <span className="text-muted-foreground/70">{time}</span> {log.message}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
