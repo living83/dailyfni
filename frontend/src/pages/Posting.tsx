@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Zap, Play, Trash2, CheckCircle2, Loader2, Clock, XCircle,
-  AlertTriangle, Info, Send,
+  AlertTriangle, Info, Send, Square, PlayCircle,
 } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
@@ -44,6 +44,7 @@ export default function Posting() {
   const [logs, setLogs] = useState<{time: string; level: string; message: string}[]>([])
   const [loading, setLoading] = useState(true)
   const [runningAll, setRunningAll] = useState(false)
+  const [schedulerRunning, setSchedulerRunning] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
 
   const fetchQueue = useCallback(async () => {
@@ -57,8 +58,19 @@ export default function Posting() {
     try { const { data } = await api.get('/posting/scheduler-logs'); setLogs(data.logs || []) } catch {}
   }, [])
 
-  useEffect(() => { fetchQueue(); fetchErrors(); fetchLogs() }, [fetchQueue, fetchErrors, fetchLogs])
-  useEffect(() => { const id = setInterval(fetchLogs, 3000); return () => clearInterval(id) }, [fetchLogs])
+  const fetchStatus = useCallback(async () => {
+    try { const { data } = await api.get('/posting/scheduler-status'); setSchedulerRunning(data.running) } catch {}
+  }, [])
+
+  useEffect(() => { fetchQueue(); fetchErrors(); fetchLogs(); fetchStatus() }, [fetchQueue, fetchErrors, fetchLogs, fetchStatus])
+  useEffect(() => { const id = setInterval(() => { fetchLogs(); fetchStatus() }, 3000); return () => clearInterval(id) }, [fetchLogs, fetchStatus])
+
+  const handleStop = async () => {
+    try { await api.post('/posting/scheduler/stop'); setSchedulerRunning(false); toast('success', '스케줄러 정지됨') } catch { toast('error', '정지 실패') }
+  }
+  const handleStart = async () => {
+    try { await api.post('/posting/scheduler/start'); setSchedulerRunning(true); toast('success', '스케줄러 시작됨') } catch { toast('error', '시작 실패') }
+  }
 
   const handleRunAll = async () => {
     setRunningAll(true)
@@ -101,11 +113,24 @@ export default function Posting() {
           <h1 className="text-2xl font-bold text-foreground">포스팅 관리</h1>
           <p className="text-sm text-muted-foreground">수동 포스팅 발행 및 오류 로그를 관리합니다</p>
         </div>
-        <button onClick={handleRunAll} disabled={runningAll}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald text-white text-sm font-medium hover:bg-emerald/90 transition-colors disabled:opacity-50">
-          {runningAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-          즉시 발행
-        </button>
+        <div className="flex items-center gap-2">
+          {schedulerRunning ? (
+            <button onClick={handleStop}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-destructive text-white text-sm font-medium hover:bg-destructive/90 transition-colors">
+              <Square className="w-4 h-4" /> 스케줄러 중지
+            </button>
+          ) : (
+            <button onClick={handleStart}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
+              <PlayCircle className="w-4 h-4" /> 스케줄러 시작
+            </button>
+          )}
+          <button onClick={handleRunAll} disabled={runningAll}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald text-white text-sm font-medium hover:bg-emerald/90 transition-colors disabled:opacity-50">
+            {runningAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            즉시 발행
+          </button>
+        </div>
       </div>
 
       {/* 자동 포스팅 스케줄은 시스템 설정 페이지로 이동되었다는 안내 */}
