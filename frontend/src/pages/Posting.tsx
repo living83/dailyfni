@@ -63,7 +63,7 @@ export default function Posting() {
   }, [])
 
   useEffect(() => { fetchQueue(); fetchErrors(); fetchLogs(); fetchStatus() }, [fetchQueue, fetchErrors, fetchLogs, fetchStatus])
-  useEffect(() => { const id = setInterval(() => { fetchLogs(); fetchStatus() }, 3000); return () => clearInterval(id) }, [fetchLogs, fetchStatus])
+  useEffect(() => { const id = setInterval(fetchLogs, 3000); return () => clearInterval(id) }, [fetchLogs])
 
   const handleStop = async () => {
     try { await api.post('/posting/scheduler/stop'); setSchedulerRunning(false); toast('success', '스케줄러 정지됨') } catch { toast('error', '정지 실패') }
@@ -205,23 +205,27 @@ export default function Posting() {
         </div>
       </div>
 
-      {/* 스케줄러 실시간 로그 */}
-      <div className="glass-panel rounded-xl p-5">
-        <h2 className="text-lg font-semibold text-foreground mb-4">스케줄러 실시간 로그 <span className="text-xs text-muted-foreground font-normal ml-2">3초마다 갱신</span></h2>
-        <div className="max-h-[400px] overflow-y-auto space-y-1 font-mono text-xs">
-          {logs.length === 0 ? (
-            <p className="text-muted-foreground text-sm">로그가 없습니다</p>
-          ) : logs.map((log, i) => {
-            const time = new Date(log.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-            const color = log.level === 'error' ? 'text-red-400' : log.level === 'success' ? 'text-emerald' : log.level === 'warn' ? 'text-amber' : log.level === 'skip' ? 'text-muted-foreground/50' : 'text-muted-foreground'
-            return (
-              <div key={i} className={`${color} ${log.level === 'skip' ? 'opacity-50' : ''}`}>
-                <span className="text-muted-foreground/70">{time}</span> {log.message}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      {/* 발행 로그 (즉시발행 + 수동 큐 실행만 표시) */}
+      {(() => {
+        const manualLogs = logs.filter(l => l.message.includes('[수동]') || l.message.includes('[즉시발행]'))
+        if (manualLogs.length === 0) return null
+        return (
+          <div className="glass-panel rounded-xl p-5">
+            <h2 className="text-lg font-semibold text-foreground mb-4">발행 로그</h2>
+            <div className="max-h-[400px] overflow-y-auto space-y-1 font-mono text-xs">
+              {manualLogs.map((log, i) => {
+                const time = new Date(log.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                const color = log.level === 'error' ? 'text-red-400' : log.level === 'success' ? 'text-emerald' : log.level === 'warn' ? 'text-amber' : 'text-muted-foreground'
+                return (
+                  <div key={i} className={color}>
+                    <span className="text-muted-foreground/70">{time}</span> {log.message}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
