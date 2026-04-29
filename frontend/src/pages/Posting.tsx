@@ -149,48 +149,34 @@ export default function Posting() {
           {queue.length === 0 ? (
             <EmptyState icon={<Send className="w-12 h-12" />} title="포스팅 큐가 비어 있습니다" description="콘텐츠를 생성하고 포스팅 큐에 추가해 보세요." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-muted-foreground border-b border-border">
-                    <th className="pb-3 font-medium">#</th>
-                    <th className="pb-3 font-medium">키워드</th>
-                    <th className="pb-3 font-medium">대상계정</th>
-                    <th className="pb-3 font-medium">톤</th>
-                    <th className="pb-3 font-medium">상태</th>
-                    <th className="pb-3 font-medium">관리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {queue.map((row, idx) => (
-                    <tr key={row.id} className="text-foreground hover:bg-white/[0.03] transition-colors">
-                      <td className="py-3 text-muted-foreground">{idx + 1}</td>
-                      <td className="py-3 font-medium">{row.keyword}</td>
-                      <td className="py-3 text-muted-foreground">{row.accountName}</td>
-                      <td className="py-3"><StatusBadge label={row.tone} /></td>
-                      <td className="py-3">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[row.status]}`}>
-                          <StatusIcon status={row.status} />{row.status}
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleRunOne(row.id)}
-                            disabled={runningIds.has(row.id) || row.status === '발행중' || row.status === '발행완료'}
-                            className="p-1.5 rounded-md hover:bg-primary/15 text-muted-foreground hover:text-primary transition-colors disabled:opacity-30" title="즉시 실행">
-                            {runningIds.has(row.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                          </button>
-                          <button onClick={() => handleDelete(row.id)}
-                            className="p-1.5 rounded-md hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-colors" title="삭제">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
+              {queue.map((row, idx) => (
+                <li key={row.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
+                  <div className="mt-0.5"><StatusIcon status={row.status} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className="text-xs text-muted-foreground">#{idx + 1}</span>
+                      <span className="text-xs font-medium text-foreground">{row.accountName}</span>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${statusStyle[row.status]}`}>{row.status}</span>
+                      <StatusBadge label={row.tone} />
+                    </div>
+                    <p className="text-sm text-foreground break-words">{row.keyword}</p>
+                    {row.error && <p className="text-xs text-destructive mt-1">{row.error}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => handleRunOne(row.id)}
+                      disabled={runningIds.has(row.id) || row.status === '발행중' || row.status === '발행완료'}
+                      className="p-1.5 rounded-md hover:bg-primary/15 text-muted-foreground hover:text-primary transition-colors disabled:opacity-30" title="즉시 실행">
+                      {runningIds.has(row.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => handleDelete(row.id)}
+                      className="p-1.5 rounded-md hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-colors" title="삭제">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
