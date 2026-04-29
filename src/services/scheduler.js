@@ -530,5 +530,6 @@ module.exports = {
   daysBetween,
   checkTierUpgrades,
   getLogs,
+  addLog: log,
   isRunning: () => running,
 };

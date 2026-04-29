@@ -7,7 +7,7 @@ const { requestPublish } = require('../services/pythonBridge');
 const telegram = require('../services/telegram');
 const { processBody } = require('../services/postingHelper');
 const { getPostTypeForTier, daysBetween } = require('../services/scheduler');
-const { getSchedulerStatus, restartScheduler, getLogs, stopScheduler, startScheduler, isRunning } = require('../services/scheduler');
+const { getSchedulerStatus, restartScheduler, getLogs, stopScheduler, startScheduler, isRunning, addLog } = require('../services/scheduler');
 
 const router = Router();
 
@@ -96,7 +96,7 @@ router.post('/posting/queue/:id/run', async (req, res) => {
         url: result.url,
         error: null,
       });
-      console.log(`[Posting] 발행 성공: ${posting.keyword} → ${result.url}`);
+      addLog('success', `[수동] 발행 성공: ${posting.accountName} → ${result.url}`);
       telegram.notifyPublishSuccess(posting.accountName, posting.keyword, result.url);
     } else {
       Posting.updatePosting(req.params.id, {
@@ -109,18 +109,17 @@ router.post('/posting/queue/:id/run', async (req, res) => {
         severity: '오류',
       });
       if (result.timedOut) {
-        // 타임아웃: 실제로는 성공했을 수 있으므로 "확인 필요" 상태로 남김
         Posting.updatePosting(posting.id, { status: '확인필요', error: '타임아웃 — 실제 발행 여부 확인 필요' });
-        console.warn(`[Posting] 발행 타임아웃 (확인필요): ${posting.keyword}`);
+        addLog('warn', `[수동] 발행 타임아웃 (확인필요): ${posting.accountName} / ${posting.keyword}`);
       } else {
-        console.error(`[Posting] 발행 실패: ${posting.keyword} — ${result.error}`);
+        addLog('error', `[수동] 발행 실패: ${posting.accountName} — ${result.error}`);
         telegram.notifyPublishFail(posting.accountName, posting.keyword, result.error);
       }
     }
   } catch (err) {
     Posting.updatePosting(req.params.id, { status: '실패', error: err.message });
     Posting.addError({ accountName: posting.accountName, message: err.message, severity: '오류' });
-    console.error(`[Posting] 발행 예외: ${posting.keyword}`, err.message);
+    addLog('error', `[수동] 발행 예외: ${posting.accountName} — ${err.message}`);
   }
 });
 
@@ -215,10 +214,11 @@ router.post('/posting/run-all', async (req, res) => {
 
       if (result.success) {
         Posting.updatePosting(p.id, { status: '발행완료', url: result.url });
-        console.log(`[Posting] 발행 성공: ${p.keyword} → ${result.url}`);
+        addLog('success', `[즉시발행] 성공: ${p.accountName} / "${p.keyword}" → ${result.url}`);
       } else {
         Posting.updatePosting(p.id, { status: '실패', error: result.error });
         Posting.addError({ accountName: p.accountName, message: result.error || '발행 실패', severity: '오류' });
+        addLog('error', `[즉시발행] 실패: ${p.accountName} / "${p.keyword}" — ${result.error}`);
       }
 
       // 다음 발행까지 간격 (5-15초 랜덤)
@@ -228,6 +228,7 @@ router.post('/posting/run-all', async (req, res) => {
     } catch (err) {
       Posting.updatePosting(p.id, { status: '실패', error: err.message });
       Posting.addError({ accountName: p.accountName, message: err.message, severity: '오류' });
+      addLog('error', `[즉시발행] 예외: ${p.accountName} — ${err.message}`);
     }
   }
 });
