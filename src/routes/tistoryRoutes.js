@@ -115,7 +115,7 @@ router.post('/tistory/test-publish', async (req, res) => {
 // POST /api/tistory/run-all — 즉시 발행 (검수완료 콘텐츠 + 활성 계정 매칭)
 router.post('/tistory/run-all', async (req, res) => {
   const activeAccounts = TistoryAccount.listAccounts().filter(a => a.isActive && a.autoPublish);
-  const contents = Content.listContents().filter(c => c.status === '검수완료' && (c.platform || 'naver') === 'tistory');
+  const contents = Content.listContents().filter(c => c.status === '검수완료');
 
   if (activeAccounts.length === 0) return res.json({ success: true, message: '활성 계정이 없습니다.', count: 0 });
   if (contents.length === 0) return res.json({ success: true, message: '검수완료된 티스토리 콘텐츠가 없습니다.', count: 0 });
