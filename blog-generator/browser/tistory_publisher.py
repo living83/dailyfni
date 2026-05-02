@@ -180,41 +180,49 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
-    """티스토리 에디터에 이미지 파일 삽입"""
+    """티스토리 에디터에 이미지 파일 삽입 — file_chooser 방식"""
     try:
-        # file input 직접 찾기 (버튼 클릭 없이 — 가장 안전)
-        file_input = await page.query_selector('input[type="file"][accept*="image"]')
-        if not file_input:
-            file_input = await page.query_selector('input[type="file"]')
+        # 툴바에서 사진/이미지 버튼 찾기
+        img_btn = None
+        for sel in [
+            'button .mce-i-image',
+            '.mce-i-image',
+            'button[aria-label*="사진"]',
+            'button[aria-label*="이미지"]',
+            'button[aria-label*="image"]',
+            '#attach-layer-btn',
+            '.tox-tbtn--select[aria-label*="image"]',
+        ]:
+            el = await page.query_selector(sel)
+            if el:
+                # mce-i-image는 아이콘이므로 부모 버튼 찾기
+                if 'mce-i' in sel:
+                    img_btn = await el.evaluate_handle(
+                        'el => el.closest("button") || el.closest("[role=button]") || el'
+                    )
+                else:
+                    img_btn = el
+                logger.info(f"[{account_name}] 이미지 버튼 발견: {sel}")
+                break
 
-        if file_input:
-            await file_input.set_input_files(img_path)
-            await random_delay(3, 5)
-            logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
+        if not img_btn:
+            logger.warning(f"[{account_name}] 이미지 버튼을 찾지 못함 (건너뜀)")
             return
 
-        # file input 없으면 버튼 클릭 시도 (5초 제한)
-        try:
-            img_btn = await page.query_selector('#attach-layer-btn')
-            if img_btn:
-                await asyncio.wait_for(
-                    img_btn.click(), timeout=5.0
-                )
-                await random_delay(1, 2)
-                file_input = await page.query_selector('input[type="file"]')
-                if file_input:
-                    await file_input.set_input_files(img_path)
-                    await random_delay(3, 5)
-                    logger.info(f"[{account_name}] 이미지 업로드 완료 (버튼 클릭 후)")
-                    return
-        except (asyncio.TimeoutError, Exception) as e:
-            logger.debug(f"[{account_name}] 첨부 버튼 클릭 실패: {e}")
-            await page.keyboard.press("Escape")
-            await random_delay(0.5, 1)
+        # file_chooser 이벤트로 네이티브 파일 다이얼로그 가로채기
+        async with page.expect_file_chooser(timeout=10000) as fc_info:
+            await img_btn.click()
+        file_chooser = await fc_info.value
+        await file_chooser.set_files(img_path)
+        await random_delay(3, 5)
+        logger.info(f"[{account_name}] 이미지 업로드 완료 (file_chooser): {img_path}")
 
-        logger.warning(f"[{account_name}] 이미지 삽입 요소를 찾지 못함 (건너뜀)")
     except Exception as e:
-        logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
+        logger.warning(f"[{account_name}] 이미지 삽입 실패 (건너뜀): {e}")
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
 
 
 async def _input_tistory_body(page, content: str, account_name: str):
