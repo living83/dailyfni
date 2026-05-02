@@ -1,10 +1,10 @@
-"""3가지 레이아웃 데모 이미지 생성"""
+"""30가지 레이아웃 데모 이미지 생성"""
 import asyncio
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from ai.html_banner import _build_html, _pick_theme, _detect_category, IMAGES_DIR
+from ai.html_banner import _build_html, _pick_theme, _detect_category, IMAGES_DIR, NUM_LAYOUTS
 
 async def main():
     from playwright.async_api import async_playwright
@@ -18,7 +18,7 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
-        for i in range(3):
+        for i in range(NUM_LAYOUTS):
             html = _build_html(title, "", category, theme, layout=i)
             html_path = IMAGES_DIR / f"_demo_{i}.html"
             png_path = IMAGES_DIR / f"demo_layout_{i}.png"
