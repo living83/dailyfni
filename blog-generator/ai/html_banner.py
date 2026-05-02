@@ -6,6 +6,7 @@ Playwright로 HTML을 렌더링하여 960x540 PNG 스크린샷을 생성합니�
 
 import asyncio
 import hashlib
+import random
 import time
 from pathlib import Path
 from typing import Optional
@@ -87,14 +88,12 @@ def _escape_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
-def _build_html(title: str, subtitle: str = "", category: str = "금융 정보 블로그", theme: dict = None) -> str:
+def _build_html(title: str, subtitle: str = "", category: str = "금융 정보 블로그", theme: dict = None, layout: int = 0) -> str:
     if theme is None:
         theme = THEMES[0]
 
-    # 제목이 30자 이상이면 폰트 살짝 줄임
     title_size = "38px" if len(title) > 30 else "42px"
     title_escaped = _escape_html(title)
-    # <br> 삽입: 쉼표 뒤 또는 중간 지점
     if "," in title_escaped:
         title_html = title_escaped.replace(",", ",<br>", 1)
     elif len(title_escaped) > 20:
@@ -109,6 +108,15 @@ def _build_html(title: str, subtitle: str = "", category: str = "금융 정보 �
 
     subtitle_html = _escape_html(subtitle) if subtitle else ""
 
+    if layout == 1:
+        return _layout_left_card(title_html, subtitle_html, category, theme, title_size)
+    elif layout == 2:
+        return _layout_wave_bottom(title_html, subtitle_html, category, theme, title_size)
+    else:
+        return _layout_center_badge(title_html, subtitle_html, category, theme, title_size)
+
+
+def _layout_center_badge(title_html, subtitle_html, category, theme, title_size):
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
@@ -132,6 +140,78 @@ body{{width:960px;height:540px;font-family:'Noto Sans KR',sans-serif;overflow:hi
 <div class="t">{title_html}</div>
 {"<div class='s'>" + subtitle_html + "</div>" if subtitle_html else ""}
 <div class="bl"></div>
+</div></body></html>"""
+
+
+def _layout_left_card(title_html, subtitle_html, category, theme, title_size):
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{width:960px;height:540px;font-family:'Noto Sans KR',sans-serif;overflow:hidden}}
+.wrap{{width:960px;height:540px;background:{theme['bg']};position:relative;display:flex;align-items:center;padding:0 70px}}
+.card{{background:rgba(255,255,255,0.85);border-radius:20px;padding:45px 50px;max-width:560px;box-shadow:0 8px 32px rgba(0,0,0,0.08);position:relative;z-index:2}}
+.cat{{display:inline-block;background:{theme['badge_text']};color:#fff;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;letter-spacing:1px;margin-bottom:20px;text-transform:uppercase}}
+.t{{font-size:{title_size};font-weight:900;color:{theme['title']};line-height:1.35;margin-bottom:16px;word-break:keep-all}}
+.line{{width:50px;height:4px;background:{theme['bottom']};border-radius:2px;margin-bottom:16px}}
+.s{{font-size:17px;font-weight:400;color:{theme['subtitle']};line-height:1.6}}
+.side{{position:absolute;right:0;top:0;width:340px;height:540px;display:flex;align-items:center;justify-content:center}}
+.ring{{border:3px solid {theme['badge_border']};border-radius:50%;opacity:0.25;position:absolute}}
+.r1{{width:260px;height:260px}}
+.r2{{width:180px;height:180px}}
+.r3{{width:100px;height:100px}}
+.dot{{width:12px;height:12px;border-radius:50%;background:{theme['deco']};opacity:0.3;position:absolute}}
+.dot1{{top:80px;right:100px}}.dot2{{top:200px;right:50px}}.dot3{{bottom:100px;right:150px}}.dot4{{top:140px;right:250px}}
+</style></head><body>
+<div class="wrap">
+<div class="card">
+<div class="cat">{_escape_html(category)}</div>
+<div class="t">{title_html}</div>
+<div class="line"></div>
+{"<div class='s'>" + subtitle_html + "</div>" if subtitle_html else ""}
+</div>
+<div class="side">
+<div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+<div class="dot dot1"></div><div class="dot dot2"></div><div class="dot dot3"></div><div class="dot dot4"></div>
+</div>
+</div></body></html>"""
+
+
+def _layout_wave_bottom(title_html, subtitle_html, category, theme, title_size):
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{width:960px;height:540px;font-family:'Noto Sans KR',sans-serif;overflow:hidden}}
+.wrap{{width:960px;height:540px;background:#fff;position:relative;display:flex;flex-direction:column;justify-content:center;padding:50px 80px}}
+.cat{{display:inline-flex;align-items:center;gap:8px;margin-bottom:28px}}
+.cat-dot{{width:8px;height:8px;border-radius:50%;background:{theme['deco']}}}
+.cat-text{{font-size:14px;font-weight:600;color:{theme['badge_text']};letter-spacing:1px}}
+.t{{font-size:{title_size};font-weight:900;color:#1a1a2e;line-height:1.4;margin-bottom:20px;word-break:keep-all}}
+.t span{{background:linear-gradient(transparent 60%,{theme['badge_border']}50 40%);padding:0 4px}}
+.s{{font-size:18px;font-weight:400;color:#666;line-height:1.6;max-width:500px}}
+.wave{{position:absolute;bottom:0;left:0;right:0;height:160px;overflow:hidden}}
+.wave svg{{position:absolute;bottom:0;width:100%}}
+.accent{{position:absolute;top:40px;right:60px;width:120px;height:120px;border-radius:50%;background:{theme['bg']};opacity:0.6}}
+.accent2{{position:absolute;top:120px;right:20px;width:60px;height:60px;border-radius:50%;background:{theme['deco']};opacity:0.15}}
+.stripe{{position:absolute;right:80px;bottom:180px;display:flex;gap:6px}}
+.stripe div{{width:4px;height:30px;background:{theme['deco']};opacity:0.2;border-radius:2px}}
+</style></head><body>
+<div class="wrap">
+<div class="cat"><div class="cat-dot"></div><div class="cat-text">{_escape_html(category)}</div></div>
+<div class="t">{title_html}</div>
+{"<div class='s'>" + subtitle_html + "</div>" if subtitle_html else ""}
+<div class="accent"></div>
+<div class="accent2"></div>
+<div class="stripe"><div></div><div style="height:22px"></div><div style="height:36px"></div><div style="height:18px"></div></div>
+<div class="wave">
+<svg viewBox="0 0 960 160" preserveAspectRatio="none">
+<path d="M0,80 C200,20 400,140 600,60 C750,10 880,90 960,50 L960,160 L0,160 Z" fill="{theme['deco']}" opacity="0.12"/>
+<path d="M0,110 C150,60 350,150 550,80 C700,30 850,100 960,70 L960,160 L0,160 Z" fill="{theme['deco']}" opacity="0.08"/>
+</svg>
+</div>
 </div></body></html>"""
 
 
@@ -159,7 +239,10 @@ async def generate_html_banner(
     category = _detect_category(keyword, title)
     theme = _pick_theme(keyword)
 
-    html = _build_html(display_title, subtitle, category, theme)
+    NUM_LAYOUTS = 3
+    layout = random.randint(0, NUM_LAYOUTS - 1)
+    html = _build_html(display_title, subtitle, category, theme, layout)
+    logger.info(f"배너 레이아웃: {layout}, 테마: {THEMES.index(theme)}")
 
     # 임시 HTML 파일 저장
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
