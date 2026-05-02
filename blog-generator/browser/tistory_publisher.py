@@ -180,9 +180,9 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
-    """티스토리 에디터에 이미지 파일 삽입 (16:38 정상 동작 버전 기반)"""
+    """티스토리 에디터에 이미지 파일 삽입"""
     try:
-        # file input 직접 찾기
+        # file input 직접 찾기 (버튼 클릭 없이 — 가장 안전)
         file_input = await page.query_selector('input[type="file"][accept*="image"]')
         if not file_input:
             file_input = await page.query_selector('input[type="file"]')
@@ -193,23 +193,24 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
             logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
             return
 
-        # 이미지/첨부 버튼 클릭 후 file input 찾기
-        img_btn = None
-        for sel in ['#attach-layer-btn', 'button[data-name="image"]',
-                     'button:has-text("사진")', 'button[title*="이미지"]']:
-            img_btn = await page.query_selector(sel)
+        # file input 없으면 버튼 클릭 시도 (5초 제한)
+        try:
+            img_btn = await page.query_selector('#attach-layer-btn')
             if img_btn:
-                break
-
-        if img_btn:
-            await img_btn.click()
-            await random_delay(1, 2)
-            file_input = await page.query_selector('input[type="file"]')
-            if file_input:
-                await file_input.set_input_files(img_path)
-                await random_delay(3, 5)
-                logger.info(f"[{account_name}] 이미지 업로드 완료 (버튼 클릭 후)")
-                return
+                await asyncio.wait_for(
+                    img_btn.click(), timeout=5.0
+                )
+                await random_delay(1, 2)
+                file_input = await page.query_selector('input[type="file"]')
+                if file_input:
+                    await file_input.set_input_files(img_path)
+                    await random_delay(3, 5)
+                    logger.info(f"[{account_name}] 이미지 업로드 완료 (버튼 클릭 후)")
+                    return
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.debug(f"[{account_name}] 첨부 버튼 클릭 실패: {e}")
+            await page.keyboard.press("Escape")
+            await random_delay(0.5, 1)
 
         logger.warning(f"[{account_name}] 이미지 삽입 요소를 찾지 못함 (건너뜀)")
     except Exception as e:
@@ -453,11 +454,12 @@ async def _publish_tistory(page, account_name: str) -> dict:
 
     # Step 4: 발행 후 디버그 + URL 추출
     await capture_debug(page, f"tistory_after_publish_{account_name}")
-    await random_delay(2, 3)
     current_url = page.url
-    logger.info(f"[{account_name}] 발행 후 URL: {current_url}")
 
-    # 글 목록 페이지로 이동하여 실제 발행 여부 확인
+    if "/manage/newpost" not in current_url and "/manage/write" not in current_url:
+        return {"success": True, "url": current_url}
+
+    # URL이 아직 에디터면 → 글 목록에서 최신 글 URL 추출
     try:
         await page.goto(
             f"https://{blog_name}.tistory.com/manage/posts",
@@ -465,60 +467,12 @@ async def _publish_tistory(page, account_name: str) -> dict:
             timeout=15000,
         )
         await random_delay(1, 2)
-
-        # 최신 글 정보 추출
-        post_info = await page.evaluate("""() => {
-            // 글 목록에서 첫 번째 글의 제목, 상태, URL 확인
-            const rows = document.querySelectorAll(
-                'tr, .post-item, [class*="post"], [class*="article"]'
-            );
-            for (const row of rows) {
-                const titleEl = row.querySelector(
-                    '.post_title a, .tit_post a, a[href*="/manage/post/"], a[href*="tistory.com/"]'
-                );
-                if (titleEl) {
-                    const statusEl = row.querySelector(
-                        '.post_state, .state, [class*="status"], [class*="visibility"]'
-                    );
-                    return {
-                        title: titleEl.textContent?.trim()?.substring(0, 50),
-                        href: titleEl.getAttribute('href'),
-                        status: statusEl?.textContent?.trim() || 'unknown'
-                    };
-                }
-            }
-            // 테이블 형태
-            const firstLink = document.querySelector('.post_title a, .tit_post a, table a');
-            if (firstLink) {
-                return {
-                    title: firstLink.textContent?.trim()?.substring(0, 50),
-                    href: firstLink.getAttribute('href'),
-                    status: 'found'
-                };
-            }
-            return null;
-        }""")
-
-        await capture_debug(page, f"tistory_post_list_{account_name}")
-
-        if post_info and post_info.get("href"):
-            href = post_info["href"]
-            if not href.startswith("http"):
-                href = f"https://{blog_name}.tistory.com{href}"
-            logger.info(
-                f"[{account_name}] 글 목록 확인 - 제목: {post_info.get('title')}, "
-                f"상태: {post_info.get('status')}, URL: {href}"
-            )
-            return {"success": True, "url": href}
-        else:
-            logger.warning(f"[{account_name}] 글 목록에서 게시글을 찾을 수 없음")
-            return {"success": False, "error": "글 목록에 게시글 없음 (발행 실패)"}
-
-    except Exception as e:
-        logger.warning(f"[{account_name}] 글 목록 확인 실패: {e}")
-
-    # 글 목록 확인 실패 시 URL로 판단
-    if "/manage/newpost" not in current_url and "/manage/write" not in current_url:
-        return {"success": True, "url": current_url}
+        first_link = await page.query_selector('.post_title a, .tit_post a, table a')
+        if first_link:
+            url = await first_link.get_attribute("href")
+            if url:
+                return {"success": True, "url": url}
+    except Exception:
+        pass
 
     return {"success": False, "error": "발행 후 URL 확인 실패 (실제 발행 미확인)"}
