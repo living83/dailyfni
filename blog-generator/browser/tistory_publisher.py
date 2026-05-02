@@ -192,7 +192,7 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
-    """티스토리 에디터에 이미지 파일 삽입"""
+    """티스토리 에디터에 이미지 파일 삽입 (base64 우선)"""
     import base64
 
     img_path_obj = Path(img_path)
@@ -200,92 +200,53 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
         logger.warning(f"[{account_name}] 이미지 파일 없음: {img_path}")
         return
 
-    uploaded = False
-
+    # ── 방법 1 (최우선): TinyMCE iframe에 base64 이미지 직접 삽입 ──
+    # 타임아웃 위험 없이 가장 확실한 방식
     try:
-        # ── 방법 1: file input 직접 찾기 (이미 존재하는 경우) ──
+        iframe_el = await page.wait_for_selector(
+            'iframe#editor-tistory_ifr, iframe[id$="_ifr"]', timeout=10000
+        )
+        if iframe_el:
+            frame = await iframe_el.content_frame()
+            if frame:
+                body_el = await frame.wait_for_selector(
+                    'body#tinymce, body.mce-content-body', timeout=5000
+                )
+                if body_el:
+                    img_data = img_path_obj.read_bytes()
+                    b64 = base64.b64encode(img_data).decode()
+                    suffix = img_path_obj.suffix.lower().lstrip('.')
+                    mime = f"image/{'jpeg' if suffix in ('jpg','jpeg') else suffix}"
+
+                    await frame.evaluate('''(imgSrc) => {
+                        const body = document.querySelector('body#tinymce') || document.body;
+                        const img = document.createElement('img');
+                        img.src = imgSrc;
+                        img.style.maxWidth = '100%';
+                        img.style.display = 'block';
+                        img.style.margin = '10px auto';
+                        body.insertBefore(img, body.firstChild);
+                    }''', f'data:{mime};base64,{b64}')
+                    await random_delay(0.5, 1)
+                    logger.info(f"[{account_name}] 이미지 삽입 완료 (base64 → TinyMCE)")
+                    return
+    except Exception as e:
+        logger.debug(f"[{account_name}] base64 이미지 삽입 실패: {e}")
+
+    # ── 방법 2: file input 직접 찾기 ──
+    try:
         file_input = await page.query_selector('input[type="file"][accept*="image"]')
         if not file_input:
             file_input = await page.query_selector('input[type="file"]')
-
         if file_input:
             await file_input.set_input_files(img_path)
             await random_delay(3, 5)
-            logger.info(f"[{account_name}] 이미지 업로드 완료 (기존 file input)")
-            uploaded = True
-
-        # ── 방법 2: 첨부 버튼 → 사진 메뉴 → file input ──
-        if not uploaded:
-            attach_btn = await page.query_selector('#attach-layer-btn')
-            if attach_btn:
-                await attach_btn.click()
-                logger.info(f"[{account_name}] 첨부 버튼 클릭")
-                await random_delay(1, 2)
-
-                # 드롭다운에서 "사진" 메뉴 클릭
-                photo_menu = await page.query_selector(
-                    'a:has-text("사진"), button:has-text("사진"), '
-                    '[class*="menu"] a:first-child, .mce-menu-item:first-child'
-                )
-                if photo_menu:
-                    await photo_menu.click()
-                    logger.info(f"[{account_name}] 사진 메뉴 클릭")
-                    await random_delay(2, 3)
-
-                # 사진 메뉴 클릭 후 file input 재탐색
-                file_input = await page.query_selector('input[type="file"][accept*="image"]')
-                if not file_input:
-                    file_input = await page.query_selector('input[type="file"]')
-                if file_input:
-                    await file_input.set_input_files(img_path)
-                    await random_delay(3, 5)
-                    logger.info(f"[{account_name}] 이미지 업로드 완료 (첨부 메뉴)")
-                    uploaded = True
-
-        # ── 방법 3: TinyMCE에 base64 이미지 직접 삽입 ──
-        if not uploaded:
-            try:
-                img_data = img_path_obj.read_bytes()
-                b64 = base64.b64encode(img_data).decode()
-                suffix = img_path_obj.suffix.lower().lstrip('.')
-                mime = f"image/{'jpeg' if suffix in ('jpg','jpeg') else suffix}"
-
-                # TinyMCE iframe 찾아서 이미지 삽입
-                iframe_el = await page.query_selector(
-                    'iframe#editor-tistory_ifr, iframe[id$="_ifr"]'
-                )
-                if iframe_el:
-                    frame = await iframe_el.content_frame()
-                    if frame:
-                        await frame.evaluate(f'''() => {{
-                            const body = document.querySelector('body#tinymce') || document.body;
-                            const img = document.createElement('img');
-                            img.src = 'data:{mime};base64,{b64}';
-                            img.style.maxWidth = '100%';
-                            img.style.display = 'block';
-                            img.style.margin = '10px auto';
-                            body.insertBefore(img, body.firstChild);
-                        }}''')
-                        await random_delay(1, 2)
-                        logger.info(f"[{account_name}] TinyMCE base64 이미지 직접 삽입 완료")
-                        uploaded = True
-            except Exception as e:
-                logger.debug(f"[{account_name}] base64 이미지 삽입 실패: {e}")
-
-        if not uploaded:
-            # 디버그: 페이지의 버튼/input 목록 로깅
-            debug_info = await page.evaluate('''() => {
-                const btns = document.querySelectorAll('button, [role="button"]');
-                const inputs = document.querySelectorAll('input[type="file"]');
-                return {
-                    buttons: Array.from(btns).slice(0, 10).map(b => ({id: b.id, text: b.textContent?.trim()?.substring(0, 30)})),
-                    fileInputs: inputs.length
-                };
-            }''')
-            logger.warning(f"[{account_name}] 이미지 삽입 모두 실패. 디버그: {debug_info}")
-
+            logger.info(f"[{account_name}] 이미지 업로드 완료 (file input)")
+            return
     except Exception as e:
-        logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
+        logger.debug(f"[{account_name}] file input 이미지 삽입 실패: {e}")
+
+    logger.warning(f"[{account_name}] 이미지 삽입 실패 (건너뜀)")
 
 
 async def _input_tistory_body(page, content: str, account_name: str):
@@ -312,11 +273,13 @@ async def _input_tistory_body(page, content: str, account_name: str):
                         'body#tinymce, body.mce-content-body', timeout=5000
                     )
                     if body_el:
-                        # JavaScript로 HTML 직접 삽입 (가장 확실한 방법)
-                        await frame.evaluate(f'''() => {{
+                        # 기존 이미지 보존하면서 본문 HTML 추가
+                        await frame.evaluate('''(newHtml) => {
                             const body = document.querySelector('body#tinymce') || document.body;
-                            body.innerHTML = {repr(html_content)};
-                        }}''')
+                            const existingImages = body.querySelectorAll('img');
+                            const imgHtmls = Array.from(existingImages).map(i => i.outerHTML);
+                            body.innerHTML = imgHtmls.join('') + newHtml;
+                        }''', html_content)
                         await random_delay(0.5, 1)
                         logger.info(f"[{account_name}] TinyMCE iframe 본문 입력 완료 ({sel})")
                         return
@@ -331,10 +294,12 @@ async def _input_tistory_body(page, content: str, account_name: str):
         try:
             body_el = await frame.query_selector('body#tinymce, body.mce-content-body')
             if body_el:
-                await frame.evaluate(f'''() => {{
+                await frame.evaluate('''(newHtml) => {
                     const body = document.querySelector('body#tinymce') || document.body;
-                    body.innerHTML = {repr(html_content)};
-                }}''')
+                    const existingImages = body.querySelectorAll('img');
+                    const imgHtmls = Array.from(existingImages).map(i => i.outerHTML);
+                    body.innerHTML = imgHtmls.join('') + newHtml;
+                }''', html_content)
                 await random_delay(0.5, 1)
                 logger.info(f"[{account_name}] frame 순회 본문 입력 완료")
                 return
