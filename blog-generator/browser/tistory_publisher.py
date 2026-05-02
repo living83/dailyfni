@@ -193,39 +193,17 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
     """티스토리 에디터에 이미지 파일 삽입"""
+    import base64
+
+    img_path_obj = Path(img_path)
+    if not img_path_obj.exists():
+        logger.warning(f"[{account_name}] 이미지 파일 없음: {img_path}")
+        return
+
+    uploaded = False
+
     try:
-        # 첨부 버튼 클릭 (드롭다운 메뉴 열기)
-        attach_btn = await page.query_selector('#attach-layer-btn')
-        if not attach_btn:
-            attach_btn = await page.query_selector('#mceu_0-open')
-        if not attach_btn:
-            attach_btn = await page.query_selector('[aria-label="첨부"] button')
-        if not attach_btn:
-            attach_btn = await page.query_selector('button .mce-i-image')
-            if attach_btn:
-                attach_btn = await attach_btn.evaluate_handle('el => el.closest("button") || el.closest("[role=button]")')
-
-        if attach_btn:
-            await attach_btn.click()
-            logger.info(f"[{account_name}] 첨부 버튼 클릭")
-            await random_delay(1, 2)
-
-            # 드롭다운에서 "사진" 또는 "이미지 업로드" 메뉴 클릭
-            photo_menu = await page.query_selector('text="사진"')
-            if not photo_menu:
-                photo_menu = await page.query_selector('text="사진 업로드"')
-            if not photo_menu:
-                photo_menu = await page.query_selector('text="이미지"')
-            if not photo_menu:
-                # 드롭다운 첫 번째 메뉴 아이템
-                photo_menu = await page.query_selector('.mce-menu-item:first-child')
-
-            if photo_menu:
-                await photo_menu.click()
-                logger.info(f"[{account_name}] 사진 메뉴 클릭")
-                await random_delay(1, 2)
-
-        # file input 찾기 (숨겨진 input[type=file])
+        # ── 방법 1: file input 직접 찾기 (이미 존재하는 경우) ──
         file_input = await page.query_selector('input[type="file"][accept*="image"]')
         if not file_input:
             file_input = await page.query_selector('input[type="file"]')
@@ -233,33 +211,79 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
         if file_input:
             await file_input.set_input_files(img_path)
             await random_delay(3, 5)
-            logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
-            return
+            logger.info(f"[{account_name}] 이미지 업로드 완료 (기존 file input)")
+            uploaded = True
 
-        # file input이 없으면 JS로 file input 생성 후 삽입
-        if not file_input:
-            try:
-                created = await page.evaluate("""() => {
-                    const inputs = document.querySelectorAll('input[type="file"]');
-                    return inputs.length;
-                }""")
-                logger.info(f"[{account_name}] file input 개수: {created}")
+        # ── 방법 2: 첨부 버튼 → 사진 메뉴 → file input ──
+        if not uploaded:
+            attach_btn = await page.query_selector('#attach-layer-btn')
+            if attach_btn:
+                await attach_btn.click()
+                logger.info(f"[{account_name}] 첨부 버튼 클릭")
+                await random_delay(1, 2)
 
-                if created == 0 and attach_btn:
-                    # 첨부 버튼을 다시 클릭하고 기다리기
-                    await attach_btn.click()
+                # 드롭다운에서 "사진" 메뉴 클릭
+                photo_menu = await page.query_selector(
+                    'a:has-text("사진"), button:has-text("사진"), '
+                    '[class*="menu"] a:first-child, .mce-menu-item:first-child'
+                )
+                if photo_menu:
+                    await photo_menu.click()
+                    logger.info(f"[{account_name}] 사진 메뉴 클릭")
                     await random_delay(2, 3)
-                    file_input = await page.query_selector('input[type="file"]')
-                    if file_input:
-                        await file_input.set_input_files(img_path)
-                        await random_delay(3, 5)
-                        logger.info(f"[{account_name}] 이미지 업로드 완료 (재시도)")
-                        return
-            except Exception:
-                pass
 
-        logger.warning(f"[{account_name}] 이미지 삽입 요소를 찾지 못함 (건너뜀)")
-        await capture_debug(page, f"tistory_no_image_{account_name}")
+                # 사진 메뉴 클릭 후 file input 재탐색
+                file_input = await page.query_selector('input[type="file"][accept*="image"]')
+                if not file_input:
+                    file_input = await page.query_selector('input[type="file"]')
+                if file_input:
+                    await file_input.set_input_files(img_path)
+                    await random_delay(3, 5)
+                    logger.info(f"[{account_name}] 이미지 업로드 완료 (첨부 메뉴)")
+                    uploaded = True
+
+        # ── 방법 3: TinyMCE에 base64 이미지 직접 삽입 ──
+        if not uploaded:
+            try:
+                img_data = img_path_obj.read_bytes()
+                b64 = base64.b64encode(img_data).decode()
+                suffix = img_path_obj.suffix.lower().lstrip('.')
+                mime = f"image/{'jpeg' if suffix in ('jpg','jpeg') else suffix}"
+
+                # TinyMCE iframe 찾아서 이미지 삽입
+                iframe_el = await page.query_selector(
+                    'iframe#editor-tistory_ifr, iframe[id$="_ifr"]'
+                )
+                if iframe_el:
+                    frame = await iframe_el.content_frame()
+                    if frame:
+                        await frame.evaluate(f'''() => {{
+                            const body = document.querySelector('body#tinymce') || document.body;
+                            const img = document.createElement('img');
+                            img.src = 'data:{mime};base64,{b64}';
+                            img.style.maxWidth = '100%';
+                            img.style.display = 'block';
+                            img.style.margin = '10px auto';
+                            body.insertBefore(img, body.firstChild);
+                        }}''')
+                        await random_delay(1, 2)
+                        logger.info(f"[{account_name}] TinyMCE base64 이미지 직접 삽입 완료")
+                        uploaded = True
+            except Exception as e:
+                logger.debug(f"[{account_name}] base64 이미지 삽입 실패: {e}")
+
+        if not uploaded:
+            # 디버그: 페이지의 버튼/input 목록 로깅
+            debug_info = await page.evaluate('''() => {
+                const btns = document.querySelectorAll('button, [role="button"]');
+                const inputs = document.querySelectorAll('input[type="file"]');
+                return {
+                    buttons: Array.from(btns).slice(0, 10).map(b => ({id: b.id, text: b.textContent?.trim()?.substring(0, 30)})),
+                    fileInputs: inputs.length
+                };
+            }''')
+            logger.warning(f"[{account_name}] 이미지 삽입 모두 실패. 디버그: {debug_info}")
+
     except Exception as e:
         logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
 
