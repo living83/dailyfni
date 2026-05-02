@@ -142,17 +142,17 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
                 logger.warning(f"[{account_name}] 이미지 삽입 실패 (계속 진행): {e}")
 
             # ── 5. 본문 입력 ──
-            # TinyMCE iframe 로딩 대기
+            # TinyMCE 에디터 완전 로딩 대기
             try:
-                await page.wait_for_selector(
-                    'iframe#editor-tistory_ifr, iframe[id$="_ifr"]',
+                await page.wait_for_function(
+                    'typeof tinymce !== "undefined" && tinymce.activeEditor && tinymce.activeEditor.initialized',
                     timeout=15000,
                 )
                 await random_delay(1, 2)
-                logger.info(f"[{account_name}] TinyMCE 에디터 iframe 로딩 확인")
+                logger.info(f"[{account_name}] TinyMCE 에디터 초기화 완료")
             except Exception:
-                logger.warning(f"[{account_name}] TinyMCE iframe 대기 타임아웃, 진행 시도")
-                await random_delay(2, 3)
+                logger.warning(f"[{account_name}] TinyMCE 초기화 대기 타임아웃, 진행 시도")
+                await random_delay(3, 4)
 
             content = post_data.get("content", "")
             if content:
@@ -168,7 +168,20 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
             if category:
                 await _select_tistory_category(page, category, account_name)
 
-            # ── 7. 발행 ──
+            # ── 7. 발행 전 내용 검증 ──
+            try:
+                content_check = await page.evaluate('''() => {
+                    if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                        const c = tinymce.activeEditor.getContent();
+                        return {len: c.length, preview: c.substring(0, 100), hasImg: c.includes('<img')};
+                    }
+                    return null;
+                }''')
+                logger.info(f"[{account_name}] 발행 전 내용 확인: {content_check}")
+            except Exception:
+                pass
+
+            # ── 발행 ──
             publish_result = await _publish_tistory(page, account_name)
             if publish_result.get("success"):
                 result["success"] = True
@@ -192,7 +205,7 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
-    """티스토리 에디터에 이미지 파일 삽입 (base64 우선)"""
+    """티스토리 에디터에 이미지 파일 삽입 — TinyMCE API 사용"""
     import base64
 
     img_path_obj = Path(img_path)
@@ -200,142 +213,111 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
         logger.warning(f"[{account_name}] 이미지 파일 없음: {img_path}")
         return
 
-    # ── 방법 1 (최우선): TinyMCE iframe에 base64 이미지 직접 삽입 ──
-    # 타임아웃 위험 없이 가장 확실한 방식
     try:
-        iframe_el = await page.wait_for_selector(
-            'iframe#editor-tistory_ifr, iframe[id$="_ifr"]', timeout=10000
+        img_data = img_path_obj.read_bytes()
+        b64 = base64.b64encode(img_data).decode()
+        suffix = img_path_obj.suffix.lower().lstrip('.')
+        mime = f"image/{'jpeg' if suffix in ('jpg','jpeg') else suffix}"
+        img_tag = (
+            f'<p><img src="data:{mime};base64,{b64}" '
+            f'style="max-width:100%;display:block;margin:10px auto" /></p>'
         )
-        if iframe_el:
-            frame = await iframe_el.content_frame()
-            if frame:
-                body_el = await frame.wait_for_selector(
-                    'body#tinymce, body.mce-content-body', timeout=5000
-                )
-                if body_el:
-                    img_data = img_path_obj.read_bytes()
-                    b64 = base64.b64encode(img_data).decode()
-                    suffix = img_path_obj.suffix.lower().lstrip('.')
-                    mime = f"image/{'jpeg' if suffix in ('jpg','jpeg') else suffix}"
 
-                    await frame.evaluate('''(imgSrc) => {
-                        const body = document.querySelector('body#tinymce') || document.body;
-                        const img = document.createElement('img');
-                        img.src = imgSrc;
-                        img.style.maxWidth = '100%';
-                        img.style.display = 'block';
-                        img.style.margin = '10px auto';
-                        body.insertBefore(img, body.firstChild);
-                    }''', f'data:{mime};base64,{b64}')
-                    await random_delay(0.5, 1)
-                    logger.info(f"[{account_name}] 이미지 삽입 완료 (base64 → TinyMCE)")
-                    return
-    except Exception as e:
-        logger.debug(f"[{account_name}] base64 이미지 삽입 실패: {e}")
+        # TinyMCE API로 이미지 삽입 (내부 상태 동기화)
+        result = await page.evaluate('''(imgHtml) => {
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                const editor = tinymce.activeEditor;
+                const existing = editor.getContent();
+                editor.setContent(imgHtml + existing);
+                return 'tinymce_api';
+            }
+            return null;
+        }''', img_tag)
 
-    # ── 방법 2: file input 직접 찾기 ──
-    try:
-        file_input = await page.query_selector('input[type="file"][accept*="image"]')
-        if not file_input:
-            file_input = await page.query_selector('input[type="file"]')
-        if file_input:
-            await file_input.set_input_files(img_path)
-            await random_delay(3, 5)
-            logger.info(f"[{account_name}] 이미지 업로드 완료 (file input)")
+        if result:
+            logger.info(f"[{account_name}] 이미지 삽입 완료 ({result})")
             return
-    except Exception as e:
-        logger.debug(f"[{account_name}] file input 이미지 삽입 실패: {e}")
 
-    logger.warning(f"[{account_name}] 이미지 삽입 실패 (건너뜀)")
+        logger.warning(f"[{account_name}] tinymce API 접근 불가, 이미지 삽입 건너뜀")
+    except Exception as e:
+        logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
 
 
 async def _input_tistory_body(page, content: str, account_name: str):
-    """티스토리 에디터에 본문 입력 (TinyMCE iframe 방식)"""
+    """티스토리 에디터에 본문 입력 — TinyMCE API 사용"""
 
     html_content = _text_to_html(content)
 
-    # ── 방법 1: TinyMCE iframe 직접 접근 (가장 안정적) ──
-    # 티스토리 에디터의 iframe ID: editor-tistory_ifr
-    iframe_selectors = [
-        'iframe#editor-tistory_ifr',
-        'iframe[id$="_ifr"]',
-        'iframe.tox-edit-area__iframe',
-    ]
+    # ── 방법 1: TinyMCE JavaScript API (가장 확실) ──
+    # tinymce.activeEditor.setContent()는 내부 상태를 동기화함
+    try:
+        result = await page.evaluate('''(newHtml) => {
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                const editor = tinymce.activeEditor;
+                const existing = editor.getContent();
+                editor.setContent(existing + newHtml);
+                return 'tinymce_api';
+            }
+            return null;
+        }''', html_content)
 
-    for sel in iframe_selectors:
-        try:
-            iframe_el = await page.wait_for_selector(sel, timeout=10000)
-            if iframe_el:
-                frame = await iframe_el.content_frame()
-                if frame:
-                    # TinyMCE body가 준비될 때까지 대기
-                    body_el = await frame.wait_for_selector(
-                        'body#tinymce, body.mce-content-body', timeout=5000
-                    )
-                    if body_el:
-                        # 기존 이미지 보존하면서 본문 HTML 추가
-                        await frame.evaluate('''(newHtml) => {
-                            const body = document.querySelector('body#tinymce') || document.body;
-                            const existingImages = body.querySelectorAll('img');
-                            const imgHtmls = Array.from(existingImages).map(i => i.outerHTML);
-                            body.innerHTML = imgHtmls.join('') + newHtml;
-                        }''', html_content)
-                        await random_delay(0.5, 1)
-                        logger.info(f"[{account_name}] TinyMCE iframe 본문 입력 완료 ({sel})")
-                        return
-        except Exception as e:
-            logger.debug(f"[{account_name}] iframe 셀렉터 {sel} 실패: {e}")
-            continue
+        if result:
+            await random_delay(0.5, 1)
+            logger.info(f"[{account_name}] 본문 입력 완료 ({result})")
+            return
+    except Exception as e:
+        logger.debug(f"[{account_name}] TinyMCE API 본문 입력 실패: {e}")
 
-    # ── 방법 2: page.frames 순회 ──
-    for frame in page.frames:
-        if frame == page.main_frame:
-            continue
-        try:
-            body_el = await frame.query_selector('body#tinymce, body.mce-content-body')
-            if body_el:
-                await frame.evaluate('''(newHtml) => {
-                    const body = document.querySelector('body#tinymce') || document.body;
-                    const existingImages = body.querySelectorAll('img');
-                    const imgHtmls = Array.from(existingImages).map(i => i.outerHTML);
-                    body.innerHTML = imgHtmls.join('') + newHtml;
-                }''', html_content)
-                await random_delay(0.5, 1)
-                logger.info(f"[{account_name}] frame 순회 본문 입력 완료")
-                return
-        except Exception:
-            continue
+    # ── 방법 2: TinyMCE iframe 대기 후 API 재시도 ──
+    try:
+        await page.wait_for_selector(
+            'iframe#editor-tistory_ifr, iframe[id$="_ifr"]', timeout=10000
+        )
+        await random_delay(1, 2)
+
+        result = await page.evaluate('''(newHtml) => {
+            if (typeof tinymce !== 'undefined' && tinymce.activeEditor) {
+                const editor = tinymce.activeEditor;
+                const existing = editor.getContent();
+                editor.setContent(existing + newHtml);
+                return 'tinymce_api_retry';
+            }
+            return null;
+        }''', html_content)
+
+        if result:
+            await random_delay(0.5, 1)
+            logger.info(f"[{account_name}] 본문 입력 완료 ({result})")
+            return
+    except Exception as e:
+        logger.debug(f"[{account_name}] TinyMCE API 재시도 실패: {e}")
 
     # ── 방법 3: HTML 모드 전환 후 textarea 입력 ──
-    html_mode_btn = await page.query_selector(
-        'button:has-text("HTML"), .btn_html, [data-mode="html"]'
-    )
-    if html_mode_btn:
-        await html_mode_btn.click()
-        await random_delay(0.5, 1)
-        html_editor = await page.query_selector('textarea.html, #html-editor, textarea')
-        if html_editor:
-            await html_editor.fill(html_content)
+    try:
+        html_mode_btn = await page.query_selector(
+            'button:has-text("HTML"), .btn_html, [data-mode="html"]'
+        )
+        if html_mode_btn:
+            await html_mode_btn.click()
             await random_delay(0.5, 1)
-            logger.info(f"[{account_name}] HTML 모드 본문 입력 완료")
-            return
+            html_editor = await page.query_selector('textarea.html, #html-editor, textarea')
+            if html_editor:
+                await html_editor.fill(html_content)
+                await random_delay(0.5, 1)
+                logger.info(f"[{account_name}] HTML 모드 본문 입력 완료")
+                return
+    except Exception as e:
+        logger.debug(f"[{account_name}] HTML 모드 실패: {e}")
 
-    # ── 방법 4: contenteditable 직접 시도 ──
-    for sel in ['[contenteditable="true"]', '.mce-content-body', '#content']:
-        body_el = await page.query_selector(sel)
-        if body_el:
-            await body_el.click()
-            await random_delay(0.3, 0.5)
-            await page.keyboard.type(content[:50], delay=30)
-            logger.info(f"[{account_name}] contenteditable 본문 입력 ({sel})")
-            return
-
-    # 디버그 로그: 페이지 내 iframe 목록 출력
-    iframe_info = await page.evaluate('''() => {
-        const iframes = document.querySelectorAll('iframe');
-        return Array.from(iframes).map(f => ({id: f.id, name: f.name, src: f.src?.substring(0, 100)}));
+    # 디버그: tinymce 상태 확인
+    debug = await page.evaluate('''() => {
+        return {
+            tinymce_exists: typeof tinymce !== 'undefined',
+            editors_count: typeof tinymce !== 'undefined' ? tinymce.editors?.length : 0,
+            active: typeof tinymce !== 'undefined' ? !!tinymce.activeEditor : false,
+        };
     }''')
-    logger.warning(f"[{account_name}] 본문 입력 영역을 찾지 못함. iframes: {iframe_info}")
+    logger.warning(f"[{account_name}] 본문 입력 실패. tinymce 상태: {debug}")
     await capture_debug(page, f"tistory_no_body_{account_name}")
 
 
