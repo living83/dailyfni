@@ -181,11 +181,17 @@ async function checkAndRun() {
         // 검수완료 콘텐츠 찾기
         const contents = Content.listContents();
         let pendingContent = contents.find(c =>
-          c.status === '검수완료' && c.contentType === postType && (c.platform || 'naver') === 'tistory'
+          c.status === '검수완료' && c.contentType === postType
         );
 
+        // 원하는 타입 없으면 다른 타입이라도 발행
         if (!pendingContent) {
-          log('warn', `${account.accountName}: '${postType}' 검수완료 콘텐츠 없음, 건너뜀`);
+          log('info', `${account.accountName}: '${postType}' 콘텐츠 없음, 다른 타입 검색`);
+          pendingContent = contents.find(c => c.status === '검수완료');
+        }
+
+        if (!pendingContent) {
+          log('warn', `${account.accountName}: 검수완료 콘텐츠 없음, 건너뜀`);
           continue;
         }
 
