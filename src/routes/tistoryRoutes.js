@@ -1,8 +1,11 @@
 const { Router } = require('express');
 const TistoryAccount = require('../models/TistoryAccount');
+const Content = require('../models/Content');
 const { requestTistoryPublish } = require('../services/pythonBridge');
+const { processBody } = require('../services/postingHelper');
 const db = require('../db/sqlite');
 const tistoryScheduler = require('../services/tistoryScheduler');
+const { v4: uuid } = require('uuid');
 
 const router = Router();
 
@@ -106,6 +109,56 @@ router.post('/tistory/test-publish', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/tistory/run-all — 즉시 발행 (검수완료 콘텐츠 + 활성 계정 매칭)
+router.post('/tistory/run-all', async (req, res) => {
+  const activeAccounts = TistoryAccount.listAccounts().filter(a => a.isActive && a.autoPublish);
+  const contents = Content.listContents().filter(c => c.status === '검수완료' && (c.platform || 'naver') === 'tistory');
+
+  if (activeAccounts.length === 0) return res.json({ success: true, message: '활성 계정이 없습니다.', count: 0 });
+  if (contents.length === 0) return res.json({ success: true, message: '검수완료된 티스토리 콘텐츠가 없습니다.', count: 0 });
+
+  const pairs = [];
+  let ci = 0;
+  for (const acc of activeAccounts) {
+    if (ci >= contents.length) break;
+    pairs.push({ account: acc, content: contents[ci++] });
+  }
+
+  res.json({ success: true, message: `${pairs.length}건 발행 시작`, count: pairs.length });
+
+  for (const { account, content } of pairs) {
+    const raw = TistoryAccount.getAccountRaw(account.id);
+    if (!raw) continue;
+
+    const postingId = uuid();
+    db.prepare(`INSERT INTO tistory_postings (id, keyword, accountName, accountId, contentId, status) VALUES (?, ?, ?, ?, ?, '발행중')`)
+      .run(postingId, content.keyword, account.accountName, account.id, content.id);
+    Content.updateContent(content.id, { status: '발행중' });
+
+    try {
+      const result = await requestTistoryPublish({
+        account: { id: raw.id, account_name: raw.accountName, blog_name: raw.blogName, kakao_id: raw.kakaoId, kakao_password: raw.kakaoPassword || '' },
+        post_data: { title: content.title || content.keyword, content: processBody(content.body || '', content.contentType), keyword: content.keyword, tags: content.keyword, post_type: content.contentType === '광고(대출)' ? 'ad' : 'general' },
+      });
+
+      if (result.success) {
+        db.prepare(`UPDATE tistory_postings SET status='발행완료', url=?, updatedAt=datetime('now','localtime') WHERE id=?`).run(result.url || '', postingId);
+        Content.updateContent(content.id, { status: '발행완료' });
+      } else {
+        db.prepare(`UPDATE tistory_postings SET status='실패', error=?, updatedAt=datetime('now','localtime') WHERE id=?`).run(result.error || '발행 실패', postingId);
+        Content.updateContent(content.id, { status: '검수완료' });
+      }
+    } catch (err) {
+      db.prepare(`UPDATE tistory_postings SET status='실패', error=?, updatedAt=datetime('now','localtime') WHERE id=?`).run(err.message, postingId);
+      Content.updateContent(content.id, { status: '검수완료' });
+    }
+
+    if (pairs.indexOf({ account, content }) < pairs.length - 1) {
+      await new Promise(r => setTimeout(r, 5000 + Math.random() * 10000));
+    }
   }
 });
 

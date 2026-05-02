@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { BookOpen, Plus, Trash2, Edit3, Send, Loader2, Save, ExternalLink, Calendar, Square, Play, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward } from 'lucide-react'
+import { BookOpen, Plus, Trash2, Edit3, Send, Loader2, Save, ExternalLink, Calendar, Square, Play, Terminal, CheckCircle2, XCircle, AlertTriangle, SkipForward, Zap } from 'lucide-react'
 import { useToast } from '../contexts/ToastContext'
 import api from '../lib/api'
 import Toggle from '../components/Toggle'
@@ -43,6 +43,7 @@ export default function Tistory() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ accountName: '', blogName: '', kakaoId: '', kakaoPassword: '' })
   const [saving, setSaving] = useState(false)
+  const [runningAll, setRunningAll] = useState(false)
 
   // 편집
   const [editId, setEditId] = useState<string | null>(null)
@@ -189,11 +190,27 @@ export default function Tistory() {
           <h1 className="text-2xl font-bold text-foreground">티스토리 관리</h1>
           <p className="text-sm text-muted-foreground">티스토리 블로그 계정 관리 및 포스팅</p>
         </div>
-        <button onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white font-medium hover:opacity-90 transition-opacity shadow-lg">
-          <Plus className="w-4 h-4" />
-          계정 추가
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={async () => {
+            setRunningAll(true)
+            try {
+              const { data } = await api.post('/tistory/run-all')
+              toast('success', data.message || '발행 시작')
+              let polls = 0
+              const pid = window.setInterval(() => { fetchData(); polls++; if (polls >= 20) clearInterval(pid) }, 5000)
+            } catch { toast('error', '발행 실패') }
+            setRunningAll(false)
+          }} disabled={runningAll}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald text-white font-medium hover:bg-emerald/90 transition-colors disabled:opacity-50">
+            {runningAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            즉시 발행
+          </button>
+          <button onClick={() => setShowForm(!showForm)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 text-white font-medium hover:opacity-90 transition-opacity shadow-lg">
+            <Plus className="w-4 h-4" />
+            계정 추가
+          </button>
+        </div>
       </div>
 
       {/* 계정 추가 폼 */}
