@@ -182,21 +182,38 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 async def _insert_tistory_image(page, img_path: str, account_name: str):
     """티스토리 에디터에 이미지 파일 삽입"""
     try:
-        # 이미지 버튼 클릭
-        img_btn_selectors = [
-            'button[data-name="image"]',
-            'button[title*="이미지"]',
-            '.btn_image',
-            'button:has-text("사진")',
-            '[class*="image"] button',
-        ]
-        img_btn = None
-        for sel in img_btn_selectors:
-            img_btn = await page.query_selector(sel)
-            if img_btn:
-                break
+        # 첨부 버튼 클릭 (드롭다운 메뉴 열기)
+        attach_btn = await page.query_selector('#attach-layer-btn')
+        if not attach_btn:
+            attach_btn = await page.query_selector('#mceu_0-open')
+        if not attach_btn:
+            attach_btn = await page.query_selector('[aria-label="첨부"] button')
+        if not attach_btn:
+            attach_btn = await page.query_selector('button .mce-i-image')
+            if attach_btn:
+                attach_btn = await attach_btn.evaluate_handle('el => el.closest("button") || el.closest("[role=button]")')
 
-        # file input 직접 찾기 (버튼 없어도)
+        if attach_btn:
+            await attach_btn.click()
+            logger.info(f"[{account_name}] 첨부 버튼 클릭")
+            await random_delay(1, 2)
+
+            # 드롭다운에서 "사진" 또는 "이미지 업로드" 메뉴 클릭
+            photo_menu = await page.query_selector('text="사진"')
+            if not photo_menu:
+                photo_menu = await page.query_selector('text="사진 업로드"')
+            if not photo_menu:
+                photo_menu = await page.query_selector('text="이미지"')
+            if not photo_menu:
+                # 드롭다운 첫 번째 메뉴 아이템
+                photo_menu = await page.query_selector('.mce-menu-item:first-child')
+
+            if photo_menu:
+                await photo_menu.click()
+                logger.info(f"[{account_name}] 사진 메뉴 클릭")
+                await random_delay(1, 2)
+
+        # file input 찾기 (숨겨진 input[type=file])
         file_input = await page.query_selector('input[type="file"][accept*="image"]')
         if not file_input:
             file_input = await page.query_selector('input[type="file"]')
@@ -207,18 +224,30 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
             logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
             return
 
-        if img_btn:
-            await img_btn.click()
-            await random_delay(1, 2)
-            # 클릭 후 file input 다시 찾기
-            file_input = await page.query_selector('input[type="file"]')
-            if file_input:
-                await file_input.set_input_files(img_path)
-                await random_delay(3, 5)
-                logger.info(f"[{account_name}] 이미지 업로드 완료 (버튼 클릭 후)")
-                return
+        # file input이 없으면 JS로 file input 생성 후 삽입
+        if not file_input:
+            try:
+                created = await page.evaluate("""() => {
+                    const inputs = document.querySelectorAll('input[type="file"]');
+                    return inputs.length;
+                }""")
+                logger.info(f"[{account_name}] file input 개수: {created}")
+
+                if created == 0 and attach_btn:
+                    # 첨부 버튼을 다시 클릭하고 기다리기
+                    await attach_btn.click()
+                    await random_delay(2, 3)
+                    file_input = await page.query_selector('input[type="file"]')
+                    if file_input:
+                        await file_input.set_input_files(img_path)
+                        await random_delay(3, 5)
+                        logger.info(f"[{account_name}] 이미지 업로드 완료 (재시도)")
+                        return
+            except Exception:
+                pass
 
         logger.warning(f"[{account_name}] 이미지 삽입 요소를 찾지 못함 (건너뜀)")
+        await capture_debug(page, f"tistory_no_image_{account_name}")
     except Exception as e:
         logger.warning(f"[{account_name}] 이미지 삽입 예외: {e}")
 
