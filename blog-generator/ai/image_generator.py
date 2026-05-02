@@ -440,8 +440,8 @@ async def generate_image_with_gemini(
     """
     Generate a blog featured image with a 3-step fallback:
 
-    1. HTML 템플릿 배너 (Playwright, 광고글 우선)
-    2. Gemini REST API (remote, 일반글 또는 HTML 실패 시)
+    1. HTML 템플릿 배너 (Playwright, 광고/일반 모두)
+    2. Gemini REST API (HTML 실패 시 fallback)
     3. Pillow local text-banner (offline, guaranteed)
 
     Args:
@@ -452,24 +452,22 @@ async def generate_image_with_gemini(
 
     Returns the saved file path, or ``None`` if everything fails.
     """
-    # Step 1: 광고글 → HTML 템플릿 배너 (심플 텍스트 배너)
-    if is_ad:
-        try:
-            from ai.html_banner import generate_html_banner
-            # description 첫 문장을 소제목으로 사용
-            subtitle = ""
-            if description:
-                first_sentence = description.split(".")[0].strip()
-                if len(first_sentence) > 10:
-                    subtitle = first_sentence[:50]
-            result = await generate_html_banner(keyword, title=title, subtitle=subtitle, is_ad=True)
-            if result:
-                return result
-            logger.info("HTML 배너 생성 실패 – Gemini로 fallback")
-        except Exception as e:
-            logger.warning(f"HTML 배너 예외: {e} – Gemini로 fallback")
+    # Step 1: HTML 템플릿 배너 (광고/일반 모두 사용)
+    try:
+        from ai.html_banner import generate_html_banner
+        subtitle = ""
+        if description:
+            first_sentence = description.split(".")[0].strip()
+            if len(first_sentence) > 10:
+                subtitle = first_sentence[:50]
+        result = await generate_html_banner(keyword, title=title, subtitle=subtitle, is_ad=is_ad)
+        if result:
+            return result
+        logger.info("HTML 배너 생성 실패 – Gemini로 fallback")
+    except Exception as e:
+        logger.warning(f"HTML 배너 예외: {e} – Gemini로 fallback")
 
-    # Step 2: Try Gemini (일반글 또는 HTML 실패 시)
+    # Step 2: Try Gemini (HTML 실패 시)
     try:
         result = await _gemini_generate(keyword, is_ad, title=title, description=description)
         if result:
