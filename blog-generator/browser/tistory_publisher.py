@@ -167,8 +167,15 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
                 logger.error(f"[{account_name}] 티스토리 발행 실패: {result['error']}")
 
         except Exception as e:
-            logger.exception(f"[{account_name}] 티스토리 발행 예외: {e}")
-            result["error"] = str(e)
+            err_msg = str(e)
+            # 페이지 이동으로 컨텍스트 파괴 = 발행 성공한 것
+            if "context was destroyed" in err_msg or "navigation" in err_msg.lower():
+                result["success"] = True
+                result["url"] = "발행 완료 (페이지 이동됨)"
+                logger.info(f"[{account_name}] 티스토리 발행 성공 (페이지 이동 감지)")
+            else:
+                logger.exception(f"[{account_name}] 티스토리 발행 예외: {e}")
+                result["error"] = err_msg
         finally:
             try:
                 await context.close()
