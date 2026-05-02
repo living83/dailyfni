@@ -379,31 +379,62 @@ async def _publish_tistory(page, account_name: str) -> dict:
     # 발행 레이어가 열린 후 디버그 스크린샷
     await capture_debug(page, f"tistory_publish_layer_{account_name}")
 
-    # Step 2: 발행 레이어 안의 최종 "발행" 버튼 클릭
+    # Step 2: "공개" 라디오 버튼 선택 (기본값이 "비공개"이므로 변경 필요)
+    try:
+        public_clicked = await page.evaluate("""() => {
+            // 라디오 버튼 또는 레이블에서 "공개" 찾기 (단, "비공개"/"공개(보호)" 제외)
+            const labels = document.querySelectorAll('label, span, input[type="radio"]');
+            for (const el of labels) {
+                const text = el.textContent.trim();
+                // 정확히 "공개"만 매칭 (비공개, 공개(보호) 제외)
+                if (text === '공개') {
+                    el.click();
+                    return 'label';
+                }
+            }
+            // input[value="0"] 또는 input[value="public"] 시도
+            const radios = document.querySelectorAll('input[type="radio"]');
+            for (const r of radios) {
+                if (r.value === '0' || r.value === 'public' || r.value === '20') {
+                    r.click();
+                    return 'radio';
+                }
+            }
+            return null;
+        }""")
+        if public_clicked:
+            logger.info(f"[{account_name}] '공개' 선택 완료 (via {public_clicked})")
+            await random_delay(1, 2)
+        else:
+            logger.warning(f"[{account_name}] '공개' 라디오 버튼을 찾지 못함")
+    except Exception as e:
+        logger.warning(f"[{account_name}] 공개 선택 실패: {e}")
+
+    # 공개 선택 후 디버그
+    await capture_debug(page, f"tistory_after_public_{account_name}")
+
+    # Step 3: "공개발행" 버튼 클릭
+    clicked = False
     confirm_selectors = [
+        'button:has-text("공개발행")',
+        'button:has-text("공개 발행")',
+        'button:has-text("발행")',
         '#publish-btn',
         'button.btn-publish',
-        'button.publish-btn',
-        '.layer_post button.btn_ok',
-        '.layer_publish button.btn_ok',
-        '#kakaoWrap button.btn_ok',
         'button.btn_ok',
-        'button:has-text("공개발행")',
-        'button:has-text("발행하기")',
-        'button:has-text("발행")',
     ]
-
-    clicked = False
     for csol in confirm_selectors:
         try:
             cbtn = await page.query_selector(csol)
             if cbtn and await cbtn.is_visible():
-                # "완료" 버튼 자체를 다시 클릭하지 않도록
-                btn_id = await cbtn.get_attribute("id")
+                btn_id = await cbtn.get_attribute("id") or ""
+                btn_text = (await cbtn.text_content() or "").strip()
                 if btn_id == "publish-layer-btn":
                     continue
+                if btn_text in ("비공개 저장", "취소"):
+                    continue
                 await cbtn.click()
-                logger.info(f"[{account_name}] 발행 확인 클릭: {csol}")
+                logger.info(f"[{account_name}] 발행 클릭: {csol} (text='{btn_text}')")
                 clicked = True
                 await random_delay(3, 5)
                 break
@@ -411,13 +442,12 @@ async def _publish_tistory(page, account_name: str) -> dict:
             continue
 
     if not clicked:
-        # JavaScript로 발행 레이어 내 버튼 강제 클릭 시도
         try:
             clicked = await page.evaluate("""() => {
                 const btns = document.querySelectorAll('button');
                 for (const btn of btns) {
                     const text = btn.textContent.trim();
-                    if ((text === '발행' || text === '공개발행' || text === '발행하기')
+                    if ((text === '공개발행' || text === '공개 발행' || text === '발행')
                         && btn.id !== 'publish-layer-btn') {
                         btn.click();
                         return true;
@@ -426,7 +456,7 @@ async def _publish_tistory(page, account_name: str) -> dict:
                 return false;
             }""")
             if clicked:
-                logger.info(f"[{account_name}] JS로 발행 버튼 클릭 성공")
+                logger.info(f"[{account_name}] JS로 공개발행 버튼 클릭 성공")
                 await random_delay(3, 5)
         except Exception as e:
             logger.warning(f"[{account_name}] JS 발행 클릭 실패: {e}")
