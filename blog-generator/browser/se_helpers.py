@@ -228,13 +228,33 @@ async def login(
                 await page.close()
                 return False
 
-            # CAPTCHA 감지
+            # CAPTCHA 감지 → Gemini Vision으로 풀기 시도
             captcha = await page.query_selector("#captcha, .captcha_wrap, #recaptcha")
             if captcha:
-                logger.error(f"[계정 {account_id}] CAPTCHA 감지 — 수동 개입 필요")
-                await capture_debug(page, f"captcha_account_{account_id}")
-                await page.close()
-                return False
+                logger.info(f"[계정 {account_id}] CAPTCHA 감지 — Gemini로 풀기 시도")
+                captcha_solved = await _solve_naver_captcha(page, account_id)
+                if captcha_solved:
+                    logger.info(f"[계정 {account_id}] CAPTCHA 풀기 성공, 로그인 결과 확인 중...")
+                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    await random_delay(2, 3)
+
+                    # 로그인 성공 여부 재확인
+                    if "nidlogin" not in page.url:
+                        cookies = await context.cookies()
+                        _save_encrypted_cookies(cookie_path, cookies)
+                        await _share_cookies_for_cbox(context)
+                        logger.info(f"[계정 {account_id}] CAPTCHA 통과 + 로그인 성공 ✅")
+                        await page.close()
+                        return True
+                    else:
+                        logger.warning(f"[계정 {account_id}] CAPTCHA 풀었으나 로그인 실패, 재시도")
+                        await random_delay(3, 6)
+                        continue
+                else:
+                    logger.error(f"[계정 {account_id}] CAPTCHA 풀기 실패")
+                    await capture_debug(page, f"captcha_account_{account_id}")
+                    await random_delay(3, 6)
+                    continue
 
             # 로그인 실패 감지 (아직 로그인 페이지에 머무는 경우)
             if "nidlogin" in page.url:
@@ -257,6 +277,109 @@ async def login(
             await random_delay(3, 6)
 
     await page.close()
+    return False
+
+
+async def _solve_naver_captcha(page, account_id, max_attempts: int = 3) -> bool:
+    """네이버 로그인 CAPTCHA를 Gemini Vision으로 풀기"""
+    import base64
+    import httpx
+
+    api_key = settings.GOOGLE_API_KEY
+    if not api_key:
+        logger.error(f"[계정 {account_id}] GOOGLE_API_KEY 없음 — 캡차 풀기 불가")
+        return False
+
+    for attempt in range(max_attempts):
+        try:
+            screenshot_bytes = await page.screenshot(type="png", full_page=False)
+            b64_screenshot = base64.b64encode(screenshot_bytes).decode()
+
+            prompt = (
+                "이 스크린샷은 네이버 로그인 CAPTCHA입니다. "
+                "이미지에 표시된 문자나 숫자를 정확히 읽어주세요. "
+                "다른 설명 없이 CAPTCHA 답(문자/숫자)만 출력하세요."
+            )
+
+            payload = {
+                "contents": [{"parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "image/png", "data": b64_screenshot}},
+                ]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 50},
+            }
+
+            models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"]
+            answer = None
+
+            for model in models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                        if text:
+                            answer = text.strip().strip('"\'.,!').strip()
+                            break
+                except Exception:
+                    continue
+
+            if not answer:
+                logger.warning(f"[계정 {account_id}] Gemini 캡차 답변 실패 (시도 {attempt + 1})")
+                continue
+
+            logger.info(f"[계정 {account_id}] Gemini 캡차 답변: '{answer}'")
+
+            # 캡차 입력 필드 찾기
+            captcha_input = await page.query_selector(
+                '#captcha_input, input[name="captcha"], '
+                'input[name="chptcha"], input[name="chptchaResponse"], '
+                '#chptcha, input.captcha_input, '
+                'input[placeholder*="자동입력"], input[placeholder*="문자"]'
+            )
+            if not captcha_input:
+                # 캡차 영역 내 input 찾기
+                captcha_input = await page.query_selector('.captcha_wrap input[type="text"], #captcha input[type="text"]')
+
+            if captcha_input:
+                await captcha_input.click()
+                await captcha_input.fill("")
+                await captcha_input.type(answer, delay=50)
+                await random_delay(0.5, 1)
+
+                # 로그인/확인 버튼 클릭
+                submit_btn = await page.query_selector(
+                    "#log\\.login, .btn_login, button[type='submit'], input[type='submit']"
+                )
+                if submit_btn:
+                    await submit_btn.click()
+                else:
+                    await page.keyboard.press("Enter")
+
+                await random_delay(3, 5)
+
+                # 캡차 사라졌는지 확인
+                still_captcha = await page.query_selector("#captcha, .captcha_wrap")
+                if not still_captcha or "nidlogin" not in page.url:
+                    logger.info(f"[계정 {account_id}] 캡차 통과!")
+                    return True
+                else:
+                    logger.warning(f"[계정 {account_id}] 캡차 오답 (시도 {attempt + 1})")
+                    # 새 캡차 이미지 로드 대기
+                    await random_delay(1, 2)
+            else:
+                logger.warning(f"[계정 {account_id}] 캡차 입력 필드 없음")
+                await capture_debug(page, f"captcha_no_input_{account_id}")
+                return False
+
+        except Exception as e:
+            logger.warning(f"[계정 {account_id}] 캡차 풀기 예외: {e}")
+
     return False
 
 
