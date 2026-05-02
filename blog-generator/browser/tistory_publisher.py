@@ -180,33 +180,41 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
 
 
 async def _insert_tistory_image(page, img_path: str, account_name: str):
-    """티스토리 에디터에 이미지 파일 삽입 — file_chooser 방식"""
+    """티스토리 에디터에 이미지 파일 삽입 — TinyMCE 4 kImage + file_chooser"""
     try:
-        # 툴바에서 사진/이미지 버튼 찾기
+        # TinyMCE 4.9.6 (keditor) 툴바에서 이미지 버튼 찾기
+        # kImage 플러그인 버튼: .mce-i-kimage 또는 첫 번째 splitbtn
         img_btn = None
         for sel in [
-            'button .mce-i-image',
+            '.mce-i-kimage',
+            '.mce-i-kImage',
             '.mce-i-image',
-            'button[aria-label*="사진"]',
-            'button[aria-label*="이미지"]',
-            'button[aria-label*="image"]',
-            '#attach-layer-btn',
-            '.tox-tbtn--select[aria-label*="image"]',
+            '.mce-ico.mce-i-kimage',
         ]:
-            el = await page.query_selector(sel)
-            if el:
-                # mce-i-image는 아이콘이므로 부모 버튼 찾기
-                if 'mce-i' in sel:
-                    img_btn = await el.evaluate_handle(
-                        'el => el.closest("button") || el.closest("[role=button]") || el'
-                    )
-                else:
-                    img_btn = el
+            icon_el = await page.query_selector(sel)
+            if icon_el:
+                img_btn = await icon_el.evaluate_handle(
+                    'el => el.closest("button") || el.closest(".mce-btn") || el'
+                )
                 logger.info(f"[{account_name}] 이미지 버튼 발견: {sel}")
                 break
 
+        # 아이콘 클래스로 못 찾으면 → 첫 번째 splitbtn (드롭다운 있는 버튼)
         if not img_btn:
-            logger.warning(f"[{account_name}] 이미지 버튼을 찾지 못함 (건너뜀)")
+            img_btn = await page.query_selector(
+                '.mce-toolbar .mce-splitbtn:first-child button:first-child, '
+                '.mce-toolbar .mce-btn-group:first-child .mce-btn:first-child button'
+            )
+            if img_btn:
+                logger.info(f"[{account_name}] 이미지 버튼 발견: 첫 번째 툴바 버튼")
+
+        if not img_btn:
+            # 디버그: 툴바 버튼 목록 출력
+            toolbar_info = await page.evaluate('''() => {
+                const icons = document.querySelectorAll('.mce-ico');
+                return Array.from(icons).slice(0, 10).map(i => i.className);
+            }''')
+            logger.warning(f"[{account_name}] 이미지 버튼 없음. 툴바 아이콘: {toolbar_info}")
             return
 
         # file_chooser 이벤트로 네이티브 파일 다이얼로그 가로채기
@@ -215,7 +223,7 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
         file_chooser = await fc_info.value
         await file_chooser.set_files(img_path)
         await random_delay(3, 5)
-        logger.info(f"[{account_name}] 이미지 업로드 완료 (file_chooser): {img_path}")
+        logger.info(f"[{account_name}] 이미지 업로드 완료: {img_path}")
 
     except Exception as e:
         logger.warning(f"[{account_name}] 이미지 삽입 실패 (건너뜀): {e}")
