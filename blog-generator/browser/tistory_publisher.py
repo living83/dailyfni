@@ -362,66 +362,100 @@ async def _select_tistory_category(page, category: str, account_name: str):
 
 async def _publish_tistory(page, account_name: str) -> dict:
     """발행 버튼 클릭 + URL 추출"""
-    # 발행 버튼 (완료/발행/공개발행 등)
-    publish_selectors = [
-        '#publish-layer-btn',
-        'button:has-text("완료")',
+    blog_name = page.url.split(".tistory.com")[0].split("//")[-1]
+
+    # Step 1: "완료" 버튼 클릭 → 발행 설정 레이어 열기
+    open_btn = await page.query_selector('#publish-layer-btn')
+    if not open_btn:
+        open_btn = await page.query_selector('button:has-text("완료")')
+    if not open_btn:
+        await capture_debug(page, f"tistory_no_publish_btn_{account_name}")
+        return {"success": False, "error": "완료 버튼을 찾을 수 없습니다."}
+
+    await open_btn.click()
+    logger.info(f"[{account_name}] '완료' 버튼 클릭 → 발행 레이어 대기")
+    await random_delay(2, 3)
+
+    # 발행 레이어가 열린 후 디버그 스크린샷
+    await capture_debug(page, f"tistory_publish_layer_{account_name}")
+
+    # Step 2: 발행 레이어 안의 최종 "발행" 버튼 클릭
+    confirm_selectors = [
+        '#publish-btn',
+        'button.btn-publish',
+        'button.publish-btn',
+        '.layer_post button.btn_ok',
+        '.layer_publish button.btn_ok',
+        '#kakaoWrap button.btn_ok',
+        'button.btn_ok',
+        'button:has-text("공개발행")',
+        'button:has-text("발행하기")',
         'button:has-text("발행")',
-        'button:has-text("공개 발행")',
-        '.btn_publish',
-        '#btn_publish',
-        'button.btn_point',
     ]
 
-    for sel in publish_selectors:
-        btn = await page.query_selector(sel)
-        if btn and await btn.is_visible():
-            await btn.click()
-            await random_delay(2, 3)
-            logger.info(f"[{account_name}] 발행 버튼 클릭: {sel}")
+    clicked = False
+    for csol in confirm_selectors:
+        try:
+            cbtn = await page.query_selector(csol)
+            if cbtn and await cbtn.is_visible():
+                # "완료" 버튼 자체를 다시 클릭하지 않도록
+                btn_id = await cbtn.get_attribute("id")
+                if btn_id == "publish-layer-btn":
+                    continue
+                await cbtn.click()
+                logger.info(f"[{account_name}] 발행 확인 클릭: {csol}")
+                clicked = True
+                await random_delay(3, 5)
+                break
+        except Exception:
+            continue
 
-            # 확인 팝업이 뜰 수 있음 (공개/보호/비공개 선택)
-            confirm_selectors = [
-                'button:has-text("공개")',
-                'button:has-text("발행")',
-                'button:has-text("확인")',
-                '.btn_ok',
-                '#publish-btn',
-            ]
-            for csol in confirm_selectors:
-                cbtn = await page.query_selector(csol)
-                if cbtn and await cbtn.is_visible():
-                    await cbtn.click()
-                    await random_delay(2, 3)
-                    logger.info(f"[{account_name}] 발행 확인: {csol}")
-                    break
+    if not clicked:
+        # JavaScript로 발행 레이어 내 버튼 강제 클릭 시도
+        try:
+            clicked = await page.evaluate("""() => {
+                const btns = document.querySelectorAll('button');
+                for (const btn of btns) {
+                    const text = btn.textContent.trim();
+                    if ((text === '발행' || text === '공개발행' || text === '발행하기')
+                        && btn.id !== 'publish-layer-btn') {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            if clicked:
+                logger.info(f"[{account_name}] JS로 발행 버튼 클릭 성공")
+                await random_delay(3, 5)
+        except Exception as e:
+            logger.warning(f"[{account_name}] JS 발행 클릭 실패: {e}")
 
-            # 발행 후 URL 추출
-            await random_delay(2, 3)
-            current_url = page.url
+    if not clicked:
+        await capture_debug(page, f"tistory_publish_fail_{account_name}")
+        return {"success": False, "error": "발행 확인 버튼을 찾을 수 없습니다."}
 
-            # /manage/write에서 벗어났으면 발행된 글 URL
-            if "/manage/write" not in current_url and "tistory.com" in current_url:
-                return {"success": True, "url": current_url}
+    # Step 3: 발행 후 디버그 + URL 추출
+    await capture_debug(page, f"tistory_after_publish_{account_name}")
+    current_url = page.url
 
-            # URL이 아직 write 페이지면 → 주소창이 아닌 다른 방법으로 추출
-            # 최근 발행 글 목록에서 추출 시도
-            try:
-                await page.goto(
-                    f"https://{page.url.split('.tistory.com')[0].split('//')[-1]}.tistory.com/manage/posts",
-                    wait_until="domcontentloaded",
-                    timeout=15000,
-                )
-                await random_delay(1, 2)
-                first_link = await page.query_selector('.post_title a, .tit_post a, table a')
-                if first_link:
-                    url = await first_link.get_attribute("href")
-                    if url:
-                        return {"success": True, "url": url}
-            except Exception:
-                pass
+    if "/manage/newpost" not in current_url and "/manage/write" not in current_url:
+        return {"success": True, "url": current_url}
 
-            return {"success": True, "url": f"발행 완료 (URL 미추출)"}
+    # URL이 아직 에디터면 → 글 목록에서 최신 글 URL 추출
+    try:
+        await page.goto(
+            f"https://{blog_name}.tistory.com/manage/posts",
+            wait_until="domcontentloaded",
+            timeout=15000,
+        )
+        await random_delay(1, 2)
+        first_link = await page.query_selector('.post_title a, .tit_post a, table a')
+        if first_link:
+            url = await first_link.get_attribute("href")
+            if url:
+                return {"success": True, "url": url}
+    except Exception:
+        pass
 
-    await capture_debug(page, f"tistory_no_publish_btn_{account_name}")
-    return {"success": False, "error": "발행 버튼을 찾을 수 없습니다."}
+    return {"success": False, "error": "발행 후 URL 확인 실패 (실제 발행 미확인)"}
