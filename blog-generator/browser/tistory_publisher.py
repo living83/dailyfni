@@ -142,6 +142,18 @@ async def publish_tistory_post(account: dict, post_data: dict) -> dict:
                 logger.warning(f"[{account_name}] 이미지 삽입 실패 (계속 진행): {e}")
 
             # ── 5. 본문 입력 ──
+            # TinyMCE iframe 로딩 대기
+            try:
+                await page.wait_for_selector(
+                    'iframe#editor-tistory_ifr, iframe[id$="_ifr"]',
+                    timeout=15000,
+                )
+                await random_delay(1, 2)
+                logger.info(f"[{account_name}] TinyMCE 에디터 iframe 로딩 확인")
+            except Exception:
+                logger.warning(f"[{account_name}] TinyMCE iframe 대기 타임아웃, 진행 시도")
+                await random_delay(2, 3)
+
             content = post_data.get("content", "")
             if content:
                 await _input_tistory_body(page, content, account_name)
@@ -253,70 +265,88 @@ async def _insert_tistory_image(page, img_path: str, account_name: str):
 
 
 async def _input_tistory_body(page, content: str, account_name: str):
-    """티스토리 에디터에 본문 입력"""
-    # HTML 모드 전환 시도 (더 안정적)
+    """티스토리 에디터에 본문 입력 (TinyMCE iframe 방식)"""
+
+    html_content = _text_to_html(content)
+
+    # ── 방법 1: TinyMCE iframe 직접 접근 (가장 안정적) ──
+    # 티스토리 에디터의 iframe ID: editor-tistory_ifr
+    iframe_selectors = [
+        'iframe#editor-tistory_ifr',
+        'iframe[id$="_ifr"]',
+        'iframe.tox-edit-area__iframe',
+    ]
+
+    for sel in iframe_selectors:
+        try:
+            iframe_el = await page.wait_for_selector(sel, timeout=10000)
+            if iframe_el:
+                frame = await iframe_el.content_frame()
+                if frame:
+                    # TinyMCE body가 준비될 때까지 대기
+                    body_el = await frame.wait_for_selector(
+                        'body#tinymce, body.mce-content-body', timeout=5000
+                    )
+                    if body_el:
+                        # JavaScript로 HTML 직접 삽입 (가장 확실한 방법)
+                        await frame.evaluate(f'''() => {{
+                            const body = document.querySelector('body#tinymce') || document.body;
+                            body.innerHTML = {repr(html_content)};
+                        }}''')
+                        await random_delay(0.5, 1)
+                        logger.info(f"[{account_name}] TinyMCE iframe 본문 입력 완료 ({sel})")
+                        return
+        except Exception as e:
+            logger.debug(f"[{account_name}] iframe 셀렉터 {sel} 실패: {e}")
+            continue
+
+    # ── 방법 2: page.frames 순회 ──
+    for frame in page.frames:
+        if frame == page.main_frame:
+            continue
+        try:
+            body_el = await frame.query_selector('body#tinymce, body.mce-content-body')
+            if body_el:
+                await frame.evaluate(f'''() => {{
+                    const body = document.querySelector('body#tinymce') || document.body;
+                    body.innerHTML = {repr(html_content)};
+                }}''')
+                await random_delay(0.5, 1)
+                logger.info(f"[{account_name}] frame 순회 본문 입력 완료")
+                return
+        except Exception:
+            continue
+
+    # ── 방법 3: HTML 모드 전환 후 textarea 입력 ──
     html_mode_btn = await page.query_selector(
-        'button:has-text("HTML"), .btn_html, [data-mode="html"], '
-        'button[title="HTML"], .switch_html'
+        'button:has-text("HTML"), .btn_html, [data-mode="html"]'
     )
     if html_mode_btn:
         await html_mode_btn.click()
         await random_delay(0.5, 1)
-        logger.info(f"[{account_name}] HTML 모드 전환")
-
-        # HTML 모드 텍스트 에디어에 직접 입력
-        html_editor = await page.query_selector(
-            'textarea.html, #html-editor, textarea, .CodeMirror textarea'
-        )
+        html_editor = await page.query_selector('textarea.html, #html-editor, textarea')
         if html_editor:
-            # HTML 태그로 본문 구성
-            html_content = _text_to_html(content)
             await html_editor.fill(html_content)
             await random_delay(0.5, 1)
             logger.info(f"[{account_name}] HTML 모드 본문 입력 완료")
             return
 
-    # WYSIWYG 모드: contenteditable 영역에 입력
-    body_selectors = [
-        '#tinymce',
-        '.mce-content-body',
-        '[contenteditable="true"]',
-        '#content',
-        '.editor_content',
-        '.post_content',
-        'iframe#editor_ifr',
-    ]
-
-    # iframe 내부 에디터 확인
-    for frame in page.frames:
-        body_el = await frame.query_selector('[contenteditable="true"], body#tinymce, body')
-        if body_el:
-            editable = await body_el.get_attribute("contenteditable")
-            if editable == "true" or await body_el.evaluate('el => el.id === "tinymce"'):
-                await body_el.click()
-                await random_delay(0.5, 1)
-                # 줄 단위로 입력
-                for line in content.split("\n"):
-                    if line.strip():
-                        await page.keyboard.type(line.strip(), delay=random.randint(20, 40))
-                    await page.keyboard.press("Enter")
-                logger.info(f"[{account_name}] iframe 에디터 본문 입력 완료")
-                return
-
-    # 메인 페이지에서 contenteditable 직접 시도
-    for sel in body_selectors:
+    # ── 방법 4: contenteditable 직접 시도 ──
+    for sel in ['[contenteditable="true"]', '.mce-content-body', '#content']:
         body_el = await page.query_selector(sel)
         if body_el:
             await body_el.click()
-            await random_delay(0.5, 1)
-            for line in content.split("\n"):
-                if line.strip():
-                    await page.keyboard.type(line.strip(), delay=random.randint(20, 40))
-                await page.keyboard.press("Enter")
-            logger.info(f"[{account_name}] 본문 입력 완료 (셀렉터: {sel})")
+            await random_delay(0.3, 0.5)
+            await page.keyboard.type(content[:50], delay=30)
+            logger.info(f"[{account_name}] contenteditable 본문 입력 ({sel})")
             return
 
-    logger.warning(f"[{account_name}] 본문 입력 영역을 찾지 못했습니다.")
+    # 디버그 로그: 페이지 내 iframe 목록 출력
+    iframe_info = await page.evaluate('''() => {
+        const iframes = document.querySelectorAll('iframe');
+        return Array.from(iframes).map(f => ({id: f.id, name: f.name, src: f.src?.substring(0, 100)}));
+    }''')
+    logger.warning(f"[{account_name}] 본문 입력 영역을 찾지 못함. iframes: {iframe_info}")
     await capture_debug(page, f"tistory_no_body_{account_name}")
 
 
