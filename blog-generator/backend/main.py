@@ -464,6 +464,92 @@ async def dashboard_tistory_publish(req: TistoryPublishRequest):
         return {"success": False, "error": str(e)}
 
 
+# ═══════════════════════════════════════════════════════
+# 수동 로그인 (스크린샷 기반 원격 브라우저)
+# ═══════════════════════════════════════════════════════
+
+class ManualLoginStartRequest(BaseModel):
+    session_id: str
+    platform: str = "naver"
+    url: Optional[str] = None
+
+class ManualLoginClickRequest(BaseModel):
+    session_id: str
+    x: int
+    y: int
+
+class ManualLoginTypeRequest(BaseModel):
+    session_id: str
+    text: str
+
+class ManualLoginKeyRequest(BaseModel):
+    session_id: str
+    key: str
+
+class ManualLoginNavigateRequest(BaseModel):
+    session_id: str
+    url: str
+
+class ManualLoginSaveRequest(BaseModel):
+    session_id: str
+    account_id: str
+    platform: str = "naver"
+
+
+@app.post("/api/manual-login/start")
+async def manual_login_start(req: ManualLoginStartRequest):
+    from browser.manual_login import start_session
+    return await start_session(req.session_id, req.platform, req.url)
+
+
+@app.get("/api/manual-login/screenshot/{session_id}")
+async def manual_login_screenshot(session_id: str):
+    from browser.manual_login import get_screenshot
+    return await get_screenshot(session_id)
+
+
+@app.post("/api/manual-login/click")
+async def manual_login_click(req: ManualLoginClickRequest):
+    from browser.manual_login import send_click
+    return await send_click(req.session_id, req.x, req.y)
+
+
+@app.post("/api/manual-login/type")
+async def manual_login_type(req: ManualLoginTypeRequest):
+    from browser.manual_login import send_type
+    return await send_type(req.session_id, req.text)
+
+
+@app.post("/api/manual-login/key")
+async def manual_login_key(req: ManualLoginKeyRequest):
+    from browser.manual_login import send_key
+    return await send_key(req.session_id, req.key)
+
+
+@app.post("/api/manual-login/navigate")
+async def manual_login_navigate(req: ManualLoginNavigateRequest):
+    from browser.manual_login import navigate
+    return await navigate(req.session_id, req.url)
+
+
+@app.post("/api/manual-login/save-cookies")
+async def manual_login_save(req: ManualLoginSaveRequest):
+    from browser.manual_login import save_cookies
+    return await save_cookies(req.session_id, req.account_id, req.platform)
+
+
+@app.post("/api/manual-login/close/{session_id}")
+async def manual_login_close(session_id: str):
+    from browser.manual_login import close_session
+    return await close_session(session_id)
+
+
+@app.get("/api/manual-login/sessions")
+async def manual_login_sessions():
+    from browser.manual_login import list_sessions
+    return {"sessions": list_sessions()}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

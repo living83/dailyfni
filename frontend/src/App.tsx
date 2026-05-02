@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, PenTool, Send, BarChart3, Heart,
-  Settings as SettingsIcon, BookOpen, LogOut
+  Settings as SettingsIcon, BookOpen, LogOut, Monitor
 } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -11,6 +11,7 @@ import Monitoring from './pages/Monitoring'
 import Engagement from './pages/Engagement'
 import SettingsPage from './pages/Settings'
 import TistoryPage from './pages/Tistory'
+import ManualLogin from './pages/ManualLogin'
 import Login from './pages/Login'
 import { type ReactNode, useState, useEffect } from 'react'
 import api, { setOnUnauthorized } from './lib/api'
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/monitoring', icon: <BarChart3 size={20} />, label: '모니터링' },
   { to: '/engagement', icon: <Heart size={20} />, label: '이웃참여' },
   { to: '/tistory', icon: <BookOpen size={20} />, label: '티스토리' },
+  { to: '/manual-login', icon: <Monitor size={20} />, label: '수동 로그인' },
   { to: '/settings', icon: <SettingsIcon size={20} />, label: '설정' },
 ]
 
@@ -124,6 +126,7 @@ function ProtectedLayout() {
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/engagement" element={<Engagement />} />
             <Route path="/tistory" element={<TistoryPage />} />
+            <Route path="/manual-login" element={<ManualLogin />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </div>

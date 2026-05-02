@@ -19,6 +19,7 @@ const statsRoutes = require('./routes/statsRoutes');
 const buddyRoutes = require('./routes/buddyRoutes');
 const styleRoutes = require('./routes/styleRoutes');
 const tistoryRoutes = require('./routes/tistoryRoutes');
+const manualLoginRoutes = require('./routes/manualLoginRoutes');
 
 const { sessionAuth, loginHandler, logoutHandler, checkHandler } = require('./middleware/sessionAuth');
 
@@ -57,6 +58,7 @@ app.use('/api', statsRoutes);
 app.use('/api', buddyRoutes);
 app.use('/api', styleRoutes);
 app.use('/api', tistoryRoutes);
+app.use('/api', manualLoginRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
