@@ -363,6 +363,198 @@ async def _select_tistory_category(page, category: str, account_name: str):
     logger.debug(f"[{account_name}] 카테고리 셀렉터 미발견 (건너뜀)")
 
 
+async def _handle_dkaptcha(page, account_name: str, max_attempts: int = 3) -> bool:
+    """DKAPTCHA 감지 및 Gemini Vision으로 자동 풀기"""
+    import base64
+    import httpx
+    from config import settings
+
+    for attempt in range(max_attempts):
+        # DKAPTCHA 팝업 감지
+        captcha_el = await page.query_selector(
+            'iframe[src*="dkaptcha"], iframe[src*="captcha"], '
+            '.dkaptcha, #dkaptcha, [class*="captcha"]'
+        )
+        if not captcha_el:
+            # iframe 없이 직접 표시되는 경우
+            captcha_text = await page.query_selector(
+                'text="빈칸에 들어갈 글자를 입력해주세요", '
+                'text="정답을 입력해주세요", '
+                'text="DKAPTCHA"'
+            )
+            if not captcha_text:
+                if attempt == 0:
+                    logger.debug(f"[{account_name}] DKAPTCHA 미감지 (정상)")
+                return attempt > 0  # 이전 시도에서 풀었으면 True
+
+        logger.info(f"[{account_name}] DKAPTCHA 감지! 풀기 시도 {attempt + 1}/{max_attempts}")
+
+        # 캡차 영역 스크린샷 캡처
+        # iframe인 경우 iframe으로 전환
+        captcha_frame = page
+        if captcha_el:
+            try:
+                frame = await captcha_el.content_frame()
+                if frame:
+                    captcha_frame = frame
+            except Exception:
+                pass
+
+        # 전체 페이지 스크린샷 (캡차 포함)
+        screenshot_bytes = await page.screenshot(type="png", full_page=False)
+        b64_screenshot = base64.b64encode(screenshot_bytes).decode()
+
+        # 캡차 문제 텍스트 추출 시도
+        question_text = ""
+        try:
+            question_text = await captcha_frame.evaluate('''() => {
+                const els = document.querySelectorAll('p, span, div, strong');
+                const texts = [];
+                for (const el of els) {
+                    const t = el.textContent.trim();
+                    if (t.includes('___') || t.includes('빈칸') || t.includes('입력')) {
+                        texts.push(t);
+                    }
+                }
+                return texts.join(' | ');
+            }''')
+        except Exception:
+            pass
+
+        if not question_text:
+            question_text = "지도에서 장소를 찾아 빈칸에 들어갈 글자를 입력"
+
+        logger.info(f"[{account_name}] 캡차 문제: {question_text}")
+
+        # Gemini Vision으로 캡차 풀기
+        api_key = settings.GOOGLE_API_KEY
+        if not api_key:
+            logger.error(f"[{account_name}] GOOGLE_API_KEY 없음 — 캡차 풀기 불가")
+            return False
+
+        answer = await _solve_captcha_with_gemini(api_key, b64_screenshot, question_text)
+        if not answer:
+            logger.warning(f"[{account_name}] Gemini 캡차 답변 실패")
+            # 새로고침 버튼으로 새 캡차 시도
+            try:
+                refresh_btn = await captcha_frame.query_selector(
+                    'button[aria-label*="새로"], button:has(svg), .refresh, '
+                    'button:near(:text("DKAPTCHA"), 200)'
+                )
+                if not refresh_btn:
+                    # 새로고침 아이콘 (회전 화살표) 찾기
+                    refresh_btn = await captcha_frame.query_selector(
+                        'button:first-of-type'
+                    )
+                if refresh_btn:
+                    await refresh_btn.click()
+                    await random_delay(1, 2)
+            except Exception:
+                pass
+            continue
+
+        logger.info(f"[{account_name}] Gemini 캡차 답변: '{answer}'")
+
+        # 답변 입력
+        try:
+            answer_input = await captcha_frame.query_selector(
+                'input[placeholder*="정답"], input[placeholder*="입력"], '
+                'input[type="text"]'
+            )
+            if answer_input:
+                await answer_input.click()
+                await answer_input.fill("")
+                await answer_input.type(answer, delay=50)
+                await random_delay(0.5, 1)
+
+                # "답변 제출" 버튼 클릭
+                submit_btn = await captcha_frame.query_selector(
+                    'button:has-text("답변 제출"), button:has-text("제출"), '
+                    'button:has-text("확인"), button[type="submit"]'
+                )
+                if submit_btn:
+                    await submit_btn.click()
+                    await random_delay(2, 3)
+                    logger.info(f"[{account_name}] 캡차 답변 제출 완료")
+
+                    # 캡차가 사라졌는지 확인
+                    still_captcha = await page.query_selector(
+                        'text="정답을 입력해주세요", text="DKAPTCHA", '
+                        'text="빈칸에 들어갈 글자"'
+                    )
+                    if not still_captcha:
+                        logger.info(f"[{account_name}] 캡차 통과 성공!")
+                        return True
+                    else:
+                        logger.warning(f"[{account_name}] 캡차 오답, 재시도")
+                else:
+                    logger.warning(f"[{account_name}] 답변 제출 버튼 없음")
+            else:
+                logger.warning(f"[{account_name}] 캡차 입력 필드 없음")
+        except Exception as e:
+            logger.warning(f"[{account_name}] 캡차 입력 실패: {e}")
+
+    logger.error(f"[{account_name}] DKAPTCHA {max_attempts}회 실패")
+    return False
+
+
+async def _solve_captcha_with_gemini(api_key: str, b64_image: str, question: str) -> str | None:
+    """Gemini Vision API로 DKAPTCHA 지도 캡차 풀기"""
+    import httpx
+
+    prompt = (
+        "이 스크린샷은 DKAPTCHA 캡차입니다. 지도 위에 장소 이름들이 표시되어 있고, "
+        "아래에 빈칸(___)이 있는 장소 이름이 있습니다.\n\n"
+        f"문제: {question}\n\n"
+        "지도에서 해당 장소를 찾아 빈칸에 들어갈 정확한 글자만 답해주세요. "
+        "다른 설명 없이 빈칸에 들어갈 글자만 출력하세요."
+    )
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inlineData": {"mimeType": "image/png", "data": b64_image}},
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 50,
+        },
+    }
+
+    models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"]
+
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    url, json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+            if resp.status_code != 200:
+                logger.debug(f"Gemini {model} captcha: status {resp.status_code}")
+                continue
+
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                continue
+
+            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            if text:
+                # 불필요한 문자 제거 (따옴표, 마침표, 공백 등)
+                answer = text.strip().strip('"\'.,!。').strip()
+                if answer:
+                    return answer
+        except Exception as e:
+            logger.debug(f"Gemini captcha error ({model}): {e}")
+            continue
+
+    return None
+
+
 async def _publish_tistory(page, account_name: str) -> dict:
     """발행 버튼 클릭 + URL 추출"""
     blog_name = page.url.split(".tistory.com")[0].split("//")[-1]
@@ -468,7 +660,12 @@ async def _publish_tistory(page, account_name: str) -> dict:
         await capture_debug(page, f"tistory_publish_fail_{account_name}")
         return {"success": False, "error": "발행 확인 버튼을 찾을 수 없습니다."}
 
-    # Step 4: 발행 후 디버그 + URL 추출
+    # Step 4: DKAPTCHA 감지 및 풀기
+    captcha_solved = await _handle_dkaptcha(page, account_name)
+    if captcha_solved:
+        await random_delay(2, 3)
+
+    # Step 5: 발행 후 디버그 + URL 추출
     await capture_debug(page, f"tistory_after_publish_{account_name}")
     current_url = page.url
 
