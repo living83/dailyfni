@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  width: 960px;
+  height: 540px;
+  font-family: 'Noto Sans KR', sans-serif;
+  overflow: hidden;
+}
+
+.banner {
+  width: 960px;
+  height: 540px;
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 30%, #b2dfdb 70%, #e0f2f1 100%);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 60px;
+}
+
+/* 상단 카테고리 뱃지 */
+.badge {
+  display: inline-block;
+  background: rgba(255,255,255,0.7);
+  border: 1.5px solid #80cbc4;
+  border-radius: 20px;
+  padding: 7px 22px;
+  font-size: 14px;
+  color: #00796b;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  margin-bottom: 32px;
+}
+
+/* 메인 제목 — 크게 */
+.title {
+  text-align: center;
+  font-size: 42px;
+  font-weight: 900;
+  color: #1a237e;
+  line-height: 1.35;
+  margin-bottom: 24px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  word-break: keep-all;
+}
+
+/* 소제목 */
+.subtitle {
+  text-align: center;
+  font-size: 20px;
+  font-weight: 500;
+  color: #546e7a;
+  line-height: 1.5;
+}
+
+/* 배경 장식 원 */
+.deco {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.12;
+}
+.d1 { width: 220px; height: 220px; background: #4db6ac; top: -50px; right: -40px; }
+.d2 { width: 140px; height: 140px; background: #80cbc4; bottom: -30px; left: -30px; }
+.d3 { width: 100px; height: 100px; background: #4dd0e1; bottom: 60px; right: 60px; }
+.d4 { width: 70px; height: 70px; background: #a5d6a7; top: 80px; left: 50px; }
+
+/* 하단 구분선 */
+.bottom-line {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, #26a69a, #42a5f5, #7e57c2);
+}
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="deco d1"></div>
+  <div class="deco d2"></div>
+  <div class="deco d3"></div>
+  <div class="deco d4"></div>
+
+  <div class="badge">금융 정보 블로그</div>
+
+  <div class="title">전업주부 개인회생 대출,<br>피부양자 서류만 있으면 신청 가능한 이유</div>
+
+  <div class="subtitle">소득 증빙의 어려움을 해결하는 법</div>
+
+  <div class="bottom-line"></div>
+</div>
+</body>
+</html>
