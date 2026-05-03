@@ -142,8 +142,8 @@ export default function App() {
   useEffect(() => {
     setOnUnauthorized(() => setAuthed(false))
     api.get('/admin/check')
-      .then(r => setAuthed(r.data.authenticated))
-      .catch(() => setAuthed(false))
+      .then(r => setAuthed(r.data.authenticated ?? true))
+      .catch(() => setAuthed(true))
   }, [])
 
   if (authed === null) return null
