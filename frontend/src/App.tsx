@@ -137,18 +137,6 @@ function ProtectedLayout() {
 
 /* ── App root ── */
 export default function App() {
-  const [authed, setAuthed] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    setOnUnauthorized(() => setAuthed(false))
-    api.get('/admin/check')
-      .then(r => setAuthed(r.data.authenticated ?? true))
-      .catch(() => setAuthed(true))
-  }, [])
-
-  if (authed === null) return null
-  if (!authed) return <Login onLogin={() => setAuthed(true)} />
-
   return (
     <Router>
       <Routes>
