@@ -1,5 +1,5 @@
 """
-manual_login.py — 웹 UI에서 스크린샷 기반 수동 로그인
+manual_login.py - 웹 UI에서 스크린샷 기반 수동 로그인
 브라우저를 서버에서 열고, 스크린샷을 전송하여 사용자가 CAPTCHA를 직접 풀 수 있게 함
 """
 
@@ -17,6 +17,21 @@ from config import settings
 _sessions: dict[str, dict] = {}
 
 
+def _get_proxy():
+    """발행 브라우저와 동일한 프록시 설정 반환"""
+    if not settings.PROXY_SERVER:
+        return None
+    server = settings.PROXY_SERVER
+    if not server.startswith(("http://", "https://", "socks4://", "socks5://")):
+        server = f"http://{server}"
+    proxy = {"server": server}
+    if settings.PROXY_USERNAME:
+        proxy["username"] = settings.PROXY_USERNAME
+        proxy["password"] = settings.PROXY_PASSWORD
+    logger.info(f"[수동로그인] 프록시 사용: {server}")
+    return proxy
+
+
 async def _create_browser(playwright):
     launch_args = [
         "--disable-blink-features=AutomationControlled",
@@ -30,16 +45,20 @@ async def _create_browser(playwright):
         "--disable-third-party-cookie-phaseout",
     ]
 
+    proxy = _get_proxy()
+
     for channel in ["chrome", "msedge", None]:
         try:
             kwargs = {"headless": True, "args": launch_args}
             if channel:
                 kwargs["channel"] = channel
+            if proxy:
+                kwargs["proxy"] = proxy
             browser = await playwright.chromium.launch(**kwargs)
             return browser
         except Exception:
             continue
-    raise RuntimeError("브라우저를 시작�� 수 없습니다.")
+    raise RuntimeError("브라우저를 시작할 수 없습니다.")
 
 
 async def start_session(session_id: str, platform: str = "naver", url: str = None) -> dict:
@@ -57,7 +76,7 @@ async def start_session(session_id: str, platform: str = "naver", url: str = Non
         ),
         locale="ko-KR",
         timezone_id="Asia/Seoul",
-        viewport={"width": 1280, "height": 900},
+        viewport={"width": 1920, "height": 1080},
     )
     await context.add_init_script("""
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
@@ -211,7 +230,7 @@ async def _take_screenshot(page: Page) -> str:
 
 
 def list_sessions() -> list:
-    """활성 세�� 목록"""
+    """활성 세션 목록"""
     return [
         {"session_id": sid, "platform": s["platform"], "created_at": s["created_at"]}
         for sid, s in _sessions.items()

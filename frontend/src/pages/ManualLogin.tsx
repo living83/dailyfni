@@ -80,8 +80,8 @@ export default function ManualLogin() {
     if (!img) return
 
     const rect = img.getBoundingClientRect()
-    const scaleX = 1280 / rect.width
-    const scaleY = 900 / rect.height
+    const scaleX = 1920 / rect.width
+    const scaleY = 1080 / rect.height
     const x = Math.round((e.clientX - rect.left) * scaleX)
     const y = Math.round((e.clientY - rect.top) * scaleY)
 
