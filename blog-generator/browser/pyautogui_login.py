@@ -304,7 +304,7 @@ class XvfbChromeSession:
 
     def __init__(
         self,
-        account_id: int,
+        account_id,
         proxy: Optional[dict] = None,
         size: tuple[int, int] = (1920, 1080),
         debug_port: Optional[int] = None,
@@ -314,10 +314,17 @@ class XvfbChromeSession:
         self.account_id = account_id
         self.proxy = proxy
         self.width, self.height = size
-        # 계정별로 포트가 겹치지 않게 9222 + (id mod 1000)
-        self.debug_port = debug_port or (9222 + (int(account_id) % 1000))
+        # 계정별로 포트가 겹치지 않게 9222 + seed%1000.
+        # DB의 account.id는 UUID 문자열이므로 int 변환이 안 되면 hash로 fallback.
+        try:
+            seed = int(account_id)
+        except (TypeError, ValueError):
+            seed = abs(hash(str(account_id)))
+        self.debug_port = debug_port or (9222 + (seed % 1000))
+        # 파일명에 안전한 형태로 정규화 (UUID에는 슬래시 없음 — 그대로 OK)
+        safe_id = str(account_id).replace("/", "_")
         self.user_data_dir = Path(user_data_dir) if user_data_dir else Path(
-            f"/tmp/pyagui_chrome_account_{account_id}"
+            f"/tmp/pyagui_chrome_account_{safe_id}"
         )
         self.keep_user_data = keep_user_data
         self._display = None
