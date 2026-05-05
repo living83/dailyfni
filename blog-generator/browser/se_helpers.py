@@ -277,7 +277,46 @@ async def login(
             await random_delay(3, 6)
 
     await page.close()
-    return False
+
+    # ── Step 4: Playwright 전부 실패 → Xvfb + pyautogui fallback ──
+    # 네이버는 Playwright 입력 시그니처를 봇으로 탐지해 무조건 CAPTCHA를 띄우는 경우가
+    # 있어, 진짜 Chrome + OS 레벨 마우스/키보드 입력으로 다시 시도한다.
+    try:
+        from browser.pyautogui_login import login_naver_with_pyautogui
+
+        proxy = await _get_proxy_for_account(account_id)
+        logger.warning(
+            f"[계정 {account_id}] Playwright 로그인 3회 실패 → pyautogui fallback 시도"
+        )
+        ok = await login_naver_with_pyautogui(
+            naver_id=naver_id,
+            naver_password=naver_password,
+            account_id=account_id,
+            proxy=proxy,
+        )
+        if not ok:
+            return False
+
+        # pyautogui가 저장한 쿠키를 현재 Playwright context에 주입
+        if cookie_path.exists():
+            try:
+                cookies = _load_encrypted_cookies(cookie_path)
+                await context.add_cookies(cookies)
+                await _share_cookies_for_cbox(context)
+                logger.info(
+                    f"[계정 {account_id}] ✅ pyautogui fallback 쿠키를 Playwright "
+                    f"context에 주입 완료"
+                )
+                return True
+            except Exception as e:
+                logger.error(
+                    f"[계정 {account_id}] pyautogui 쿠키 주입 실패: {e}"
+                )
+                return False
+        return False
+    except Exception as e:
+        logger.error(f"[계정 {account_id}] pyautogui fallback 자체 실패: {e}")
+        return False
 
 
 async def _solve_naver_captcha(page, account_id, max_attempts: int = 3) -> bool:
