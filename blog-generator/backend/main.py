@@ -284,17 +284,30 @@ async def dashboard_generate(req: DashboardGenerateRequest):
 # 대시보드 통합 API — 블로그 발행 (Playwright)
 # ═══════════════════════════════════════════════════════
 
+# 발행은 항상 한 번에 하나씩만 — pyautogui/PyScreeze의 X 연결이 프로세스
+# 전역 캐시라 동시 실행 시 Xvfb DISPLAY가 엉키고, 노드 측 fire-and-forget
+# 라우트(/posting/queue/:id/run)도 병렬 호출이 가능해 여기서 직렬화한다.
+_publish_lock = asyncio.Lock()
+
+
 @app.post("/api/dashboard/publish")
 async def dashboard_publish(req: PublishRequest):
-    """Playwright로 네이버 블로그에 글 발행"""
-    try:
-        from browser.publisher import publish_single_post
-        result = await publish_single_post(req.account, req.post_data)
-        return {"success": result.get("success", False), "url": result.get("url"), "error": result.get("error")}
-    except ImportError as e:
-        return {"success": False, "error": f"Playwright 모듈 로드 실패: {e}"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    """Playwright로 네이버 블로그에 글 발행 (전역 락으로 순차 실행)"""
+    waited_logged = False
+    if _publish_lock.locked():
+        logger.info(f"[publish] 다른 발행 진행 중 — 대기 (account={req.account.get('account_name')})")
+        waited_logged = True
+    async with _publish_lock:
+        if waited_logged:
+            logger.info(f"[publish] 락 획득 → 발행 시작 (account={req.account.get('account_name')})")
+        try:
+            from browser.publisher import publish_single_post
+            result = await publish_single_post(req.account, req.post_data)
+            return {"success": result.get("success", False), "url": result.get("url"), "error": result.get("error")}
+        except ImportError as e:
+            return {"success": False, "error": f"Playwright 모듈 로드 실패: {e}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
 
 # ═══════════════════════════════════════════════════════

@@ -381,10 +381,25 @@ async def _input_body(page, editor, content: str):
     # 취소선 토글로 작동하여 첫 줄에 취소선이 적용되는 버그가 있었음.
     # 정렬은 에디터 기본값(왼쪽)을 유지합니다.
     #
-    # 에디터에 잔존할 수 있는 포맷 상태를 안전하게 해제 (idempotent toggle)
-    # — Bold가 켜져 있으면 끄고, 꺼져 있으면 켰다가 다시 끔
+    # 방어적 포맷 해제 — 어떤 경로(이전 Tab, 툴바 hover/포커스 등)로든
+    # 취소선/볼드/기울임/밑줄 토글이 켜져 있으면 끈다.
     try:
-        await page.evaluate("document.execCommand && document.execCommand('removeFormat', false, null)")
+        await editor.evaluate("""() => {
+            try { document.execCommand('removeFormat', false, null); } catch(e) {}
+            for (const cmd of ['strikeThrough', 'bold', 'italic', 'underline']) {
+                try {
+                    if (document.queryCommandState(cmd)) {
+                        document.execCommand(cmd, false, null);
+                    }
+                } catch(e) {}
+            }
+            // 네이버 SE 툴바의 취소선/볼드/기울임/밑줄 버튼이 active 상태면 클릭으로 해제
+            const labels = ['취소선', '굵게', '기울임', '밑줄'];
+            for (const lbl of labels) {
+                const btn = document.querySelector(`button[aria-label*="${lbl}"][aria-pressed="true"]`);
+                if (btn) { try { btn.click(); } catch(e) {} }
+            }
+        }""")
         await asyncio.sleep(0.1)
     except Exception:
         pass
@@ -1003,8 +1018,11 @@ async def publish_single_post(account: dict, post_data: dict) -> dict:
                 await capture_debug(page, f"title_fail_{account_id}")
                 return result
 
-            # 본문 영역으로 포커스 이동
-            await page.keyboard.press("Tab")
+            # ⚠️ 이전에 있던 `keyboard.press("Tab")` 제거 — 네이버 SE에서
+            # 제목 필드에서 Tab은 본문이 아니라 툴바의 취소선 버튼을 활성화시킴
+            # → 그 뒤 입력하는 본문 텍스트가 전부 <strike>로 감싸지는 버그 원인.
+            # 이미지 삽입 마지막에 `Enter Enter`로 본문에 커서가 자동 배치되고,
+            # _input_body()에서 본문 영역을 직접 클릭하므로 별도 포커스 이동 불필요.
             await random_delay(1, 2)
 
             # ── 5. 대표이미지 삽입 (제목 입력 직후, 본문 전) ──────

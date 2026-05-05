@@ -558,8 +558,30 @@ async def login_naver_with_pyautogui(
                     success = True
 
             if not success:
+                fail_url = await cdp.current_url()
+                # 실패 시점 진단 — 스크린샷 + body 일부 텍스트 + CAPTCHA 여부
+                try:
+                    pg = _setup_pyautogui()
+                    debug_dir = settings.DATA_DIR / "debug_screenshots"
+                    debug_dir.mkdir(parents=True, exist_ok=True)
+                    shot_path = debug_dir / f"pyagui_login_fail_{account_id}.png"
+                    pg.screenshot().save(str(shot_path))
+                    logger.warning(f"[계정 {account_id}] 실패 스크린샷: {shot_path}")
+                except Exception as se:
+                    logger.warning(f"실패 스크린샷 저장 실패: {se}")
+                try:
+                    body_snippet = (await cdp.body_text())[:600].replace("\n", " | ")
+                    logger.warning(f"[계정 {account_id}] body 일부: {body_snippet}")
+                    captcha_check = await cdp.eval_js(
+                        "(()=>{const el=document.querySelector('#captcha,.captcha_wrap,#recaptcha,#chptcha,.captcha'); return el ? el.outerHTML.slice(0,400) : null;})()"
+                    )
+                    cap_val = captcha_check.get("value")
+                    if cap_val:
+                        logger.warning(f"[계정 {account_id}] CAPTCHA 요소 감지: {cap_val}")
+                except Exception as e2:
+                    logger.warning(f"실패 진단 실패: {e2}")
                 logger.warning(
-                    f"[계정 {account_id}] pyautogui 로그인 실패 — URL: {await cdp.current_url()}"
+                    f"[계정 {account_id}] pyautogui 로그인 실패 — URL: {fail_url}"
                 )
                 return False
 
