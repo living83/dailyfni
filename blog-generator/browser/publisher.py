@@ -356,6 +356,37 @@ def _split_sentences(text: str) -> list[str]:
     return [s.strip() for s in sentences if s.strip()]
 
 
+async def _force_off_strikethrough(editor):
+    """
+    네이버 SE 의 취소선 toolbar 토글을 명시적으로 OFF.
+    이미지 삽입이 어떤 이유로 이 toggle 을 ON 상태로 만드는 부작용이 있어,
+    그 다음 본문 입력이 모두 <strike>로 wrap 되는 버그 차단용.
+    핵심은 execCommand('strikeThrough') 토글 (state ON 일 때만 OFF).
+    """
+    try:
+        await editor.evaluate("""() => {
+            // 1) execCommand 토글 — SE 의 internal model 까지 OFF 시키는 핵심
+            try {
+                if (document.queryCommandState('strikeThrough')) {
+                    document.execCommand('strikeThrough', false, null);
+                }
+            } catch(e) {}
+            // 2) 안전망 — toolbar 버튼이 active 클래스로 표시되는 경우 클릭
+            for (const sel of [
+                '.se-strikethrough-toolbar-button.se-is-selected',
+                '.se-strikethrough-toolbar-button[class*="selected"]',
+                '.se-strikethrough-toolbar-button[aria-pressed="true"]',
+                'button[aria-label*="취소선"][aria-pressed="true"]',
+            ]) {
+                for (const btn of document.querySelectorAll(sel)) {
+                    try { btn.click(); } catch(e) {}
+                }
+            }
+        }""")
+    except Exception as e:
+        logger.warning(f"취소선 강제 OFF 실패: {e}")
+
+
 async def _input_body(page, editor, content: str):
     """본문 입력 — 문장별 줄바꿈 + 가운데 정렬 (모바일 가독성)"""
     # HTML 콘텐츠인 경우 변환
@@ -376,6 +407,8 @@ async def _input_body(page, editor, content: str):
     if body_el:
         await body_el.click()
         await random_delay(0.5, 1.0)
+    # 본문 입력 직전 한번 더 OFF (body click 이 toolbar state 를 바꿨을 수 있음)
+    await _force_off_strikethrough(editor)
 
     # ⚠️ Ctrl+Shift+E 단축키 제거 — 네이버 SE에서는 가운데 정렬이 아니라
     # 취소선 토글로 작동하여 첫 줄에 취소선이 적용되는 버그가 있었음.
@@ -467,6 +500,37 @@ async def _input_body(page, editor, content: str):
             await asyncio.sleep(random.uniform(0.2, 0.5))
 
     logger.info("본문 입력 완료")
+
+    # ── 본문 paragraph 들의 <s>/<strike>/text-decoration:line-through 강제 제거 ──
+    # 원인: 이미지 삽입 후 cursor 가 strike-styled span 에 위치 → 본문 입력이
+    # styling 을 상속받아 모든 줄이 <strike>로 wrap 되는 현상.
+    # toolbar toggle 자체를 끄는 것보다 결과 markup 을 unwrap 하는 게 가장 확실.
+    try:
+        n_unwrapped = await editor.evaluate("""() => {
+            let n = 0;
+            const root = document.querySelector('.se-main-container') || document.body;
+            // <s>, <strike>, <del> wrapper unwrap
+            for (const tag of ['s', 'strike', 'del']) {
+                for (const el of Array.from(root.querySelectorAll(tag))) {
+                    const parent = el.parentNode;
+                    if (!parent) continue;
+                    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                    parent.removeChild(el);
+                    n++;
+                }
+            }
+            // inline style line-through 제거
+            for (const el of Array.from(root.querySelectorAll('[style*="line-through"]'))) {
+                el.style.textDecoration = el.style.textDecoration.replace(/line-through/g, '').trim();
+                if (!el.getAttribute('style')?.trim()) el.removeAttribute('style');
+                n++;
+            }
+            return n;
+        }""")
+        if n_unwrapped:
+            logger.info(f"취소선 wrapper {n_unwrapped}개 제거됨")
+    except Exception as e:
+        logger.warning(f"취소선 unwrap 실패: {e}")
 
 
 async def _insert_image_from_file(page, editor, image_path: str):
@@ -1025,6 +1089,7 @@ async def publish_single_post(account: dict, post_data: dict) -> dict:
             # _input_body()에서 본문 영역을 직접 클릭하므로 별도 포커스 이동 불필요.
             await random_delay(1, 2)
 
+
             # ── 5. 대표이미지 삽입 (제목 입력 직후, 본문 전) ──────
             post_type = post_data.get("post_type", "general")
             is_ad_post = (post_type == "ad")
@@ -1062,11 +1127,17 @@ async def publish_single_post(account: dict, post_data: dict) -> dict:
                     logger.warning("[광고글] Gemini 이미지 생성 실패 → 이미지 없이 진행")
             await random_delay(1, 2)
 
+            # ⚡ 이미지 삽입은 어떤 이유로 SE 의 취소선 toolbar toggle 을
+            # ON 으로 만들어버려 다음 본문 입력이 전부 <strike>로 wrap 되는
+            # 부작용이 있음. 본문 입력 전에 즉시 강제 OFF.
+            await _force_off_strikethrough(editor)
+
             # ── 6. 본문 입력 (HTML → 텍스트 자동 변환) ──────────
             content = post_data.get("content", "")
             if content:
                 await _input_body(page, editor, content)
                 await random_delay(1, 2)
+
 
 
 

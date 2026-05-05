@@ -12,6 +12,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Naver Blog 단일 포스트 발행 테스트")
     parser.add_argument("--naver-id", required=True, help="네이버 ID")
     parser.add_argument("--naver-pw", required=True, help="네이버 비밀번호")
+    parser.add_argument("--account-id", default="test", help="DB 계정 UUID (proxy lookup용)")
     parser.add_argument("--title", default="테스트 포스트", help="글 제목")
     parser.add_argument("--content", default="이것은 테스트 포스팅입니다.", help="글 내용")
     parser.add_argument("--tags", default="테스트,자동화", help="태그 (쉼표 구분)")
@@ -19,7 +20,7 @@ async def main():
     args = parser.parse_args()
 
     account = {
-        "id": "test",
+        "id": args.account_id,
         "account_name": "테스트계정",
         "naver_id": args.naver_id,
         "naver_password": args.naver_pw,

@@ -465,6 +465,124 @@ async def _press(key: str):
     await asyncio.sleep(0.1)
 
 
+async def _solve_naver_captcha_with_gemini(
+    cdp: "_CDP",
+    account_id,
+    naver_password: str,
+    max_attempts: int = 2,
+) -> bool:
+    """
+    Naver DKAPTCHA (영수증 카운팅/단가 등 비주얼 추론) 를 Gemini Vision 으로 풀기.
+    Naver 는 CAPTCHA 표시 시 password 도 자동 클리어하므로 함께 재입력한다.
+    """
+    import base64
+    import io as _io
+    api_key = settings.GOOGLE_API_KEY
+    if not api_key:
+        logger.error(f"[계정 {account_id}] GOOGLE_API_KEY 없음 — CAPTCHA 자동 풀이 불가")
+        return False
+
+    pg = _setup_pyautogui()
+    for attempt in range(max_attempts):
+        try:
+            # CAPTCHA 질문 텍스트 추출
+            q_res = await cdp.eval_js(
+                "(()=>{const el=document.querySelector('.captcha_wrap'); return el ? el.innerText.slice(0,400) : '';})()"
+            )
+            question = (q_res.get("value") or "").strip()
+
+            # 전체 화면 스크린샷
+            img = pg.screenshot()
+            buf = _io.BytesIO()
+            img.convert("RGB").save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode()
+
+            prompt = (
+                "Naver 로그인 페이지의 CAPTCHA 입니다. 화면에는 영수증/이미지 와 함께 "
+                "질문이 표시됩니다. 다음 질문에 답하세요. 답은 숫자 또는 짧은 단어/문구만, "
+                "다른 설명 없이 답만 출력하세요.\n\n"
+                f"질문: {question}"
+            )
+            payload = {
+                "contents": [{"parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": "image/png", "data": b64}},
+                ]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 50},
+            }
+
+            answer = None
+            for model in ("gemini-2.5-flash", "gemini-2.0-flash"):
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as c:
+                        r = await c.post(url, json=payload, headers={"Content-Type": "application/json"})
+                    if r.status_code != 200:
+                        logger.warning(f"[계정 {account_id}] Gemini {model} HTTP {r.status_code}")
+                        continue
+                    data = r.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                        if text:
+                            answer = text.strip().strip('"\'.,!?').strip()
+                            break
+                except Exception as e:
+                    logger.warning(f"[계정 {account_id}] Gemini {model} 호출 예외: {e}")
+                    continue
+
+            if not answer:
+                logger.warning(f"[계정 {account_id}] Gemini CAPTCHA 답변 실패 (시도 {attempt+1})")
+                continue
+
+            logger.info(f"[계정 {account_id}] Gemini CAPTCHA 답변 (시도 {attempt+1}): '{answer}'")
+
+            # CAPTCHA 답 입력 필드 좌표
+            ans_xy = await cdp.element_center(
+                'input[placeholder*="답"], input[placeholder*="answer"], input[placeholder*="answer"], #chptcha, .captcha_wrap input[type="text"]'
+            )
+            if not ans_xy:
+                logger.warning(f"[계정 {account_id}] CAPTCHA 답 입력 필드 미발견")
+                continue
+
+            # 답 입력
+            pg.moveTo(*ans_xy, duration=0.1)
+            await asyncio.sleep(0.05)
+            pg.click(*ans_xy)
+            await asyncio.sleep(0.3)
+            pg.write(answer, interval=0.05)
+            await asyncio.sleep(0.4)
+
+            # Naver 가 PW 를 클리어했으므로 재입력
+            pw_xy = await cdp.element_center("#pw")
+            if pw_xy:
+                pg.moveTo(*pw_xy, duration=0.1)
+                pg.click(*pw_xy)
+                await asyncio.sleep(0.3)
+                pg.write(naver_password, interval=0.05)
+                await asyncio.sleep(0.3)
+
+            # Sign in 클릭
+            btn_xy = await cdp.element_center("#log\\.login, .btn_login, button[type='submit']")
+            if btn_xy:
+                pg.moveTo(*btn_xy, duration=0.1)
+                pg.click(*btn_xy)
+            else:
+                pg.press("enter")
+            await asyncio.sleep(3.5)
+
+            url = await cdp.current_url()
+            if "nidlogin" not in url:
+                logger.info(f"[계정 {account_id}] ✅ CAPTCHA 통과 — URL: {url}")
+                return True
+            else:
+                logger.warning(f"[계정 {account_id}] CAPTCHA 오답 (시도 {attempt+1}) — URL still: {url}")
+        except Exception as e:
+            logger.warning(f"[계정 {account_id}] CAPTCHA 풀이 예외 (시도 {attempt+1}): {e}")
+
+    return False
+
+
 async def login_naver_with_pyautogui(
     naver_id: str,
     naver_password: str,
@@ -556,6 +674,28 @@ async def login_naver_with_pyautogui(
                 url = await cdp.current_url()
                 if "nidlogin" not in url:
                     success = True
+
+            # CAPTCHA 감지 → Gemini Vision 으로 풀기 시도
+            if not success:
+                captcha_check = await cdp.eval_js(
+                    "(()=>{const el=document.querySelector('.captcha_wrap'); return el ? el.innerText.slice(0,400) : null;})()"
+                )
+                cap_text = captcha_check.get("value")
+                if cap_text:
+                    logger.warning(
+                        f"[계정 {account_id}] CAPTCHA 감지 — Gemini Vision으로 풀기 시도\n"
+                        f"질문: {cap_text[:200]}"
+                    )
+                    if await _solve_naver_captcha_with_gemini(
+                        cdp, account_id, naver_password
+                    ):
+                        # 다시 URL 폴링
+                        for _ in range(20):
+                            await asyncio.sleep(0.5)
+                            url = await cdp.current_url()
+                            if "nidlogin" not in url:
+                                success = True
+                                break
 
             if not success:
                 fail_url = await cdp.current_url()

@@ -282,15 +282,66 @@ def _check_proxy_alive(proxy_server: str, timeout: float = 5.0) -> bool:
         return False
 
 
-async def _get_proxy_for_account(account_id: int) -> Optional[dict]:
+def _get_db_path() -> Optional[Path]:
+    """공용 dailyfni.db 경로 — Node 측과 동일 (../../data/dailyfni.db 기준)."""
+    candidates = [
+        settings.DATA_DIR / "dailyfni.db",                # blog-generator/data/dailyfni.db (없을 수도)
+        Path("/opt/dailyfni-blog/data/dailyfni.db"),      # Node 와 공유하는 실제 경로
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _lookup_account_proxy_from_db(account_id) -> Optional[dict]:
     """
-    계정별 프록시 설정 조회 (DB 없음 — .env 글로벌만 사용)
-    우선순위: ① .env PROXY_SERVER (모든 계정 공통 글로벌 프록시)
-             ② None → 직접 연결
+    공용 SQLite DB 에서 계정별 proxy 정보 조회.
+    accounts.proxyId → proxies (ip, port, username, password) JOIN.
+    account_id 가 UUID 문자열이어야 매칭됨 (가짜 'test' 등은 None 반환).
+    """
+    import sqlite3
+    db_path = _get_db_path()
+    if not db_path:
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0)
+        try:
+            row = conn.execute(
+                """SELECT p.ip, p.port, p.username, p.password, a.proxyServer
+                   FROM accounts a LEFT JOIN proxies p ON a.proxyId = p.id
+                   WHERE a.id = ?""",
+                (str(account_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        ip, port, username, password, proxy_server = row
+        if ip and port:
+            return {
+                "server": f"http://{ip}:{port}",
+                "username": username or "",
+                "password": password or "",
+            }
+        if proxy_server:
+            return {"server": f"http://{proxy_server}"}
+        return None
+    except Exception as e:
+        logger.warning(f"[계정 {account_id}] DB 프록시 조회 실패: {e}")
+        return None
+
+
+async def _get_proxy_for_account(account_id) -> Optional[dict]:
+    """
+    계정별 프록시 설정 조회.
+    우선순위:
+      ① DB(accounts.proxyId → proxies) — 계정별 sticky proxy (CAPTCHA 회피 핵심)
+      ② .env PROXY_SERVER — 글로벌 fallback (per-account 매칭 실패 시)
+      ③ None → 직접 연결
     """
 
     def _build_proxy(server: str, username: str = "", password: str = "") -> Optional[dict]:
-        """프록시 dict 생성 + 프로토콜 자동 보완 + 연결 테스트"""
         if not server:
             return None
         if not server.startswith(("http://", "https://", "socks4://", "socks5://")):
@@ -305,9 +356,21 @@ async def _get_proxy_for_account(account_id: int) -> Optional[dict]:
         logger.info(f"[계정 {account_id}] ✅ 프록시 연결 확인: {server}")
         return proxy
 
-    # ── ① .env 글로벌 프록시: 모든 계정 공통 적용 ───────────────
+    # ── ① DB 의 계정별 proxy 우선 (각 계정마다 다른 sticky 출구 IP 보장) ──
+    db_proxy = _lookup_account_proxy_from_db(account_id)
+    if db_proxy and db_proxy.get("server"):
+        logger.info(f"[계정 {account_id}] DB 계정별 프록시 사용 시도: {db_proxy['server']}")
+        proxy = _build_proxy(
+            db_proxy["server"],
+            db_proxy.get("username", ""),
+            db_proxy.get("password", ""),
+        )
+        if proxy:
+            return proxy
+
+    # ── ② .env 글로벌 프록시 fallback ─────────────────────────
     if settings.PROXY_SERVER:
-        logger.info(f"[계정 {account_id}] .env 글로벌 프록시 사용 시도: {settings.PROXY_SERVER}")
+        logger.info(f"[계정 {account_id}] .env 글로벌 프록시 fallback: {settings.PROXY_SERVER}")
         proxy = _build_proxy(
             settings.PROXY_SERVER,
             settings.PROXY_USERNAME,
@@ -316,7 +379,7 @@ async def _get_proxy_for_account(account_id: int) -> Optional[dict]:
         if proxy:
             return proxy
 
-    # ── ② 직접 연결 ─────────────────────────────────────────────
+    # ── ③ 직접 연결 ─────────────────────────────────────────────
     logger.debug(f"[계정 {account_id}] 프록시 없음 — 직접 연결")
     return None
 
