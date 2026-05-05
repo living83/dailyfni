@@ -1,4 +1,7 @@
-require('dotenv').config();
+// pm2가 cwd를 의도와 다르게 잡는 경우(/root 등)가 있어 .env를 진입점 기준
+// 절대 경로로 로드. 텔레그램 토큰 같은 시크릿이 누락돼 알림이 사일런트로
+// 무력화되는 사고 방지.
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env') });
 const express = require('express');
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes');

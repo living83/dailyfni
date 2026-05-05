@@ -6,7 +6,11 @@
 const axios = require('axios');
 
 function getConfig() {
-  require('dotenv').config();
+  // .env는 src/index.js 진입점에서 절대 경로로 이미 로드됨. 다만 다른 진입점
+  // (스크립트 등)에서 단독 호출되더라도 안전하도록 한 번 더 보강.
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+    require('dotenv').config({ path: require('path').resolve(__dirname, '..', '..', '.env') });
+  }
   return {
     token: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
