@@ -82,6 +82,10 @@ startBuddyScheduler();
 const { startTistoryScheduler } = require('./services/tistoryScheduler');
 startTistoryScheduler();
 
+// --- 콘텐츠 풀 자동 유지보수 (검수완료 보충 + stuck 복원) ---
+const contentMaintenance = require('./services/contentMaintenance');
+contentMaintenance.start();
+
 app.listen(PORT, () => {
   console.log(`\n=== DailyFNI Agency System ===`);
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
