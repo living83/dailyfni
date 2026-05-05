@@ -214,18 +214,17 @@ async def login(
     context: BrowserContext,
     naver_id: str,
     naver_password: str,
-    account_id: int,
+    account_id,
 ) -> bool:
     """
-    쿠키 → ID/PW 2단계 로그인 전략 (guide §3-2, §3-3)
-    성공 시 True, 실패 시 False 반환
+    네이버 로그인 — 2단계:
+      1) 저장된 쿠키 재사용 (Playwright context)
+      2) 만료/없음 → Xvfb + 실제 Chrome + pyautogui로 ID/PW 로그인
+         (Playwright ID/PW 입력은 navigator.webdriver 위장에도 무조건
+         CAPTCHA로 차단되어 완전히 폐기)
 
-    개선 사항:
-    - 네이버 메인 warm-up 방문으로 IP 봇 차단 우회
-    - 타임아웃 30초로 증가
-    - networkidle 대기 추가로 JS 로딩 완료 보장
-    - 실패 시 매 시도마다 스크린샷 캡처
-    - 로그인 버튼 셀렉터 다양화
+    pyautogui 로그인이 성공하면 추출된 쿠키를 현재 Playwright context에
+    주입하여 호출자가 그대로 발행/엔게이지 작업을 이어가도록 한다.
     """
     page = await context.new_page()
 
@@ -245,165 +244,46 @@ async def login(
                 await _share_cookies_for_cbox(context)
                 await page.close()
                 return True
-            logger.debug(f"[계정 {account_id}] 쿠키 만료 → ID/PW 로그인으로 전환")
+            logger.debug(f"[계정 {account_id}] 쿠키 만료 → pyautogui 로그인으로 전환")
         except Exception as e:
             logger.warning(f"[계정 {account_id}] 쿠키 로드 실패: {e}")
 
-    # ── Step 2: 네이버 메인 warm-up (봇 탐지 우회) ────────────
-    try:
-        logger.debug(f"[계정 {account_id}] warm-up: 네이버 메인 방문 중...")
-        await page.goto("https://www.naver.com/", timeout=30000)
-        await page.wait_for_load_state("domcontentloaded")
-        await random_delay(1.5, 3.0)
-    except Exception as e:
-        logger.warning(f"[계정 {account_id}] warm-up 실패 (계속 진행): {e}")
-
-    # ── Step 3: ID/PW 로그인 ─────────────────────────────────
-    for attempt in range(1, 4):
-        try:
-            logger.info(f"[계정 {account_id}] 로그인 시도 {attempt}/3...")
-            await page.goto("https://nid.naver.com/nidlogin.login", timeout=30000)
-
-            # domcontentloaded 후 networkidle까지 대기 (JS 로딩 완료 보장)
-            try:
-                await page.wait_for_load_state("domcontentloaded", timeout=30000)
-                await page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                # networkidle 타임아웃은 무시하고 진행
-                pass
-
-            # 네이버 암호화 모듈 로딩 대기 (2~3초 추가)
-            await random_delay(2.0, 3.5)
-
-            # 입력 필드 존재 확인
-            id_field = await page.query_selector("#id")
-            pw_field = await page.query_selector("#pw")
-            if not id_field or not pw_field:
-                logger.warning(f"[계정 {account_id}] 입력 필드를 찾지 못함 (id={bool(id_field)}, pw={bool(pw_field)}) (시도 {attempt}/3)")
-                await capture_debug(page, f"login_no_field_{account_id}_attempt{attempt}")
-                await random_delay(2, 4)
-                continue
-
-            # 아이디 입력
-            await id_field.click()
-            await random_delay(0.3, 0.7)
-            await page.keyboard.press("Control+a")
-            await random_delay(0.1, 0.2)
-            await page.keyboard.type(naver_id, delay=random.randint(50, 120))
-            await random_delay(0.5, 1.0)
-
-            # 비밀번호 입력 — #pw 직접 클릭 (Tab은 다른 요소로 갈 수 있음)
-            await pw_field.click()
-            await random_delay(0.3, 0.7)
-            await page.keyboard.press("Control+a")
-            await random_delay(0.1, 0.2)
-            await page.keyboard.type(naver_password, delay=random.randint(30, 80))
-            await random_delay(0.5, 1.0)
-
-            # 입력값 확인 로그
-            try:
-                id_val = await page.evaluate("() => document.querySelector('#id').value")
-                pw_len = await page.evaluate("() => document.querySelector('#pw').value.length")
-                logger.info(f"[계정 {account_id}] 입력 확인: ID='{id_val}', PW길이={pw_len}")
-            except Exception:
-                pass
-
-            await capture_debug(page, f"login_before_submit_{account_id}_attempt{attempt}")
-
-            # Enter로 로그인 제출
-            await page.keyboard.press("Enter")
-
-            await page.wait_for_load_state("domcontentloaded", timeout=30000)
-            await random_delay(3, 5)
-
-            # ── 본인인증 요구 감지 ─────────────────────────────────
-            page_text = await page.evaluate("() => document.body.innerText")
-            if "허용하지 않은 지역" in page_text or "본인확인이 필요" in page_text or "휴대전화 번호" in page_text:
-                logger.error(
-                    f"[계정 {account_id}] 본인인증 요구 감지! URL: {page.url}"
-                )
-                await capture_debug(page, f"identity_verify_required_{account_id}")
-                try:
-                    from telegram_notifier import send_telegram_message
-                    await send_telegram_message(
-                        f"[계정 {account_id}] 네이버 본인인증 요구!\n"
-                        f"네이버 보안설정에서 이 기기를 신뢰 기기로 등록하거나,\n"
-                        f"쿠키를 수동으로 저장해주세요."
-                    )
-                except Exception:
-                    pass
-                await page.close()
-                return False
-
-            # ── CAPTCHA 감지 + 자동 풀이 ───────────────────────────
-            has_captcha = False
-            captcha = await page.query_selector(
-                "#captcha, .captcha_wrap, #recaptcha, .captcha_area, "
-                "#captchaimg, img[src*='captcha'], img[src*='ncaptcha'], "
-                "input[name*='captcha'], input[placeholder*='정답']"
-            )
-            if captcha:
-                has_captcha = True
-            elif "자동입력 방지" in page_text or "정답을 입력" in page_text:
-                has_captcha = True
-
-            if has_captcha:
-                logger.warning(f"[계정 {account_id}] CAPTCHA 감지 — 자동 풀이 시도")
-                await capture_debug(page, f"captcha_account_{account_id}_attempt{attempt}")
-                try:
-                    from captcha_solver import detect_and_solve_captcha
-                    result = await detect_and_solve_captcha(page)
-                    if result == "solved":
-                        logger.info(f"[계정 {account_id}] CAPTCHA 자동 풀이 성공")
-                        # 비밀번호 재입력 (CAPTCHA 출현 시 비밀번호 필드가 초기화됨)
-                        pw_retry = await page.query_selector("#pw")
-                        if pw_retry:
-                            await pw_retry.click()
-                            await random_delay(0.2, 0.5)
-                            await page.keyboard.press("Control+a")
-                            await page.keyboard.type(naver_password, delay=random.randint(30, 80))
-                            await random_delay(0.5, 1.0)
-                        await page.keyboard.press("Enter")
-                        await page.wait_for_load_state("domcontentloaded", timeout=30000)
-                        await random_delay(3, 5)
-                        # 로그인 성공 확인
-                        if "nidlogin" not in page.url:
-                            cookies = await context.cookies()
-                            _save_encrypted_cookies(cookie_path, cookies)
-                            await _share_cookies_for_cbox(context)
-                            logger.info(f"[계정 {account_id}] CAPTCHA 풀이 후 로그인 성공")
-                            await page.close()
-                            return True
-                        logger.warning(f"[계정 {account_id}] CAPTCHA 풀이 후에도 로그인 실패")
-                    else:
-                        logger.error(f"[계정 {account_id}] CAPTCHA 자동 풀이 실패: {result}")
-                except Exception as e:
-                    logger.error(f"[계정 {account_id}] CAPTCHA 풀이 예외: {e}")
-                await random_delay(3, 6)
-                continue
-
-            # 로그인 실패 감지 (아직 로그인 페이지에 머무는 경우)
-            if "nidlogin" in page.url:
-                logger.warning(f"[계정 {account_id}] 로그인 실패 (시도 {attempt}/3) - URL: {page.url}")
-                await capture_debug(page, f"login_fail_{account_id}_attempt{attempt}")
-                await random_delay(3, 6)
-                continue
-
-            # 성공 — 쿠키 저장
-            cookies = await context.cookies()
-            _save_encrypted_cookies(cookie_path, cookies)
-            await _share_cookies_for_cbox(context)
-            logger.info(f"[계정 {account_id}] ID/PW 로그인 성공 URL: {page.url}")
-            await page.close()
-            return True
-
-        except Exception as e:
-            logger.error(f"[계정 {account_id}] 로그인 시도 {attempt} 예외: {e}")
-            await capture_debug(page, f"login_exception_{account_id}_attempt{attempt}")
-            await random_delay(3, 6)
-
     await page.close()
-    return False
+
+    # ── Step 2: Xvfb + pyautogui로 ID/PW 로그인 ──────────────
+    try:
+        from pyautogui_login import login_naver_with_pyautogui
+
+        proxy = await _get_proxy_for_account(account_id)
+        logger.info(f"[계정 {account_id}] pyautogui 로그인 시작")
+        ok = await login_naver_with_pyautogui(
+            naver_id=naver_id,
+            naver_password=naver_password,
+            account_id=account_id,
+            proxy=proxy,
+        )
+        if not ok:
+            logger.error(f"[계정 {account_id}] pyautogui 로그인 실패")
+            return False
+    except Exception as e:
+        logger.error(f"[계정 {account_id}] pyautogui 로그인 자체 실패: {e}")
+        return False
+
+    # pyautogui가 저장한 쿠키를 현재 Playwright context에 주입
+    if not cookie_path.exists():
+        logger.error(f"[계정 {account_id}] pyautogui 성공 후 쿠키 파일 없음")
+        return False
+    try:
+        cookies = _load_encrypted_cookies(cookie_path)
+        await context.add_cookies(cookies)
+        await _share_cookies_for_cbox(context)
+        logger.info(
+            f"[계정 {account_id}] ✅ pyautogui 쿠키를 Playwright context에 주입 완료"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[계정 {account_id}] pyautogui 쿠키 주입 실패: {e}")
+        return False
 
 
 # ──────────────────────────────────────────────────────────────

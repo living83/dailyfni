@@ -432,7 +432,7 @@ async def _publish_single(account: dict, config: dict, cafe_group_id: int = None
     if not _is_running and not _is_publishing:
         return
 
-    # 3-1. 발행 직전 일일 한도 재확인 (병렬 실행 시 race condition 방지)
+    # 3-1. 발행 직전 일일 한도 재확인 (이전 발행 결과로 한도 도달했을 수 있음)
     if cafe_group_id is not None:
         daily_limit = config.get("daily_post_limit", 3)
         if daily_limit > 0:
@@ -608,86 +608,60 @@ async def execute_batch_job():
         "total_accounts": total
     })
 
-    # 5. 병렬 발행 (계정별 그룹화 → 동시 실행)
-    max_parallel = global_config.get("max_parallel_accounts", 3)
-    if max_parallel < 1:
-        max_parallel = 1
+    # 5. 순차 발행 — pyautogui 로그인은 process-wide DISPLAY 환경변수를 사용하므로
+    #    병렬 실행 시 세션이 서로 충돌함. 카페 간 교차 발행 순서는 _interleave_tasks가 보장.
+    _slog(f"순차 발행 시작: 총 {total}건")
 
-    # 계정별로 태스크 그룹화 (같은 계정의 카페 작업을 묶음)
-    from collections import OrderedDict
-    account_groups = OrderedDict()
-    for task in tasks:
-        acc_id = task[0]["id"]
-        if acc_id not in account_groups:
-            account_groups[acc_id] = []
-        account_groups[acc_id].append(task)
+    success_count = 0
+    fail_count = 0
 
-    _slog(f"병렬 발행: {len(account_groups)}개 계정, 동시 {max_parallel}개, 총 {total}건")
+    for idx, (account, cafe_cfg, cafe_gid, cafe_name) in enumerate(tasks):
+        if not _is_running:
+            break
 
-    # 공유 카운터 (thread-safe via asyncio single-thread)
-    _batch_counters = {"success": 0, "fail": 0, "done": 0}
-    semaphore = asyncio.Semaphore(max_parallel)
+        turn_start = datetime.now()
 
-    async def _run_account_tasks(acc_tasks: list):
-        """한 계정의 모든 카페 작업을 순차 실행 (계정 내부는 순차, 계정 간은 병렬)"""
-        async with semaphore:
-            for j, (account, cafe_cfg, cafe_gid, cafe_name) in enumerate(acc_tasks):
-                if not _is_running:
-                    break
+        # 일일 한도 재확인
+        daily_limit = cafe_cfg.get("daily_post_limit", 3)
+        if daily_limit > 0:
+            current_count = await asyncio.to_thread(db.get_today_post_count, account["id"], cafe_group_id=cafe_gid)
+            if current_count >= daily_limit:
+                logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
+                continue
 
-                turn_start = datetime.now()
+        await _notify_progress("batch_progress", {
+            "message": f"[{idx + 1}/{total}] {account['username']} → {cafe_name}",
+            "current": idx + 1,
+            "total": total,
+            "account": account["username"]
+        })
 
-                # 일일 한도 재확인
-                daily_limit = cafe_cfg.get("daily_post_limit", 3)
-                if daily_limit > 0:
-                    current_count = await asyncio.to_thread(db.get_today_post_count, account["id"], cafe_group_id=cafe_gid)
-                    if current_count >= daily_limit:
-                        logger.info(f"[{account['username']}] 카페 {cafe_name} 일일 한도 도달 ({current_count}/{daily_limit}) - 건너뜀")
-                        continue
+        try:
+            await _publish_single(account, cafe_cfg, cafe_group_id=cafe_gid)
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            logger.error(f"[{account['username']}] 발행 중 예외: {e}")
+            await _notify_progress("error", {
+                "message": f"[{account['username']}] 발행 예외: {str(e)}"
+            })
 
-                _batch_counters["done"] += 1
-                await _notify_progress("batch_progress", {
-                    "message": f"[{_batch_counters['done']}/{total}] {account['username']} → {cafe_name}",
-                    "current": _batch_counters["done"],
-                    "total": total,
-                    "account": account["username"]
+        # 다음 발행까지 인터벌 대기 (마지막 작업은 제외)
+        if idx < total - 1 and _is_running:
+            interval_lo = cafe_cfg.get("interval_min", 3)
+            interval_hi = cafe_cfg.get("interval_max", 15)
+            if interval_hi < interval_lo:
+                interval_hi = interval_lo
+            interval = random.randint(interval_lo, interval_hi)
+            elapsed = (datetime.now() - turn_start).total_seconds()
+            remaining = interval * 60 - elapsed
+            if remaining > 0:
+                logger.info(f"다음 발행까지 {remaining:.0f}초 대기 ({interval}분)")
+                await _notify_progress("delay", {
+                    "message": f"다음 발행까지 {remaining:.0f}초 대기 ({interval}분)",
+                    "seconds": remaining
                 })
-
-                try:
-                    await _publish_single(account, cafe_cfg, cafe_group_id=cafe_gid)
-                    _batch_counters["success"] += 1
-                except Exception as e:
-                    _batch_counters["fail"] += 1
-                    logger.error(f"[{account['username']}] 발행 중 예외: {e}")
-                    await _notify_progress("error", {
-                        "message": f"[{account['username']}] 발행 예외: {str(e)}"
-                    })
-
-                # 같은 계정 내 다음 카페 작업까지 대기
-                if j < len(acc_tasks) - 1 and _is_running:
-                    interval_lo = cafe_cfg.get("interval_min", 3)
-                    interval_hi = cafe_cfg.get("interval_max", 15)
-                    if interval_hi < interval_lo:
-                        interval_hi = interval_lo
-                    interval = random.randint(interval_lo, interval_hi)
-                    elapsed = (datetime.now() - turn_start).total_seconds()
-                    remaining = interval * 60 - elapsed
-                    if remaining > 0:
-                        logger.info(f"[{account['username']}] 다음 카페까지 {remaining:.0f}초 대기 ({interval}분)")
-                        await _notify_progress("delay", {
-                            "message": f"[{account['username']}] 다음 카페까지 {remaining:.0f}초 대기 ({interval}분)",
-                            "seconds": remaining
-                        })
-                        await asyncio.sleep(remaining)
-
-    # 모든 계정 그룹을 동시 실행 (semaphore가 동시 실행 수 제한)
-    await asyncio.gather(
-        *[_run_account_tasks(acc_tasks) for acc_tasks in account_groups.values()],
-        return_exceptions=True
-    )
-
-    success_count = _batch_counters["success"]
-    fail_count = _batch_counters["fail"]
+                await asyncio.sleep(remaining)
 
     logger.info(f"배치 발행 완료: 성공 {success_count}, 실패 {fail_count}")
     await _notify_progress("batch_complete", {
@@ -729,6 +703,17 @@ def _interleave_tasks(tasks: list) -> list:
     return result
 
 
+_COMMENT_CONCURRENCY = max(1, int(__import__("os").environ.get("CAFE_COMMENT_CONCURRENCY", "4")))
+_comment_semaphore: Optional[asyncio.Semaphore] = None
+
+def _get_comment_semaphore() -> asyncio.Semaphore:
+    """런타임 이벤트 루프에 바인딩된 세마포어를 lazy하게 만든다."""
+    global _comment_semaphore
+    if _comment_semaphore is None:
+        _comment_semaphore = asyncio.Semaphore(_COMMENT_CONCURRENCY)
+    return _comment_semaphore
+
+
 async def execute_comment_job(
     publish_id: int,
     post_url: str,
@@ -737,13 +722,19 @@ async def execute_comment_job(
     keyword_id: int = None,
     cafe_group_id: int = None
 ):
-    """발행 후 댓글 병렬 자동 작성 (계정별 독립 브라우저로 동시 실행)"""
+    """발행 후 댓글 병렬 자동 작성.
+
+    로그인 단계는 별도 subprocess(pyautogui_login_runner)로 격리되어 있어
+    DISPLAY/X 모듈 캐시 충돌이 없다. 댓글 자체는 부모 프로세스의 Playwright
+    코루틴으로 동시 실행하되, CAFE_COMMENT_CONCURRENCY(기본 4) 세마포어로
+    동시성 한계를 둔다. 디스플레이 슬롯은 display_pool에서 별도로 제한됨.
+    """
     comments_per_post = config.get("comments_per_post", 6)
     comment_order     = config.get("comment_order", "random")
     exclude_author    = bool(config.get("exclude_author", 1))
     daily_comment_limit = config.get("daily_comment_limit", 10)
-    # 최대 동시 댓글 수 (기본 3 — 너무 많으면 IP 의심)
-    max_parallel_comments = config.get("max_parallel_comments", 3)
+    comment_delay_min = config.get("comment_delay_min", 30)
+    comment_delay_max = config.get("comment_delay_max", 120)
 
     # URL 검증: 글쓰기 페이지면 댓글 불가
     if not post_url or "articles/write" in post_url or "articleWrite" in post_url:
@@ -779,60 +770,73 @@ async def execute_comment_job(
     random.shuffle(shuffled_templates)
 
     total = len(comment_accounts)
-    logger.info(f"댓글 병렬 작성 시작: {total}개 계정, 동시 {max_parallel_comments}개")
+    logger.info(
+        f"댓글 병렬 작성 시작: {total}개 계정 (동시={_COMMENT_CONCURRENCY})"
+    )
     await _notify_progress("commenting", {
-        "message": f"💬 댓글 병렬 작성 시작 ({total}개 계정, 동시 {max_parallel_comments}개)",
+        "message": f"💬 댓글 병렬 작성 시작 ({total}개 계정, 동시 {_COMMENT_CONCURRENCY})",
         "publish_id": publish_id,
         "total": total
     })
 
-    semaphore = asyncio.Semaphore(max_parallel_comments)
+    if comment_delay_max < comment_delay_min:
+        comment_delay_max = comment_delay_min
 
-    async def _write_one(i: int, acc: dict):
-        """단일 계정 댓글 작성 코루틴"""
+    sem = _get_comment_semaphore()
+
+    async def _one(i: int, acc: dict):
         if not _is_running and not _is_publishing:
             return
-
         template = shuffled_templates[i % len(shuffled_templates)]
         comment_text = template["text"]
-        comment_id = await asyncio.to_thread(db.add_comment_record, publish_id, acc["id"], template["id"])
+        comment_id = await asyncio.to_thread(
+            db.add_comment_record, publish_id, acc["id"], template["id"]
+        )
 
-        # 동시 로그인 집중 방지: 소폭 랜덤 스태거 (0~10초)
-        stagger = random.uniform(0, min(10, i * 2))
-        if stagger > 0:
-            await asyncio.sleep(stagger)
+        # 같은 카페에 동시에 우르르 들어가면 스팸 패턴으로 보일 수 있어
+        # 시작 시점만 random[0..delay_max] 만큼 분산 (최대 동시성은 sem이 결정)
+        startup_jitter = random.randint(0, max(comment_delay_min, 1))
+        await asyncio.sleep(startup_jitter)
 
-        await _notify_progress("commenting", {
-            "message": f"💬 댓글 #{i+1}/{total} — {acc['username']}",
-            "publish_id": publish_id,
-            "comment_index": i + 1,
-            "account": acc["username"]
-        })
+        async with sem:
+            await _notify_progress("commenting", {
+                "message": f"💬 댓글 #{i+1}/{total} — {acc['username']}",
+                "publish_id": publish_id,
+                "comment_index": i + 1,
+                "account": acc["username"]
+            })
+            try:
+                result = await async_post_comment(
+                    account=acc,
+                    post_url=post_url,
+                    comment_text=comment_text,
+                    headless=True,
+                )
+            except Exception as e:
+                logger.exception(
+                    f"댓글 코루틴 예외: {acc.get('username')} ({e})"
+                )
+                result = {"success": False, "error": f"{type(e).__name__}: {e}"}
 
-        async with semaphore:
-            result = await async_post_comment(
-                account=acc,
-                post_url=post_url,
-                comment_text=comment_text,
-                headless=True
-            )
-
-        if result["success"]:
+        if result.get("success"):
             await asyncio.to_thread(db.update_comment_status, comment_id, "성공")
             if result.get("cookies"):
                 await asyncio.to_thread(db.update_account_cookie, acc["id"], result["cookies"])
             logger.info(f"댓글 성공: {acc['username']}")
         else:
-            await asyncio.to_thread(db.update_comment_status, comment_id, "실패", result.get("error"))
-            logger.warning(f"댓글 실패: {acc['username']} — {result.get('error')}")
+            await asyncio.to_thread(
+                db.update_comment_status, comment_id, "실패", result.get("error")
+            )
+            logger.warning(
+                f"댓글 실패: {acc.get('username')} — {result.get('error')}"
+            )
 
-    # 모든 계정 병렬 실행
     await asyncio.gather(
-        *[_write_one(i, acc) for i, acc in enumerate(comment_accounts)],
-        return_exceptions=True
+        *[_one(i, acc) for i, acc in enumerate(comment_accounts)],
+        return_exceptions=False,
     )
 
-    logger.info(f"댓글 병렬 작성 완료: {total}개")
+    logger.info(f"댓글 순차 작성 완료: {total}개")
     await _notify_progress("commenting", {
         "message": f"✅ 댓글 작성 완료 ({total}개)",
         "publish_id": publish_id
