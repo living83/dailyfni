@@ -116,15 +116,14 @@ async def login(
     account_id: int,
 ) -> bool:
     """
-    쿠키 → ID/PW 2단계 로그인 전략 (guide §3-2, §3-3)
-    성공 시 True, 실패 시 False 반환
+    네이버 로그인 — 2단계:
+      1) 저장된 쿠키 재사용 (Playwright context)
+      2) 만료/없음 → Xvfb + 실제 Chrome + pyautogui로 ID/PW 로그인
+         (Playwright ID/PW 입력은 navigator.webdriver 위장에도 무조건
+         CAPTCHA로 차단되어 완전히 폐기)
 
-    개선 사항:
-    - 네이버 메인 warm-up 방문으로 IP 봇 차단 우회
-    - 타임아웃 30초로 증가
-    - networkidle 대기 추가로 JS 로딩 완료 보장
-    - 실패 시 매 시도마다 스크린샷 캡처
-    - 로그인 버튼 셀렉터 다양화
+    pyautogui 로그인이 성공하면 추출된 쿠키를 현재 Playwright context에
+    주입하여 호출자가 그대로 발행/엔게이지 작업을 이어가도록 한다.
     """
     page = await context.new_page()
 
@@ -144,150 +143,18 @@ async def login(
                 await _share_cookies_for_cbox(context)
                 await page.close()
                 return True
-            logger.debug(f"[계정 {account_id}] 쿠키 만료 → ID/PW 로그인으로 전환")
+            logger.debug(f"[계정 {account_id}] 쿠키 만료 → pyautogui 로그인으로 전환")
         except Exception as e:
             logger.warning(f"[계정 {account_id}] 쿠키 로드 실패: {e}")
 
-    # ── Step 2: 네이버 메인 warm-up (봇 탐지 우회) ────────────
-    try:
-        logger.debug(f"[계정 {account_id}] warm-up: 네이버 메인 방문 중...")
-        await page.goto("https://www.naver.com/", timeout=30000)
-        await page.wait_for_load_state("domcontentloaded")
-        await random_delay(1.5, 3.0)
-    except Exception as e:
-        logger.warning(f"[계정 {account_id}] warm-up 실패 (계속 진행): {e}")
-
-    # ── Step 3: ID/PW 로그인 ─────────────────────────────────
-    for attempt in range(1, 4):
-        try:
-            logger.info(f"[계정 {account_id}] 로그인 시도 {attempt}/3...")
-            await page.goto("https://nid.naver.com/nidlogin.login", timeout=30000)
-
-            # domcontentloaded 후 networkidle까지 대기 (JS 로딩 완료 보장)
-            try:
-                await page.wait_for_load_state("domcontentloaded", timeout=30000)
-                await page.wait_for_load_state("networkidle", timeout=10000)
-            except Exception:
-                # networkidle 타임아웃은 무시하고 진행
-                pass
-
-            await random_delay(1.0, 2.0)
-
-            # 입력 필드 존재 확인
-            id_field = await page.query_selector("#id")
-            if not id_field:
-                logger.warning(f"[계정 {account_id}] #id 입력 필드를 찾지 못함 (시도 {attempt}/3)")
-                await capture_debug(page, f"login_no_id_field_{account_id}_attempt{attempt}")
-                await random_delay(2, 4)
-                continue
-
-            # JS로 값 설정 + input 이벤트 dispatch (guide §3-3)
-            await page.evaluate(f"""
-                const idField = document.querySelector('#id');
-                if (idField) {{
-                    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(idField, '{naver_id}');
-                    idField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    idField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                }}
-            """)
-            await random_delay(0.5, 1.0)
-            await page.evaluate(f"""
-                const pwField = document.querySelector('#pw');
-                if (pwField) {{
-                    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(pwField, '{naver_password}');
-                    pwField.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    pwField.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                }}
-            """)
-            await random_delay(0.5, 1.0)
-
-            # 로그인 버튼 클릭 (다양한 셀렉터 시도)
-            btn = await page.query_selector(
-                "#log\\.login, .btn_login, button[type='submit'], input[type='submit']"
-            )
-            if btn:
-                await btn.click()
-            else:
-                # 버튼을 못 찾으면 Enter 키 대체
-                logger.warning(f"[계정 {account_id}] 로그인 버튼을 찾지 못해 Enter로 대체")
-                await page.keyboard.press("Enter")
-
-            await page.wait_for_load_state("domcontentloaded", timeout=30000)
-            await random_delay(3, 5)
-
-            # ── 본인인증 요구 감지 (허용되지 않은 지역 로그인) ─────
-            # 스크린샷: "회원님이 로그인을 허용하지 않은 지역에서 로그인 되었습니다."
-            page_text = await page.evaluate("() => document.body.innerText")
-            if "허용하지 않은 지역" in page_text or "본인확인이 필요" in page_text or "휴대전화 번호" in page_text:
-                logger.error(
-                    f"[계정 {account_id}] ❌ 본인인증 요구 감지! "
-                    f"네이버가 이 IP를 낯선 지역으로 차단했습니다. "
-                    f"URL: {page.url}"
-                )
-                await capture_debug(page, f"identity_verify_required_{account_id}")
-                await page.close()
-                return False
-
-            # CAPTCHA 감지 → Gemini Vision으로 풀기 시도
-            captcha = await page.query_selector("#captcha, .captcha_wrap, #recaptcha")
-            if captcha:
-                logger.info(f"[계정 {account_id}] CAPTCHA 감지 — Gemini로 풀기 시도")
-                captcha_solved = await _solve_naver_captcha(page, account_id)
-                if captcha_solved:
-                    logger.info(f"[계정 {account_id}] CAPTCHA 풀기 성공, 로그인 결과 확인 중...")
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                    await random_delay(2, 3)
-
-                    # 로그인 성공 여부 재확인
-                    if "nidlogin" not in page.url:
-                        cookies = await context.cookies()
-                        _save_encrypted_cookies(cookie_path, cookies)
-                        await _share_cookies_for_cbox(context)
-                        logger.info(f"[계정 {account_id}] CAPTCHA 통과 + 로그인 성공 ✅")
-                        await page.close()
-                        return True
-                    else:
-                        logger.warning(f"[계정 {account_id}] CAPTCHA 풀었으나 로그인 실패, 재시도")
-                        await random_delay(3, 6)
-                        continue
-                else:
-                    logger.error(f"[계정 {account_id}] CAPTCHA 풀기 실패")
-                    await capture_debug(page, f"captcha_account_{account_id}")
-                    await random_delay(3, 6)
-                    continue
-
-            # 로그인 실패 감지 (아직 로그인 페이지에 머무는 경우)
-            if "nidlogin" in page.url:
-                logger.warning(f"[계정 {account_id}] 로그인 실패 (시도 {attempt}/3) - URL: {page.url}")
-                await capture_debug(page, f"login_fail_{account_id}_attempt{attempt}")
-                await random_delay(3, 6)
-                continue
-
-            # 성공 — 쿠키 저장
-            cookies = await context.cookies()
-            _save_encrypted_cookies(cookie_path, cookies)
-            await _share_cookies_for_cbox(context)
-            logger.info(f"[계정 {account_id}] ID/PW 로그인 성공 ✅ URL: {page.url}")
-            await page.close()
-            return True
-
-        except Exception as e:
-            logger.error(f"[계정 {account_id}] 로그인 시도 {attempt} 예외: {e}")
-            await capture_debug(page, f"login_exception_{account_id}_attempt{attempt}")
-            await random_delay(3, 6)
-
     await page.close()
 
-    # ── Step 4: Playwright 전부 실패 → Xvfb + pyautogui fallback ──
-    # 네이버는 Playwright 입력 시그니처를 봇으로 탐지해 무조건 CAPTCHA를 띄우는 경우가
-    # 있어, 진짜 Chrome + OS 레벨 마우스/키보드 입력으로 다시 시도한다.
+    # ── Step 2: Xvfb + pyautogui로 ID/PW 로그인 ──────────────
     try:
         from browser.pyautogui_login import login_naver_with_pyautogui
 
         proxy = await _get_proxy_for_account(account_id)
-        logger.warning(
-            f"[계정 {account_id}] Playwright 로그인 3회 실패 → pyautogui fallback 시도"
-        )
+        logger.info(f"[계정 {account_id}] pyautogui 로그인 시작")
         ok = await login_naver_with_pyautogui(
             naver_id=naver_id,
             naver_password=naver_password,
@@ -295,131 +162,27 @@ async def login(
             proxy=proxy,
         )
         if not ok:
+            logger.error(f"[계정 {account_id}] pyautogui 로그인 실패")
             return False
-
-        # pyautogui가 저장한 쿠키를 현재 Playwright context에 주입
-        if cookie_path.exists():
-            try:
-                cookies = _load_encrypted_cookies(cookie_path)
-                await context.add_cookies(cookies)
-                await _share_cookies_for_cbox(context)
-                logger.info(
-                    f"[계정 {account_id}] ✅ pyautogui fallback 쿠키를 Playwright "
-                    f"context에 주입 완료"
-                )
-                return True
-            except Exception as e:
-                logger.error(
-                    f"[계정 {account_id}] pyautogui 쿠키 주입 실패: {e}"
-                )
-                return False
-        return False
     except Exception as e:
-        logger.error(f"[계정 {account_id}] pyautogui fallback 자체 실패: {e}")
+        logger.error(f"[계정 {account_id}] pyautogui 로그인 자체 실패: {e}")
         return False
 
-
-async def _solve_naver_captcha(page, account_id, max_attempts: int = 3) -> bool:
-    """네이버 로그인 CAPTCHA를 Gemini Vision으로 풀기"""
-    import base64
-    import httpx
-
-    api_key = settings.GOOGLE_API_KEY
-    if not api_key:
-        logger.error(f"[계정 {account_id}] GOOGLE_API_KEY 없음 — 캡차 풀기 불가")
+    # pyautogui가 저장한 쿠키를 현재 Playwright context에 주입
+    if not cookie_path.exists():
+        logger.error(f"[계정 {account_id}] pyautogui 성공 후 쿠키 파일 없음")
         return False
-
-    for attempt in range(max_attempts):
-        try:
-            screenshot_bytes = await page.screenshot(type="png", full_page=False)
-            b64_screenshot = base64.b64encode(screenshot_bytes).decode()
-
-            prompt = (
-                "이 스크린샷은 네이버 로그인 CAPTCHA입니다. "
-                "이미지에 표시된 문자나 숫자를 정확히 읽어주세요. "
-                "다른 설명 없이 CAPTCHA 답(문자/숫자)만 출력하세요."
-            )
-
-            payload = {
-                "contents": [{"parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": "image/png", "data": b64_screenshot}},
-                ]}],
-                "generationConfig": {"temperature": 0, "maxOutputTokens": 50},
-            }
-
-            models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"]
-            answer = None
-
-            for model in models:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-                try:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
-                    if resp.status_code != 200:
-                        continue
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                        if text:
-                            answer = text.strip().strip('"\'.,!').strip()
-                            break
-                except Exception:
-                    continue
-
-            if not answer:
-                logger.warning(f"[계정 {account_id}] Gemini 캡차 답변 실패 (시도 {attempt + 1})")
-                continue
-
-            logger.info(f"[계정 {account_id}] Gemini 캡차 답변: '{answer}'")
-
-            # 캡차 입력 필드 찾기
-            captcha_input = await page.query_selector(
-                '#captcha_input, input[name="captcha"], '
-                'input[name="chptcha"], input[name="chptchaResponse"], '
-                '#chptcha, input.captcha_input, '
-                'input[placeholder*="자동입력"], input[placeholder*="문자"]'
-            )
-            if not captcha_input:
-                # 캡차 영역 내 input 찾기
-                captcha_input = await page.query_selector('.captcha_wrap input[type="text"], #captcha input[type="text"]')
-
-            if captcha_input:
-                await captcha_input.click()
-                await captcha_input.fill("")
-                await captcha_input.type(answer, delay=50)
-                await random_delay(0.5, 1)
-
-                # 로그인/확인 버튼 클릭
-                submit_btn = await page.query_selector(
-                    "#log\\.login, .btn_login, button[type='submit'], input[type='submit']"
-                )
-                if submit_btn:
-                    await submit_btn.click()
-                else:
-                    await page.keyboard.press("Enter")
-
-                await random_delay(3, 5)
-
-                # 캡차 사라졌는지 확인
-                still_captcha = await page.query_selector("#captcha, .captcha_wrap")
-                if not still_captcha or "nidlogin" not in page.url:
-                    logger.info(f"[계정 {account_id}] 캡차 통과!")
-                    return True
-                else:
-                    logger.warning(f"[계정 {account_id}] 캡차 오답 (시도 {attempt + 1})")
-                    # 새 캡차 이미지 로드 대기
-                    await random_delay(1, 2)
-            else:
-                logger.warning(f"[계정 {account_id}] 캡차 입력 필드 없음")
-                await capture_debug(page, f"captcha_no_input_{account_id}")
-                return False
-
-        except Exception as e:
-            logger.warning(f"[계정 {account_id}] 캡차 풀기 예외: {e}")
-
-    return False
+    try:
+        cookies = _load_encrypted_cookies(cookie_path)
+        await context.add_cookies(cookies)
+        await _share_cookies_for_cbox(context)
+        logger.info(
+            f"[계정 {account_id}] ✅ pyautogui 쿠키를 Playwright context에 주입 완료"
+        )
+        return True
+    except Exception as e:
+        logger.error(f"[계정 {account_id}] pyautogui 쿠키 주입 실패: {e}")
+        return False
 
 
 # ──────────────────────────────────────────────────────────────
