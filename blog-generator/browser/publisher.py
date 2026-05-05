@@ -468,28 +468,28 @@ async def _input_body(page, editor, content: str):
             if not clean:
                 continue
 
-            if is_heading:
-                await page.keyboard.press("Control+b")
+            # ⚠️ heading 의 Ctrl+B 굵게 토글 제거 — 네이버 SE 에서 Ctrl+B 가
+            # 어떤 식으로든 strike toggle 을 트리거하는 것으로 의심됨 (긴 콘텐츠
+            # 일수록 strike 누적). heading 도 그냥 일반 텍스트로 입력하고,
+            # 굵게 효과는 포기 (안정성 우선). is_heading 은 더 이상 분기 영향 없음.
+            sentences = _split_sentences(clean)
+            if len(sentences) > 1:
+                for i, sentence in enumerate(sentences):
+                    await page.keyboard.type(sentence, delay=delay)
+                    await page.keyboard.press("Enter")
+                    if i == len(sentences) - 1:
+                        await page.keyboard.press("Enter")
+            else:
                 await page.keyboard.type(clean, delay=delay)
                 await page.keyboard.press("Enter")
                 await page.keyboard.press("Enter")
-                await page.keyboard.press("Control+b")
-            else:
-                # 문장 단위로 분리해서 각 문장마다 줄바꿈 (모바일 가독성)
-                sentences = _split_sentences(clean)
-                if len(sentences) > 1:
-                    for i, sentence in enumerate(sentences):
-                        await page.keyboard.type(sentence, delay=delay)
-                        await page.keyboard.press("Enter")
-                        # 마지막 문장 뒤에는 추가 빈 줄 (문단 구분)
-                        if i == len(sentences) - 1:
-                            await page.keyboard.press("Enter")
-                else:
-                    await page.keyboard.type(clean, delay=delay)
-                    await page.keyboard.press("Enter")
-                    await page.keyboard.press("Enter")
         else:
             await page.keyboard.press("Enter")
+
+        # ⚡ 매 라인 후 strike toggle 강제 OFF — 본문 입력 *중* SE 가
+        # 어떤 트리거로 strike toggle 을 다시 ON 시키는 현상이 누적되는 것을
+        # 라인 단위로 즉시 차단. 가벼운 execCommand 호출이라 비용 무시할 만함.
+        await _force_off_strikethrough(editor)
 
         r = random.random()
         if r < 0.03:
@@ -500,6 +500,8 @@ async def _input_body(page, editor, content: str):
             await asyncio.sleep(random.uniform(0.2, 0.5))
 
     logger.info("본문 입력 완료")
+    # 발행 직전 한번 더 OFF (안전망)
+    await _force_off_strikethrough(editor)
 
     # ── 본문 paragraph 들의 <s>/<strike>/text-decoration:line-through 강제 제거 ──
     # 원인: 이미지 삽입 후 cursor 가 strike-styled span 에 위치 → 본문 입력이
