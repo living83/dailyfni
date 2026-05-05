@@ -39,7 +39,9 @@ def _ensure_x_env():
       없으면 "gnome-screenshot 설치하라"는 예외를 던지고 scrot으로 fallback도 안 함.
     Xvfb는 인증 없이 동작하므로 .Xauthority 내용은 무관하다.
     """
-    os.environ.setdefault("XDG_SESSION_TYPE", "x11")
+    # 강제 덮어쓰기 — SSH 세션에서 XDG_SESSION_TYPE=tty가 상속되어 오면
+    # pyscreeze가 X11도 Wayland도 아니라고 판단해 스크린샷을 거부함.
+    os.environ["XDG_SESSION_TYPE"] = "x11"
     home = os.environ.get("HOME") or "/root"
     xauth = os.environ.get("XAUTHORITY") or os.path.join(home, ".Xauthority")
     try:
@@ -161,6 +163,136 @@ class _CDP:
 
 
 # ──────────────────────────────────────────────────────────────
+# 인증 프록시용 CDP Fetch 핸들러
+# ──────────────────────────────────────────────────────────────
+# Chrome은 `--proxy-server`에 user:pass를 받지 않고, 안정판은
+# `--load-extension`/`--disable-extensions-except`도 거부한다 (개발 모드 전용).
+# 그래서 페이지 타깃의 CDP WS에 상주시키며 Fetch.authRequired 이벤트에
+# 자격증명을 제공하고, Fetch.requestPaused는 그대로 통과시키는 핸들러를 둔다.
+
+class ProxyAuthHandler:
+    def __init__(self, cdp: "_CDP", username: str, password: str):
+        self.cdp = cdp
+        self.username = username
+        self.password = password
+        self._ws = None
+        self._task: Optional[asyncio.Task] = None
+        self._msg_id = 1_000_000
+
+    async def start(self):
+        page = await self.cdp.page_target()
+        self._ws = await websockets.connect(
+            page["webSocketDebuggerUrl"], max_size=20 * 1024 * 1024
+        )
+        await self._send("Fetch.enable", {
+            "handleAuthRequests": True,
+            "patterns": [{"urlPattern": "*"}],
+        })
+        self._task = asyncio.create_task(self._loop())
+        logger.info("[proxy-auth] CDP Fetch 핸들러 시작")
+
+    async def _send(self, method: str, params: Optional[dict] = None):
+        self._msg_id += 1
+        await self._ws.send(json.dumps({
+            "id": self._msg_id,
+            "method": method,
+            "params": params or {},
+        }))
+
+    async def _loop(self):
+        try:
+            async for raw in self._ws:
+                msg = json.loads(raw)
+                method = msg.get("method")
+                params = msg.get("params") or {}
+                if method == "Fetch.authRequired":
+                    rid = params["requestId"]
+                    src = (params.get("authChallenge") or {}).get("source")
+                    if src == "Proxy":
+                        await self._send("Fetch.continueWithAuth", {
+                            "requestId": rid,
+                            "authChallengeResponse": {
+                                "response": "ProvideCredentials",
+                                "username": self.username,
+                                "password": self.password,
+                            },
+                        })
+                    else:
+                        await self._send("Fetch.continueWithAuth", {
+                            "requestId": rid,
+                            "authChallengeResponse": {"response": "Default"},
+                        })
+                elif method == "Fetch.requestPaused":
+                    await self._send("Fetch.continueRequest", {
+                        "requestId": params["requestId"],
+                    })
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(f"[proxy-auth] 핸들러 루프 종료: {e}")
+
+    async def stop(self):
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except Exception:
+                pass
+        if self._ws:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+
+
+# ──────────────────────────────────────────────────────────────
+# 인증 프록시용 임시 Chrome 확장 (MV2 webRequestBlocking)
+# ──────────────────────────────────────────────────────────────
+
+def _write_proxy_auth_extension(ext_dir: Path, username: str, password: str) -> Path:
+    """
+    Chrome `--proxy-server`는 URL의 user:pass 부분을 무시하므로,
+    인증 프록시를 쓰려면 onAuthRequired 콜백을 등록하는 확장이 필요하다.
+    MV2가 webRequestBlocking을 가장 단순하게 지원해서 그걸 쓴다.
+    """
+    ext_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Proxy Auth Helper",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking",
+        ],
+        "background": {"scripts": ["background.js"]},
+        "minimum_chrome_version": "76.0.0",
+    }
+    # 자격증명을 JS string literal로 안전 escape
+    u = json.dumps(username)
+    p = json.dumps(password)
+    background = (
+        "chrome.webRequest.onAuthRequired.addListener(\n"
+        "  function(details) {\n"
+        "    if (details.isProxy) {\n"
+        f"      return {{ authCredentials: {{ username: {u}, password: {p} }} }};\n"
+        "    }\n"
+        "    return {};\n"
+        "  },\n"
+        "  { urls: ['<all_urls>'] },\n"
+        "  ['blocking']\n"
+        ");\n"
+    )
+    (ext_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (ext_dir / "background.js").write_text(background)
+    return ext_dir
+
+
+# ──────────────────────────────────────────────────────────────
 # 디스플레이 + Chrome 라이프사이클
 # ──────────────────────────────────────────────────────────────
 
@@ -230,10 +362,13 @@ class XvfbChromeSession:
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--lang=ko-KR",
-            "about:blank",
         ]
         if self.proxy and self.proxy.get("server"):
             args.append(f"--proxy-server={self.proxy['server']}")
+            # NOTE: Chrome `--proxy-server`는 URL의 user:pass를 무시하고,
+            # 안정판은 `--load-extension`도 거부하므로 인증 프록시는
+            # CDP의 ProxyAuthHandler(Fetch)로 별도 처리.
+        args.append("about:blank")
 
         self._chrome = subprocess.Popen(
             args,
@@ -342,10 +477,23 @@ async def login_naver_with_pyautogui(
             cdp = _CDP(sess.debug_port)
             await cdp.wait_ready(timeout=30.0)
 
-            # warm-up: 메인 → 로그인 페이지 (봇 탐지 우회)
-            await cdp.navigate(NAVER_MAIN_URL)
-            await asyncio.sleep(2.0)
-            await cdp.navigate(NAVER_LOGIN_URL)
+            # 인증 프록시면 CDP Fetch 핸들러를 페이지 target에 부착
+            auth_handler: Optional[ProxyAuthHandler] = None
+            if proxy and proxy.get("username"):
+                auth_handler = ProxyAuthHandler(
+                    cdp, proxy["username"], proxy.get("password", "")
+                )
+                await auth_handler.start()
+
+            try:
+                # warm-up: 메인 → 로그인 페이지 (봇 탐지 우회)
+                await cdp.navigate(NAVER_MAIN_URL)
+                await asyncio.sleep(2.0)
+                await cdp.navigate(NAVER_LOGIN_URL)
+            except Exception:
+                if auth_handler:
+                    await auth_handler.stop()
+                raise
 
             # 입력 필드 렌더 대기
             id_xy = None
