@@ -1,0 +1,51 @@
+# car-valuation — local dev (Windows + Docker Desktop) and server (Naver Cloud
+# Ubuntu) share this file. Both target environments do `docker compose up -d`.
+#
+# Mounts: SQLite DB / logs / Excel outputs are kept on the host so rebuilding
+# the image doesn't wipe data.
+
+services:
+  car-valuation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: car-valuation:latest
+    container_name: car-valuation
+    restart: unless-stopped
+
+    # The image's default CMD already runs uvicorn on :8000.
+    ports:
+      - "${FASTAPI_PORT:-8000}:8000"
+
+    # Load .env from the project root. Compose reads it as well for variable
+    # interpolation above; passing env_file forwards every key to the container.
+    env_file:
+      - .env
+
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      PYTHONUNBUFFERED: "1"
+
+    # Host-mounted state. These directories live inside the project so a
+    # `docker compose down -v` cannot accidentally drop the SQLite cache.
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./output:/app/output
+
+    # 8GB-class server → cap at half.
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # `deploy.resources` is honored by `docker compose up` since v2.x even
+    # outside Swarm. If you're on an older compose, mem_limit below is the
+    # legacy fallback (uncomment if needed):
+    # mem_limit: 4g
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
