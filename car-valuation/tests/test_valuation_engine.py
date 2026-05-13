@@ -132,19 +132,40 @@ def test_auction_custom_ratio():
     ((8, 1, 0), "하"),    # only encar
     ((1, 0, 0), "실패"),  # none qualify
 ])
-def test_confidence_grades(counts: tuple[int, int, int], expected: str):
+def test_confidence_grades_3_sites(counts: tuple[int, int, int], expected: str):
     sites = ["encar", "kbchachacha", "heydealer"]
     per_site = {s: _site(10_000_000, c) for s, c in zip(sites, counts)}
     assert confidence_grade(per_site) == expected
 
 
-def test_confidence_none_value_treated_as_miss():
+@pytest.mark.parametrize("counts,expected", [
+    ((10, 10), "상"),     # both 매칭
+    ((10, 1), "중"),      # 1매칭 (kb below threshold)
+    ((10, 0), "중"),      # 1매칭 (kb missing)
+    ((1, 0), "실패"),     # 0매칭
+])
+def test_confidence_grades_2_sites(counts: tuple[int, int], expected: str):
+    """After heydealer was dropped, the active pipeline runs 2 sites."""
+    sites = ["encar", "kbchachacha"]
+    per_site = {s: _site(10_000_000, c) for s, c in zip(sites, counts)}
+    assert confidence_grade(per_site) == expected
+
+
+def test_confidence_none_value_treated_as_miss_3sites():
     per_site = {
         "encar":       _site(10_000_000, 10),
         "kbchachacha": None,
         "heydealer":   None,
     }
     assert confidence_grade(per_site) == "하"
+
+
+def test_confidence_none_value_treated_as_miss_2sites():
+    per_site = {
+        "encar":       _site(10_000_000, 10),
+        "kbchachacha": None,
+    }
+    assert confidence_grade(per_site) == "중"
 
 
 # ---------------------------------------------------------------------------

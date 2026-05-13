@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from typing import Any, Type
 
@@ -22,7 +23,6 @@ from db.cache import get_cached, init_db, upsert_cache
 from normalizer import ModelNormalizer, get_default, log_unmatched_to_file
 from scrapers.base import BaseScraper
 from scrapers.encar_scraper import EncarScraper
-from scrapers.heydealer_scraper import HeydealerScraper
 from scrapers.kbchachacha_scraper import KbChachachaScraper
 from scrapers.utils import ScraperBlocked, ScraperEmpty
 
@@ -31,10 +31,13 @@ logger = logging.getLogger(__name__)
 # Spec: "매물 수 < 3건이면 해당 사이트 가중치 0, 나머지 재분배"
 MIN_SAMPLES_FOR_WEIGHT = 3
 
+# Heydealer was dropped 2026-05-13: its public API returns retail (dealer→
+# consumer) prices, not the dealer-buyback figure the spec assumed, AND the
+# Decodo proxy IPs trip its bot defense (500 AssertionError). encar+KB가
+# 본질적인 두 데이터 소스.
 SCRAPER_CLASSES: dict[str, Type[BaseScraper]] = {
     "encar": EncarScraper,
     "kbchachacha": KbChachachaScraper,
-    "heydealer": HeydealerScraper,
 }
 
 
@@ -83,13 +86,28 @@ def confidence_grade(
     *,
     min_samples: int = MIN_SAMPLES_FOR_WEIGHT,
 ) -> str:
-    """3-사 매칭=상, 2-사=중, 1-사=하, 0건=실패 (수동검토 마킹)."""
+    """Total-aware grading so the same rule applies whether we ship 2 or 3
+    sites. matched == total → 상; matched ≥ ceil(total/2) → 중;
+    matched > 0 → 하; matched == 0 → 실패.
+
+    For 3 sites: 3=상, 2=중, 1=하, 0=실패 (matches the original spec).
+    For 2 sites: 2=상, 1=중, 0=실패.
+    """
+    total = len(per_site)
+    if total == 0:
+        return "실패"
     matched = sum(
         1
         for data in per_site.values()
         if data is not None and data.get("count", 0) >= min_samples
     )
-    return {3: "상", 2: "중", 1: "하"}.get(matched, "실패")
+    if matched == 0:
+        return "실패"
+    if matched == total:
+        return "상"
+    if matched >= math.ceil(total / 2):
+        return "중"
+    return "하"
 
 
 # ---------------------------------------------------------------------------

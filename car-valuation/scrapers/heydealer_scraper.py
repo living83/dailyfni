@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -37,10 +38,14 @@ class HeydealerScraper(BaseScraper):
         self._normalizer = normalizer or get_default()
 
     async def _warm_session(self) -> None:
+        # heydealer's SPA pings GA/카카오/kbdmp continuously, so networkidle
+        # rarely fires (especially through a proxy). domcontentloaded + a
+        # brief sleep is enough — the initialize_app XHR fires soon after
+        # the DOM is ready and seeds the cookies the market API expects.
         page = await self.context.new_page()
         try:
-            await page.goto(HEYDEALER_MAIN, wait_until="networkidle", timeout=45_000)
-            await human_delay(1.0, 2.5)
+            await page.goto(HEYDEALER_MAIN, wait_until="domcontentloaded", timeout=30_000)
+            await asyncio.sleep(2.5)
         finally:
             await page.close()
 
