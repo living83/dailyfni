@@ -3,3 +3,7 @@ __pycache__/
 .env
 *.log
 dist/
+*.deb
+*.bak
+*.xlsx
+*.xls

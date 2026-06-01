@@ -196,11 +196,32 @@ async function getProductGuide(fidx, options = {}) {
       }
     });
 
-    // 버튼 (인증방법, 스크래핑방법 등)
+    // 버튼 (인증방법, 스크래핑방법, 동의서, 인증서 등)
+    // onclick 의 js_fnDownDoc_* / js_fnAuthSite 패턴을 파싱해 액션 정보를 첨부.
+    // (loanlist_app.asp 의 +인증/동의서 섹션과 동일한 함수명 체계)
+    const parseArgs = (raw) => [...raw.matchAll(/'([^']*)'/g)].map(x => x[1]);
     const buttons = [];
     document.querySelectorAll('input[type="button"], button').forEach(btn => {
-      if (btn.value || btn.textContent) {
-        buttons.push(btn.value || btn.textContent.trim());
+      const label = (btn.value || btn.textContent || '').trim();
+      if (!label) return;
+      const oc = btn.getAttribute('onclick') || '';
+      const m = oc.match(/js_fn(DownDoc_Mo|DownDoc_FinInfo|AuthSite|DownDoc_DataCommon)\((.*?)\)/);
+      if (m) {
+        const fnName = m[1];
+        const args = parseArgs(m[2]);
+        if (fnName === 'AuthSite') {
+          buttons.push({ label, action: 'auth', url: args[0] || '' });
+        } else if (fnName === 'DownDoc_Mo') {
+          buttons.push({ label, action: 'download', kind: 'mo', id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_FinInfo') {
+          buttons.push({ label, action: 'download', kind: 'fin', id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_DataCommon') {
+          buttons.push({ label, action: 'download', kind: 'data', id: '', flag: args[0] || '' });
+        } else {
+          buttons.push({ label });
+        }
+      } else {
+        buttons.push({ label });
       }
     });
 
@@ -1605,9 +1626,9 @@ async function getNotices(agentNo, upw, options = {}) {
             if (!title || title.length < 3) continue;
 
             let href = linkEl ? (linkEl.getAttribute('href') || '') : '';
+            let onclick = linkEl ? (linkEl.getAttribute('onclick') || '') : '';
             let idx = '';
-            if (linkEl) {
-              const onclick = linkEl.getAttribute('onclick') || '';
+            if (onclick) {
               const m = onclick.match(/[\(,'"\s](\d{2,})[\)'"\s,]/);
               if (m) idx = m[1];
             }
@@ -1617,7 +1638,7 @@ async function getNotices(agentNo, upw, options = {}) {
             }
             if (!idx && /^\d{2,}$/.test(cellTexts[0])) idx = cellTexts[0];
 
-            out.push({ date: dateStr, title, idx, href });
+            out.push({ date: dateStr, title, idx, href, onclick });
           }
         }
         // Fallback 파서: innerText 에서 [번호]\n[제목]\n[글쓴이]\n[날짜] 4줄 패턴 스캔
@@ -1706,66 +1727,238 @@ async function getNotices(agentNo, upw, options = {}) {
     htmlSnippet: items.htmlSnippet
   };
 
-  // 본문 fetch (옵션) — 사이드바/헤더 같은 네비게이션 텍스트는 걸러냄
-  const NAV_PATTERNS = /(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|\(지점\)\s*직원관리|QnA|로그아웃|팝업검색|검색조건)/;
-  const extractBody = async () => {
-    // 모든 frame 을 훑으면서 "네비게이션이 아닌" 가장 큰 텍스트 블록 선택
+  // 본문 fetch (옵션)
+  //
+  // 이전 버그: view.asp?idx= 추측 URL이 lmaster 의 실제 파라미터명과 다르면
+  // list.asp 의 "최신공지 팝업"이 그대로 노출돼서 모든 공지가 같은 본문으로 저장됐다.
+  // 팝업 블록은 [팝업제목]\n작성일: ...\n해당공지로 이동\n[실내용] 패턴으로 시작한다.
+  //
+  // 새 전략:
+  //  1) list.asp 에서 실제 링크를 클릭해 lmaster JS 가 라우팅을 맡게 한다 (URL 추측 X)
+  //  2) 본문 추출은 "title 기반 anchored search" — 공지 제목이 포함된 가장 짧은 블록 우선
+  //  3) "해당공지로 이동" 팝업 헤더는 마지막 발생 위치 이후 텍스트만 사용
+  //  4) 최종 본문에 은행시그니처(타이틀 핵심키워드)가 없으면 mismatch 로 표시 (DB 측에서 기존값 유지)
+  const NAV_LINE_RE = /^(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|QnA|로그아웃)$/;
+  const NAV_HEAVY_RE = /(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|\(지점\)\s*직원관리|QnA|로그아웃|팝업검색|검색조건)/g;
+
+  // 공지 제목에서 식별용 signature 추출
+  //   "◈ 친애저축 - [ 기득권 주의사항 ] 안내 ◈" → { bank: "친애저축", core: "친애저축기득권" }
+  const titleSignature = (title) => {
+    if (!title) return { bank: '', core: '' };
+    const cleaned = title.replace(/[◈⚠️]/g, '').trim();
+    const m = cleaned.match(/^(.+?)\s*(?:-|\[)/);
+    const bank = (m ? m[1] : cleaned).replace(/\s+/g, '').slice(0, 8);
+    const core = cleaned.replace(/[\s\[\]\-]/g, '').slice(0, 10);
+    return { bank, core };
+  };
+
+  // 팝업/사이드바 헤더 잘라내기
+  const stripPopupHeader = (text) => {
+    if (!text) return '';
+    const marker = '해당공지로 이동';
+    const lastIdx = text.lastIndexOf(marker);
+    if (lastIdx >= 0) {
+      const after = text.slice(lastIdx + marker.length).trim();
+      if (after.length > 20) return after;
+    }
+    return text;
+  };
+
+  // 본문 추출 — 공지 제목으로 anchor 잡고 가장 가까운 부모의 텍스트 선택
+  const extractBodyForTitle = async (expectedTitle) => {
+    const sig = titleSignature(expectedTitle);
+    if (!sig.bank) return '';
+
     let best = '';
+    let bestScore = -Infinity;
+
     for (const fr of page.frames()) {
       try {
-        const text = await fr.evaluate((NAV_PATTERNS_STR) => {
-          const NAV = new RegExp(NAV_PATTERNS_STR);
+        const found = await fr.evaluate((bankSig, coreSig) => {
+          const score = (text) => {
+            if (!text) return -Infinity;
+            const len = text.length;
+            if (len < 30 || len > 8000) return -Infinity;
+            const hasBank = text.includes(bankSig);
+            const hasCore = coreSig && text.includes(coreSig.slice(0, 4));
+            if (!hasBank && !hasCore) return -Infinity;
+            // 짧고 bank/core 위치가 앞쪽일수록 좋음
+            const bankPos = hasBank ? text.indexOf(bankSig) : 9999;
+            return (hasBank ? 200 : 0) + (hasCore ? 100 : 0) - Math.min(bankPos, 500) - Math.floor(len / 100);
+          };
+
           const candidates = document.querySelectorAll('td, div, article, section, pre');
           let localBest = '';
+          let localScore = -Infinity;
           for (const el of candidates) {
             const t = (el.innerText || el.textContent || '').trim();
-            if (t.length < 20 || t.length > 4000) continue;
-            const navHits = (t.match(new RegExp(NAV.source, 'g')) || []).length;
-            if (navHits >= 3) continue;
-            if (t.length > localBest.length) localBest = t;
+            const s = score(t);
+            if (s > localScore) {
+              localScore = s;
+              localBest = t;
+            }
           }
-          return localBest;
-        }, NAV_PATTERNS.source);
-        if (text && text.length > best.length) best = text;
+          return { text: localBest, score: localScore };
+        }, sig.bank, sig.core);
+
+        if (found && found.score > bestScore) {
+          bestScore = found.score;
+          best = found.text;
+        }
       } catch {}
     }
-    return best.split(/\n+/).map(l => l.trim()).filter(l => l && !(/^(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|QnA)$/.test(l))).join('\n').substring(0, 3000);
+
+    // 후처리: 팝업 헤더 제거 + 메뉴/네비 라인 필터 + 길이 제한
+    const trimmed = stripPopupHeader(best);
+    return trimmed
+      .split(/\n+/)
+      .map(l => l.trim())
+      .filter(l => l && !NAV_LINE_RE.test(l))
+      .join('\n')
+      .slice(0, 8000);
+  };
+
+  // body 가 "이 공지"의 것이 맞는지 검증
+  const bodyMatchesTitle = (body, title) => {
+    const sig = titleSignature(title);
+    if (!sig.bank || !body) return false;
+    if (body.includes(sig.bank)) return true;
+    if (sig.core && body.includes(sig.core.slice(0, 5))) return true;
+    return false;
+  };
+
+  // 클릭 strategies: a.click() 가 JS 이벤트 핸들러를 못 깨우는 lmaster 가 있어서
+  // 1) onclick 문자열을 같은 frame 안에서 eval
+  // 2) javascript: href 도 eval
+  // 3) 평범한 href 면 location 변경
+  // 4) MouseEvent dispatch
+  // 5) 최후에 element.click()
+  const robustClickInFrame = async (frame, idx) => {
+    return await frame.evaluate((idx) => {
+      const links = [...document.querySelectorAll('a[onclick], a[href]')];
+      const link = links.find(a => {
+        const oc = a.getAttribute('onclick') || '';
+        const hr = a.getAttribute('href') || '';
+        return oc.includes(idx) || hr.includes(idx);
+      });
+      if (!link) return { ok: false, error: 'no_link' };
+      const oc = link.getAttribute('onclick') || '';
+      const hr = link.getAttribute('href') || '';
+      try {
+        if (oc) { try { new Function(oc)(); return { ok: true, method: 'eval_onclick' }; } catch (_) {} }
+        if (hr.startsWith('javascript:')) {
+          try { new Function(hr.slice('javascript:'.length))(); return { ok: true, method: 'eval_href' }; } catch (_) {}
+        }
+        if (hr && !hr.startsWith('javascript:') && !hr.startsWith('#')) {
+          window.location.href = hr;
+          return { ok: true, method: 'href' };
+        }
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        link.dispatchEvent(evt);
+        link.click();
+        return { ok: true, method: 'dispatch' };
+      } catch (e) {
+        return { ok: false, error: 'click_threw:' + e.message };
+      }
+    }, idx);
+  };
+
+  const buildViewUrls = (idx) => [
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/read.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&bbs_no=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&seq=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&num=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&wr_id=${idx}`
+  ];
+
+  const fetchBodyForNotice = async (notice) => {
+    const expectedBank = titleSignature(notice.title).bank;
+    const attempts = [];
+
+    // STRATEGY A: list.asp 에서 robust click 후 body 추출
+    try {
+      const listUrl = `${NOTICE_LIST_URL}?no=${agentNo || '12'}&upw=${upw || '1'}`;
+      await page.goto(listUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+      await delay(400, 800);
+
+      let linkFrame = null;
+      for (const fr of page.frames()) {
+        try {
+          const has = await fr.evaluate((idx) => {
+            return [...document.querySelectorAll('a[onclick], a[href]')].some(a => {
+              const oc = a.getAttribute('onclick') || '';
+              const hr = a.getAttribute('href') || '';
+              return oc.includes(idx) || hr.includes(idx);
+            });
+          }, notice.idx);
+          if (has) { linkFrame = fr; break; }
+        } catch {}
+      }
+      if (linkFrame) {
+        const preUrl = linkFrame.url();
+        const clickRes = await robustClickInFrame(linkFrame, notice.idx);
+        attempts.push({ kind: 'click', method: clickRes.method || 'none', ok: clickRes.ok });
+        if (clickRes.ok) {
+          try {
+            await page.waitForFunction((preU, bank) => {
+              const dlist = [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } }).filter(Boolean)];
+              for (const d of dlist) {
+                if (!d) continue;
+                if (d.location && d.location.href !== preU) return true;
+                const t = (d.body?.innerText || '');
+                if (bank && t.includes(bank)) return true;
+              }
+              return false;
+            }, { timeout: 5000 }, preUrl, expectedBank).catch(() => {});
+          } catch {}
+          await delay(400, 800);
+          const body = await extractBodyForTitle(notice.title);
+          attempts.push({ kind: 'click_extracted', len: body.length, match: bodyMatchesTitle(body, notice.title) });
+          if (body && bodyMatchesTitle(body, notice.title)) {
+            return { body, error: '', source: 'click', attempts };
+          }
+        }
+      } else {
+        attempts.push({ kind: 'click', error: 'link_not_found' });
+      }
+    } catch (e) {
+      attempts.push({ kind: 'click', error: 'exception:' + e.message });
+    }
+
+    // STRATEGY B: URL 추측 6종 fallback
+    for (const url of buildViewUrls(notice.idx)) {
+      try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 12000 });
+        await delay(300, 600);
+        const body = await extractBodyForTitle(notice.title);
+        const ok = bodyMatchesTitle(body, notice.title);
+        attempts.push({ kind: 'url', url: url.replace(LMASTER_BASE, ''), len: body.length, match: ok });
+        if (body && ok) {
+          return { body, error: '', source: 'url', attempts };
+        }
+      } catch (e) {
+        attempts.push({ kind: 'url', url: url.replace(LMASTER_BASE, ''), error: e.message });
+      }
+    }
+
+    return { body: '', error: 'title_mismatch', attempts };
   };
 
   if (fetchBodies && list.length > 0) {
-    // 상세 페이지 URL 패턴 후보 (lmaster 게시판 버전별)
-    const buildViewUrls = (idx) => [
-      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
-      `${LMASTER_BASE}/admin/bbs/notice/read.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
-      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&bbs_no=${idx}`,
-      `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&seq=${idx}`
-    ];
-
-    for (const n of list.slice(0, 10)) {
+    const MAX_BODIES = 20;
+    for (const n of list.slice(0, MAX_BODIES)) {
       try {
-        if (!n.idx) continue;
-        let bestBody = '';
-        let usedUrl = '';
-
-        for (const viewUrl of buildViewUrls(n.idx)) {
-          try {
-            await page.goto(viewUrl, { waitUntil: 'networkidle2', timeout: 12000 });
-            await delay(300, 600);
-            const body = await extractBody();
-            // 이 공지의 제목 핵심 키워드가 본문에 나오면 올바른 URL
-            const titleKey = (n.title || '').replace(/[◈⚠️\s\[\]]/g, '').substring(0, 6);
-            if (titleKey && body.includes(titleKey.substring(0, 4))) {
-              bestBody = body; usedUrl = viewUrl; break;
-            }
-            // 아니면 가장 긴 결과 keep
-            if (body.length > bestBody.length) { bestBody = body; usedUrl = viewUrl; }
-          } catch { continue; }
-        }
-
-        n.body = bestBody;
-        n.viewUrlTried = usedUrl;
+        if (!n.idx) { n.bodyError = 'no_idx'; continue; }
+        const { body, error, source, attempts } = await fetchBodyForNotice(n);
+        n.body = body || '';
+        if (error) n.bodyError = error;
+        if (source) n.bodySource = source;
+        // attempts 는 디버그 페이로드 — 운영 응답에서는 빼고 로그로 남긴다
+        console.log(`[공지] idx=${n.idx} title="${(n.title||'').slice(0,40)}" -> source=${source||'-'} err=${error||''} attempts=${JSON.stringify(attempts).slice(0,400)}`);
       } catch (e) {
-        n.bodyError = e.message;
+        n.bodyError = 'exception:' + e.message;
+        console.error(`[공지] idx=${n.idx} 본문 fetch 예외:`, e.message);
       }
     }
   }
@@ -1788,6 +1981,219 @@ async function getCachedNotices(agentNo, upw, options = {}) {
   return { ...data, cached: false };
 }
 
+// ============================================================
+// 동의서/인증/자료 다운로드 (loanlist_app.asp 의 +인증/동의서 섹션)
+// ============================================================
+// 페이지 DOM 구조:
+//   <div id="prdt_item_tr_{fidx}" data-fname="금융사명" data-trans="상품별칭">
+//     ...
+//     <input type="button" value="[동의서]" onclick="js_fnDownDoc_Mo('862','');">
+//     <input type="button" value="동의서작성예시" onclick="js_fnDownDoc_FinInfo('2439','1');">
+//     <input type="button" value="[인증주소]" onclick="js_fnAuthSite('https://...');">
+//   </div>
+// 다운로드 URL:
+//   - mo  : /admin/data/Proc_DownDoc_Mo.asp?upw=1&moidx={id}&flag={flag}
+//   - fin : /admin/finance/Proc_DownDoc_FinInfo.asp?upw=1&finidx={id}&flag={flag}
+//   - data: /admin/data/Proc_DownDoc_DataCommon.asp?upw=1&flag={flag}
+// 응답: Content-Disposition 의 filename 은 cp949 raw bytes (latin1 로 보임).
+// ============================================================
+
+const _downloadCache = { ts: 0, data: null };
+const DOWNLOAD_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+
+async function scanProductDownloads(agentNo = '12', upw = '1', options = {}) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+
+  const force = options.force === true;
+  const now = Date.now();
+  if (!force && _downloadCache.data && (now - _downloadCache.ts < DOWNLOAD_CACHE_TTL_MS)) {
+    return { ..._downloadCache.data, cached: true, cachedAgeSec: Math.floor((now - _downloadCache.ts)/1000) };
+  }
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(1500, 2500);
+
+  // 세션 만료 감지 (login.asp 로 리다이렉트 또는 로그인 폼 노출)
+  const after = page.url();
+  if (after.includes('login.asp')) {
+    isLoggedIn = false;
+    const err = new Error('론앤마스터 세션이 만료되었습니다. 재로그인이 필요합니다.');
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    throw err;
+  }
+
+  const products = await page.evaluate(() => {
+    const parseArgs = (raw) => [...raw.matchAll(/'([^']*)'/g)].map(x => x[1]);
+
+    const items = [];
+    const containers = document.querySelectorAll('div[id^="prdt_item_tr_"]');
+    for (const c of containers) {
+      const fidxMatch = c.id.match(/prdt_item_tr_(\d+)/);
+      const fidx = fidxMatch ? fidxMatch[1] : '';
+      const finName = c.getAttribute('data-fname') || '';
+      const productAlias = c.getAttribute('data-trans') || '';
+      // 상태 텍스트 (예: "[ 후인증Y | 동의서첨부X ]") 추출
+      const statusEl = c.querySelector('.cs_txt_bold');
+      const statusText = statusEl ? (statusEl.innerText || '').trim() : '';
+
+      // 컨테이너 내 모든 동의서/인증 버튼
+      const auth = [];      // 인증주소(외부 URL)
+      const docs = [];      // 다운로드 가능 파일
+
+      const btns = c.querySelectorAll('input[type=button][onclick]');
+      for (const b of btns) {
+        const oc = b.getAttribute('onclick') || '';
+        const m = oc.match(/js_fn(DownDoc_Mo|DownDoc_FinInfo|AuthSite|DownDoc_DataCommon)\((.*?)\)/);
+        if (!m) continue;
+        const fnName = m[1];
+        const args = parseArgs(m[2]);
+        const label = b.value || '';
+
+        if (fnName === 'AuthSite') {
+          auth.push({ kind: 'auth', label, url: args[0] || '' });
+        } else if (fnName === 'DownDoc_Mo') {
+          docs.push({ kind: 'mo', label, id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_FinInfo') {
+          docs.push({ kind: 'fin', label, id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_DataCommon') {
+          docs.push({ kind: 'data', label, flag: args[0] || '' });
+        }
+      }
+
+      if (auth.length || docs.length) {
+        items.push({ fidx, finName, productAlias, statusText, auth, docs });
+      }
+    }
+    return items;
+  });
+
+  const data = { products, scannedAt: new Date().toISOString() };
+  _downloadCache.ts = now;
+  _downloadCache.data = data;
+  return { ...data, cached: false };
+}
+
+// 동의서/자료 1건 다운로드 — puppeteer page 컨텍스트의 fetch 로 세션 활용
+//   * Node 의 https 로 직접 호출하면 쿠키만으로는 "잘못된 세션" 응답이 떨어진다
+//     (다른 헤더/쿠키 흐름이 필요한 듯). 실제로 작동하는 건 page 컨텍스트 fetch.
+// 반환: { status, contentType, filename, body(Buffer) }
+async function downloadConsentDoc({ kind, id, flag = '' }) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+  if (!page) throw new Error('브라우저가 실행 중이 아닙니다.');
+
+  let url;
+  if (kind === 'mo') {
+    if (!id) throw new Error('moidx(id)가 필요합니다.');
+    url = `${LMASTER_BASE}/admin/data/Proc_DownDoc_Mo.asp?upw=1&moidx=${encodeURIComponent(id)}&flag=${encodeURIComponent(flag)}`;
+  } else if (kind === 'fin') {
+    if (!id) throw new Error('finidx(id)가 필요합니다.');
+    url = `${LMASTER_BASE}/admin/finance/Proc_DownDoc_FinInfo.asp?upw=1&finidx=${encodeURIComponent(id)}&flag=${encodeURIComponent(flag)}`;
+  } else if (kind === 'data') {
+    url = `${LMASTER_BASE}/admin/data/Proc_DownDoc_DataCommon.asp?upw=1&flag=${encodeURIComponent(flag)}`;
+  } else {
+    throw new Error(`unknown kind: ${kind}`);
+  }
+
+  // 다운로드 엔드포인트는 loanlist_app 안의 ifrm_g_work iframe 에서 호출되는 형태이므로,
+  // 현재 페이지가 그 페이지가 아니라면 먼저 이동해 둬야 세션이 활성화된다.
+  if (!page.url().includes('loanlist_app.asp')) {
+    await page.goto(`${LOAN_APP_URL}?no=12&upw=1&w=w`, { waitUntil: 'networkidle2', timeout: 15000 });
+    await delay(700, 1200);
+    if (page.url().includes('login.asp')) {
+      isLoggedIn = false;
+      const err = new Error('론앤마스터 세션이 만료되었습니다.');
+      err.code = 'LMASTER_SESSION_EXPIRED';
+      throw err;
+    }
+  }
+
+  // page 컨텍스트에서 fetch — 쿠키/Origin/Referer 가 자동으로 잡힘
+  // 응답 ArrayBuffer 를 base64 로 직렬화해서 Node 로 전달
+  const result = await page.evaluate(async (u) => {
+    try {
+      const r = await fetch(u, { credentials: 'include', cache: 'no-store' });
+      const ct = r.headers.get('content-type') || '';
+      const cd = r.headers.get('content-disposition') || '';
+      const buf = await r.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // ArrayBuffer → binary string → base64 (chunk 단위로 처리해 stack overflow 회피)
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      return { ok: true, status: r.status, contentType: ct, contentDisposition: cd, base64: btoa(binary) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }, url);
+
+  if (!result || !result.ok) {
+    throw new Error(result?.error || '다운로드 실패');
+  }
+  if (result.status !== 200) {
+    const err = new Error(`다운로드 실패: HTTP ${result.status}`);
+    err.code = 'LMASTER_DOWNLOAD_FAILED';
+    throw err;
+  }
+
+  const body = Buffer.from(result.base64, 'base64');
+
+  // 본문이 HTML/세션 만료 텍스트인지 확인
+  // 정상 PDF 시그니처: %PDF (0x25 0x50 0x44 0x46)
+  // 정상 HWP/Excel/zip 등도 가능하므로, "잘못된 세션" 같은 cp949 한글 텍스트가 들어오는지 확인
+  const iconv = require('iconv-lite');
+  if (body.length < 256) {
+    const head = body.slice(0, body.length).toString('binary');
+    const isHtml = /<html|<!doctype|<body/i.test(head);
+    let cp949 = '';
+    try { cp949 = iconv.decode(body, 'euc-kr'); } catch {}
+    if (isHtml || /세션|로그인|만료|오류|불가/.test(cp949)) {
+      isLoggedIn = isLoggedIn && !/세션|로그인|만료/.test(cp949);
+      const err = new Error(`다운로드 실패: ${cp949 || head}`.slice(0, 200));
+      err.code = isLoggedIn ? 'LMASTER_DOWNLOAD_FAILED' : 'LMASTER_SESSION_EXPIRED';
+      throw err;
+    }
+  }
+
+  // Content-Disposition 의 filename 디코드 (cp949)
+  let filename = '';
+  const cd = result.contentDisposition || '';
+  if (cd) {
+    let m = cd.match(/filename\*=UTF-8''([^;\n]+)/i);
+    if (m) {
+      try { filename = decodeURIComponent(m[1]); } catch { filename = m[1]; }
+    } else {
+      m = cd.match(/filename=([^;\n]+)/i);
+      if (m) {
+        const raw = m[1].trim().replace(/^"|"$/g, '');
+        // 브라우저가 헤더를 latin1 로 디코드해 JS 문자열로 줬으니, 다시 byte 로 되돌려 cp949 디코드
+        try {
+          const buf = Buffer.from(raw, 'binary');
+          filename = iconv.decode(buf, 'euc-kr');
+        } catch { filename = raw; }
+      }
+    }
+  }
+  if (!filename) {
+    const ct = (result.contentType || '').toLowerCase();
+    let ext = '';
+    if (ct.includes('pdf')) ext = '.pdf';
+    else if (ct.includes('excel') || ct.includes('spreadsheet')) ext = '.xlsx';
+    else if (ct.includes('hwp')) ext = '.hwp';
+    else if (ct.includes('zip')) ext = '.zip';
+    filename = `lmaster_${kind}_${id || ''}_${flag || ''}${ext}`;
+  }
+
+  return {
+    status: result.status,
+    contentType: result.contentType || 'application/octet-stream',
+    filename,
+    body
+  };
+}
+
 // 상태 확인
 function getStatus() {
   return {
@@ -1795,6 +2201,87 @@ function getStatus() {
     isLoggedIn,
     pageUrl: page ? page.url() : null
   };
+}
+
+// === 디버그: 임의 URL 로 이동 후 HTML/링크/폼 덤프 (탐색용) ===
+// options.js: 페이지 로드 후 실행할 JS 표현식 (예: 'selectmenu(15)')
+// options.waitMs: js 실행 후 추가 대기시간(ms)
+// options.htmlLen: bodyHtmlSnippet 길이 (기본 6000)
+async function debugFetch(rawUrl, options = {}) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  const url = rawUrl.startsWith('http') ? rawUrl : (LMASTER_BASE + rawUrl);
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(800, 1400);
+  if (options.js) {
+    try { await page.evaluate(options.js); } catch (e) { /* ignore */ }
+    await delay(options.waitMs || 1500, (options.waitMs || 1500) + 500);
+  }
+  const htmlLen = options.htmlLen || 6000;
+  return await page.evaluate((htmlLen) => {
+    const links = [...document.querySelectorAll('a')].map(a => ({
+      text: (a.textContent || '').trim().substring(0, 80),
+      href: a.getAttribute('href') || '',
+      onclick: a.getAttribute('onclick') || ''
+    })).filter(l => l.text || l.href || l.onclick);
+    const forms = [...document.querySelectorAll('form')].map(f => ({
+      name: f.name || '', id: f.id || '',
+      action: f.getAttribute('action') || '', method: (f.method || 'GET').toUpperCase(),
+      inputs: [...f.querySelectorAll('input,select,textarea')].map(i => ({
+        tag: i.tagName, type: i.type || '', name: i.name || '', value: (i.value || '').substring(0, 60)
+      }))
+    }));
+    const buttons = [...document.querySelectorAll('input[type=button],input[type=submit],button')].map(b => ({
+      type: b.type, value: b.value || '', text: (b.textContent || '').trim().substring(0, 60),
+      onclick: b.getAttribute('onclick') || ''
+    }));
+    const iframes = [...document.querySelectorAll('iframe,frame')].map(f => ({
+      name: f.name || '', src: f.getAttribute('src') || '', currentSrc: f.src || ''
+    }));
+    // 같은 origin iframe 의 본문도 추출
+    const iframeBodies = [];
+    document.querySelectorAll('iframe,frame').forEach(f => {
+      try {
+        const doc = f.contentDocument;
+        if (!doc) return;
+        iframeBodies.push({
+          name: f.name || '', src: f.src || '',
+          url: doc.location?.href || '',
+          title: doc.title || '',
+          bodySnippet: (doc.body?.innerText || '').substring(0, 1500),
+          bodyHtmlSnippet: (doc.body?.innerHTML || '').substring(0, htmlLen),
+          links: [...doc.querySelectorAll('a')].map(a => ({
+            text: (a.textContent || '').trim().substring(0, 80),
+            href: a.getAttribute('href') || '',
+            onclick: a.getAttribute('onclick') || ''
+          })).filter(l => l.text || l.href || l.onclick).slice(0, 200),
+          forms: [...doc.querySelectorAll('form')].map(form => ({
+            name: form.name || '', id: form.id || '',
+            action: form.getAttribute('action') || '', method: (form.method || 'GET').toUpperCase(),
+            inputs: [...form.querySelectorAll('input,select,textarea')].map(i => ({
+              tag: i.tagName, type: i.type || '', name: i.name || '', value: (i.value || '').substring(0, 60)
+            }))
+          })),
+          buttons: [...doc.querySelectorAll('input[type=button],input[type=submit],button')].map(b => ({
+            type: b.type, value: b.value || '', text: (b.textContent || '').trim().substring(0, 60),
+            onclick: b.getAttribute('onclick') || ''
+          })),
+        });
+      } catch (e) {
+        iframeBodies.push({ name: f.name || '', src: f.src || '', error: 'cross-origin or unloaded' });
+      }
+    });
+    return {
+      url: location.href,
+      title: document.title,
+      bodySnippet: (document.body?.innerText || '').substring(0, 2000),
+      bodyHtmlSnippet: (document.body?.innerHTML || '').substring(0, htmlLen),
+      links: links.slice(0, 200),
+      forms,
+      buttons,
+      iframes,
+      iframeBodies
+    };
+  }, htmlLen);
 }
 
 module.exports = {
@@ -1813,5 +2300,8 @@ module.exports = {
   scanProductFileSlots,
   scanProductRequirements,
   getNotices,
-  getCachedNotices
+  getCachedNotices,
+  scanProductDownloads,
+  downloadConsentDoc,
+  debugFetch
 };

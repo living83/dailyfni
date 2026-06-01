@@ -3,10 +3,17 @@
 //   - 결과: UMS_LOG_YYYYMM 에서 DONE_CODE 조회 (에이전트가 complete 후 이관)
 //   - dailyfni.sms_logs 에 우리 관리용 이력 저장
 const { v4: uuid } = require('uuid');
+const crypto = require('crypto');
 const { query, hubQuery } = require('../../database/db');
 
 const CALLBACK_NUMBER = process.env.SMS_CALLBACK || '0221380749';
 const API_KEY = process.env.MSG_HUB_API_KEY || 'APIHLVmV';
+
+// LGU+ 메시지허브 cliKey 제약: 최대 30자, [a-zA-Z0-9-_.@] 만 허용.
+// UUID v4(36자, 하이픈 포함) 그대로는 거부됨 → 15바이트 hex(30자)로 발급. 충돌 확률 사실상 0.
+function genClientKey() {
+  return crypto.randomBytes(15).toString('hex');
+}
 
 // 단건 발송
 async function sendSms({
@@ -19,7 +26,7 @@ async function sendSms({
   content = '',
   sentBy = '',
 }) {
-  const clientKey = uuid();
+  const clientKey = genClientKey();
 
   // 1) UMS_MSG 에 INSERT (에이전트가 폴링해서 발송)
   await hubQuery(
@@ -62,7 +69,7 @@ async function sendSmsBulk({
 
   for (const r of recipients) {
     try {
-      const clientKey = uuid();
+      const clientKey = genClientKey();
       await hubQuery(
         `INSERT INTO UMS_MSG
            (CLIENT_KEY, TRAFFIC_TYPE, MSG_STATUS, REQ_DATE, TEMPLATE_CODE, CALLBACK_NUMBER, PHONE, KV_JSON)

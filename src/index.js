@@ -112,11 +112,19 @@ if (hasSSL) {
           idx VARCHAR(20) PRIMARY KEY,
           notice_date DATE,
           title VARCHAR(500),
-          body TEXT,
+          body LONGTEXT,
           author VARCHAR(50) DEFAULT '',
+          body_status VARCHAR(32) DEFAULT 'ok',
           fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_date (notice_date)
         )`);
+        // 기존 테이블 보강 (idempotent) — TEXT → LONGTEXT, body_status 신설
+        try {
+          await query(`ALTER TABLE lmaster_notices MODIFY body LONGTEXT`);
+        } catch (_) {}
+        try {
+          await query(`ALTER TABLE lmaster_notices ADD COLUMN body_status VARCHAR(32) DEFAULT 'ok'`);
+        } catch (_) {}
         console.log('lmaster_notices 테이블 준비됨');
       } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
     }
@@ -140,11 +148,19 @@ if (hasSSL) {
           idx VARCHAR(20) PRIMARY KEY,
           notice_date DATE,
           title VARCHAR(500),
-          body TEXT,
+          body LONGTEXT,
           author VARCHAR(50) DEFAULT '',
+          body_status VARCHAR(32) DEFAULT 'ok',
           fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           INDEX idx_date (notice_date)
         )`);
+        // 기존 테이블 보강 (idempotent) — TEXT → LONGTEXT, body_status 신설
+        try {
+          await query(`ALTER TABLE lmaster_notices MODIFY body LONGTEXT`);
+        } catch (_) {}
+        try {
+          await query(`ALTER TABLE lmaster_notices ADD COLUMN body_status VARCHAR(32) DEFAULT 'ok'`);
+        } catch (_) {}
       } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
     }
     console.log(`==========================\n`);

@@ -35,6 +35,22 @@ router.get('/crawler/debug-html', async (req, res) => {
   }
 });
 
+// 임의 URL 이동 후 HTML/링크/폼 덤프 (페이지 탐색 디버그용)
+router.get('/crawler/debug-fetch', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ success: false, message: 'url 파라미터 필요' });
+    const opts = {};
+    if (req.query.js) opts.js = String(req.query.js);
+    if (req.query.waitMs) opts.waitMs = parseInt(req.query.waitMs);
+    if (req.query.htmlLen) opts.htmlLen = parseInt(req.query.htmlLen);
+    const data = await crawler.debugFetch(String(url), opts);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 론앤마스터 로그인
 router.post('/crawler/login', async (req, res) => {
   try {
@@ -255,21 +271,43 @@ router.post(
 });
 
 // 론앤마스터 공지 (당일분 + 본문) — 1시간 캐시 + 오늘 공지는 DB 저장
+//
+// 저장 정책 (보존 우선):
+//  - 본문이 비어있거나 title mismatch (bodyError 있음) → 기존 본문을 덮어쓰지 않는다.
+//  - title 은 항상 최신 값으로 동기화.
+//  - 새 본문이 기존보다 50% 이상 짧으면(=정보 손실 가능성) 기존 유지.
+//  - body_status 컬럼에 마지막 fetch 결과(ok / mismatch / empty)를 기록.
 router.get('/crawler/notices', async (req, res) => {
   try {
     const { agentNo, upw, force } = req.query;
     const data = await crawler.getCachedNotices(agentNo || '12', upw || '1', { force: force === '1' });
 
-    // 오늘 공지만 DB 에 upsert (중복은 title/body 만 갱신)
     try {
       const { query } = require('../database/db');
       for (const n of (data.notices || [])) {
         if (!n.idx || !n.date) continue;
+        const body = n.body || '';
+        const bodyOk = body.length > 20 && !n.bodyError;
+        // 상태: ok / 또는 구체적 실패 원인 (title_mismatch, link_not_found, click_failed, exception:..., empty)
+        const status = bodyOk
+          ? 'ok'
+          : (n.bodyError ? n.bodyError.toString().slice(0, 30) : (body.length === 0 ? 'empty' : 'unknown'));
+
+        // 새 본문은 신뢰할 수 있을 때만 덮어쓴다 (보존 우선)
         await query(
-          `INSERT INTO lmaster_notices (idx, notice_date, title, body, author)
-           VALUES (?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE title=VALUES(title), body=VALUES(body), author=VALUES(author)`,
-          [n.idx, n.date, (n.title || '').substring(0, 500), n.body || '', n.author || '관리자']
+          `INSERT INTO lmaster_notices (idx, notice_date, title, body, author, body_status)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             title=VALUES(title),
+             author=VALUES(author),
+             body_status=VALUES(body_status),
+             body=CASE
+               WHEN VALUES(body_status)='ok'
+                 AND CHAR_LENGTH(VALUES(body)) >= GREATEST(20, FLOOR(CHAR_LENGTH(COALESCE(body,'')) * 0.5))
+                 THEN VALUES(body)
+               ELSE body
+             END`,
+          [n.idx, n.date, (n.title || '').substring(0, 500), body, n.author || '관리자', status]
         );
       }
     } catch (e) { console.error('[공지] DB 저장 실패:', e.message); }
@@ -280,20 +318,77 @@ router.get('/crawler/notices', async (req, res) => {
   }
 });
 
-// DB 저장된 공지 조회 (날짜별, 기본 최근 30일)
+// DB 저장된 공지 조회 — 보존된 공지 전체 (오늘 list 에 없는 과거 공지 포함)
+// 파라미터: days(기본 90), limit(기본 500), q(제목 부분일치)
+//
+// mysql2 prepared statement(execute) 는 LIMIT / INTERVAL N DAY 에 placeholder 를
+// 받지 못해 "Incorrect arguments to mysqld_stmt_execute" 가 난다.
+// → 검증·clamp 한 정수는 SQL 에 인라인. 사용자 입력 q 만 placeholder 로 처리.
 router.get('/crawler/notices/history', async (req, res) => {
   try {
     const { query } = require('../database/db');
-    const { days = 30 } = req.query;
+    const days = Math.max(1, Math.min(3650, parseInt(req.query.days) || 90));
+    const limit = Math.max(1, Math.min(2000, parseInt(req.query.limit) || 500));
+    const q = (req.query.q || '').trim();
+    const params = [];
+    let whereExtra = '';
+    if (q) { whereExtra = 'AND title LIKE ?'; params.push('%' + q + '%'); }
     const rows = await query(
-      `SELECT idx, DATE_FORMAT(notice_date, '%Y-%m-%d') AS date, title, body, author, fetched_at
+      `SELECT idx, DATE_FORMAT(notice_date, '%Y-%m-%d') AS date, title, body, author, body_status, fetched_at
        FROM lmaster_notices
-       WHERE notice_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       WHERE notice_date >= DATE_SUB(CURDATE(), INTERVAL ${days} DAY)
+       ${whereExtra}
        ORDER BY notice_date DESC, idx DESC
-       LIMIT 200`, [parseInt(days) || 30]
+       LIMIT ${limit}`, params
     );
-    res.json({ success: true, data: rows });
+    res.json({ success: true, data: rows, days, count: rows.length });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 동의서/인증/자료 버튼 스캔 (loanlist_app.asp 의 +인증/동의서 섹션)
+// 1시간 캐시 — ?force=1 로 갱신
+router.get('/crawler/lmaster-downloads', async (req, res) => {
+  try {
+    const { agentNo, upw, force } = req.query;
+    const data = await crawler.scanProductDownloads(
+      agentNo || '12',
+      upw || '1',
+      { force: force === '1' }
+    );
+    res.json({ success: true, data });
+  } catch (err) {
+    if (err && err.code === 'LMASTER_SESSION_EXPIRED') {
+      return res.status(401).json({ success: false, code: err.code, message: err.message });
+    }
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 동의서/자료 1건 다운로드 — 파일을 그대로 클라이언트에 스트림
+//   GET /api/crawler/lmaster-download?kind=mo|fin|data&id=...&flag=...
+router.get('/crawler/lmaster-download', async (req, res) => {
+  try {
+    const { kind, id, flag } = req.query;
+    if (!kind || !['mo', 'fin', 'data'].includes(kind)) {
+      return res.status(400).json({ success: false, message: 'kind 는 mo|fin|data 중 하나여야 합니다.' });
+    }
+    if (kind !== 'data' && !id) {
+      return res.status(400).json({ success: false, message: 'id(moidx/finidx)가 필요합니다.' });
+    }
+    const result = await crawler.downloadConsentDoc({ kind, id, flag: flag || '' });
+
+    // 한글 파일명을 RFC 5987 형식으로 인코딩 (브라우저 호환성)
+    const encodedName = encodeURIComponent(result.filename);
+    res.setHeader('Content-Type', result.contentType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`);
+    res.setHeader('Content-Length', result.body.length);
+    res.end(result.body);
+  } catch (err) {
+    if (err && err.code === 'LMASTER_SESSION_EXPIRED') {
+      return res.status(401).json({ success: false, code: err.code, message: err.message });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });

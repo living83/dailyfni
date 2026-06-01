@@ -2,8 +2,9 @@
 // 대부중개 전산시스템 - 프론트엔드 앱
 // ========================================
 
-// API 인증 토큰 자동 전송
+// API 인증 토큰 자동 전송. 401 응답은 세션 만료 → 로그인 화면으로 일괄 리다이렉트(무한 재렌더 방지)
 const _originalFetch = window.fetch;
+let _authFailureHandled = false;
 window.fetch = function(url, options = {}) {
   if (typeof url === 'string' && url.startsWith('/api')) {
     try {
@@ -15,6 +16,16 @@ window.fetch = function(url, options = {}) {
         }
       }
     } catch {}
+    return _originalFetch.call(this, url, options).then(res => {
+      if (res.status === 401 && !_authFailureHandled
+          && !url.includes('/api/system/login') && !url.includes('/api/auth/login')) {
+        _authFailureHandled = true;
+        sessionStorage.removeItem('loggedInUser');
+        alert('세션이 만료되었습니다. 다시 로그인하세요.');
+        location.reload();
+      }
+      return res;
+    });
   }
   return _originalFetch.call(this, url, options);
 };
@@ -66,22 +77,49 @@ function formatSsn(val) {
   return num.substring(0,6) + '-' + num.substring(6,13);
 }
 
-// 주민번호에서 만나이 + 성별 자동 계산
-function calcAge() {
-  const ssn = (document.getElementById('reg-ssn')?.value || '').replace(/-/g,'');
-  if (ssn.length < 7) return;
+// 주민번호 → 만 나이 (숫자) / null
+function ageFromSsn(rawSsn) {
+  const ssn = (rawSsn || '').replace(/-/g, '');
+  if (ssn.length < 7) return null;
   const genderCode = ssn.charAt(6);
-  const century = (genderCode === '1' || genderCode === '2') ? 1900 : 2000;
+  // 1,2,5,6 → 1900대 / 3,4,7,8 → 2000대 / 9,0 → 1800대
+  let century;
+  if (genderCode === '1' || genderCode === '2' || genderCode === '5' || genderCode === '6') century = 1900;
+  else if (genderCode === '3' || genderCode === '4' || genderCode === '7' || genderCode === '8') century = 2000;
+  else if (genderCode === '9' || genderCode === '0') century = 1800;
+  else return null;
   const birthYear = century + parseInt(ssn.substring(0,2));
   const birthMonth = parseInt(ssn.substring(2,4));
   const birthDay = parseInt(ssn.substring(4,6));
+  if (!birthMonth || !birthDay) return null;
   const today = new Date();
   let age = today.getFullYear() - birthYear;
   if (today.getMonth()+1 < birthMonth || (today.getMonth()+1 === birthMonth && today.getDate() < birthDay)) age--;
-  const ageEl = document.getElementById('reg-age');
-  if (ageEl) ageEl.value = age + '세';
-  const genderEl = document.getElementById('reg-gender');
-  if (genderEl) genderEl.value = (genderCode === '1' || genderCode === '3') ? '남' : '여';
+  return age;
+}
+
+function genderFromSsn(rawSsn) {
+  const ssn = (rawSsn || '').replace(/-/g, '');
+  if (ssn.length < 7) return '';
+  const g = ssn.charAt(6);
+  if (g === '1' || g === '3' || g === '5' || g === '7' || g === '9') return '남';
+  if (g === '2' || g === '4' || g === '6' || g === '8' || g === '0') return '여';
+  return '';
+}
+
+// 주민번호에서 만나이 + 성별 자동 계산 (고객등록 / 고객수정 공용)
+function calcAge() {
+  const ssnEl = document.getElementById('reg-ssn') || document.getElementById('edit-ssn');
+  if (!ssnEl) return;
+  const age = ageFromSsn(ssnEl.value);
+  const gender = genderFromSsn(ssnEl.value);
+  const ageEl = document.getElementById('reg-age') || document.getElementById('edit-age');
+  if (ageEl) ageEl.value = age == null ? '' : age + '세';
+  const genderEl = document.getElementById('reg-gender') || document.getElementById('edit-gender');
+  if (genderEl && gender) {
+    if (genderEl.tagName === 'SELECT') genderEl.value = gender;
+    else genderEl.value = gender;
+  }
 }
 
 // 연봉 → 월 환산
@@ -149,6 +187,7 @@ const pages = {
   audit: { title: '감사로그', render: renderAudit },
   'doc-convert': { title: '문서 변환', render: renderDocConvert },
   'lmaster-notice': { title: '론앤마스터 공지', render: renderLmasterNotice },
+  'lmaster-downloads': { title: '동의서/인증 자료', render: renderLmasterDownloads },
 };
 
 // --- 초기화 ---
@@ -195,25 +234,100 @@ function resetLmasterNoticeSeen() {
 }
 
 // 사이드바 → 론앤마스터 공지 페이지 (가로 50% 좌측 정렬)
+// 탭: 오늘 / 보존된 과거 공지
 function renderLmasterNotice() {
   setTimeout(() => loadLmasterNoticePage(false), 50);
   return `
     <div style="max-width:50%;">
-      <div class="filter-bar">
-        <button class="btn btn-primary" onclick="loadLmasterNoticePage(false)">새로고침</button>
-        <button class="btn btn-outline" onclick="loadLmasterNoticePage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
+      <div class="filter-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div id="lmasterNoticeTabs" style="display:flex;gap:4px;">
+          <button class="btn btn-primary btn-sm" data-tab="today" onclick="switchLmasterNoticeTab('today')">오늘 공지</button>
+          <button class="btn btn-outline btn-sm" data-tab="history" onclick="switchLmasterNoticeTab('history')">보존된 공지</button>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadLmasterNoticeCurrentTab(false)">새로고침</button>
+        <button class="btn btn-outline btn-sm" onclick="loadLmasterNoticeCurrentTab(true)" title="강제 재조회 / 검색">강제 재조회</button>
+        <input type="text" id="lmasterNoticeSearch" placeholder="제목 검색 (보존 탭)" style="display:none;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:200px;" onkeydown="if(event.key==='Enter') loadLmasterNoticeHistory()">
+        <select id="lmasterNoticeDays" style="display:none;padding:5px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;" onchange="loadLmasterNoticeHistory()">
+          <option value="7">7일</option>
+          <option value="30" selected>30일</option>
+          <option value="90">90일</option>
+          <option value="365">1년</option>
+          <option value="3650">전체</option>
+        </select>
         <span id="lmasterNoticeMeta" style="font-size:11px;color:#94a3b8;margin-left:8px;"></span>
       </div>
       <div class="panel">
         <div class="panel-header">
-          <h2>론앤마스터 당일 공지</h2>
-          <span style="font-size:11px;color:#94a3b8;">서버에서 1시간 캐시 — 새 공지는 자동 갱신</span>
+          <h2 id="lmasterNoticeTitle">론앤마스터 당일 공지</h2>
+          <span id="lmasterNoticeSubtitle" style="font-size:11px;color:#94a3b8;">서버에서 1시간 캐시 — 새 공지는 자동 갱신</span>
         </div>
-        <div class="panel-body" id="lmasterNoticeBody" style="padding:12px 16px;">
+        <div class="panel-body" id="lmasterNoticeBody" style="padding:12px 16px;max-height:calc(100vh - 200px);overflow-y:auto;">
           <div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중...</div>
         </div>
       </div>
     </div>`;
+}
+
+let _lmasterNoticeTab = 'today';
+function switchLmasterNoticeTab(tab) {
+  _lmasterNoticeTab = tab;
+  const tabs = document.querySelectorAll('#lmasterNoticeTabs button');
+  tabs.forEach(b => {
+    if (b.dataset.tab === tab) { b.classList.remove('btn-outline'); b.classList.add('btn-primary'); }
+    else { b.classList.remove('btn-primary'); b.classList.add('btn-outline'); }
+  });
+  const isHist = tab === 'history';
+  document.getElementById('lmasterNoticeSearch').style.display = isHist ? '' : 'none';
+  document.getElementById('lmasterNoticeDays').style.display = isHist ? '' : 'none';
+  document.getElementById('lmasterNoticeTitle').textContent = isHist ? '보존된 공지 (DB 이력)' : '론앤마스터 당일 공지';
+  document.getElementById('lmasterNoticeSubtitle').textContent = isHist
+    ? '서버 DB에 보존된 과거 공지 — title 검색 가능, body_status 가 stale 인 항목은 다음 크롤 시 재수집됨'
+    : '서버에서 1시간 캐시 — 새 공지는 자동 갱신';
+  loadLmasterNoticeCurrentTab(false);
+}
+
+function loadLmasterNoticeCurrentTab(force) {
+  if (_lmasterNoticeTab === 'history') return loadLmasterNoticeHistory();
+  return loadLmasterNoticePage(force);
+}
+
+async function loadLmasterNoticeHistory() {
+  const body = document.getElementById('lmasterNoticeBody');
+  const meta = document.getElementById('lmasterNoticeMeta');
+  if (!body) return;
+  const days = document.getElementById('lmasterNoticeDays').value || 90;
+  const q = (document.getElementById('lmasterNoticeSearch').value || '').trim();
+  body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중...</div>';
+  if (meta) meta.textContent = '';
+  try {
+    const url = '/api/crawler/notices/history?days=' + encodeURIComponent(days) + (q ? '&q=' + encodeURIComponent(q) : '');
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.success) { body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">조회 실패: ${data.message || '알 수 없는 오류'}</div>`; return; }
+    const rows = data.data || [];
+    if (meta) meta.textContent = `최근 ${days}일 / ${rows.length}건${q ? ' / "' + q + '"' : ''}`;
+    if (rows.length === 0) { body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">조건에 맞는 공지가 없습니다.</div>'; return; }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    body.innerHTML = rows.map((n, i) => {
+      const id = 'h-' + (n.idx || String(i));
+      const status = n.body_status || 'ok';
+      const stale = status !== 'ok';
+      const badge = stale ? `<span title="${esc(status)}" style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:4px;margin-left:6px;">재수집필요</span>` : '';
+      return `
+      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:0;margin-bottom:8px;background:${stale?'#fff7ed':'#fafafa'};overflow:hidden;">
+        <div onclick="toggleNoticeCard('${esc(id)}')" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+          <span id="noticeArrow-${esc(id)}" style="color:#64748b;font-size:10px;width:10px;">▶</span>
+          <strong style="color:#0f172a;font-size:13px;flex:1;">${esc(n.title)}${badge}</strong>
+          <span style="color:#64748b;font-size:11px;white-space:nowrap;">${esc(n.date)}</span>
+        </div>
+        <div id="noticeBody-${esc(id)}" style="display:none;padding:0 14px 12px 32px;">
+          ${n.body ? `<div style="font-size:12px;color:#334155;white-space:pre-wrap;line-height:1.5;max-height:400px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:10px 12px;">${esc(n.body)}</div>` : '<div style="font-size:11px;color:#94a3b8;">본문이 비어있습니다 (다음 크롤 시 재수집).</div>'}
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">서버 연결 실패: ${e.message}</div>`;
+  }
 }
 
 // 공지 카드 펼침/접힘
@@ -253,11 +367,14 @@ async function loadLmasterNoticePage(force) {
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     body.innerHTML = notices.map((n, i) => {
       const id = n.idx || String(i);
+      const err = n.bodyError || '';
+      const stale = !n.body || err;
+      const badge = err ? `<span title="${esc(err)}" style="font-size:10px;background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:4px;margin-left:6px;">${esc(err)}</span>` : '';
       return `
-      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:0;margin-bottom:8px;background:#fafafa;overflow:hidden;">
+      <div style="border:1px solid #e2e8f0;border-radius:6px;padding:0;margin-bottom:8px;background:${stale?'#fff7ed':'#fafafa'};overflow:hidden;">
         <div onclick="toggleNoticeCard('${esc(id)}')" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
           <span id="noticeArrow-${esc(id)}" style="color:#64748b;font-size:10px;width:10px;">▶</span>
-          <strong style="color:#0f172a;font-size:13px;flex:1;">${esc(n.title)}</strong>
+          <strong style="color:#0f172a;font-size:13px;flex:1;">${esc(n.title)}${badge}</strong>
           <span style="color:#64748b;font-size:11px;white-space:nowrap;">${esc(n.date)}</span>
         </div>
         <div id="noticeBody-${esc(id)}" style="display:none;padding:0 14px 12px 32px;">
@@ -267,6 +384,173 @@ async function loadLmasterNoticePage(force) {
     }).join('');
   } catch (e) {
     body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">서버 연결 실패: ${e.message}</div>`;
+  }
+}
+
+// =============================================================
+// 동의서/인증 자료 페이지 — 론앤마스터 loanlist_app.asp 의 +인증/동의서 섹션을
+// 상품별로 묶어 보여주고, 버튼 클릭으로 PDF/HWP 다운로드.
+// =============================================================
+function renderLmasterDownloads() {
+  setTimeout(() => loadLmasterDownloadsPage(false), 50);
+  return `
+    <div>
+      <div class="filter-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="lmDlSearch" placeholder="금융사/상품명 검색..." style="min-width:240px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;" oninput="filterLmasterDownloads()">
+        <label style="font-size:12px;color:#475569;display:flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="lmDlOnlyConsent" onchange="filterLmasterDownloads()"> 동의서가 있는 상품만
+        </label>
+        <button class="btn btn-primary" onclick="loadLmasterDownloadsPage(false)">새로고침</button>
+        <button class="btn btn-outline" onclick="loadLmasterDownloadsPage(true)" title="서버 캐시 무시하고 즉시 다시 크롤링">강제 재조회</button>
+        <span id="lmDlMeta" style="font-size:11px;color:#94a3b8;margin-left:auto;"></span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>상품별 인증주소·동의서·자료</h2>
+          <span style="font-size:11px;color:#94a3b8;">론앤마스터 ▶ 대출접수 페이지의 [+인증/동의서] 섹션 자동 추출 (1시간 캐시)</span>
+        </div>
+        <div class="panel-body" id="lmDlBody" style="padding:8px 10px;">
+          <div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중... (10~20초)</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+let _lmDlData = null; // 마지막 스캔 결과 캐시 (필터링용)
+
+async function loadLmasterDownloadsPage(force) {
+  const body = document.getElementById('lmDlBody');
+  const meta = document.getElementById('lmDlMeta');
+  if (!body) return;
+  if (typeof crawlerLoggedIn !== 'undefined' && !crawlerLoggedIn) {
+    body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">론앤마스터 연동이 필요합니다. 헤더의 [론앤마스터: 미연결] 을 클릭해 로그인하세요.</div>`;
+    return;
+  }
+  body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">불러오는 중... (10~20초 소요)</div>';
+  if (meta) meta.textContent = '';
+  try {
+    const res = await fetch('/api/crawler/lmaster-downloads' + (force ? '?force=1' : ''));
+    const data = await res.json();
+    if (res.status === 401) {
+      body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">${data.message || '세션이 만료되었습니다.'} 헤더의 연동 버튼으로 재로그인하세요.</div>`;
+      return;
+    }
+    if (!data.success) {
+      body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">조회 실패: ${data.message || '알 수 없는 오류'}</div>`;
+      return;
+    }
+    _lmDlData = data.data || {};
+    const products = _lmDlData.products || [];
+    let totalDocs = 0, totalAuth = 0;
+    for (const p of products) { totalDocs += p.docs.length; totalAuth += p.auth.length; }
+    if (meta) meta.textContent = `${products.length}개 상품 · 동의서/자료 ${totalDocs}건 · 인증주소 ${totalAuth}건 · ${_lmDlData.cached ? '캐시 (' + (_lmDlData.cachedAgeSec||0) + '초 전)' : '실시간'}`;
+    renderLmasterDownloadsList();
+  } catch (e) {
+    body.innerHTML = `<div style="color:#b91c1c;padding:20px;font-size:13px;">서버 연결 실패: ${e.message}</div>`;
+  }
+}
+
+function filterLmasterDownloads() { renderLmasterDownloadsList(); }
+
+function renderLmasterDownloadsList() {
+  const body = document.getElementById('lmDlBody');
+  if (!body || !_lmDlData) return;
+  const q = (document.getElementById('lmDlSearch')?.value || '').trim().toLowerCase();
+  const onlyConsent = !!document.getElementById('lmDlOnlyConsent')?.checked;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const products = (_lmDlData.products || []).filter(p => {
+    if (q) {
+      const blob = (p.finName + ' ' + p.productAlias + ' ' + (p.docs||[]).map(d => d.label).join(' ')).toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    if (onlyConsent) {
+      const hasConsent = (p.docs||[]).some(d => /동의서/.test(d.label));
+      if (!hasConsent) return false;
+    }
+    return true;
+  });
+
+  if (products.length === 0) {
+    body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px;font-size:13px;">조건에 맞는 상품이 없습니다.</div>';
+    return;
+  }
+
+  body.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#f1f5f9;border-bottom:1px solid #e2e8f0;">
+          <th style="text-align:left;padding:8px 10px;width:60px;">fidx</th>
+          <th style="text-align:left;padding:8px 10px;min-width:160px;">금융사</th>
+          <th style="text-align:left;padding:8px 10px;min-width:140px;">상품별칭</th>
+          <th style="text-align:left;padding:8px 10px;min-width:140px;">상태</th>
+          <th style="text-align:left;padding:8px 10px;">자료 / 인증</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${products.map(p => `
+          <tr style="border-bottom:1px solid #f1f5f9;vertical-align:top;">
+            <td style="padding:8px 10px;color:#64748b;font-family:monospace;">${esc(p.fidx)}</td>
+            <td style="padding:8px 10px;font-weight:600;color:#0f172a;">${esc(p.finName)}</td>
+            <td style="padding:8px 10px;color:#475569;">${esc(p.productAlias)}</td>
+            <td style="padding:8px 10px;color:${(p.statusText||'').includes('Y')?'#0d9488':'#94a3b8'};font-size:11px;">${esc(p.statusText)}</td>
+            <td style="padding:8px 10px;">
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${(p.docs||[]).map(d => `
+                  <button class="btn btn-sm btn-outline"
+                          onclick="downloadLmasterDoc('${esc(d.kind)}','${esc(d.id||'')}','${esc(d.flag||'')}','${esc(d.label).replace(/'/g, '&#39;')}')"
+                          title="${esc(d.kind)}(${esc(d.id||'')},${esc(d.flag||'')})"
+                          style="background:#ede9fe;border-color:#c4b5fd;color:#5b21b6;">
+                    📄 ${esc(d.label)}
+                  </button>
+                `).join('')}
+                ${(p.auth||[]).map(a => `
+                  <a href="${esc(a.url)}" target="_blank" rel="noopener"
+                     class="btn btn-sm btn-outline" title="외부 인증 사이트 열기"
+                     style="background:#ecfccb;border-color:#bef264;color:#3f6212;text-decoration:none;">
+                    🔐 ${esc(a.label)}
+                  </a>
+                `).join('')}
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+// 동의서/자료 1건 다운로드 — 서버에서 PDF 가져와 브라우저에 저장
+async function downloadLmasterDoc(kind, id, flag, label) {
+  try {
+    const url = `/api/crawler/lmaster-download?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}&flag=${encodeURIComponent(flag)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      let msg = `다운로드 실패 (HTTP ${res.status})`;
+      try { const j = await res.json(); if (j.message) msg = j.message; } catch {}
+      alert(msg);
+      return;
+    }
+    // Content-Disposition 에서 filename* 추출
+    const cd = res.headers.get('content-disposition') || '';
+    let filename = (label || 'document') + '.pdf';
+    let m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m) {
+      try { filename = decodeURIComponent(m[1]); } catch {}
+    } else {
+      m = cd.match(/filename="?([^";]+)"?/i);
+      if (m) {
+        try { filename = decodeURIComponent(m[1]); } catch { filename = m[1]; }
+      }
+    }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    alert('다운로드 실패: ' + e.message);
   }
 }
 
@@ -1182,7 +1466,7 @@ function renderLoanRegister() {
           <tbody>
             <tr>
               <th>직업구분 <span class="required">*</span></th>
-              <td colspan="5"><select id="lr-jobType">${sel(['직장인(4대가입)','직장인(미가입)','개인사업자','프리랜서','무직','주부','학생','기타'], (c?.employment_type) || (c?.has_4_insurance === '가입' ? '직장인(4대가입)' : (c?.has_4_insurance === '미가입' ? '직장인(미가입)' : '')))}</select></td>
+              <td colspan="5"><select id="lr-jobType">${sel(['직장인(4대가입)','직장인(4대미가입)','개인사업자','법인사업자','주부','청년','프리랜서','무직','기타'], (c?.employment_type || ''))}</select></td>
             </tr>
             <tr>
               <th>직장명 <span class="required">*</span></th>
@@ -1627,18 +1911,43 @@ async function submitLoanRegister() {
     }));
   } catch {}
 
+  // 셀렉트 placeholder 값(==선택==, 선택, 선택하세요 등)을 빈 문자열로 치환.
+  // 론앤마스터에 placeholder 문자열이 그대로 전송되면 "알 수 없는 값" 으로 거절될 수 있다.
+  const stripPlaceholder = (v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return '';
+    if (/^==.*==$/.test(s)) return '';
+    if (/^-.*-$/.test(s)) return '';
+    if (s === '선택' || s === '선택하세요' || /항목\s*선택|선택\s*하세요|선택해?주세요/.test(s)) return '';
+    return s;
+  };
+
   const formData = {
-    fidx, productName, name, birth, gender, carrier,
+    fidx, productName, name, birth, gender,
+    carrier: stripPlaceholder(carrier),
     phone1, phone2, phone3, loanAmount,
-    jobType, company, joinDate, insurance4,
+    jobType: stripPlaceholder(jobType),
+    company, joinDate,
+    insurance4: stripPlaceholder(insurance4),
     bizNo1, bizNo2, bizNo3,
     salary, monthlySalary, healthInsurance,
     zipcode, address, addressDetail,
-    housingType, housingOwnership,
-    vehicleNo, vehicleName, vehicleYear, vehicleKm, vehicleOwnership, vehicleCoOwner,
-    recoveryType, courtName, caseNoYear, caseNoType, caseNoNum, refundBank, refundAccount, monthlyPayment,
+    housingType: stripPlaceholder(housingType),
+    housingOwnership: stripPlaceholder(housingOwnership),
+    vehicleNo, vehicleName,
+    vehicleYear: stripPlaceholder(vehicleYear),
+    vehicleKm,
+    vehicleOwnership: stripPlaceholder(vehicleOwnership),
+    vehicleCoOwner,
+    recoveryType: stripPlaceholder(recoveryType),
+    courtName, caseNoYear,
+    caseNoType: stripPlaceholder(caseNoType),
+    caseNoNum,
+    refundBank: stripPlaceholder(refundBank),
+    refundAccount, monthlyPayment,
     workZipcode, workAddress, workAddressDetail,
-    memo, dbSource,
+    memo,
+    dbSource: stripPlaceholder(dbSource),
     legal   // 고객적법확인 블록 (firstPath / brokerPath / writeDate / company / writer / ceo / url)
   };
 
@@ -2055,9 +2364,12 @@ function renderSettlement() {
 
 let salesSummary = null;
 let salesExecutions = [];
+let salesSummaryLoading = false;
+// 매출집계 대상월 다중선택. null=초기화 전, []=전체선택(필터 없음), [...]=선택된 월들
+let salesMonthsSelected = null;
 
 function renderSettlementSales() {
-  if (!salesSummary) loadSalesSummary();
+  if (!salesSummary && !salesSummaryLoading) loadSalesSummary();
 
   const s = salesSummary || {};
   const now = new Date();
@@ -2066,6 +2378,15 @@ function renderSettlementSales() {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
   }
+  if (salesMonthsSelected === null) salesMonthsSelected = [months[0]];
+
+  const allSelected = salesMonthsSelected.length === 0 || salesMonthsSelected.length === months.length;
+  const checkedSet = new Set(salesMonthsSelected);
+  const btnLabel = allSelected
+    ? '전체'
+    : salesMonthsSelected.length === 1
+      ? salesMonthsSelected[0]
+      : `${salesMonthsSelected[0]} 외 ${salesMonthsSelected.length - 1}개`;
 
   const execRows = salesExecutions.length > 0 ? salesExecutions.map(e => {
     const date = e.executed_date ? new Date(e.executed_date).toISOString().split('T')[0] : '-';
@@ -2078,7 +2399,25 @@ function renderSettlementSales() {
 
   return `
     <div class="filter-bar">
-      <select id="salesMonth">${months.map(m => `<option value="${m}">${m}</option>`).join('')}</select>
+      <div class="month-multi" style="position:relative;">
+        <button type="button" id="salesMonthBtn" onclick="toggleSalesMonthPanel(event)"
+          style="padding:6px 28px 6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;background:#fff;cursor:pointer;min-width:140px;text-align:left;position:relative;">
+          <span id="salesMonthBtnLabel">${btnLabel}</span>
+          <span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:10px;">▾</span>
+        </button>
+        <div id="salesMonthPanel" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:1px solid #e2e8f0;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.08);padding:8px;min-width:180px;max-height:320px;overflow-y:auto;z-index:50;">
+          <label style="display:flex;align-items:center;gap:6px;padding:6px 4px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:1px solid #e2e8f0;margin-bottom:4px;">
+            <input type="checkbox" id="salesMonthAll" ${allSelected?'checked':''} onchange="toggleSalesMonthAll(this)">
+            전체선택
+          </label>
+          ${months.map(m => `
+            <label style="display:flex;align-items:center;gap:6px;padding:4px;font-size:12px;cursor:pointer;">
+              <input type="checkbox" name="salesMonthOpt" value="${m}" ${checkedSet.has(m)||allSelected?'checked':''} onchange="onSalesMonthCheck()">
+              ${m}
+            </label>
+          `).join('')}
+        </div>
+      </div>
       <select id="salesSource"><option>전체 출처</option><option>네이버 광고</option><option>카카오 DB</option><option>자체 DB</option><option>소개/추천</option><option>홈페이지</option></select>
       <button class="btn btn-primary" onclick="loadSalesSummary()">조회</button>
       ${isAdmin() ? `
@@ -2129,23 +2468,94 @@ function renderSettlementSales() {
   `;
 }
 
+function toggleSalesMonthPanel(event) {
+  event?.stopPropagation();
+  const panel = document.getElementById('salesMonthPanel');
+  if (!panel) return;
+  const willOpen = panel.style.display === 'none';
+  panel.style.display = willOpen ? 'block' : 'none';
+  if (willOpen) {
+    setTimeout(() => {
+      const onDocClick = (e) => {
+        if (!e.target.closest('#salesMonthPanel') && !e.target.closest('#salesMonthBtn')) {
+          panel.style.display = 'none';
+          document.removeEventListener('click', onDocClick);
+        }
+      };
+      document.addEventListener('click', onDocClick);
+    }, 0);
+  }
+}
+
+function toggleSalesMonthAll(cb) {
+  document.querySelectorAll('input[name="salesMonthOpt"]').forEach(el => { el.checked = cb.checked; });
+  syncSalesMonthsState();
+}
+
+function onSalesMonthCheck() {
+  const all = document.getElementById('salesMonthAll');
+  const opts = document.querySelectorAll('input[name="salesMonthOpt"]');
+  const checkedCount = Array.from(opts).filter(o => o.checked).length;
+  if (all) all.checked = checkedCount === opts.length;
+  syncSalesMonthsState();
+}
+
+function syncSalesMonthsState() {
+  const opts = document.querySelectorAll('input[name="salesMonthOpt"]');
+  const checked = Array.from(opts).filter(o => o.checked).map(o => o.value);
+  // 모두 선택 또는 모두 해제 → [] (전체, 필터 없음)
+  salesMonthsSelected = (checked.length === opts.length || checked.length === 0) ? [] : checked;
+  const labelEl = document.getElementById('salesMonthBtnLabel');
+  if (labelEl) {
+    labelEl.textContent = salesMonthsSelected.length === 0
+      ? '전체'
+      : salesMonthsSelected.length === 1
+        ? salesMonthsSelected[0]
+        : `${salesMonthsSelected[0]} 외 ${salesMonthsSelected.length - 1}개`;
+  }
+}
+
 async function loadSalesSummary() {
+  if (salesSummaryLoading) return;
+  salesSummaryLoading = true;
   try {
-    const month = document.getElementById('salesMonth')?.value || '';
     const source = document.getElementById('salesSource')?.value || '';
+    // salesMonthsSelected: []=전체(필터 없음), [...]=선택된 월들
+    const months = Array.isArray(salesMonthsSelected) ? salesMonthsSelected : [];
+    const monthParam = months.length > 0 ? `months=${encodeURIComponent(months.join(','))}` : '';
+    const sourceParam = source && source !== '전체 출처' ? `dbSource=${encodeURIComponent(source)}` : '';
+
+    const sumQs = monthParam ? '?' + monthParam : '';
+    const execQs = [monthParam, sourceParam].filter(Boolean).join('&');
 
     const [sumRes, execRes] = await Promise.all([
-      fetch(`/api/settlement/summary${month ? '?month='+month : ''}`),
-      fetch(`/api/settlement/executions?${month ? 'month='+month+'&' : ''}${source && source !== '전체 출처' ? 'dbSource='+encodeURIComponent(source) : ''}`)
+      fetch(`/api/settlement/summary${sumQs}`),
+      fetch(`/api/settlement/executions${execQs ? '?' + execQs : ''}`)
     ]);
+
+    // 401 → 세션 만료. 무한 재렌더 방지하고 로그인 화면으로 안내.
+    if (sumRes.status === 401 || execRes.status === 401) {
+      sessionStorage.removeItem('loggedInUser');
+      alert('세션이 만료되었습니다. 다시 로그인하세요.');
+      location.reload();
+      return;
+    }
+
     const sumData = await sumRes.json();
     const execData = await execRes.json();
 
     if (sumData.success) salesSummary = sumData.data;
+    else { console.error('summary 실패:', sumData.message); salesSummary = {}; }
     if (execData.success) salesExecutions = execData.data;
+    else { console.error('executions 실패:', execData.message); salesExecutions = []; }
 
-    if (document.getElementById('salesMonth')) navigate('settlement');
-  } catch (e) { console.error(e); }
+    if (document.getElementById('salesMonthBtn')) navigate('settlement');
+  } catch (e) {
+    console.error(e);
+    salesSummary = salesSummary || {};
+  } finally {
+    salesSummaryLoading = false;
+  }
 }
 
 
@@ -2435,9 +2845,10 @@ async function loadSettlementFromDB() {
 setTimeout(() => loadSettlementFromDB(), 300);
 
 let closeData = [];
+let closeDataLoaded = false;
 
 function renderSettlementClose() {
-  if (closeData.length === 0) loadMonthlyCloses();
+  if (!closeDataLoaded) loadMonthlyCloses();
 
   const now = new Date();
   const months = [];
@@ -2496,14 +2907,21 @@ function renderSettlementClose() {
 }
 
 async function loadMonthlyCloses() {
+  if (closeDataLoaded) return;
+  closeDataLoaded = true;
   try {
     const res = await fetch('/api/settlement/monthly-closes');
     const data = await res.json();
     if (data.success) {
-      closeData = data.data;
-      if (document.getElementById('closeMonth') || closeData.length > 0) navigate('settlement');
+      closeData = data.data || [];
+      if (settlementTab === 'close') navigate('settlement');
+    } else {
+      closeDataLoaded = false;
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    closeDataLoaded = false;
+    console.error(e);
+  }
 }
 
 async function processMonthlyClose() {
@@ -2522,8 +2940,8 @@ async function processMonthlyClose() {
     const result = await res.json();
     if (result.success) {
       closeData = [];
+      closeDataLoaded = false;
       navigate('settlement');
-      setTimeout(() => loadMonthlyCloses(), 100);
       alert(`${month} 마감 완료`);
     } else {
       alert('실패: ' + result.message);
@@ -2545,8 +2963,8 @@ async function reopenMonth(month) {
     const result = await res.json();
     if (result.success) {
       closeData = [];
+      closeDataLoaded = false;
       navigate('settlement');
-      setTimeout(() => loadMonthlyCloses(), 100);
       alert(`${month} 마감 해제 완료`);
     } else {
       alert('실패: ' + result.message);
@@ -2658,6 +3076,22 @@ function parsePolicyExcel(input) {
       const lines = text.split('\n').filter(l => l.trim());
       let currentCategory = '';
 
+      // CSV 한 줄을 따옴표 인식해서 분할 (셀 안의 콤마 보존).
+      // 예전엔 line.split(',') 만 써서 '엠케이(회생,파산)' 같은 셀이 두 컬럼으로 깨졌음.
+      const splitCsv = (line) => {
+        const out = []; let cur = ''; let inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+            else inQ = !inQ;
+          } else if (ch === ',' && !inQ) { out.push(cur); cur = ''; }
+          else { cur += ch; }
+        }
+        out.push(cur);
+        return out.map(c => c.trim());
+      };
+
       // 숫자/요율 셀 판별. "2.60%", "1.85", "0.5" 모두 true.
       const isNumericCell = (s) => {
         const t = String(s || '').replace(/%/g, '').trim();
@@ -2668,9 +3102,21 @@ function parsePolicyExcel(input) {
         const t = String(s || '').trim();
         return ['금융사','상품구분','지급수당','수수료','인증','대출구분','카테고리'].some(k => t.includes(k));
       };
+      // "2.4/1.65%" 처럼 그룹의 기본 수수료를 헤더 셀에 적은 경우 — 카테고리로 받지 않음
+      const looksLikeRateText = (s) => /^\d+(\.\d+)?\s*\/\s*\d+(\.\d+)?\s*%?$/.test(String(s || '').trim());
+      // '통' '통합' 같은 자리표시자 셀
+      const isPlaceholder = (s) => {
+        const t = String(s || '').trim();
+        return t === '통' || t === '통합' || t === '-' || t === '·';
+      };
+      // 인증 정규화: X/O 만 받고 그 외(별표 *, 메모, 빈값)는 모두 빈값
+      const normAuth = (s) => {
+        const t = String(s || '').trim().toUpperCase();
+        return (t === 'X' || t === 'O') ? t : '';
+      };
 
       lines.forEach(line => {
-        const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        const cols = splitCsv(line).map(c => c.replace(/^"|"$/g, ''));
 
         // 헤더/설명 행 스킵
         if (cols.some(c => ['금융사별 수수료','소비자 금융사별 수수료','수수료 색상'].some(k => c.includes(k)))) return;
@@ -2681,8 +3127,8 @@ function parsePolicyExcel(input) {
         const firstRateIdx = cols.findIndex(c => isNumericCell(c));
 
         if (firstRateIdx === -1) {
-          // 텍스트만 있는 행 = 카테고리 정의 행. 가장 의미있는 마지막 텍스트를 카테고리로 기억.
-          const texts = cols.filter(c => c && c.length > 1 && !isHeaderWord(c));
+          // 텍스트만 있는 행 = 그룹 헤더 후보. 수수료 표기("2.4/1.65%")는 카테고리로 받지 않음.
+          const texts = cols.filter(c => c && c.length > 1 && !isHeaderWord(c) && !looksLikeRateText(c));
           if (texts.length > 0) currentCategory = texts[texts.length - 1];
           return;
         }
@@ -2691,23 +3137,41 @@ function parsePolicyExcel(input) {
         const leftTexts = cols.slice(0, firstRateIdx).filter(c => c && c !== '%' && !isHeaderWord(c));
         // 같은 텍스트 연속 중복 제거 ('오토론','오토론' → '오토론' 한 번)
         const dedup = leftTexts.filter((v, i, a) => i === 0 || v !== a[i - 1]);
-        if (dedup.length === 0) return;
 
-        const product = dedup[dedup.length - 1]; // 마지막 = 금융사
-        if (dedup.length > 1) currentCategory = dedup[dedup.length - 2]; // 그 앞 = 상품구분
+        // product / category 결정. dedup 마지막이 '통' 같은 placeholder면
+        // 이 행은 단일 수당률 그룹 자체(currentCategory가 진짜 금융사명).
+        let product = dedup[dedup.length - 1] || '';
+        let category = (dedup.length > 1) ? dedup[dedup.length - 2] : currentCategory;
+        if (isPlaceholder(product)) {
+          product = currentCategory || (dedup.length > 1 ? dedup[dedup.length - 2] : '');
+          category = '';
+        } else if (dedup.length > 1) {
+          currentCategory = dedup[dedup.length - 2];
+        }
 
-        const rateUnder = (cols[firstRateIdx] || '').replace(/%$/,'').trim();
-        const rateOver  = (cols[firstRateIdx + 1] || '').replace(/%$/,'').trim();
-        const auth      = cols[firstRateIdx + 2] || '';
+        // 수당률: 다음 셀이 숫자면 두 단계(미만/이상), 아니면 단일 수당률 모드.
+        // 단일 모드에선 그 자리 셀이 사실 인증값(X/O)이므로 auth 로 가져온다.
+        const rateUnderRaw = (cols[firstRateIdx] || '').replace(/%$/,'').trim();
+        const nextRaw = (cols[firstRateIdx + 1] || '').replace(/%$/,'').trim();
+        let rateUnder, rateOver, authRaw;
+        if (isNumericCell(nextRaw)) {
+          rateUnder = rateUnderRaw;
+          rateOver  = nextRaw;
+          authRaw   = cols[firstRateIdx + 2] || '';
+        } else {
+          rateUnder = rateUnderRaw;
+          rateOver  = '';
+          authRaw   = nextRaw;
+        }
 
         if (!product || isNumericCell(product)) return;
 
         allData.push({
-          category: currentCategory,
+          category,
           product,
           rateUnder,
           rateOver,
-          auth,
+          auth: normAuth(authRaw),
         });
       });
       processed++;
@@ -3239,6 +3703,10 @@ setTimeout(() => loadNotifications(), 1000);
 // ========================================
 // 문서 변환 (PDF → TIFF)
 // ========================================
+// 변환된 TIF 보관소: { id, name, blob, size } — 페이지 재렌더와 무관하게 살아있어야 하므로 모듈 전역에 둠.
+let convertedTifs = [];
+let tifIdSeq = 1;
+
 function renderDocConvert() {
   return `
     <div class="panel">
@@ -3264,11 +3732,27 @@ function renderDocConvert() {
               </td>
               <th>출력 형식</th>
               <td>
-                <select id="docFormat" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+                <select id="docFormat" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;" onchange="onDocFormatChange()">
                   <option value="tiff" selected>TIFF</option>
                   <option value="png">PNG</option>
                   <option value="jpg">JPG</option>
                 </select>
+              </td>
+            </tr>
+            <tr>
+              <th>압축</th>
+              <td>
+                <select id="docCompression" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;" onchange="onDocCompressionChange()">
+                  <option value="jpeg" selected>JPEG (작게, 컬러/그레이)</option>
+                  <option value="group4">Group4 (최소, 흑백전용)</option>
+                  <option value="zip">ZIP (무손실)</option>
+                  <option value="lzw">LZW (무손실, 호환성↑)</option>
+                </select>
+              </td>
+              <th>JPEG 품질</th>
+              <td>
+                <input type="number" id="docQuality" value="80" min="10" max="100" style="width:70px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+                <span style="font-size:11px;color:#64748b;margin-left:6px;">10~100 (낮을수록 작음)</span>
               </td>
             </tr>
           </tbody>
@@ -3285,13 +3769,212 @@ function renderDocConvert() {
         <div id="docConvertResults" style="margin-top:12px;"></div>
       </div>
     </div>
+
+    <div class="panel" style="margin-top:12px;">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <h2>TIF 합치기 <span style="font-size:11px;color:#94a3b8;font-weight:400;margin-left:6px;">선택한 파일을 순서대로 하나의 다중페이지 TIF로 결합</span></h2>
+        <div>
+          <input type="file" id="tifMergeAdd" accept=".tif,.tiff" multiple style="display:none;" onchange="addTifsFromInput(event)">
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('tifMergeAdd').click()" style="font-size:11px;padding:4px 10px;">TIF 추가</button>
+          <button class="btn btn-outline btn-sm" onclick="clearTifList()" style="font-size:11px;padding:4px 10px;margin-left:4px;">목록 비우기</button>
+        </div>
+      </div>
+      <div class="panel-body" style="padding:0;">
+        <div id="tifMergeList">${renderTifMergeListBody()}</div>
+        <div style="padding:10px 16px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:11px;color:#64748b;">
+            <label style="cursor:pointer;"><input type="checkbox" id="tifSelectAll" onchange="toggleTifSelectAll(this)" style="vertical-align:middle;margin-right:4px;">전체 선택</label>
+          </div>
+          <div>
+            <button class="btn btn-primary" onclick="mergeTifs()" style="padding:7px 18px;">선택 파일 합치기</button>
+          </div>
+        </div>
+        <div id="tifMergeProgress" style="display:none;padding:8px 16px;border-top:1px solid #e2e8f0;background:#fefce8;">
+          <span style="font-size:11px;color:#854d0e;">합치는 중...</span>
+        </div>
+        <div id="tifMergeResult" style="padding:0;"></div>
+      </div>
+    </div>
   `;
+}
+
+function renderTifMergeListBody() {
+  if (convertedTifs.length === 0) {
+    return `<div style="padding:24px;text-align:center;font-size:12px;color:#94a3b8;">변환 완료된 TIF 가 여기에 자동으로 추가됩니다. 또는 우측 [TIF 추가] 버튼으로 직접 올릴 수 있습니다.</div>`;
+  }
+  const rows = convertedTifs.map((t, i) => {
+    const sizeKB = (t.size / 1024).toFixed(0);
+    return `<tr data-tif-id="${t.id}">
+      <td style="width:32px;text-align:center;"><input type="checkbox" class="tif-row-check" data-tif-id="${t.id}" ${t.selected ? 'checked' : ''} onchange="onTifRowCheck(${t.id}, this.checked)"></td>
+      <td style="width:36px;text-align:center;color:#64748b;font-size:11px;">${i+1}</td>
+      <td style="font-size:12px;">${escapeHtmlSafe(t.name)}</td>
+      <td style="width:80px;font-size:11px;color:#64748b;text-align:right;">${sizeKB} KB</td>
+      <td style="width:140px;text-align:right;white-space:nowrap;padding-right:10px;">
+        <button class="btn btn-outline btn-sm" onclick="moveTif(${t.id}, -1)" ${i===0?'disabled':''} style="padding:2px 7px;font-size:11px;">▲</button>
+        <button class="btn btn-outline btn-sm" onclick="moveTif(${t.id}, 1)" ${i===convertedTifs.length-1?'disabled':''} style="padding:2px 7px;font-size:11px;">▼</button>
+        <a href="${t.url}" download="${escapeHtmlSafe(t.name)}" class="btn btn-outline btn-sm" style="padding:2px 7px;font-size:11px;text-decoration:none;">DL</a>
+        <button class="btn btn-outline btn-sm" onclick="removeTif(${t.id})" style="padding:2px 7px;font-size:11px;color:#dc2626;">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="background:#f1f5f9;">
+      <th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e2e8f0;"></th>
+      <th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:center;border-bottom:1px solid #e2e8f0;">순서</th>
+      <th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:left;border-bottom:1px solid #e2e8f0;">파일명</th>
+      <th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #e2e8f0;">크기</th>
+      <th style="padding:6px 8px;font-size:11px;font-weight:600;text-align:right;border-bottom:1px solid #e2e8f0;padding-right:10px;">작업</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function escapeHtmlSafe(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function refreshTifMergeList() {
+  const el = document.getElementById('tifMergeList');
+  if (el) el.innerHTML = renderTifMergeListBody();
+  const all = document.getElementById('tifSelectAll');
+  if (all) all.checked = convertedTifs.length > 0 && convertedTifs.every(t => t.selected);
+}
+
+function addTifToList(name, blob) {
+  const url = URL.createObjectURL(blob);
+  convertedTifs.push({ id: tifIdSeq++, name, blob, size: blob.size, url, selected: true });
+  refreshTifMergeList();
+}
+
+function addTifsFromInput(ev) {
+  const files = ev.target.files;
+  if (!files) return;
+  for (const f of files) addTifToList(f.name, f);
+  ev.target.value = '';
+}
+
+function moveTif(id, dir) {
+  const i = convertedTifs.findIndex(t => t.id === id);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= convertedTifs.length) return;
+  [convertedTifs[i], convertedTifs[j]] = [convertedTifs[j], convertedTifs[i]];
+  refreshTifMergeList();
+}
+
+function removeTif(id) {
+  const t = convertedTifs.find(x => x.id === id);
+  if (t && t.url) { try { URL.revokeObjectURL(t.url); } catch (e) {} }
+  convertedTifs = convertedTifs.filter(x => x.id !== id);
+  refreshTifMergeList();
+}
+
+function clearTifList() {
+  if (convertedTifs.length === 0) return;
+  if (!confirm('TIF 합치기 목록을 비우시겠습니까?')) return;
+  for (const t of convertedTifs) { if (t.url) { try { URL.revokeObjectURL(t.url); } catch (e) {} } }
+  convertedTifs = [];
+  refreshTifMergeList();
+  const r = document.getElementById('tifMergeResult');
+  if (r) r.innerHTML = '';
+}
+
+function onTifRowCheck(id, checked) {
+  const t = convertedTifs.find(x => x.id === id);
+  if (t) t.selected = checked;
+  const all = document.getElementById('tifSelectAll');
+  if (all) all.checked = convertedTifs.length > 0 && convertedTifs.every(t => t.selected);
+}
+
+function toggleTifSelectAll(cb) {
+  const checked = cb.checked;
+  for (const t of convertedTifs) t.selected = checked;
+  refreshTifMergeList();
+}
+
+async function mergeTifs() {
+  const targets = convertedTifs.filter(t => t.selected);
+  if (targets.length < 2) {
+    alert('합칠 TIF 를 2개 이상 선택해주세요.');
+    return;
+  }
+  const progress = document.getElementById('tifMergeProgress');
+  const result = document.getElementById('tifMergeResult');
+  progress.style.display = 'block';
+  result.innerHTML = '';
+
+  try {
+    const fd = new FormData();
+    for (const t of targets) fd.append('files', t.blob, t.name);
+
+    const res = await fetch('/api/doc-convert/merge-tif', { method: 'POST', body: fd });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: '합치기 실패' }));
+      result.innerHTML = `<div style="padding:8px 16px;background:#fef2f2;border-top:1px solid #fecaca;font-size:12px;color:#991b1b;">✗ ${escapeHtmlSafe(err.message || '합치기 실패')}</div>`;
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const outName = `merged-${new Date().toISOString().slice(0,10)}-${Date.now().toString().slice(-4)}.tif`;
+    const sizeKB = (blob.size / 1024).toFixed(0);
+
+    result.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;background:#f0fdf4;border-top:1px solid #bbf7d0;">
+      <span style="font-size:12px;"><span style="color:#16a34a;font-weight:700;">✓</span> ${targets.length}개 파일을 합쳤습니다 — ${escapeHtmlSafe(outName)} (${sizeKB} KB)</span>
+      <span>
+        <a href="${url}" download="${outName}" class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px;">다운로드</a>
+        <button class="btn btn-outline btn-sm" onclick="addMergedTifToList('${outName}', '${url}', ${blob.size})" style="font-size:11px;padding:3px 10px;margin-left:4px;">목록에 추가</button>
+      </span>
+    </div>`;
+    // 다음 합치기에서 재사용할 수 있도록 blob 보관
+    window.__lastMergedTifBlob = blob;
+  } catch (e) {
+    result.innerHTML = `<div style="padding:8px 16px;background:#fef2f2;border-top:1px solid #fecaca;font-size:12px;color:#991b1b;">✗ 서버 연결 실패: ${escapeHtmlSafe(e.message)}</div>`;
+  } finally {
+    progress.style.display = 'none';
+  }
+}
+
+function addMergedTifToList(name, url, size) {
+  const blob = window.__lastMergedTifBlob;
+  if (!blob) { alert('병합 결과가 만료되었습니다. 다시 합치기를 실행해주세요.'); return; }
+  convertedTifs.push({ id: tifIdSeq++, name, blob, size, url, selected: false });
+  refreshTifMergeList();
+}
+
+// 출력 형식 / 압축 선택 변경 시 UI 동기화
+//   - PNG 출력: 압축 선택은 의미 없음 → 비활성화
+//   - JPG 출력: JPEG 품질만 의미 있음 → 압축 비활성화, 품질 활성화
+//   - TIFF 출력: 압축 선택 활성화, JPEG 일 때만 품질 활성화
+function onDocFormatChange() {
+  const format = document.getElementById('docFormat').value;
+  const comp = document.getElementById('docCompression');
+  const quality = document.getElementById('docQuality');
+  if (format === 'tiff') {
+    comp.disabled = false;
+    quality.disabled = comp.value !== 'jpeg';
+  } else if (format === 'jpg') {
+    comp.disabled = true;
+    quality.disabled = false;
+  } else {
+    comp.disabled = true;
+    quality.disabled = true;
+  }
+}
+function onDocCompressionChange() {
+  const format = document.getElementById('docFormat').value;
+  const comp = document.getElementById('docCompression').value;
+  const quality = document.getElementById('docQuality');
+  if (format === 'tiff') quality.disabled = comp !== 'jpeg';
 }
 
 async function startDocConvert() {
   const fileInput = document.getElementById('docFiles');
   const dpi = document.getElementById('docDpi').value;
   const format = document.getElementById('docFormat').value;
+  const compression = document.getElementById('docCompression').value;
+  const quality = document.getElementById('docQuality').value;
   const progressDiv = document.getElementById('docConvertProgress');
   const statusDiv = document.getElementById('docConvertStatus');
   const resultsDiv = document.getElementById('docConvertResults');
@@ -3313,6 +3996,8 @@ async function startDocConvert() {
     formData.append('file', file);
     formData.append('dpi', dpi);
     formData.append('format', format);
+    formData.append('compression', compression);
+    formData.append('quality', quality);
 
     try {
       const res = await fetch('/api/doc-convert', {
@@ -3325,8 +4010,12 @@ async function startDocConvert() {
         const url = URL.createObjectURL(blob);
         const outName = file.name.replace(/\.(pdf|jpg|jpeg|png|bmp|gif|tif|tiff)$/i, '') + '.' + format;
         const size = (blob.size / 1024).toFixed(0);
+        // TIFF 출력은 합치기 목록에도 자동으로 적재 (사용자가 바로 순서 잡고 합칠 수 있도록)
+        if (format === 'tiff') {
+          addTifToList(outName, blob);
+        }
         html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;margin-bottom:4px;">
-          <span style="font-size:12px;"><span style="color:#16a34a;font-weight:700;">✓</span> ${outName} (${size}KB)</span>
+          <span style="font-size:12px;"><span style="color:#16a34a;font-weight:700;">✓</span> ${outName} (${size}KB)${format === 'tiff' ? ' <span style="color:#64748b;">· TIF 합치기 목록에 추가됨</span>' : ''}</span>
           <a href="${url}" download="${outName}" class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 10px;">다운로드</a>
         </div>`;
       } else {
@@ -3525,7 +4214,7 @@ function viewCustomer(id) {
               <table class="info-table">
                 <tbody>
                   <tr><th>고객명</th><td>${c.name}</td><th>주민등록번호</th><td>${c.ssn}</td></tr>
-                  <tr><th>만 나이</th><td>${c.age}세</td><th>성별</th><td>${gender}</td></tr>
+                  <tr><th>만 나이</th><td>${(ageFromSsn(c.ssn)!=null)?(ageFromSsn(c.ssn)+'세'):(c.age?c.age+'세':'-')}</td><th>성별</th><td>${gender}</td></tr>
                   <tr><th>휴대전화</th><td>${c.phone}</td><th>보조 연락처</th><td>${c.phone2 || '-'}</td></tr>
                   <tr><th>이메일</th><td>${c.email}</td><th>DB 유입출처</th><td>${c.dbSource}</td></tr>
                   <tr><th>초본 주소</th><td colspan="3">${c.residenceAddress}</td></tr>
@@ -3994,11 +4683,11 @@ function loadLedgerRecommendations() {
   const century = (ssn.length >= 7 && (ssn.charAt(6) === '3' || ssn.charAt(6) === '4')) ? 2000 : 1900;
   const age = new Date().getFullYear() - (century + birthYear);
 
-  const jobMap = {'가입':'직장인(4대가입)','미가입':'직장인(미가입)','선택':''};
+  const jobMap = {'가입':'직장인(4대가입)','미가입':'직장인(4대미가입)','선택':''};
   const has4 = c.has_4_insurance || '';
-  let jobType = c.employment_type || '';
+  let jobType = document.getElementById('lr-jobType')?.value || c.employment_type || '';
   if (!jobType && has4) jobType = jobMap[has4] || '';
-  if (!jobType) jobType = '직장인(4대가입)';
+  if (!jobType) jobType = '';
 
   const customer = {
     jobType,
@@ -4351,8 +5040,9 @@ function renderCustomerLedger() {
 
   const c = ledgerCustomer;
   const ssn = c.ssn || '';
-  const genderChar = ssn.length >= 8 ? ssn.charAt(7) : '';
-  const gender = (genderChar==='1'||genderChar==='3') ? '남' : (genderChar==='2'||genderChar==='4') ? '여' : '-';
+  const computedAge = ageFromSsn(ssn);
+  const ageStr = (computedAge != null) ? (computedAge + '세') : (c.age ? c.age + '세' : '');
+  const gender = genderFromSsn(ssn) || '-';
   const creditScore = c.credit_score || c.creditScore || 0;
   const creditColor = creditScore>=700?'#16a34a':creditScore>=600?'#d97706':'#ef4444';
   const status = c.status || '리드';
@@ -4386,7 +5076,7 @@ function renderCustomerLedger() {
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
             <tr><th>고객명</th><td><input type="text" value="${c.name||''}" ${ro}></td><th>주민등록번호</th><td><input type="text" value="${formatSsn(ssn)}" ${ro}></td></tr>
-            <tr><th>만 나이</th><td><input type="text" value="${c.age||''}세" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td><th>성별</th><td><input type="text" value="${gender}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
+            <tr><th>만 나이</th><td><input type="text" value="${ageStr}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td><th>성별</th><td><input type="text" value="${gender}" data-always-readonly="1" readonly style="background:#f1f5f9;border-color:#e2e8f0;"></td></tr>
             <tr><th>통신사</th><td><input type="text" value="${c.carrier||'-'}" ${ro}></td><th>보조 연락처</th><td><input type="text" value="${c.phone2 || '-'}" ${ro}></td></tr>
             <tr><th>휴대전화</th><td><input type="text" value="${formatPhone(c.phone||'')}" ${ro}></td><th>4대보험</th><td><input type="text" value="${c.has_4_insurance||'-'}" ${ro}></td></tr>
             <tr><th>이메일</th><td><input type="text" value="${c.email||''}" ${ro}></td><th>DB 유입출처</th><td><input type="text" value="${dbSource}" ${ro}></td></tr>
@@ -4687,7 +5377,8 @@ function renderCustomerEdit() {
       <div style="flex:1;min-width:0;">
         <div class="panel"><div class="panel-header"><h2>인적 사항</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>고객명 *</th><td><input type="text" id="edit-name" value="${c.name||''}"></td><th>주민등록번호 *</th><td><input type="text" id="edit-ssn" value="${formatSsn(c.ssn||'')}" oninput="this.value=formatSsn(this.value)"></td></tr>
+            <tr><th>고객명 *</th><td><input type="text" id="edit-name" value="${c.name||''}"></td><th>주민등록번호 *</th><td><input type="text" id="edit-ssn" value="${formatSsn(c.ssn||'')}" oninput="this.value=formatSsn(this.value);calcAge();"></td></tr>
+            <tr><th>만 나이</th><td><input type="text" id="edit-age" value="${(ageFromSsn(c.ssn)!=null)?(ageFromSsn(c.ssn)+'세'):''}" readonly style="background:#f1f5f9;"></td><th>성별</th><td><input type="text" id="edit-gender" value="${genderFromSsn(c.ssn)}" readonly style="background:#f1f5f9;"></td></tr>
             <tr><th>통신사</th><td><select id="edit-carrier">${selDb(['선택','SK','KT','LGU+','알뜰','SK알뜰','KT알뜰','LG알뜰','기타'], c.carrier||'선택')}</select></td><th>보조 연락처</th><td><input type="text" id="edit-phone2" value="${c.phone2||''}"></td></tr>
             <tr><th>휴대전화 *</th><td><input type="text" id="edit-phone" value="${formatPhone(c.phone||'')}" oninput="this.value=formatPhone(this.value)"></td><th>4대보험</th><td><select id="edit-insurance">${selDb(['선택','가입','미가입','모름'], c.has_4_insurance||'선택')}</select></td></tr>
             <tr><th>이메일</th><td><input type="text" id="edit-email" value="${c.email||''}"></td><th>DB 유입출처 *</th><td><select id="edit-dbsource">${selDb(dbOpts, c.db_source||'선택하세요')}</select></td></tr>
@@ -4699,7 +5390,7 @@ function renderCustomerEdit() {
 
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>직장명</th><td><input type="text" id="edit-company" value="${c.company||''}"></td><th>고용형태</th><td><select id="edit-emptype">${selDb(['선택','정규직','계약직','프리랜서','자영업','무직'], c.employment_type||'선택')}</select></td></tr>
+            <tr><th>직장명</th><td><input type="text" id="edit-company" value="${c.company||''}"></td><th>고용형태</th><td><select id="edit-emptype">${selDb(['선택','직장인(4대가입)','직장인(4대미가입)','개인사업자','법인사업자','주부','청년','프리랜서','무직','기타'], c.employment_type||'선택')}</select></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="edit-compaddr" style="flex:1;" value="${c.company_addr||''}" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('edit-compaddr')">검색</button><input type="text" id="edit-compaddr-detail" style="width:200px;" placeholder="상세주소"></div></td></tr>
             <tr><th>직장 전화</th><td><input type="text" id="edit-compphone" value="${c.company_phone||''}"></td><th>입사일자</th><td><input type="text" id="edit-joindate" value="${c.join_date||''}" placeholder="2020-01-15"></td></tr>
             <tr><th>연봉</th><td><input type="text" id="edit-salary" value="${c.salary||''}"></td><th>월 환산</th><td><input type="text" value="${c.salary ? Math.round(c.salary/12)+'만원' : ''}" readonly style="background:#f1f5f9;"></td></tr>
@@ -4908,7 +5599,7 @@ function renderCustomerRegister() {
 
         <div class="panel"><div class="panel-header"><h2>직장 정보</h2></div><div class="panel-body" style="padding:0;">
           <table class="info-table"><tbody>
-            <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>정규직</option><option>계약직</option><option>프리랜서</option><option>자영업</option><option>무직</option></select></td></tr>
+            <tr><th>직장명</th><td><input type="text" id="reg-company" placeholder="직장명"></td><th>고용형태</th><td><select id="reg-emptype"><option>선택</option><option>직장인(4대가입)</option><option>직장인(4대미가입)</option><option>개인사업자</option><option>법인사업자</option><option>주부</option><option>청년</option><option>프리랜서</option><option>무직</option><option>기타</option></select></td></tr>
             <tr><th>4대보험</th><td><select id="reg-insurance">${selDb(['선택','가입','미가입','모름'], pf.has4Insurance||'선택')}</select></td><th></th><td></td></tr>
             <tr><th>직장 주소</th><td colspan="3"><div style="display:flex;gap:4px;"><input type="text" id="reg-compaddr" style="flex:1;" placeholder="주소 검색" readonly><button class="btn btn-sm btn-primary" onclick="openAddrSearchSingle('reg-compaddr')">검색</button><input type="text" id="reg-compaddr-detail" style="width:200px;" placeholder="상세주소 입력"></div></td></tr>
             <tr><th>직장 전화</th><td><input type="text" id="reg-compphone" placeholder="02-0000-0000"></td><th>입사일자</th><td><input type="text" id="reg-joindate" placeholder="2020-01-15"></td></tr>
@@ -5099,7 +5790,7 @@ function renderRecommendations() {
 
   const customer = {
     age: c.age || 0,
-    jobType: jobTypeMap[empType] || '직장인(4대가입)',
+    jobType: jobTypeMap[empType] || c?.employment_type || '',
     vehicleNo: vehicleNoForm,
     vehicleYear: parseInt(vehicleYearForm) || 0,
     vehicleKm: parseInt(String(vehicleKmForm).replace(/[^0-9]/g,'')) || 0,
@@ -5379,35 +6070,26 @@ async function openProductGuide(el) {
   const productName = el.dataset.productName;
   const fidx = el.dataset.fidx;
 
-  // fidx가 있으면 바로 가이드 가져오기 시도
   if (fidx && fidx !== '' && fidx !== 'undefined') {
     try {
       showGuideModal(productName, { loading: true });
       const res = await fetch('/api/crawler/product-guide/' + fidx);
       const text = await res.text();
       let data;
-      try { data = JSON.parse(text); } catch { showGuideModal(productName, null); return; }
-
-      // 세션 만료는 재로그인 유도
-      if (res.status === 401 && data.code === 'LMASTER_SESSION_EXPIRED') {
-        crawlerLoggedIn = false;
-        showGuideModal(productName, null);
-        return;
-      }
-
-      // 가이드 페이지 로드 실패 (세션 OK 이지만 페이지 리다이렉트 등)
-      if (!data.success && data.code === 'LMASTER_GUIDE_NOT_FOUND') {
-        showGuideModal(productName, { error: data.message || '상품 가이드 페이지를 불러올 수 없습니다. 론앤마스터에서 직접 확인하세요.' });
-        return;
-      }
-
+      try { data = JSON.parse(text); } catch { showGuideModal(productName, { error: '서버 응답 오류' }); return; }
       if (data.success && data.data && data.data.body) {
         showGuideModal(productName, data.data);
       } else {
-        showGuideModal(productName, null);
+        const sr = await fetch('/api/crawler/status');
+        const sd = await sr.json();
+        if (sd.success && sd.data && sd.data.isLoggedIn) {
+          showGuideModal(productName, { error: '상품 가이드를 불러올 수 없습니다. 다시 시도해주세요.' });
+        } else {
+          showGuideModal(productName, null);
+        }
       }
     } catch (e) {
-      showGuideModal(productName, null);
+      showGuideModal(productName, { error: '연결 오류: ' + e.message });
     }
   } else {
     showGuideModal(productName, null);
@@ -5420,7 +6102,9 @@ function showGuideModal(productName, guideData) {
 
   let content = '';
 
-  if (!guideData) {
+  if (guideData && guideData.error) {
+    content = '<div style="text-align:center;padding:30px 20px;"><div style="font-size:14px;color:#dc2626;margin-bottom:16px;">' + guideData.error + '</div><button class="btn btn-outline btn-sm" onclick="closeGuideModal();">닫기</button></div>';
+  } else if (!guideData) {
     content = `
       <div style="text-align:center;padding:30px 20px;">
         <div style="font-size:14px;color:#475569;margin-bottom:16px;">론앤마스터 연동이 필요합니다.</div>
@@ -5460,9 +6144,22 @@ function showGuideModal(productName, guideData) {
       return `<div style="font-size:11px;line-height:1.7;color:#334155;">${l}</div>`;
     }).join('');
 
-    const files = (guideData.buttons || []).filter(b => b !== '닫기' && b !== '🔍').map(f =>
-      `<span style="display:inline-block;margin:2px 3px;padding:3px 8px;background:#3b82f6;color:#fff;border-radius:4px;font-size:10px;cursor:pointer;">${f}</span>`
-    ).join('');
+    // buttons: 백엔드에서 객체({label,action,kind,id,flag,url})로 내려오지만,
+    // 옛 캐시(문자열 배열)도 호환. action 이 있으면 클릭 가능 버튼/링크, 없으면 단순 칩.
+    const escAttr = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const files = (guideData.buttons || [])
+      .map(b => (typeof b === 'string') ? { label: b } : (b || {}))
+      .filter(b => b.label && b.label !== '닫기' && b.label !== '🔍')
+      .map(b => {
+        if (b.action === 'download') {
+          const oc = `downloadLmasterDoc('${escAttr(b.kind)}','${escAttr(b.id||'')}','${escAttr(b.flag||'')}','${escAttr(b.label).replace(/'/g, '&#39;')}')`;
+          return `<button type="button" onclick="${oc}" title="다운로드: ${escAttr(b.label)}" style="display:inline-block;margin:2px 3px;padding:3px 10px;background:#ede9fe;color:#5b21b6;border:1px solid #c4b5fd;border-radius:4px;font-size:11px;cursor:pointer;">📄 ${escAttr(b.label)}</button>`;
+        }
+        if (b.action === 'auth' && b.url) {
+          return `<a href="${escAttr(b.url)}" target="_blank" rel="noopener" title="외부 인증 사이트 열기" style="display:inline-block;margin:2px 3px;padding:3px 10px;background:#ecfccb;color:#3f6212;border:1px solid #bef264;border-radius:4px;font-size:11px;text-decoration:none;">🔐 ${escAttr(b.label)}</a>`;
+        }
+        return `<span style="display:inline-block;margin:2px 3px;padding:3px 8px;background:#94a3b8;color:#fff;border-radius:4px;font-size:10px;">${escAttr(b.label)}</span>`;
+      }).join('');
 
     content = `
       <div style="padding:10px 14px;">

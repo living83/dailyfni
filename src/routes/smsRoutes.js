@@ -3,6 +3,36 @@ const router = express.Router();
 const { query } = require('../database/db');
 const { sendSms, sendSmsBulk, syncSmsResults } = require('../drivers/sms/MsghubDriver');
 
+// 템플릿 변수명 → 고객 데이터 추출 함수.
+// LGU+ 메시지허브 통합템플릿이 #{고객} 처럼 한글 키를 쓰므로 한글 키만 매핑.
+// 새 변수 추가될 땐 여기에 추가.
+const VAR_RESOLVERS = {
+  '고객':     c => c.name,
+  '고객명':   c => c.name,
+  '이름':     c => c.name,
+  '전화':     c => c.phone,
+  '휴대전화': c => c.phone,
+  '연락처':   c => c.phone,
+};
+
+// 템플릿 variables 컬럼(JSON array)과 고객 정보로 KV_JSON 문자열 생성.
+// 빈 객체 '{}' 로 보내면 메시지허브 agent 가 'json value invalid' 로 거부함.
+function buildKvJson(templateVariables, customer) {
+  if (!templateVariables) return '{}';
+  let vars;
+  try {
+    vars = typeof templateVariables === 'string' ? JSON.parse(templateVariables) : templateVariables;
+  } catch (e) { return '{}'; }
+  if (!Array.isArray(vars) || vars.length === 0) return '{}';
+
+  const obj = {};
+  for (const key of vars) {
+    const fn = VAR_RESOLVERS[key];
+    obj[key] = fn ? String(fn(customer) || '') : '';
+  }
+  return JSON.stringify(obj);
+}
+
 // ========== 템플릿 CRUD ==========
 
 // 템플릿 목록 조회
@@ -94,11 +124,13 @@ router.post('/customers/:id/sms', async (req, res) => {
     // 템플릿 코드 결정 (templateId 우선)
     let templateCode = reqTemplateCode;
     let templateName = '';
+    let templateVariables = null;
     if (templateId) {
-      const [t] = await query('SELECT name, template_code FROM sms_templates WHERE id = ?', [templateId]);
+      const [t] = await query('SELECT name, template_code, variables FROM sms_templates WHERE id = ?', [templateId]);
       if (!t) return res.status(404).json({ success: false, message: '템플릿을 찾을 수 없습니다.' });
       templateCode = t.template_code;
       templateName = t.name;
+      templateVariables = t.variables;
     }
     if (!templateCode) {
       return res.status(400).json({ success: false, message: 'templateId 또는 templateCode 필요' });
@@ -110,7 +142,7 @@ router.post('/customers/:id/sms', async (req, res) => {
       phone: String(customer.phone || '').replace(/[^0-9]/g, ''),
       templateCode,
       templateName,
-      kvJson: kvJson || '{}',
+      kvJson: kvJson || buildKvJson(templateVariables, customer),
       content: content || '',
       sentBy,
     });
@@ -136,11 +168,13 @@ router.post('/sms/send-bulk', async (req, res) => {
     // 템플릿 코드 결정
     let templateCode = reqTemplateCode;
     let templateName = '';
+    let templateVariables = null;
     if (templateId) {
-      const [t] = await query('SELECT name, template_code FROM sms_templates WHERE id = ?', [templateId]);
+      const [t] = await query('SELECT name, template_code, variables FROM sms_templates WHERE id = ?', [templateId]);
       if (!t) return res.status(404).json({ success: false, message: '템플릿을 찾을 수 없습니다.' });
       templateCode = t.template_code;
       templateName = t.name;
+      templateVariables = t.variables;
     }
     if (!templateCode) {
       return res.status(400).json({ success: false, message: 'templateId 또는 templateCode 필요' });
@@ -161,7 +195,7 @@ router.post('/sms/send-bulk', async (req, res) => {
       customerId: c.id,
       customerName: c.name,
       phone: String(c.phone || '').replace(/[^0-9]/g, ''),
-      kvJson: (kvJsonByCustomerId && kvJsonByCustomerId[c.id]) || '{}',
+      kvJson: (kvJsonByCustomerId && kvJsonByCustomerId[c.id]) || buildKvJson(templateVariables, c),
     }));
 
     const result = await sendSmsBulk({

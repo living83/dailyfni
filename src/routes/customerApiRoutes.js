@@ -4,6 +4,27 @@ const { query } = require('../database/db');
 const { logAudit } = require('../database/auditHelper');
 const { maskCustomerList, maskCustomer } = require('../middleware/maskData');
 
+// 주민번호 → 만 나이 (생일 미경과 시 -1)
+function ageFromSsn(rawSsn) {
+  const ssn = (rawSsn || '').replace(/-/g, '');
+  if (ssn.length < 7) return 0;
+  const g = ssn.charAt(6);
+  let century;
+  if (g === '1' || g === '2' || g === '5' || g === '6') century = 1900;
+  else if (g === '3' || g === '4' || g === '7' || g === '8') century = 2000;
+  else if (g === '9' || g === '0') century = 1800;
+  else return 0;
+  const birthYear = century + parseInt(ssn.substring(0, 2));
+  const birthMonth = parseInt(ssn.substring(2, 4));
+  const birthDay = parseInt(ssn.substring(4, 6));
+  if (!birthMonth || !birthDay) return 0;
+  const today = new Date();
+  let age = today.getFullYear() - birthYear;
+  if (today.getMonth() + 1 < birthMonth ||
+      (today.getMonth() + 1 === birthMonth && today.getDate() < birthDay)) age--;
+  return age < 0 ? 0 : age;
+}
+
 // 고객 등록
 router.post('/customers', async (req, res) => {
   try {
@@ -25,13 +46,8 @@ router.post('/customers', async (req, res) => {
       }
     }
 
-    // 주민번호로 나이/성별 자동 계산
-    let age = 0;
-    if (ssn && ssn.length >= 6) {
-      const birthYear = parseInt(ssn.substring(0, 2));
-      const century = (ssn.length > 7 && (ssn.charAt(7) === '3' || ssn.charAt(7) === '4')) ? 2000 : 1900;
-      age = new Date().getFullYear() - (century + birthYear);
-    }
+    // 주민번호로 만 나이 자동 계산
+    const age = ageFromSsn(ssn);
 
     const result = await query(
       `INSERT INTO customers (name, ssn, age, phone, carrier, phone2, email, address, residence_address,
@@ -110,8 +126,10 @@ router.put('/customers/:id', async (req, res) => {
       refundBank, refundAccount, refundHolder, monthlyPayment,
       creditScore, creditStatus, existingLoans, dbSource, assignedTo, status, memo } = req.body;
 
+    const age = ageFromSsn(ssn);
+
     await query(
-      `UPDATE customers SET name=?, ssn=?, phone=?, carrier=?, phone2=?, email=?, address=?, residence_address=?,
+      `UPDATE customers SET name=?, ssn=?, age=?, phone=?, carrier=?, phone2=?, email=?, address=?, residence_address=?,
         housing_type=?, housing_ownership=?,
         company=?, company_addr=?, company_phone=?, salary=?, employment_type=?, has_4_insurance=?, join_date=?, work_years=?,
         vehicle_no=?, vehicle_name=?, vehicle_year=?, vehicle_km=?, vehicle_ownership=?, vehicle_co_owner=?,
@@ -119,7 +137,7 @@ router.put('/customers/:id', async (req, res) => {
         court_name=?, case_no=?, refund_bank=?, refund_account=?, refund_holder=?, monthly_payment=?,
         credit_score=?, credit_status=?, existing_loans=?, db_source=?,
         assigned_to=? WHERE id=?`,
-      [name, ssn||'', phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
+      [name, ssn||'', age, phone, carrier||'', phone2||'', email||'', address||'', residenceAddress||'',
        housingType||'', housingOwnership||'',
        company||'', companyAddr||'', companyPhone||'', salary||0, employmentType||'', has4Insurance||'', joinDate||null, workYears||'',
        vehicleNo||'', vehicleName||'', vehicleYear||'', vehicleKm||'', vehicleOwnership||'', vehicleCoOwner||'',

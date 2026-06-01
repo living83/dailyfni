@@ -281,10 +281,16 @@ router.post('/settlement/sync-from-loans', async (req, res) => {
     // 매출집계는 오직 '승인' 또는 '완납' 상태만. 그 외(가승인/접수/심사/부결/조회중…)는
     // 아예 settlement_executions 에 INSERT 조차 하지 않는다.
     //   - 예전 버그: loan.status.includes('승인') 이 '가승인' 도 매칭시켜 '승인' 으로 저장
-    //   - 현재 규칙: exact match 로 '승인' 또는 '완납' 만 허용, '완납' 은 '승인' 으로 정규화
-    const APPROVED_STATUSES = ['승인', '완납'];
+    //   - 현재 규칙: '승인'/'완납' 정확히 매칭 + 론앤마스터에서 오는 "승인YYYY-MM-DD"
+    //     prefix 형식(td 안에 승인 텍스트 + 일자가 붙어 textContent 가 합쳐진 케이스)도 허용.
+    //     '가승인'은 시작이 '가'라 걸리지 않아 안전.
+    const isApproved = (raw) => {
+      const s = String(raw || '').trim();
+      if (s === '승인' || s === '완납') return true;
+      return /^승인\d{4}-\d{2}-\d{2}$/.test(s);
+    };
     const targetLoans = loanData
-      .filter(r => r.status && APPROVED_STATUSES.includes(r.status.trim()))
+      .filter(r => isApproved(r.status))
       .map(r => ({ ...r, productName: normalizeProductName(r.productName) }));
 
     // 정산 정책 조회 (최신 월)
@@ -549,14 +555,22 @@ router.post('/settlement/executions', async (req, res) => {
 // 실행 건 목록 조회 — 기본 '승인' + 제외 담당자 필터. 제외 담당자 상수는 config/settlementFilters.js.
 router.get('/settlement/executions', async (req, res) => {
   try {
-    const { month, dbSource, assignedTo, customerName, includeAll } = req.query;
+    const { month, months, dbSource, assignedTo, customerName, includeAll } = req.query;
     let sql = 'SELECT * FROM settlement_executions WHERE 1=1';
     const params = [];
     if (!includeAll || includeAll === '0') {
       sql += buildApprovedAndVisibleClause(params);
     }
     if (customerName) { sql += ' AND customer_name = ?'; params.push(customerName); }
-    if (month) { sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?'; params.push(month); }
+    const monthList = (months ? String(months).split(',') : (month ? [month] : []))
+      .map(s => s.trim()).filter(Boolean);
+    if (monthList.length === 1) {
+      sql += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
+      params.push(monthList[0]);
+    } else if (monthList.length > 1) {
+      sql += ` AND DATE_FORMAT(executed_date, "%Y-%m") IN (${monthList.map(()=>'?').join(',')})`;
+      params.push(...monthList);
+    }
     if (dbSource && dbSource !== '전체 출처') { sql += ' AND db_source = ?'; params.push(dbSource); }
     if (assignedTo && assignedTo !== '전체 담당자') { sql += ' AND assigned_to = ?'; params.push(assignedTo); }
     sql += ' ORDER BY executed_date DESC';
@@ -570,12 +584,17 @@ router.get('/settlement/executions', async (req, res) => {
 // 매출 요약 (월별) — '승인' 건만 집계, 제외 담당자(윤장호) 제외
 router.get('/settlement/summary', async (req, res) => {
   try {
-    const { month } = req.query;
+    const { month, months } = req.query;
+    const monthList = (months ? String(months).split(',') : (month ? [month] : []))
+      .map(s => s.trim()).filter(Boolean);
     const params = [];
     let whereClause = ' WHERE 1=1' + buildApprovedAndVisibleClause(params);
-    if (month) {
+    if (monthList.length === 1) {
       whereClause += ' AND DATE_FORMAT(executed_date, "%Y-%m") = ?';
-      params.push(month);
+      params.push(monthList[0]);
+    } else if (monthList.length > 1) {
+      whereClause += ` AND DATE_FORMAT(executed_date, "%Y-%m") IN (${monthList.map(()=>'?').join(',')})`;
+      params.push(...monthList);
     }
     const monthFilter = whereClause; // "승인 + 제외담당자 + (옵션)월" 필터
 
@@ -588,10 +607,16 @@ router.get('/settlement/summary', async (req, res) => {
     // 실행 건수
     const [execCount] = await query(`SELECT COUNT(*) as cnt FROM settlement_executions${monthFilter}`, params);
 
-    // 리베이트 합계
+    // 리베이트/환수 — 같은 월 필터 적용
     let rebateFilter = '';
     const rebateParams = [];
-    if (month) { rebateFilter = ' AND target_month = ?'; rebateParams.push(month); }
+    if (monthList.length === 1) {
+      rebateFilter = ' AND target_month = ?';
+      rebateParams.push(monthList[0]);
+    } else if (monthList.length > 1) {
+      rebateFilter = ` AND target_month IN (${monthList.map(()=>'?').join(',')})`;
+      rebateParams.push(...monthList);
+    }
     const [rebateTotal] = await query(`SELECT COALESCE(SUM(amount),0) as total FROM settlement_adjustments WHERE type='리베이트'${rebateFilter}`, rebateParams);
 
     // 환수 합계

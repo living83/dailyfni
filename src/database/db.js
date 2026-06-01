@@ -43,9 +43,22 @@ async function query(sql, params) {
 }
 
 // hub_client DB 쿼리
+// LGU+ 메시지허브 에이전트가 사용하는 DB. dailyfni 와 분리되어 있어
+// 미설치 환경에선 명확한 에러 메시지를 던져야 한다(과거 destructuring
+// 단계에서 'is not iterable' 모호한 메시지로 노출되던 문제 방지).
 async function hubQuery(sql, params) {
-  const pool = getHubPool();
-  const [rows] = await pool.execute(sql, params);
+  let result;
+  try {
+    const pool = getHubPool();
+    result = await pool.execute(sql, params);
+  } catch (err) {
+    const code = err && err.code ? ` [${err.code}]` : '';
+    throw new Error(`메시지허브(hub_client) DB 연결/쿼리 실패${code}: ${err.message}`);
+  }
+  if (!Array.isArray(result)) {
+    throw new Error('메시지허브 DB 응답이 비정상입니다(드라이버가 결과를 반환하지 않음).');
+  }
+  const [rows] = result;
   return rows;
 }
 
