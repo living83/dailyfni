@@ -237,12 +237,12 @@ async def dashboard_generate(req: DashboardGenerateRequest):
             product_text = f"키워드: {req.keyword}"
             if req.product_info:
                 product_text += f"\n상품 정보:\n{req.product_info}"
-            research = await asyncio.to_thread(run_research_agent, api_key, product_text)
+            research = await asyncio.to_thread(run_research_agent, api_key, product_text, req.content_type)
             yield send("progress", {"step": "research_done", "content_id": req.content_id})
 
             # Step 2: SEO
             yield send("progress", {"step": "seo", "content_id": req.content_id})
-            seo = await asyncio.to_thread(run_seo_agent, api_key, research)
+            seo = await asyncio.to_thread(run_seo_agent, api_key, research, req.content_type)
             yield send("progress", {"step": "seo_done", "content_id": req.content_id})
 
             main_kw = seo.get("main_keyword", req.keyword)
@@ -253,7 +253,7 @@ async def dashboard_generate(req: DashboardGenerateRequest):
             # Step 3: 글 작성 (단일 톤)
             yield send("progress", {"step": "writing", "content_id": req.content_id})
             body = await asyncio.to_thread(
-                run_writer_agent, api_key, tone_en, title, main_kw, sub_kws, research
+                run_writer_agent, api_key, tone_en, title, main_kw, sub_kws, research, req.content_type
             )
             yield send("progress", {"step": "writing_done", "content_id": req.content_id})
 

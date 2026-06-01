@@ -12,17 +12,33 @@ from prompts import (
     WRITER_EXPERT_PROMPT,
     WRITER_REVIEW_PROMPT,
     REVIEWER_PROMPT,
+    RESEARCH_INFO_PROMPT,
+    SEO_INFO_PROMPT,
+    WRITER_INFO_FRIENDLY_PROMPT,
+    WRITER_INFO_EXPERT_PROMPT,
+)
+
+INFO_TYPE = "일반 정보성"
+
+# JSON 응답을 기대하는 호출에서 모델이 거절/머리말 없이 JSON만 내도록 강제하는 시스템 프롬프트
+_JSON_SYSTEM = (
+    "You output ONLY valid JSON. No prose, no explanations, no markdown code fences. "
+    "Always return the requested JSON structure based on the given topic, even if it is "
+    "not a commercial product."
 )
 
 
-def _call_claude(api_key: str, prompt: str, max_tokens: int = 4096) -> str:
+def _call_claude(api_key: str, prompt: str, max_tokens: int = 4096, force_json: bool = False) -> str:
     """Claude API 호출 공통 함수"""
     client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
+    kwargs = dict(
         model="claude-haiku-4-5-20251001",
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
+    if force_json:
+        kwargs["system"] = _JSON_SYSTEM
+    message = client.messages.create(**kwargs)
     return message.content[0].text
 
 
@@ -44,29 +60,39 @@ def _parse_json(text: str) -> dict:
 
 
 # === 1. 리서치 에이전트 ===
-def run_research_agent(api_key: str, product_info: str) -> dict:
-    """상품 정보를 JSON으로 정리"""
-    prompt = RESEARCH_PROMPT.format(product_info=product_info)
-    response = _call_claude(api_key, prompt)
+def run_research_agent(api_key: str, product_info: str, content_type: str = "") -> dict:
+    """상품/주제 정보를 JSON으로 정리 (content_type 에 따라 상품용/정보성용 분기)"""
+    template = RESEARCH_INFO_PROMPT if content_type == INFO_TYPE else RESEARCH_PROMPT
+    prompt = template.format(product_info=product_info)
+    response = _call_claude(api_key, prompt, force_json=True)
     return _parse_json(response)
 
 
 # === 2. SEO 에이전트 ===
-def run_seo_agent(api_key: str, research_data: dict) -> dict:
-    """네이버 블로그용 키워드, 제목, 태그 생성"""
-    prompt = SEO_PROMPT.format(research_data=json.dumps(research_data, ensure_ascii=False, indent=2))
-    response = _call_claude(api_key, prompt)
+def run_seo_agent(api_key: str, research_data: dict, content_type: str = "") -> dict:
+    """네이버 블로그용 키워드, 제목, 태그 생성 (content_type 분기)"""
+    template = SEO_INFO_PROMPT if content_type == INFO_TYPE else SEO_PROMPT
+    prompt = template.format(research_data=json.dumps(research_data, ensure_ascii=False, indent=2))
+    response = _call_claude(api_key, prompt, force_json=True)
     return _parse_json(response)
 
 
 # === 3. 라이터 에이전트 ===
-def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub_keywords: list, research_data: dict) -> str:
-    """톤별 블로그 글 생성 — 저장된 스타일 가이드가 있으면 자동 주입"""
-    template_map = {
-        "friendly": WRITER_FRIENDLY_PROMPT,
-        "expert": WRITER_EXPERT_PROMPT,
-        "review": WRITER_REVIEW_PROMPT,
-    }
+def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub_keywords: list, research_data: dict, content_type: str = "") -> str:
+    """톤별 블로그 글 생성 — 저장된 스타일 가이드가 있으면 자동 주입 (content_type 분기)"""
+    if content_type == INFO_TYPE:
+        # 정보성: 리뷰톤은 정보성에 부적합하므로 친근톤으로 폴백
+        template_map = {
+            "friendly": WRITER_INFO_FRIENDLY_PROMPT,
+            "expert": WRITER_INFO_EXPERT_PROMPT,
+            "review": WRITER_INFO_FRIENDLY_PROMPT,
+        }
+    else:
+        template_map = {
+            "friendly": WRITER_FRIENDLY_PROMPT,
+            "expert": WRITER_EXPERT_PROMPT,
+            "review": WRITER_REVIEW_PROMPT,
+        }
     template = template_map.get(tone)
     if not template:
         raise ValueError(f"지원하지 않는 톤입니다: {tone}")
@@ -94,12 +120,12 @@ def run_writer_agent(api_key: str, tone: str, title: str, main_keyword: str, sub
 def run_reviewer_agent(api_key: str, main_keyword: str, content: str) -> dict:
     """맞춤법, SEO, 저품질 검수"""
     prompt = REVIEWER_PROMPT.format(main_keyword=main_keyword, content=content)
-    response = _call_claude(api_key, prompt)
+    response = _call_claude(api_key, prompt, force_json=True)
     return _parse_json(response)
 
 
 # === 전체 파이프라인 ===
-async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
+async def run_pipeline(api_key: str, product_info: str, progress_callback=None, content_type: str = ""):
     """
     전체 에이전트 파이프라인 실행
     Returns: {
@@ -112,12 +138,12 @@ async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
     # Step 1: 리서치
     if progress_callback:
         await progress_callback("researching")
-    research_data = run_research_agent(api_key, product_info)
+    research_data = run_research_agent(api_key, product_info, content_type)
 
     # Step 2: SEO
     if progress_callback:
         await progress_callback("seo")
-    seo_data = run_seo_agent(api_key, research_data)
+    seo_data = run_seo_agent(api_key, research_data, content_type)
 
     main_keyword = seo_data["main_keyword"]
     sub_keywords = seo_data["sub_keywords"]
@@ -129,7 +155,7 @@ async def run_pipeline(api_key: str, product_info: str, progress_callback=None):
 
     articles = {}
     for tone, title in [("friendly", titles["friendly"]), ("expert", titles["expert"]), ("review", titles["review"])]:
-        articles[tone] = run_writer_agent(api_key, tone, title, main_keyword, sub_keywords, research_data)
+        articles[tone] = run_writer_agent(api_key, tone, title, main_keyword, sub_keywords, research_data, content_type)
 
     # Step 4: 리뷰어 (각 글 검수)
     if progress_callback:
