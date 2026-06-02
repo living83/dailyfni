@@ -237,9 +237,14 @@ async def login(
             await page.goto("https://www.naver.com/", timeout=30000)
             await page.wait_for_load_state("domcontentloaded")
 
-            # 로그인 버튼이 없으면 이미 로그인 상태
-            login_btn = await page.query_selector("a.link_login, a[href*='nidlogin']")
-            if not login_btn:
+            # 로그인 상태 확인: 네이버 메인 MyView 영역의 '로그아웃' 요소 존재 여부.
+            # (구버전은 a[href*='nidlogin'] 유무로 판정했으나, 이 링크는 로그인/비로그인
+            #  상태 모두 존재해 유효한 쿠키도 항상 '만료'로 오판 → 매번 풀 로그인/캡차.
+            #  2026-06 수정: 로그아웃 요소는 로그인 상태에서만 렌더됨을 대조 검증.)
+            logout_el = await page.query_selector(
+                "[class*='MyView'][class*='logout'], a[href*='nidlogin.logout']"
+            )
+            if logout_el:
                 logger.info(f"[계정 {account_id}] 쿠키 로그인 성공")
                 await _share_cookies_for_cbox(context)
                 await page.close()
