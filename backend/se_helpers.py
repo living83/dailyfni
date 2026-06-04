@@ -38,6 +38,45 @@ settings = _Settings()
 _PROXY_CHECKED_NO_PROXY = object()
 
 # ──────────────────────────────────────────────────────────────
+# 정적 CDN 분리 라우팅
+#   네이버 카페 새 에디터는 Vue SPA로, 4MB+ JS 번들 여러 개를 받는다.
+#   레지던셜 프록시(decodo)는 대용량 에셋이 극도로 느려(4.4MB=58s) SPA가
+#   영영 안 뜬다. 인증과 무관한 정적 CDN(*.pstatic.net/*.naver.net)은
+#   프록시를 우회해 직접 받고, 네이버 인증 요청만 프록시로 보낸다.
+#   (세션 IP 바인딩은 cafe.naver.com/apis.naver.com 요청에만 필요)
+import httpx as _httpx
+
+_direct_asset_client: Optional["_httpx.AsyncClient"] = None
+
+
+def _get_direct_asset_client() -> "_httpx.AsyncClient":
+    global _direct_asset_client
+    if _direct_asset_client is None:
+        _direct_asset_client = _httpx.AsyncClient(timeout=30, follow_redirects=False)
+    return _direct_asset_client
+
+
+def _is_static_cdn(url: str) -> bool:
+    return ("pstatic.net" in url) or ("naver.net" in url)
+
+
+async def _asset_split_route(route):
+    """정적 CDN GET 요청은 무프록시로 직접 받아 fulfill, 그 외는 그대로 진행."""
+    req = route.request
+    if req.method == "GET" and _is_static_cdn(req.url):
+        try:
+            r = await _get_direct_asset_client().get(req.url)
+            hdrs = {
+                k: v for k, v in r.headers.items()
+                if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+            }
+            await route.fulfill(status=r.status_code, headers=hdrs, body=r.content)
+            return
+        except Exception:
+            pass
+    await route.continue_()
+
+# ──────────────────────────────────────────────────────────────
 # 1. 스텔스 브라우저 컨텍스트 생성
 # ──────────────────────────────────────────────────────────────
 
@@ -203,12 +242,48 @@ async def create_stealth_context(
         delete window.__pw_manual;
     """)
 
+    # 프록시 사용 시에만 정적 CDN 분리 라우팅 적용 (대용량 JS 번들을 프록시 우회로
+    # 직접 받아 SPA 에디터가 정상 로드되게 함). 무프록시 context엔 불필요.
+    if proxy:
+        await context.route("**/*", _asset_split_route)
+
     return browser, context
 
 
 # ──────────────────────────────────────────────────────────────
 # 2. 네이버 로그인
 # ──────────────────────────────────────────────────────────────
+
+async def _cookies_still_valid(cookies: list) -> bool:
+    """
+    저장된 쿠키가 아직 로그인 상태인지 '무프록시'로 빠르게 검증한다.
+    www.naver.com을 띄워 로그인 상태에서만 렌더되는 로그아웃 요소(MyView/logout,
+    a[href*='nidlogin.logout'])의 존재로 판정. 레지던셜 프록시 경유 시 이 페이지가
+    20s+ 걸려도 렌더 안 돼 유효 쿠키도 만료로 오판되므로, 검증만 무프록시로 분리한다.
+    (세션 유효성은 IP보안 OFF라 IP와 무관 → 무프록시 판정이 실제 발행에도 유효.)
+    """
+    from playwright.async_api import async_playwright
+    try:
+        async with async_playwright() as pw:
+            browser, ctx = await create_stealth_context(pw, proxy=None, headless=True)
+            try:
+                await ctx.add_cookies(cookies)
+                page = await ctx.new_page()
+                await page.goto("https://www.naver.com/", wait_until="commit", timeout=30000)
+                try:
+                    el = await page.wait_for_selector(
+                        "[class*='MyView'][class*='logout'], a[href*='nidlogin.logout']",
+                        timeout=10000, state="attached",
+                    )
+                except Exception:
+                    el = None
+                return bool(el)
+            finally:
+                await browser.close()
+    except Exception as e:
+        logger.warning(f"쿠키 유효성 검증 오류: {e}")
+        return False
+
 
 async def login(
     context: BrowserContext,
@@ -233,18 +308,12 @@ async def login(
     if cookie_path.exists():
         try:
             cookies = _load_encrypted_cookies(cookie_path)
-            await context.add_cookies(cookies)
-            await page.goto("https://www.naver.com/", timeout=30000)
-            await page.wait_for_load_state("domcontentloaded")
-
-            # 로그인 상태 확인: 네이버 메인 MyView 영역의 '로그아웃' 요소 존재 여부.
-            # (구버전은 a[href*='nidlogin'] 유무로 판정했으나, 이 링크는 로그인/비로그인
-            #  상태 모두 존재해 유효한 쿠키도 항상 '만료'로 오판 → 매번 풀 로그인/캡차.
-            #  2026-06 수정: 로그아웃 요소는 로그인 상태에서만 렌더됨을 대조 검증.)
-            logout_el = await page.query_selector(
-                "[class*='MyView'][class*='logout'], a[href*='nidlogin.logout']"
-            )
-            if logout_el:
+            # 쿠키 유효성은 '무프록시'로 검증한다. 계정 레지던셜 프록시는 www.naver.com
+            # 렌더가 너무 느려(20s+) 유효한 쿠키도 만료로 오판 → 불필요한 pyautogui로
+            # 빠진다. 세션 유효성은 IP보안 OFF라 IP와 무관하므로 무프록시 검증이 정확하며
+            # (검증 1.3s), 실제 발행은 그대로 프록시 context로 진행한다.
+            if await _cookies_still_valid(cookies):
+                await context.add_cookies(cookies)
                 logger.info(f"[계정 {account_id}] 쿠키 로그인 성공")
                 await _share_cookies_for_cbox(context)
                 await page.close()

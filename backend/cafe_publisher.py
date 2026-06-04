@@ -791,7 +791,10 @@ async def async_publish_to_cafe(
             
             # 2. cafe.naver.com 세션 확립 (기존 매크로의 _ensure_cafe_session 동일)
             if on_progress: on_progress("navigate", "카페 세션 확립 중...")
-            await page.goto("https://cafe.naver.com", wait_until="domcontentloaded", timeout=30000)
+            # 네이버가 cafe.naver.com → section.cafe.naver.com/ca-fe/ SPA로 리다이렉트.
+            # 이 SPA는 domcontentloaded가 30s 내 안 떠서 타임아웃 → "commit"(응답 수신
+            # 즉시)으로 변경. 세션/리다이렉트 판정은 아래 page.url로 그대로 동작.
+            await page.goto("https://cafe.naver.com", wait_until="commit", timeout=30000)
             await random_delay(2, 3)
             if "nidlogin" in page.url or "nid.naver.com" in page.url:
                 raise Exception("카페 세션 확립 실패 — 로그인 페이지로 리다이렉트됨")
@@ -835,11 +838,32 @@ async def async_publish_to_cafe(
                                 break
                     except Exception as e:
                         logger.warning(f"Naver API 조회 실패 ({api_url}): {e}")
-                
+
+                # apis.naver.com이 막힘(CafeGateInfo=500 '잘못된 접근'/CafeMobileInfo=삭제됨).
+                # 카페 게이트 HTML(서버 렌더)에는 /cafes/{id}가 그대로 노출되므로 직접 파싱.
                 if not cafe_numeric_id:
-                    # API 실패 시 페이지 소스에서 추출 시도
-                    logger.warning("API 조회 실패 → 카페 페이지 소스에서 ID 추출 시도")
-                    await page.goto(f"https://cafe.naver.com/{cafe_alias}", wait_until="domcontentloaded", timeout=30000)
+                    try:
+                        req = urllib.request.Request(
+                            f"https://cafe.naver.com/{cafe_alias}",
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                     "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                     "Chrome/134.0.0.0 Safari/537.36"},
+                        )
+                        with urllib.request.urlopen(req, timeout=10) as resp_:
+                            html_ = resp_.read().decode("utf-8", errors="replace")
+                        for pat in [r'/cafes/(\d+)', r'"clubId"\s*:\s*(\d+)', r'"cafeId"\s*:\s*(\d+)']:
+                            _m = re.search(pat, html_)
+                            if _m:
+                                cafe_numeric_id = _m.group(1)
+                                logger.info(f"카페 게이트 HTML에서 ID 추출: {cafe_alias} → {cafe_numeric_id}")
+                                break
+                    except Exception as e:
+                        logger.warning(f"카페 게이트 HTML 조회 실패: {e}")
+
+                if not cafe_numeric_id:
+                    # 마지막 폴백: 브라우저(프록시 경유) 페이지 소스에서 추출 시도
+                    logger.warning("HTML 직접 조회 실패 → 브라우저 페이지 소스에서 ID 추출 시도")
+                    await page.goto(f"https://cafe.naver.com/{cafe_alias}", wait_until="commit", timeout=30000)
                     await random_delay(2, 3)
                     page_src = await page.content()
                     for pat in [r'"clubId"\s*:\s*(\d+)', r'"cafeId"\s*:\s*(\d+)', r'/cafes/(\d+)']:
@@ -860,13 +884,39 @@ async def async_publish_to_cafe(
                 write_url = f"https://cafe.naver.com/ca-fe/cafes/{cafe_numeric_id}/articles/write?boardType=L"
             
             logger.info(f"글쓰기 URL: {write_url}")
-            await page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
-            await random_delay(3, 5)
-            
-            # 세션 만료 체크
-            if "nidlogin" in page.url or "nid.naver.com" in page.url:
-                raise Exception("글쓰기 페이지 이동 중 세션 만료 — 재로그인 필요")
-            
+            # 글쓰기 진입 — 프록시 exit IP 불안정으로 가끔(~1/3) 로그인 페이지로 튕긴다.
+            # 로그인 리다이렉트면 재네비게이션하고, 에디터(제목 영역)가 뜰 때까지 폴링한다.
+            # (commit으로 빠르게 진입 + 정적에셋 분리 라우팅으로 SPA 번들을 직접 받아 렌더)
+            _EDITOR_READY = (
+                "[contenteditable='true'], .se-content, .se-container, [class*='se-'], "
+                ".ArticleWritingTitle, [class*='ArticleWriting'], [placeholder*='제목'], "
+                "textarea[placeholder*='제목']"
+            )
+            entered = False
+            for attempt in range(1, 7):
+                await page.goto(write_url, wait_until="commit", timeout=30000)
+                for _ in range(20):  # 최대 ~20s: 로그인 튕김 or 에디터 등장 대기
+                    await asyncio.sleep(1.0)
+                    cur = page.url
+                    if "nidlogin" in cur or "nid.naver.com" in cur:
+                        break  # 로그인으로 튕김 → 재시도
+                    try:
+                        if await page.query_selector(_EDITOR_READY):
+                            entered = True
+                            break
+                    except Exception:
+                        pass
+                if entered:
+                    break
+                logger.warning(
+                    f"글쓰기 진입 실패(로그인 리다이렉트/에디터 미등장) — 재시도 {attempt}/6"
+                )
+                await random_delay(1, 2)
+            if not entered:
+                raise Exception(
+                    "글쓰기 페이지 진입 실패 — 반복적으로 로그인 리다이렉트 "
+                    "(프록시 exit IP 불안정 추정, 재시도 6회 소진)"
+                )
             logger.info(f"글쓰기 페이지 URL: {page.url}")
             
             # 5. cafe_main iframe 확인 및 switch (기존 매크로 동일)

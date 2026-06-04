@@ -521,8 +521,12 @@ async def _login_naver_in_process(
             else:
                 await _press("enter")
 
+            # 성공 판정: 로그인 POST 후 nidlogin 도메인을 벗어나면 성공.
+            # 24*0.5=12s는 레지던셜 프록시로 제출이 느린 라운드(버튼 스피너 유지)를
+            # 성공인데도 실패로 클립하는 경우가 있어 50*0.5=25s로 확대
+            # (subprocess 타임아웃 180s 내라 여유 충분).
             success = False
-            for _ in range(24):
+            for _ in range(50):
                 await asyncio.sleep(0.5)
                 url = await cdp.current_url()
                 if "nidlogin" not in url and "nid.naver.com" not in url:
