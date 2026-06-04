@@ -285,6 +285,59 @@ async def _cookies_still_valid(cookies: list) -> bool:
         return False
 
 
+async def _playwright_login(context, naver_id: str, naver_password: str, account_id) -> bool:
+    """
+    프록시 context에서 직접 Playwright로 ID/PW 로그인.
+    핵심: 느린 프록시에선 로그인 JS(dynamicEcKey = 비번 암호화 키)가 다 로드되기 전
+    '다음'을 누르면 제출이 무시되어 로그인 페이지에 머문다. 그래서 #id 등장 후
+    networkidle까지 기다린 뒤 입력·클릭한다. (깨끗한 IP + 스텔스면 캡차 안 뜸 — 2026-06
+    재검증. 과거 'Playwright=무조건 캡차'는 더 이상 사실 아님.)
+    성공 시 쿠키를 .enc로 저장하고 context에 그대로 유지한다.
+    """
+    page = await context.new_page()
+    try:
+        await page.goto("https://nid.naver.com/nidlogin.login", wait_until="commit", timeout=30000)
+        await page.wait_for_selector("#id", timeout=40000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=25000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(1500)
+        await page.click("#id")
+        await page.type("#id", naver_id, delay=50)
+        await page.click("#pw")
+        await page.type("#pw", naver_password, delay=50)
+        await page.wait_for_timeout(400)
+        btn = await page.query_selector("#log\\.login, .btn_login, button[type='submit']")
+        if btn:
+            await btn.click()
+        else:
+            await page.keyboard.press("Enter")
+        ok = False
+        for _ in range(25):
+            await page.wait_for_timeout(1000)
+            u = page.url
+            if "nidlogin" not in u and "nid.naver.com" not in u:
+                ok = True
+                break
+        if not ok:
+            logger.warning(f"[계정 {account_id}] Playwright 로그인 미완료 (URL: {page.url[:55]})")
+            return False
+        cookies = await context.cookies()
+        _save_encrypted_cookies(settings.COOKIES_DIR / f"account_{account_id}.enc", cookies)
+        await _share_cookies_for_cbox(context)
+        logger.info(f"[계정 {account_id}] ✅ Playwright 로그인 성공 — 쿠키 {len(cookies)}개 저장")
+        return True
+    except Exception as e:
+        logger.warning(f"[계정 {account_id}] Playwright 로그인 오류: {e}")
+        return False
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
 async def login(
     context: BrowserContext,
     naver_id: str,
@@ -324,7 +377,14 @@ async def login(
 
     await page.close()
 
-    # ── Step 2: Xvfb + pyautogui로 ID/PW 로그인 ──────────────
+    # ── Step 2a: 프록시 context에서 Playwright로 직접 로그인 ──
+    # (networkidle 대기로 dynamicEcKey 로드 후 클릭 — 깨끗한 IP면 캡차 없이 성공)
+    logger.info(f"[계정 {account_id}] Playwright 로그인 시작")
+    if await _playwright_login(context, naver_id, naver_password, account_id):
+        return True
+    logger.warning(f"[계정 {account_id}] Playwright 로그인 실패 → pyautogui 폴백")
+
+    # ── Step 2b: Xvfb + pyautogui로 ID/PW 로그인 (폴백) ──────
     try:
         from pyautogui_login import login_naver_with_pyautogui
 
