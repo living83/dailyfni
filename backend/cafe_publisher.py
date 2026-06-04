@@ -85,45 +85,49 @@ async def _select_board(page: Page, editor: Frame | Page, menu_id: str, board_na
         board_btn_el = None
         found_in = None
 
-        # 1. 각 target(iframe → page 순)에서 게시판 선택 버튼 탐색
-        for target in targets:
-            # JS evaluate_handle로 탐색
-            try:
-                handle = await target.evaluate_handle(_BOARD_BTN_JS)
-                if handle and await handle.evaluate("el => el !== null"):
-                    el = handle.as_element()
-                    if el:
-                        board_btn_el = el
-                        found_in = target
-                        break
-            except:
-                pass
+        # CSS 셀렉터 폴백 목록 (새 에디터 FormSelectBox 포함)
+        board_selectors = [
+            ".menu_candidates_selectbox button.button",
+            ".FormSelectBox button.button",
+            ".FormSelectButton button",
+            "button.select_component",
+            ".board_select button",
+            "select.select_component",
+            "button[class*='Board']",
+            "button[class*='board']",
+            ".select_area button",
+        ]
 
-            if board_btn_el:
-                break
-
-            # CSS 셀렉터 폴백
-            board_selectors = [
-                "button.select_component",
-                ".board_select button",
-                "select.select_component",
-                "button[class*='Board']",
-                "button[class*='board']",
-                ".select_area button",
-            ]
-            for sel in board_selectors:
+        # 1. 게시판 선택 버튼 탐색 — 새 에디터(FormSelectBox)는 느린 프록시에서
+        #    제목/본문보다 늦게 렌더되므로 최대 ~24s 폴링한다.
+        for _attempt in range(12):
+            for target in targets:
                 try:
-                    el = await target.query_selector(sel)
-                    if el:
-                        txt = (await el.inner_text()).strip()
-                        if "선택" in txt or "게시판" in txt:
+                    handle = await target.evaluate_handle(_BOARD_BTN_JS)
+                    if handle and await handle.evaluate("el => el !== null"):
+                        el = handle.as_element()
+                        if el:
                             board_btn_el = el
                             found_in = target
                             break
                 except:
-                    continue
+                    pass
+                for sel in board_selectors:
+                    try:
+                        el = await target.query_selector(sel)
+                        if el:
+                            txt = (await el.inner_text()).strip()
+                            if "선택" in txt or "게시판" in txt:
+                                board_btn_el = el
+                                found_in = target
+                                break
+                    except:
+                        continue
+                if board_btn_el:
+                    break
             if board_btn_el:
                 break
+            await asyncio.sleep(2)
 
         if not board_btn_el:
             logger.info("게시판 선택 버튼 없음 (URL menuId로 이미 지정됨 또는 미노출)")
@@ -150,6 +154,20 @@ async def _select_board(page: Page, editor: Frame | Page, menu_id: str, board_na
             except:
                 pass
         await random_delay(0.8, 1.2)
+
+        # 옵션 목록은 클릭 후 비동기로 채워진다(느린 프록시에서 ~2s+). 채워질 때까지 대기.
+        for _ in range(10):
+            try:
+                _n = await found_in.evaluate(
+                    "() => document.querySelectorAll("
+                    "'.menu_candidates_selectbox .option_list li, .select_option li, ul.option_list li'"
+                    ").length"
+                )
+            except Exception:
+                _n = 0
+            if _n and _n > 0:
+                break
+            await asyncio.sleep(1.0)
 
         # 3. 드롭다운 항목 덤프 + menuId 매칭
         _DUMP_JS = """() => {
