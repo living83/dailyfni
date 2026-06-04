@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "config", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "config", ".env"), override=True)
 
 import database as db
 from crypto import encrypt_password, decrypt_password

@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger("content_generator")
 
-# 최상위 폴더의 .env 로드
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "config", ".env"))
+# 최상위 폴더의 .env 로드 (override=True: pm2 환경에 박힌 옛 키보다 .env가 항상 우선)
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "config", ".env"), override=True)
 
 
 def get_tone_instructions(tone: str) -> str:
@@ -92,7 +92,7 @@ async def async_generate_content(keyword: str, tone: str = "공감", cta_link: s
     logger.info(f"Claude 3.5 API 요청: 키워드 '{keyword}', 톤 '{tone}'")
 
     response = await client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model="claude-haiku-4-5-20251001",
         max_tokens=4000,
         temperature=0.8,
         messages=[

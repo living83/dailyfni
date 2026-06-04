@@ -20,7 +20,7 @@ from pathlib import Path
 
 # .env 로드 (backend 상위 폴더 기준)
 _BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(_BASE_DIR / "config" / ".env")
+load_dotenv(_BASE_DIR / "config" / ".env", override=True)
 
 
 class _Settings:
