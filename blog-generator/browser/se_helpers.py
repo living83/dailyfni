@@ -109,6 +109,87 @@ async def create_stealth_context(
 # 2. 네이버 로그인
 # ──────────────────────────────────────────────────────────────
 
+async def _cookies_still_valid(cookies: list) -> bool:
+    """
+    저장 쿠키가 로그인 상태인지 '무프록시'로 빠르게 검증.
+    레지던셜 프록시로 www.naver.com 렌더가 20s+ 걸려 유효 쿠키도 만료로 오판되므로
+    검증만 무프록시로 분리한다(세션 유효성은 IP보안 OFF라 IP 무관). 로그인 상태에서만
+    렌더되는 로그아웃 요소 존재로 판정.
+    """
+    try:
+        async with async_playwright() as pw:
+            browser, ctx = await create_stealth_context(pw, proxy=None, headless=True)
+            try:
+                await ctx.add_cookies(cookies)
+                page = await ctx.new_page()
+                await page.goto("https://www.naver.com/", wait_until="commit", timeout=30000)
+                try:
+                    el = await page.wait_for_selector(
+                        "[class*='MyView'][class*='logout'], a[href*='nidlogin.logout']",
+                        timeout=10000, state="attached",
+                    )
+                except Exception:
+                    el = None
+                return bool(el)
+            finally:
+                await browser.close()
+    except Exception as e:
+        logger.warning(f"쿠키 유효성 검증 오류: {e}")
+        return False
+
+
+async def _playwright_login(context, naver_id: str, naver_password: str, account_id) -> bool:
+    """
+    프록시 context에서 직접 Playwright로 ID/PW 로그인.
+    핵심: 느린 프록시에선 로그인 JS(dynamicEcKey = 비번 암호화 키)가 다 로드되기 전
+    '다음'을 누르면 제출이 무시되어 로그인 페이지에 머문다. #id 등장 후 networkidle까지
+    기다린 뒤 입력·클릭한다. (깨끗한 IP + 스텔스면 캡차 안 뜸 — 2026-06 재검증.)
+    성공 시 쿠키를 .enc로 저장하고 context에 유지한다.
+    """
+    page = await context.new_page()
+    try:
+        await page.goto("https://nid.naver.com/nidlogin.login", wait_until="commit", timeout=30000)
+        await page.wait_for_selector("#id", timeout=40000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=25000)
+        except Exception:
+            pass
+        await page.wait_for_timeout(1500)
+        await page.click("#id")
+        await page.type("#id", naver_id, delay=50)
+        await page.click("#pw")
+        await page.type("#pw", naver_password, delay=50)
+        await page.wait_for_timeout(400)
+        btn = await page.query_selector("#log\\.login, .btn_login, button[type='submit']")
+        if btn:
+            await btn.click()
+        else:
+            await page.keyboard.press("Enter")
+        ok = False
+        for _ in range(25):
+            await page.wait_for_timeout(1000)
+            u = page.url
+            if "nidlogin" not in u and "nid.naver.com" not in u:
+                ok = True
+                break
+        if not ok:
+            logger.warning(f"[계정 {account_id}] Playwright 로그인 미완료 (URL: {page.url[:55]})")
+            return False
+        cookies = await context.cookies()
+        _save_encrypted_cookies(settings.COOKIES_DIR / f"account_{account_id}.enc", cookies)
+        await _share_cookies_for_cbox(context)
+        logger.info(f"[계정 {account_id}] ✅ Playwright 로그인 성공 — 쿠키 {len(cookies)}개 저장")
+        return True
+    except Exception as e:
+        logger.warning(f"[계정 {account_id}] Playwright 로그인 오류: {e}")
+        return False
+    finally:
+        try:
+            await page.close()
+        except Exception:
+            pass
+
+
 async def login(
     context: BrowserContext,
     naver_id: str,
@@ -132,29 +213,28 @@ async def login(
     if cookie_path.exists():
         try:
             cookies = _load_encrypted_cookies(cookie_path)
-            await context.add_cookies(cookies)
-            await page.goto("https://www.naver.com/", timeout=30000)
-            await page.wait_for_load_state("domcontentloaded")
-
-            # 로그인 상태 확인: 네이버 메인 MyView 영역의 '로그아웃' 요소 존재 여부.
-            # (구버전은 a[href*='nidlogin'] 유무로 판정했으나, 이 링크는 로그인/비로그인
-            #  상태 모두 존재해 유효한 쿠키도 항상 '만료'로 오판 → 매번 풀 로그인/캡차.
-            #  2026-06 수정: 로그아웃 요소는 로그인 상태에서만 렌더됨을 대조 검증.)
-            logout_el = await page.query_selector(
-                "[class*='MyView'][class*='logout'], a[href*='nidlogin.logout']"
-            )
-            if logout_el:
+            # 쿠키 유효성은 '무프록시'로 검증한다(레지던셜 프록시로 www.naver.com 렌더가
+            # 20s+라 유효 쿠키도 만료로 오판 → 불필요 풀로그인). 실제 발행은 프록시 context.
+            if await _cookies_still_valid(cookies):
+                await context.add_cookies(cookies)
                 logger.info(f"[계정 {account_id}] 쿠키 로그인 성공")
                 await _share_cookies_for_cbox(context)
                 await page.close()
                 return True
-            logger.debug(f"[계정 {account_id}] 쿠키 만료 → pyautogui 로그인으로 전환")
+            logger.debug(f"[계정 {account_id}] 쿠키 만료 → 로그인으로 전환")
         except Exception as e:
             logger.warning(f"[계정 {account_id}] 쿠키 로드 실패: {e}")
 
     await page.close()
 
-    # ── Step 2: Xvfb + pyautogui로 ID/PW 로그인 ──────────────
+    # ── Step 2a: 프록시 context에서 Playwright로 직접 로그인 ──
+    # (networkidle 대기로 dynamicEcKey 로드 후 클릭 — 깨끗한 IP면 캡차 없이 성공)
+    logger.info(f"[계정 {account_id}] Playwright 로그인 시작")
+    if await _playwright_login(context, naver_id, naver_password, account_id):
+        return True
+    logger.warning(f"[계정 {account_id}] Playwright 로그인 실패 → pyautogui 폴백")
+
+    # ── Step 2b: Xvfb + pyautogui로 ID/PW 로그인 (폴백) ──────
     try:
         from browser.pyautogui_login import login_naver_with_pyautogui
 
@@ -302,8 +382,8 @@ def _get_db_path() -> Optional[Path]:
 def _lookup_account_proxy_from_db(account_id) -> Optional[dict]:
     """
     공용 SQLite DB 에서 계정별 proxy 정보 조회.
-    accounts.proxyId → proxies (ip, port, username, password) JOIN.
-    account_id 가 UUID 문자열이어야 매칭됨 (가짜 'test' 등은 None 반환).
+    네이버(accounts) → 티스토리(tistory_accounts) 순으로 lookup.
+    account_id 가 UUID 문자열이어야 매칭됨.
     """
     import sqlite3
     db_path = _get_db_path()
@@ -318,6 +398,14 @@ def _lookup_account_proxy_from_db(account_id) -> Optional[dict]:
                    WHERE a.id = ?""",
                 (str(account_id),),
             ).fetchone()
+            if not row:
+                # 티스토리 계정 fallback
+                row = conn.execute(
+                    """SELECT p.ip, p.port, p.username, p.password, t.proxyServer
+                       FROM tistory_accounts t LEFT JOIN proxies p ON t.proxyId = p.id
+                       WHERE t.id = ?""",
+                    (str(account_id),),
+                ).fetchone()
         finally:
             conn.close()
         if not row:
