@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DailyFNI - UI Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-card: #12121a;
+      --bg-input: #0e0e16;
+      --border: rgba(255,255,255,0.06);
+      --border-focus: rgba(99,102,241,0.5);
+      --text: #e4e4e7;
+      --text-dim: #71717a;
+      --text-bright: #fafafa;
+      --accent-1: #6366f1;
+      --accent-2: #8b5cf6;
+      --accent-3: #a78bfa;
+      --green: #10b981;
+      --green-dim: rgba(16,185,129,0.15);
+      --blue: #3b82f6;
+      --blue-dim: rgba(59,130,246,0.15);
+      --orange: #f59e0b;
+      --orange-dim: rgba(245,158,11,0.15);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --radius: 14px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .bg-glow { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .bg-glow::before {
+      content: ''; position: absolute; top: -20%; left: -10%; width: 50%; height: 50%;
+      background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%);
+      animation: float1 20s ease-in-out infinite;
+    }
+    .bg-glow::after {
+      content: ''; position: absolute; bottom: -10%; right: -10%; width: 45%; height: 45%;
+      background: radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%);
+      animation: float2 25s ease-in-out infinite;
+    }
+    @keyframes float1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(8%,12%)} }
+    @keyframes float2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-6%,-8%)} }
+
+    .header {
+      position: relative; padding: 56px 0 72px; text-align: center; overflow: hidden;
+    }
+    .header::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(139,92,246,0.06) 50%, transparent 100%);
+    }
+    .header::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-1), var(--accent-2), transparent);
+      opacity: 0.3;
+    }
+    .header-inner { position: relative; z-index: 1; }
+    .header .brand { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .header .brand-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      display: grid; place-items: center; font-weight: 900; font-size: 20px; color: #fff;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+    }
+    .header h1 {
+      font-size: 36px; font-weight: 900; letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #fff 30%, var(--accent-3));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .header .subtitle { font-size: 15px; color: var(--text-dim); margin-top: 8px; }
+
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+    .glass { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: blur(20px); }
+
+    .input-section { margin-top: -40px; padding: 32px; box-shadow: var(--shadow); }
+    .section-label {
+      display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+      color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;
+    }
+    .section-label .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-1); }
+
+    .api-key-row { display: flex; gap: 12px; margin-bottom: 20px; align-items: center; }
+    .api-key-row label { font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--text-dim); min-width: 70px; }
+    .api-key-row input {
+      flex: 1; padding: 12px 16px; background: var(--bg-input); border: 1.5px solid var(--border);
+      border-radius: 10px; font-size: 13px; font-family: 'SF Mono','Fira Code',monospace; color: var(--text);
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .api-key-row input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); outline: none; }
+    .api-key-row input::placeholder { color: #3f3f50; }
+
+    .product-input { margin-bottom: 8px; }
+    .product-input textarea {
+      width: 100%; height: 180px; padding: 16px; background: var(--bg-input); border: 1.5px solid var(--border);
+      border-radius: 12px; font-size: 14px; line-height: 1.7; color: var(--text); resize: vertical;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .product-input textarea:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(99,102,241,0.1); outline: none; }
+    .product-input textarea::placeholder { color: #3f3f50; }
+
+    .btn-generate {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; margin-top: 16px; padding: 15px;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      color: #fff; border: none; border-radius: 12px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: transform 0.15s, box-shadow 0.25s;
+      box-shadow: 0 4px 24px rgba(99,102,241,0.25);
+    }
+    .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 8px 32px rgba(99,102,241,0.35); }
+    .btn-generate:active { transform: translateY(0) scale(0.995); }
+    .btn-generate svg { width: 18px; height: 18px; }
+
+    /* Progress */
+    .progress-section { margin-top: 28px; }
+    .progress-bar-track { background: #1e1e2e; border-radius: 20px; height: 6px; overflow: hidden; margin-bottom: 20px; }
+    .progress-bar-fill {
+      height: 100%; width: 75%;
+      background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-3));
+      background-size: 200% 100%; border-radius: 20px;
+      animation: shimmer 2s linear infinite;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    .progress-steps { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
+    .progress-step {
+      text-align: center; padding: 14px 8px; border-radius: 10px; font-size: 12px; font-weight: 600;
+      background: #16161f; color: #3f3f50; border: 1px solid transparent; transition: all 0.35s;
+    }
+    .progress-step.active {
+      background: rgba(99,102,241,0.08); color: var(--accent-3); border-color: rgba(99,102,241,0.15);
+      animation: stepPulse 1.8s ease-in-out infinite;
+    }
+    .progress-step.done { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.2); animation: none; }
+    .progress-step .icon { font-size: 20px; display: block; margin-bottom: 6px; }
+    @keyframes stepPulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
+
+    /* Results */
+    .results-section { margin-top: 48px; padding-bottom: 80px; animation: fadeSlideIn 0.5s ease; }
+    @keyframes fadeSlideIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+    .results-header { text-align: center; margin-bottom: 32px; }
+    .results-header h2 { font-size: 26px; font-weight: 800; color: var(--text-bright); letter-spacing: -0.02em; }
+    .results-header p { font-size: 14px; color: var(--text-dim); margin-top: 6px; }
+    .results-header .divider {
+      width: 48px; height: 3px; border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent-1), var(--accent-2)); margin: 16px auto 0;
+    }
+
+    .cards-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+    @media (max-width:960px) { .cards-grid { grid-template-columns:1fr; max-width:560px; margin:0 auto; } }
+
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; display: flex; flex-direction: column;
+      transition: transform 0.25s, box-shadow 0.25s;
+    }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 16px 48px rgba(0,0,0,0.3); }
+
+    .card-header {
+      padding: 20px 24px 16px; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-header.friendly { background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,182,212,0.06)); border-bottom-color: rgba(16,185,129,0.15); }
+    .card-header.expert { background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(99,102,241,0.06)); border-bottom-color: rgba(59,130,246,0.15); }
+    .card-header.review { background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(239,68,68,0.06)); border-bottom-color: rgba(245,158,11,0.15); }
+    .card-header h3 { font-size: 15px; font-weight: 700; color: var(--text-bright); }
+    .card-header .badge { font-size: 11px; padding: 4px 12px; border-radius: 20px; font-weight: 600; }
+    .card-header.friendly .badge { background: var(--green-dim); color: var(--green); }
+    .card-header.expert .badge { background: var(--blue-dim); color: var(--blue); }
+    .card-header.review .badge { background: var(--orange-dim); color: var(--orange); }
+
+    .card-title { padding: 18px 24px 0; font-size: 15px; font-weight: 700; color: var(--text-bright); line-height: 1.5; }
+    .card-content {
+      padding: 14px 24px; font-size: 13px; line-height: 1.8; color: var(--text); flex: 1;
+      max-height: 300px; overflow-y: auto;
+    }
+    .card-content::-webkit-scrollbar { width: 4px; }
+    .card-content::-webkit-scrollbar-thumb { background: #27273a; border-radius: 4px; }
+    .card-content h2 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--text-bright); }
+    .card-content p { margin-bottom: 8px; }
+    .card-content strong { color: var(--text-bright); }
+    .card-content ul { margin: 6px 0 6px 18px; }
+    .card-content li { margin-bottom: 3px; }
+
+    .card-review { padding: 14px 24px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
+    .card-review .score-row { display: flex; justify-content: space-between; align-items: center; }
+    .card-review .grade { font-size: 22px; font-weight: 900; margin-right: 6px; }
+    .grade-A { color: var(--green); }
+    .grade-B { color: var(--blue); }
+
+    .card-footer { padding: 14px 24px 18px; border-top: 1px solid var(--border); }
+    .btn-copy {
+      width: 100%; padding: 11px; border: 1.5px solid #27273a; border-radius: 10px;
+      background: transparent; font-size: 13px; font-weight: 600; color: var(--text-dim);
+      cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-copy:hover { border-color: var(--accent-1); color: var(--accent-3); background: rgba(99,102,241,0.05); }
+
+    .footer { text-align: center; padding: 32px 24px 40px; font-size: 12px; color: #3f3f50; position: relative; z-index: 1; }
+
+    .demo-badge {
+      position: fixed; top: 16px; right: 16px; z-index: 100;
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      color: #fff; font-size: 11px; font-weight: 700; padding: 6px 14px;
+      border-radius: 20px; letter-spacing: 0.03em;
+      box-shadow: 0 4px 16px rgba(99,102,241,0.3);
+    }
+
+    @media (max-width:640px) {
+      .header { padding: 40px 0 56px; }
+      .header h1 { font-size: 26px; }
+      .input-section { padding: 24px 20px; }
+      .api-key-row { flex-direction: column; align-items: stretch; gap: 6px; }
+      .progress-steps { grid-template-columns: repeat(2,1fr); }
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27273a; border-radius: 6px; }
+  </style>
+</head>
+<body>
+
+  <div class="demo-badge">UI PREVIEW</div>
+  <div class="bg-glow"></div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand"><div class="brand-icon">D</div></div>
+      <h1>DailyFNI Blog Generator</h1>
+      <p class="subtitle">상품 정보를 입력하면 3가지 톤의 네이버 블로그 글을 AI가 자동 생성합니다</p>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Input Section -->
+    <div class="input-section glass">
+      <div class="section-label"><span class="dot"></span> API Configuration</div>
+      <div class="api-key-row">
+        <label>API Key</label>
+        <input type="password" value="sk-ant-api03-xxxx...xxxx" readonly />
+      </div>
+
+      <div class="section-label" style="margin-top:20px"><span class="dot"></span> Product Information</div>
+      <div class="product-input">
+        <textarea readonly>삼성 갤럭시 S24 울트라
+- 가격: 1,650,000원~
+- 6.8인치 다이내믹 AMOLED 2X
+- 스냅드래곤 8 Gen 3
+- 2억 화소 카메라
+- 5000mAh 배터리
+- S펜 내장
+- 티타늄 프레임
+- Galaxy AI 기능 탑재</textarea>
+      </div>
+
+      <button class="btn-generate">
+        <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 3v3m0 12v3m-9-9h3m12 0h3m-3.5-6.5L15 7.5m-6 9-1.5 1.5m0-12L9 7.5m6 9 1.5 1.5"/><circle cx="12" cy="12" r="4"/></svg>
+        생성하기
+      </button>
+
+      <!-- Progress Demo -->
+      <div class="progress-section">
+        <div class="progress-bar-track"><div class="progress-bar-fill"></div></div>
+        <div class="progress-steps">
+          <div class="progress-step done"><span class="icon">&#128269;</span>리서치</div>
+          <div class="progress-step done"><span class="icon">&#128202;</span>SEO 분석</div>
+          <div class="progress-step active"><span class="icon">&#9997;&#65039;</span>글 작성</div>
+          <div class="progress-step"><span class="icon">&#9989;</span>검수</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Demo Result Cards -->
+    <div class="results-section">
+      <div class="results-header">
+        <h2>생성 완료</h2>
+        <p>원하는 톤의 글을 복사하여 네이버 블로그에 붙여넣으세요</p>
+        <div class="divider"></div>
+      </div>
+
+      <div class="cards-grid">
+        <!-- Card 1: Friendly -->
+        <div class="card">
+          <div class="card-header friendly">
+            <h3>친근톤</h3>
+            <span class="badge">~해요체</span>
+          </div>
+          <div class="card-title">갤럭시 S24 울트라, 직접 써보니 이건 진짜 넘사벽이에요!</div>
+          <div class="card-content">
+            <p>안녕하세요, 여러분! 오늘은 제가 정말 기대하고 있던 <strong>삼성 갤럭시 S24 울트라</strong>를 소개해드리려고 해요.</p>
+            <h2>디자인부터 남다르다</h2>
+            <p>이번에 <strong>티타늄 프레임</strong>을 적용해서 고급스러움이 한층 업그레이드됐어요. 손에 쥐는 순간 "와, 이건 다르다" 느낌이 확 오거든요.</p>
+            <h2>카메라가 미쳤어요</h2>
+            <p><strong>2억 화소 카메라</strong>로 찍으면 머리카락 한 올까지 선명하게 나와요. 야경도 노이즈 없이 깔끔하게 담을 수 있답니다.</p>
+            <h2>Galaxy AI가 진짜 편해요</h2>
+            <p>통역, 요약, 사진 편집까지 AI가 다 해줘요. 특히 통화 중 실시간 통역 기능은 해외여행 갈 때 필수템이 될 것 같아요!</p>
+            <ul>
+              <li>6.8인치 대화면 AMOLED 디스플레이</li>
+              <li>스냅드래곤 8 Gen 3 프로세서</li>
+              <li>5000mAh 대용량 배터리</li>
+              <li>S펜 내장으로 메모도 간편하게</li>
+            </ul>
+          </div>
+          <div class="card-review">
+            <div class="score-row">
+              <span><span class="grade grade-A">A</span> 92점</span>
+              <span>매우 우수</span>
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="btn-copy">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              복사하기
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 2: Expert -->
+        <div class="card">
+          <div class="card-header expert">
+            <h3>전문톤</h3>
+            <span class="badge">~입니다체</span>
+          </div>
+          <div class="card-title">삼성 갤럭시 S24 울트라 심층 분석: 차세대 플래그십의 기준</div>
+          <div class="card-content">
+            <p>삼성전자의 최신 플래그십 스마트폰 <strong>갤럭시 S24 울트라</strong>는 모바일 기기의 새로운 기준을 제시합니다.</p>
+            <h2>프로세서 및 성능</h2>
+            <p><strong>퀄컴 스냅드래곤 8 Gen 3</strong>를 탑재하여 전작 대비 CPU 성능 30%, GPU 성능 25% 향상을 달성하였습니다. 멀티태스킹 환경에서도 안정적인 구동이 가능합니다.</p>
+            <h2>디스플레이 사양</h2>
+            <p>6.8인치 <strong>Dynamic AMOLED 2X</strong> 패널은 최대 2,600nit 밝기를 지원하며, 1~120Hz 가변 주사율을 통해 배터리 효율을 극대화하였습니다.</p>
+            <h2>카메라 시스템</h2>
+            <p>메인 카메라는 <strong>200MP ISOCELL HP2</strong> 센서를 채용하였으며, 광학 5배 줌과 디지털 100배 스페이스 줌을 지원합니다.</p>
+            <h2>Galaxy AI 플랫폼</h2>
+            <p>온디바이스 AI 처리를 통한 실시간 번역, 텍스트 요약, 이미지 생성 편집 등 혁신적 기능을 제공합니다.</p>
+          </div>
+          <div class="card-review">
+            <div class="score-row">
+              <span><span class="grade grade-A">A</span> 95점</span>
+              <span>매우 우수</span>
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="btn-copy">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              복사하기
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 3: Review -->
+        <div class="card">
+          <div class="card-header review">
+            <h3>리뷰톤</h3>
+            <span class="badge">사용 후기</span>
+          </div>
+          <div class="card-title">갤럭시 S24 울트라 2주 실사용 리뷰 — 역대급 완성도</div>
+          <div class="card-content">
+            <p>2주간 메인폰으로 사용해본 <strong>갤럭시 S24 울트라</strong> 솔직 후기를 남깁니다.</p>
+            <h2>디자인 & 그립감 ★★★★★</h2>
+            <p>티타늄 프레임 덕분에 무게는 줄고 강도는 높아졌습니다. 각진 디자인이 손에 안정감 있게 잡히네요. S펜도 여전히 슬롯에 내장되어 있어 편합니다.</p>
+            <h2>카메라 품질 ★★★★★</h2>
+            <p>200MP 메인 카메라의 디테일은 압도적입니다. 저조도에서도 노이즈가 거의 없고, 5배 광학 줌은 실사용에서 정말 유용했어요.</p>
+            <h2>배터리 ★★★★☆</h2>
+            <p>5000mAh로 하루 종일 충분히 사용 가능합니다. 다만 100배 줌이나 AI 기능을 자주 쓰면 오후에 충전이 필요할 수도 있습니다.</p>
+            <h2>Galaxy AI ★★★★★</h2>
+            <p>써보면 놀라운 기능들이 많습니다. 통화 실시간 통역, 원터치 사진 편집, 메모 요약 등 일상에서 체감이 확 됩니다.</p>
+            <p><strong>종합 평점: 4.8 / 5.0</strong> — 2024년 최고의 스마트폰이라 단언합니다.</p>
+          </div>
+          <div class="card-review">
+            <div class="score-row">
+              <span><span class="grade grade-B">B</span> 88점</span>
+              <span>우수</span>
+            </div>
+          </div>
+          <div class="card-footer">
+            <button class="btn-copy">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              복사하기
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">DailyFNI &copy; 2026 &middot; Powered by Claude AI</div>
+</body>
+</html>
