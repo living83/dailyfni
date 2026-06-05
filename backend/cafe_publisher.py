@@ -483,6 +483,26 @@ async def _wait_editor(page: Page) -> tuple["Frame|Page", Any]:
     return page, False
 
 
+async def _is_login_wall(page: Page) -> bool:
+    """현재 페이지가 '로그인 벽'인지 견고하게 판정.
+
+    네이버 글쓰기 진입 시 세션 거부는 두 가지로 나타난다.
+      (1) URL이 nid.naver.com/nidlogin.login 으로 리다이렉트
+      (2) URL은 write를 유지한 채 로그인 폼만 인라인 렌더
+    신규 로그인 UI는 input id가 #id/#pw 가 아닐 수 있으므로, 어떤 UI에도
+    존재하는 password 입력 필드를 1차 신호로 쓴다. (에디터에는 절대 없음)
+    """
+    try:
+        u = page.url or ""
+        if "nidlogin" in u or "nid.naver.com" in u:
+            return True
+        return bool(await page.evaluate(
+            "() => !!document.querySelector(\"input[type='password'], #id, #pw\")"
+        ))
+    except Exception:
+        return False
+
+
 async def _find_title_element(page: Page, editor: Frame | Page):
     """제목 입력 영역 찾기 (기존 매크로의 다중 전략 적용)"""
 
@@ -557,6 +577,19 @@ async def _input_title_and_body(page: Page, editor: Frame|Page, title: str, sect
             if pages:
                 await capture_debug(pages[-1], "title_not_found")
         except: pass
+        # 제목이 없는 진짜 원인이 '로그인 벽'인지 구분해 정확히 보고한다.
+        # (과거엔 로그인 페이지인데도 '제목 영역 없음'으로 오인 보고됐다.)
+        try:
+            is_login = await page.evaluate(
+                "() => !!document.querySelector('input#id, input#pw') "
+                "|| location.href.includes('nidlogin')"
+            )
+        except Exception:
+            is_login = False
+        if is_login:
+            raise Exception(
+                "글쓰기 세션 거부(로그인 페이지) — 제목 영역 없음은 미로그인 증상. 재로그인 필요."
+            )
         raise Exception("제목 영역을 찾을 수 없습니다. (모든 전략 실패)")
         
     await t_el.click()
@@ -905,27 +938,80 @@ async def async_publish_to_cafe(
             # 글쓰기 진입 — 프록시 exit IP 불안정으로 가끔(~1/3) 로그인 페이지로 튕긴다.
             # 로그인 리다이렉트면 재네비게이션하고, 에디터(제목 영역)가 뜰 때까지 폴링한다.
             # (commit으로 빠르게 진입 + 정적에셋 분리 라우팅으로 SPA 번들을 직접 받아 렌더)
+            # 실제 에디터에만 존재하는 요소로 한정한다. (과거 '[class*=se-]'는
+            # 로그인 페이지의 무관한 요소까지 매칭해 '진입 성공' 오판 → 이후
+            # '제목 영역 없음'으로 잘못 보고되는 원인이었다.)
             _EDITOR_READY = (
-                "[contenteditable='true'], .se-content, .se-container, [class*='se-'], "
-                ".ArticleWritingTitle, [class*='ArticleWriting'], [placeholder*='제목'], "
-                "textarea[placeholder*='제목']"
+                "textarea.textarea_input, .ArticleWritingTitle, [class*='ArticleWriting'], "
+                ".se-documentTitle, [placeholder*='제목'], textarea[placeholder*='제목']"
             )
             entered = False
+            relogin_done = False
+            editor = page  # 기본은 page
             for attempt in range(1, 7):
                 await page.goto(write_url, wait_until="commit", timeout=30000)
+                login_wall = False
+                editor_seen = False
                 for _ in range(20):  # 최대 ~20s: 로그인 튕김 or 에디터 등장 대기
                     await asyncio.sleep(1.0)
-                    cur = page.url
-                    if "nidlogin" in cur or "nid.naver.com" in cur:
-                        break  # 로그인으로 튕김 → 재시도
+                    if await _is_login_wall(page):
+                        login_wall = True
+                        break
                     try:
                         if await page.query_selector(_EDITOR_READY):
-                            entered = True
+                            editor_seen = True
                             break
                     except Exception:
                         pass
-                if entered:
-                    break
+
+                # 에디터가 보였더라도, SPA가 글쓰기 셸을 잠깐 렌더한 뒤 세션 거부로
+                # 로그인으로 튕기는 '낙관적 렌더' 케이스가 있다. 안정화 대기 후
+                # iframe 전환 + 에디터 JS 초기화까지 끝낸 다음 '최종' 로그인 벽을
+                # 재확인해야 오판('제목 영역 없음')을 막는다.
+                if editor_seen and not login_wall:
+                    # iframe 전환 (신 에디터는 iframe 없음 — page 직접)
+                    editor = page
+                    try:
+                        frame_el = await page.wait_for_selector(
+                            "iframe#cafe_main, iframe[name='cafe_main']", timeout=8000
+                        )
+                        if frame_el:
+                            frame = await frame_el.content_frame()
+                            if frame:
+                                editor = frame
+                                logger.info("cafe_main iframe 감지 → frame으로 전환")
+                                await random_delay(1, 2)
+                    except Exception:
+                        logger.info("cafe_main iframe 없음 — page 직접 사용")
+                    await random_delay(3, 5)  # 에디터 JS 초기화 대기
+                    # 최종 검증: 안정화 후에도 로그인 벽이 아니고 제목 요소가 실제로 있는가
+                    if await _is_login_wall(page):
+                        login_wall = True
+                    elif await page.query_selector(_EDITOR_READY):
+                        entered = True
+                        break
+
+                # 글쓰기 세션 거부(로그인 벽). 저장 쿠키는 홈 탐색은 되지만 글쓰기는
+                # 거부되는 stale 상태이므로 단순 goto 재시도는 무의미하다.
+                # → 1회에 한해 '신선 재로그인'으로 쿠키를 재발급받고 재진입한다.
+                if login_wall and not relogin_done:
+                    relogin_done = True
+                    logger.warning(
+                        "글쓰기 세션 거부(로그인 벽) 감지 — stale 쿠키 무효화 후 신선 재로그인 시도"
+                    )
+                    if on_progress: on_progress("login", "글쓰기 세션 만료 — 재로그인 중...")
+                    relogin_ok = await login(
+                        context, account["username"], plain_pw, account_id, force_fresh=True
+                    )
+                    if not relogin_ok:
+                        raise Exception(
+                            "글쓰기 세션 거부 — 신선 재로그인 실패 (캡차 또는 ID/PW 오류)"
+                        )
+                    logger.info("신선 재로그인 성공 — 글쓰기 재진입 시도")
+                    cookies = await context.cookies()
+                    result["cookies"] = json.dumps(cookies, ensure_ascii=False)
+                    await random_delay(1, 2)
+                    continue
                 logger.warning(
                     f"글쓰기 진입 실패(로그인 리다이렉트/에디터 미등장) — 재시도 {attempt}/6"
                 )
@@ -933,29 +1019,12 @@ async def async_publish_to_cafe(
             if not entered:
                 raise Exception(
                     "글쓰기 페이지 진입 실패 — 반복적으로 로그인 리다이렉트 "
-                    "(프록시 exit IP 불안정 추정, 재시도 6회 소진)"
+                    "(글쓰기 세션 거부 / 재로그인 후에도 실패)"
                 )
             logger.info(f"글쓰기 페이지 URL: {page.url}")
-            
-            # 5. cafe_main iframe 확인 및 switch (기존 매크로 동일)
+
+            # 5. 에디터/게시판 단계로 진행 (iframe 전환·초기화 대기는 위에서 완료)
             if on_progress: on_progress("write", "에디터 로딩 및 본문 작성 중...")
-            
-            editor = page  # 기본은 page
-            try:
-                frame_el = await page.wait_for_selector(
-                    "iframe#cafe_main, iframe[name='cafe_main']", timeout=8000
-                )
-                if frame_el:
-                    frame = await frame_el.content_frame()
-                    if frame:
-                        editor = frame
-                        logger.info("cafe_main iframe 감지 → frame으로 전환")
-                        await random_delay(1, 2)
-            except Exception:
-                logger.info("cafe_main iframe 없음 — page 직접 사용")
-            
-            # 에디터 JS 초기화 대기
-            await random_delay(3, 5)
             
             await _dismiss_popups(page, editor)
 

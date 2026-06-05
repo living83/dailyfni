@@ -343,6 +343,7 @@ async def login(
     naver_id: str,
     naver_password: str,
     account_id,
+    force_fresh: bool = False,
 ) -> bool:
     """
     네이버 로그인 — 2단계:
@@ -353,12 +354,24 @@ async def login(
 
     pyautogui 로그인이 성공하면 추출된 쿠키를 현재 Playwright context에
     주입하여 호출자가 그대로 발행/엔게이지 작업을 이어가도록 한다.
+
+    force_fresh=True 면 Step 1(쿠키 재사용)을 건너뛰고 곧바로 새 로그인을
+    수행한다. 저장된 쿠키가 홈 탐색은 통과하지만 글쓰기 엔드포인트에서
+    nidlogin 으로 튕기는('탐색 가능·글쓰기 거부') stale 상태일 때 호출자가
+    쿠키를 강제로 재발급받기 위해 사용한다.
     """
     page = await context.new_page()
 
     # ── Step 1: 쿠키 로그인 시도 ─────────────────────────────
     cookie_path = settings.COOKIES_DIR / f"account_{account_id}.enc"
-    if cookie_path.exists():
+    if force_fresh and cookie_path.exists():
+        # 글쓰기 거부된 stale 쿠키 → 재사용 차단. 실패 대비 백업 후 제거.
+        try:
+            cookie_path.replace(cookie_path.with_suffix(".enc.stale"))
+            logger.info(f"[계정 {account_id}] force_fresh — stale 쿠키 격리(.stale)")
+        except Exception as e:
+            logger.warning(f"[계정 {account_id}] stale 쿠키 격리 실패(무시): {e}")
+    if cookie_path.exists() and not force_fresh:
         try:
             cookies = _load_encrypted_cookies(cookie_path)
             # 쿠키 유효성은 '무프록시'로 검증한다. 계정 레지던셜 프록시는 www.naver.com
