@@ -1210,9 +1210,24 @@ async def async_publish_to_cafe(
                     result["success"] = True
                     result["url"] = final_url
                 else:
-                    # pub_ok=True면 발행 버튼 클릭은 성공 → 글은 실제로 올라간 상태
-                    # URL만 확인 못한 것이므로 성공으로 처리 (현재 페이지 URL or 게시판 URL 사용)
-                    fallback_url = page.url if page.url and "cafe.naver.com" in page.url else f"https://cafe.naver.com/{cafe_alias}"
+                    # pub_ok=True면 발행 버튼 클릭은 성공 → 글은 실제로 올라간 상태.
+                    # URL만 확인 못한 것이므로 성공으로 처리한다.
+                    # 단, 이 시점의 page.url은 아직 글쓰기 페이지(.../articles/write?...)에
+                    # 머물러 있는 경우가 잦다. 그 write URL을 저장/알림하면 텔레그램에
+                    # '포스팅이 아닌 글쓰기 URL'이 전송되는 버그가 된다 → write/edit는 배제하고
+                    # 대신 해당 게시판(menu_id) 또는 카페 홈 URL로 대체한다.
+                    _cur = page.url or ""
+                    _low = _cur.lower()
+                    if _cur and "cafe.naver.com" in _cur and "write" not in _low and "edit" not in _low:
+                        fallback_url = _cur
+                    elif menu_id:
+                        fallback_url = (
+                            f"https://cafe.naver.com/{cafe_alias}"
+                            f"?iframe_url=/ArticleList.nhn%3Fsearch.clubid={cafe_numeric_id}"
+                            f"%26search.menuid={menu_id}"
+                        )
+                    else:
+                        fallback_url = f"https://cafe.naver.com/{cafe_alias}"
                     result["success"] = True
                     result["url"] = fallback_url
                     logger.warning(f"리다이렉트 URL 확인 실패 — 성공으로 처리 (fallback URL: {fallback_url})")
