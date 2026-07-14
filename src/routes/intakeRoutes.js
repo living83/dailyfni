@@ -75,6 +75,42 @@ router.get('/intake/list', async (req, res) => {
     sql += ' ORDER BY created_at DESC LIMIT 50';
 
     const rows = await query(sql, params);
+
+    // 중복 연락처 표기: 정규화 phone(숫자만) 기준으로
+    //  (1) 이미 등록된 고객(customers) 존재 여부/상태/담당
+    //  (2) 동일 번호 유입 횟수(재유입)
+    const norm = p => String(p || '').replace(/[^0-9]/g, '');
+    const phones = [...new Set(rows.map(r => norm(r.phone)).filter(Boolean))];
+    if (phones.length) {
+      const ph = phones.map(() => '?').join(',');
+      const NPEXPR = "REPLACE(REPLACE(REPLACE(phone,'-',''),' ',''),'.','')";
+
+      const custs = await query(
+        `SELECT id, ${NPEXPR} AS np, status, assigned_to, created_at
+           FROM customers WHERE ${NPEXPR} IN (${ph}) ORDER BY created_at ASC`,
+        phones
+      );
+      const custMap = {};
+      custs.forEach(c => { if (!custMap[c.np]) custMap[c.np] = c; }); // 최초 등록건 기준
+
+      const cnts = await query(
+        `SELECT ${NPEXPR} AS np, COUNT(*) AS cnt
+           FROM intake_customers WHERE ${NPEXPR} IN (${ph}) GROUP BY np`,
+        phones
+      );
+      const cntMap = {};
+      cnts.forEach(x => { cntMap[x.np] = x.cnt; });
+
+      rows.forEach(r => {
+        const np = norm(r.phone);
+        const c = custMap[np];
+        r.existing_customer_id = c ? c.id : null;
+        r.existing_customer_status = c ? c.status : null;
+        r.existing_customer_assignee = c ? c.assigned_to : null;
+        r.reentry_count = cntMap[np] || 1; // 동일 번호 유입 총 횟수
+      });
+    }
+
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

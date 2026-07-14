@@ -662,6 +662,10 @@ function navigate(page) {
       loadLedgerLoanList(ledgerCustomer?.name);
     }, 200);
   }
+  // 고객 수정 페이지 렌더 후 메모/상담 이력 로드
+  if (page === 'customer-edit' && ledgerEditCustomerId) {
+    setTimeout(() => loadEditConsultTimeline(ledgerEditCustomerId), 200);
+  }
   // 대출 신청 관리 진입 시 자동 동기화 + 5분마다 자동 갱신
   // (수동 [동기화] 버튼은 항상 사용 가능)
   if (page === 'loans') {
@@ -3060,6 +3064,123 @@ function parseRebateExcel(input) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// 정산정책 파서 (2D 그리드 기반) — 월 수당표 xlsx 자동 반영용
+// 규칙:
+//  · 헤더행('금융사'/'지급수당'/'상품구분')에서 컬럼 위치 자동 감지
+//  · '상품구분' 컬럼 보유 시트 = 대부(카테고리 fill-down + '대부 ' 접두)
+//  · 없으면 단독 섹션헤더행(예: '햇살론','오토론')으로 카테고리 추적
+//  · '통' 단일요율 → rateUnder=rateOver=값 / 'NNN만원' → 정액
+//  · '오토 통합론' 처럼 이름 다음 칸에 하위금융사, 그 다음 칸에 '2.5/1.75%' 결합요율
+//    → category='오토통합론', product=하위금융사, 결합요율을 500이하/초과로 분리
+// rows: 2차원 배열(행 × 셀, 값은 서식 텍스트 "2.50%")
+function parsePolicyGrid(rows) {
+  const out = [];
+  const norm = (s) => String(s == null ? '' : s).replace(/ /g, ' ').trim();
+  const isRate = (s) => { const t = norm(s).replace(/%/g, ''); return t !== '' && /^\d+(\.\d+)?$/.test(t); };
+  const isCombo = (s) => /^\d+(\.\d+)?\s*\/\s*\d+(\.\d+)?\s*%?$/.test(norm(s));
+  const isFlat = (s) => /만원/.test(norm(s));
+  const isPlaceholder = (s) => { const t = norm(s); return t === '통' || t === '통합'; };
+  const pct = (s) => { const t = norm(s).replace(/%/g, ''); if (t === '') return ''; const n = parseFloat(t); return isNaN(n) ? '' : String(n); };
+  const normAuth = (s) => { const t = norm(s).toUpperCase(); return (t === 'X' || t === 'O') ? t : ''; };
+  const isHeaderRow = (r) => r.some(c => { const t = norm(c); return t === '금융사' || t.includes('지급수당') || t === '상품구분'; });
+  const cleanCat = (s) => norm(s).replace(/\s*\/\s*/g, '/');
+
+  let nameCol = 1, rateCol = 2, authCol = 4, catCol = -1;
+  let isDaebu = false, colCat = '', sectionCat = '', autoParent = '';
+
+  (rows || []).forEach(raw => {
+    const r = Array.isArray(raw) ? raw.map(norm) : [];
+    if (!r.some(c => c)) return;
+    if (r.some(c => /금융사별 수수료|소비자 금융사별 수수료|수수료 색상/.test(c))) return;
+
+    // 헤더행 → 컬럼 위치 재설정
+    if (isHeaderRow(r)) {
+      const iName = r.findIndex(c => norm(c) === '금융사');
+      const iRate = r.findIndex(c => norm(c).includes('지급수당'));
+      const iCat  = r.findIndex(c => norm(c) === '상품구분');
+      const iAuth = r.findIndex(c => norm(c) === '인증' || norm(c) === '비고');
+      if (iName >= 0) nameCol = iName;
+      if (iRate >= 0) rateCol = iRate;
+      if (iAuth >= 0) authCol = iAuth;
+      catCol = iCat;
+      if (iCat >= 0) isDaebu = true;
+      return;
+    }
+
+    if (catCol >= 0 && norm(r[catCol])) colCat = norm(r[catCol]);
+
+    const name = norm(r[nameCol]);
+    const c1 = norm(r[rateCol]);
+    const c2 = norm(r[rateCol + 1]);
+
+    // 섹션 헤더행(이름만, 요율칸 비어있음) — 단독 카테고리
+    if (name && !c1 && !c2 && catCol < 0) { sectionCat = name; autoParent = ''; return; }
+
+    // 결합요율 하위그룹(오토 통합론): 요율1칸이 하위 금융사명(텍스트), 요율2칸이 실제 요율
+    const c1IsLenderText = c1 && !isRate(c1) && !isPlaceholder(c1) && !isCombo(c1) && !isFlat(c1);
+    const c2IsRate = isCombo(c2) || isRate(c2);
+    const enterAuto = name && c1IsLenderText && c2IsRate;
+    const continueAuto = !name && c1IsLenderText && c2IsRate && autoParent;
+    if (enterAuto || continueAuto) {
+      if (name) autoParent = name;
+      let ru = '', ro = '';
+      if (isCombo(c2)) { const p = norm(c2).split('/'); ru = pct(p[0]); ro = pct(p[1]); }
+      else { ru = ro = pct(c2); }
+      out.push({ category: '오토통합론', product: c1, rateUnder: ru, rateOver: ro, auth: '' });
+      return;
+    }
+
+    // 일반행
+    if (!name) return;
+    autoParent = '';
+    let ru = '', ro = '';
+    if (isFlat(c1)) { ru = norm(c1); ro = ''; }                 // 정액 (예: 110만원)
+    else if (isPlaceholder(c1)) { ru = ro = pct(c2); }          // '통' 단일요율 → c2 가 값
+    else if (isRate(c1) && isRate(c2)) { ru = pct(c1); ro = pct(c2); }
+    else if (isRate(c1)) { ru = ro = pct(c1); }                 // 한 칸만 요율
+    else if (isCombo(c1)) { const p = norm(c1).split('/'); ru = pct(p[0]); ro = pct(p[1]); }
+    else return;                                                // 요율 없음 → 스킵
+
+    let category = cleanCat(catCol >= 0 ? colCat : sectionCat);
+    if (isDaebu && category) category = '대부 ' + category;
+    out.push({ category, product: name, rateUnder: ru, rateOver: ro, auth: normAuth(r[authCol]) });
+  });
+  return out;
+}
+
+// xlsx/csv → 2D 그리드(들) 로 변환 후 콜백. (xlsx 는 시트별 그리드, csv 는 단일 그리드)
+function readPolicyGrids(file, callback) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const splitCsv = (line) => {
+    const o = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) { const ch = line[i];
+      if (ch === '"') { if (q && line[i+1] === '"') { cur += '"'; i++; } else q = !q; }
+      else if (ch === ',' && !q) { o.push(cur); cur = ''; } else cur += ch; }
+    o.push(cur); return o.map(c => c.trim().replace(/^"|"$/g, ''));
+  };
+  if (ext === 'xlsx' || ext === 'xls') {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      // raw:false → 셀 서식 문자열("2.50%") 유지, defval:'' → 빈 셀 보존(컬럼 정렬 유지)
+      const grids = wb.SheetNames.map(nm => XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, raw: false, defval: '' }));
+      callback(grids);
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const reader = new FileReader();
+    const done = (text) => callback([text.split('\n').filter(l => l.trim()).map(splitCsv)]);
+    reader.onload = (e) => {
+      const text = e.target.result;
+      if (text.includes('�') || text.includes('ï¿½')) {
+        const r2 = new FileReader(); r2.onload = (e2) => done(e2.target.result); r2.readAsText(file, 'EUC-KR');
+      } else done(text);
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+}
+
 function parsePolicyExcel(input) {
   const files = input.files;
   if (!files.length) return;
@@ -3072,108 +3193,8 @@ function parsePolicyExcel(input) {
       alert('엑셀(.xlsx) 또는 CSV 파일만 지원합니다.');
       continue;
     }
-    readSpreadsheetFile(file, async function(text) {
-      const lines = text.split('\n').filter(l => l.trim());
-      let currentCategory = '';
-
-      // CSV 한 줄을 따옴표 인식해서 분할 (셀 안의 콤마 보존).
-      // 예전엔 line.split(',') 만 써서 '엠케이(회생,파산)' 같은 셀이 두 컬럼으로 깨졌음.
-      const splitCsv = (line) => {
-        const out = []; let cur = ''; let inQ = false;
-        for (let i = 0; i < line.length; i++) {
-          const ch = line[i];
-          if (ch === '"') {
-            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
-            else inQ = !inQ;
-          } else if (ch === ',' && !inQ) { out.push(cur); cur = ''; }
-          else { cur += ch; }
-        }
-        out.push(cur);
-        return out.map(c => c.trim());
-      };
-
-      // 숫자/요율 셀 판별. "2.60%", "1.85", "0.5" 모두 true.
-      const isNumericCell = (s) => {
-        const t = String(s || '').replace(/%/g, '').trim();
-        if (!t) return false;
-        return /^[\d.]+$/.test(t);
-      };
-      const isHeaderWord = (s) => {
-        const t = String(s || '').trim();
-        return ['금융사','상품구분','지급수당','수수료','인증','대출구분','카테고리'].some(k => t.includes(k));
-      };
-      // "2.4/1.65%" 처럼 그룹의 기본 수수료를 헤더 셀에 적은 경우 — 카테고리로 받지 않음
-      const looksLikeRateText = (s) => /^\d+(\.\d+)?\s*\/\s*\d+(\.\d+)?\s*%?$/.test(String(s || '').trim());
-      // '통' '통합' 같은 자리표시자 셀
-      const isPlaceholder = (s) => {
-        const t = String(s || '').trim();
-        return t === '통' || t === '통합' || t === '-' || t === '·';
-      };
-      // 인증 정규화: X/O 만 받고 그 외(별표 *, 메모, 빈값)는 모두 빈값
-      const normAuth = (s) => {
-        const t = String(s || '').trim().toUpperCase();
-        return (t === 'X' || t === 'O') ? t : '';
-      };
-
-      lines.forEach(line => {
-        const cols = splitCsv(line).map(c => c.replace(/^"|"$/g, ''));
-
-        // 헤더/설명 행 스킵
-        if (cols.some(c => ['금융사별 수수료','소비자 금융사별 수수료','수수료 색상'].some(k => c.includes(k)))) return;
-        // 모든 셀이 헤더 키워드면 스킵 (예: '상품구분,금융사,지급수당,인증')
-        if (cols.filter(c => c).every(c => isHeaderWord(c))) return;
-
-        // 첫 번째 숫자(요율) 셀 인덱스 탐색. 앞쪽은 텍스트 영역, 뒤쪽은 수수료/인증 영역.
-        const firstRateIdx = cols.findIndex(c => isNumericCell(c));
-
-        if (firstRateIdx === -1) {
-          // 텍스트만 있는 행 = 그룹 헤더 후보. 수수료 표기("2.4/1.65%")는 카테고리로 받지 않음.
-          const texts = cols.filter(c => c && c.length > 1 && !isHeaderWord(c) && !looksLikeRateText(c));
-          if (texts.length > 0) currentCategory = texts[texts.length - 1];
-          return;
-        }
-
-        // 요율 앞쪽의 텍스트 셀들: [카테고리들..., 금융사]
-        const leftTexts = cols.slice(0, firstRateIdx).filter(c => c && c !== '%' && !isHeaderWord(c));
-        // 같은 텍스트 연속 중복 제거 ('오토론','오토론' → '오토론' 한 번)
-        const dedup = leftTexts.filter((v, i, a) => i === 0 || v !== a[i - 1]);
-
-        // product / category 결정. dedup 마지막이 '통' 같은 placeholder면
-        // 이 행은 단일 수당률 그룹 자체(currentCategory가 진짜 금융사명).
-        let product = dedup[dedup.length - 1] || '';
-        let category = (dedup.length > 1) ? dedup[dedup.length - 2] : currentCategory;
-        if (isPlaceholder(product)) {
-          product = currentCategory || (dedup.length > 1 ? dedup[dedup.length - 2] : '');
-          category = '';
-        } else if (dedup.length > 1) {
-          currentCategory = dedup[dedup.length - 2];
-        }
-
-        // 수당률: 다음 셀이 숫자면 두 단계(미만/이상), 아니면 단일 수당률 모드.
-        // 단일 모드에선 그 자리 셀이 사실 인증값(X/O)이므로 auth 로 가져온다.
-        const rateUnderRaw = (cols[firstRateIdx] || '').replace(/%$/,'').trim();
-        const nextRaw = (cols[firstRateIdx + 1] || '').replace(/%$/,'').trim();
-        let rateUnder, rateOver, authRaw;
-        if (isNumericCell(nextRaw)) {
-          rateUnder = rateUnderRaw;
-          rateOver  = nextRaw;
-          authRaw   = cols[firstRateIdx + 2] || '';
-        } else {
-          rateUnder = rateUnderRaw;
-          rateOver  = '';
-          authRaw   = nextRaw;
-        }
-
-        if (!product || isNumericCell(product)) return;
-
-        allData.push({
-          category,
-          product,
-          rateUnder,
-          rateOver,
-          auth: normAuth(authRaw),
-        });
-      });
+    readPolicyGrids(file, async function(grids) {
+      grids.forEach(grid => { allData = allData.concat(parsePolicyGrid(grid)); });
       processed++;
       if (processed === files.length) {
         // 저장이 실제로 성공했는지 확인한 뒤에만 표시/알림 진행
@@ -5217,9 +5238,19 @@ function renderIntake() {
     const phoneF = formatPhone(i.phone||'');
     const contentKo = translateContent(i.content||'');
 
+    // 중복 연락처 배지: 기존 등록고객 / 재유입
+    let dupBadges = '';
+    if (i.existing_customer_id) {
+      const info = `${i.existing_customer_status||'-'}·${i.existing_customer_assignee||'미배정'}`;
+      dupBadges += `<span onclick="event.stopPropagation();viewCustomerLedger(${i.existing_customer_id})" title="이미 등록된 고객 — 클릭 시 기존 원장 열기" style="margin-left:6px;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;background:#fee2e2;color:#b91c1c;cursor:pointer;white-space:nowrap;">⚠ 기존고객(${info})</span>`;
+    }
+    if ((i.reentry_count||1) > 1) {
+      dupBadges += `<span title="동일 번호 유입 ${i.reentry_count}건" style="margin-left:4px;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;background:#fef3c7;color:#b45309;white-space:nowrap;">↻ 재유입${i.reentry_count}</span>`;
+    }
+
     return `<tr ondblclick="processIntake(${i.id},'${i.name}','${i.phone}','${(i.content||'').replace(/'/g,"\\'")}','${i.source||'홈페이지'}')" style="cursor:${i.status==='pending'?'pointer':'default'};" title="${i.status==='pending'?'더블클릭: 고객등록으로 이동':''}">
       <td>${date}</td>
-      <td style="font-weight:600;">${i.name}</td>
+      <td style="font-weight:600;">${i.name}${dupBadges}</td>
       <td>${phoneF}</td>
       <td>${i.source || '홈페이지'}</td>
       <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${contentKo}">${contentKo||'-'}</td>
@@ -5289,8 +5320,11 @@ function updateIntakeBadge() {
             <tbody>${recentPending.map(i => {
               const ago = Math.round((Date.now() - new Date(i.created_at).getTime()) / 60000);
               const agoText = ago < 60 ? ago + '분전' : Math.round(ago/60) + '시간전';
+              const dupB = i.existing_customer_id
+                ? `<span onclick="event.stopPropagation();viewCustomerLedger(${i.existing_customer_id})" title="이미 등록된 고객 — 클릭 시 기존 원장 열기" style="margin-left:6px;padding:1px 5px;border-radius:10px;font-size:9px;font-weight:700;background:#fee2e2;color:#b91c1c;cursor:pointer;">⚠기존</span>`
+                : '';
               return `<tr>
-                <td style="font-weight:600;">${i.name}</td>
+                <td style="font-weight:600;">${i.name}${dupB}</td>
                 <td>${i.phone}</td>
                 <td>${i.source||'홈페이지'}</td>
                 <td>${agoText}</td>
@@ -5309,6 +5343,18 @@ let intakePrefill = null;
 
 async function processIntake(id, name, phone, content, source) {
   const user = JSON.parse(sessionStorage.getItem('loggedInUser') || '{}');
+
+  // 중복 연락처 가드: 이미 등록된 고객이면 새로 등록 대신 기존 원장으로 유도
+  const row = intakeData.find(i => String(i.id) === String(id)) || {};
+  if (row.existing_customer_id) {
+    const info = `${row.existing_customer_assignee || '미배정'}·${row.existing_customer_status || '-'}`;
+    const openExisting = confirm(
+      `이미 등록된 고객입니다 (${info}).\n연락처: ${phone}\n\n` +
+      `[확인] 기존 원장 열기 (이중등록 방지)\n[취소] 그래도 새로 등록 진행`
+    );
+    if (openExisting) { viewCustomerLedger(row.existing_customer_id); return; }
+  }
+
   if (!confirm(`${name} (${phone}) 고객을 접수 처리하시겠습니까?\n\n고객등록 화면으로 이동합니다.`)) return;
 
   try {
@@ -5437,9 +5483,37 @@ function renderCustomerEdit() {
           <button class="btn btn-primary" style="flex:1;padding:8px;font-size:13px;" onclick="submitCustomerEdit()">수정 저장</button>
           <button class="btn btn-outline" style="padding:8px 14px;font-size:13px;" onclick="viewCustomerLedger(${ledgerEditCustomerId})">취소</button>
         </div>
+
+        <div class="panel" style="margin-top:8px;"><div class="panel-header"><h2>메모 / 상담 이력</h2></div>
+          <div class="panel-body" style="padding:8px 12px;max-height:420px;overflow-y:auto;">
+            <div class="timeline" id="editConsultTimeline">
+              <div style="font-size:11px;color:#94a3b8;padding:8px;">로딩중...</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
+}
+
+// 고객 수정 페이지 우측 — 메모/상담 이력 읽기전용 로드 (고객원장 타임라인 재사용)
+async function loadEditConsultTimeline(customerId) {
+  const el = document.getElementById('editConsultTimeline');
+  if (!el) return;
+  try {
+    const res = await fetch(`/api/consultations?customerId=${customerId}`);
+    const data = await res.json();
+    if (data.success && data.data.length > 0) {
+      el.innerHTML = data.data.map(c => {
+        const date = c.consulted_at ? new Date(c.consulted_at).toLocaleString('ko-KR') : '';
+        return `<div class="timeline-item"><div class="tl-date">${date}</div><div class="tl-content">${c.content}</div><div class="tl-user">${c.channel||'메모'} | ${c.consulted_by||'-'}</div></div>`;
+      }).join('');
+    } else {
+      el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:8px;">기록이 없습니다.</div>';
+    }
+  } catch (e) {
+    el.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:8px;">이력 로드 실패</div>';
+  }
 }
 
 async function submitCustomerEdit() {
