@@ -1,0 +1,11 @@
+USE dailyfni;
+
+CREATE TABLE IF NOT EXISTS settlement_policies (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  category VARCHAR(50) DEFAULT '',
+  product VARCHAR(100) NOT NULL,
+  rate_under VARCHAR(20) DEFAULT '',
+  rate_over VARCHAR(20) DEFAULT '',
+  auth VARCHAR(10) DEFAULT '',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

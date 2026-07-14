@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>대부중개 전산시스템</title></head>
+<body>
+<script>
+  if (sessionStorage.getItem('loggedInUser')) {
+    location.href = '/main.html';
+  } else {
+    location.href = '/login.html';
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,2307 @@
+// ========================================
+// 론앤마스터 크롤러 - 사용자 행동 모방 방식
+// 상품 클릭 시 1건만 가져옴 (일괄 수집 X)
+// ========================================
+const puppeteer = require('puppeteer-core');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const LMASTER_BASE = 'https://lmaster.kr';
+const LOGIN_URL = LMASTER_BASE + '/jisa/login.asp';
+const PRODUCT_INFO_URL = LMASTER_BASE + '/admin/agent/win_fininfo.asp';
+const LOAN_APP_URL = LMASTER_BASE + '/admin/agent/loanlist_app.asp';
+const LOAN_LIST_URL = LMASTER_BASE + '/admin/agent/list_loanlist.asp';
+const STATUS_WIN_URL = LMASTER_BASE + '/admin/agent/statuswin.asp';
+const NOTICE_LIST_URL = LMASTER_BASE + '/admin/bbs/notice/list.asp';
+
+// 브라우저 인스턴스 (싱글톤)
+let browser = null;
+let page = null;
+let isLoggedIn = false;
+
+// 랜덤 딜레이 (사람처럼)
+function delay(min, max) {
+  const ms = Math.floor(Math.random() * (max - min) + min);
+  return new Promise(r => setTimeout(r, ms));
+}
+
+// Chrome 경로 자동 탐색
+function getChromePath() {
+  const paths = [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.CHROME_PATH || ''
+  ];
+  const fs = require('fs');
+  for (const p of paths) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+// 브라우저 시작
+async function launchBrowser() {
+  if (browser) return;
+
+  const chromePath = getChromePath();
+  if (!chromePath) {
+    throw new Error('Chrome 브라우저를 찾을 수 없습니다. CHROME_PATH 환경변수를 설정하세요.');
+  }
+
+  const isLinux = process.platform === 'linux';
+
+  browser = await puppeteer.launch({
+    executablePath: chromePath,
+    headless: isLinux ? 'new' : false, // 서버(Linux): headless, 로컬(Windows): 브라우저 표시
+    defaultViewport: isLinux ? { width: 1280, height: 900 } : null,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+  });
+
+  page = (await browser.pages())[0] || await browser.newPage();
+
+  // 브라우저 닫힘 감지
+  browser.on('disconnected', () => {
+    browser = null;
+    page = null;
+    isLoggedIn = false;
+  });
+}
+
+// 론앤마스터 로그인
+async function login(userId, password) {
+  await launchBrowser();
+
+  await page.goto(LOGIN_URL, { waitUntil: 'networkidle2' });
+  await delay(1000, 2000);
+
+  // 로그인 폼 입력
+  await page.evaluate((id, pw) => {
+    const inputs = document.querySelectorAll('input');
+    for (const inp of inputs) {
+      if (inp.name && (inp.name.toLowerCase().includes('id') || inp.name.toLowerCase().includes('user'))) {
+        inp.value = id;
+      }
+      if (inp.type === 'password') {
+        inp.value = pw;
+      }
+    }
+  }, userId, password);
+
+  await delay(500, 1000);
+
+  // 로그인 버튼 클릭
+  await page.evaluate(() => {
+    const btns = document.querySelectorAll('input[type="submit"], input[type="button"], button');
+    for (const btn of btns) {
+      if (btn.value && (btn.value.includes('로그인') || btn.value.includes('LOGIN'))) {
+        btn.click();
+        return;
+      }
+    }
+    // 폼 서브밋
+    const form = document.querySelector('form');
+    if (form) form.submit();
+  });
+
+  await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+  await delay(1500, 2500);
+
+  isLoggedIn = true;
+  return { success: true, message: '로그인 성공' };
+}
+
+// 상품 상세 가이드 가져오기 (1건, 사용자 행동 모방)
+// 주의: 크롤러는 단일 puppeteer page 싱글톤이라 직전에 어떤 페이지에 있었는지가 결과에 영향.
+//   - scanProductRequirements 가 loanlist_app.asp?w=w (windowed 모드) 로 이동시키고
+//     상품을 클릭해 두면, 이어서 win_fininfo.asp 로 가도 론앤마스터가 메인 접수 폼을
+//     다시 반환하는 문제가 있었다 (대출접수 메뉴에서만 가이드가 이상하게 나오던 원인).
+//   - 그래서 가이드 요청 시작할 때 puppeteer 를 list_loanlist.asp (목록 페이지) 로
+//     리셋해 windowed 모드를 털어낸 뒤 win_fininfo.asp 로 이동한다.
+async function getProductGuide(fidx, options = {}) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
+  const { agentNo = '12', upw = '1' } = options;
+
+  // 1) puppeteer 상태 리셋 — 깨끗한 목록 페이지로 이동
+  try {
+    await page.goto(`${LOAN_LIST_URL}?no=${agentNo}&upw=${upw}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await delay(400, 800);
+  } catch (e) {
+    // 실패해도 그냥 진행 — 어차피 아래에서 세션/리다이렉트 체크함
+  }
+
+  // 2) 상품 가이드 URL (no/upw 포함 — 없으면 리다이렉트 되는 환경 보호)
+  const url = `${PRODUCT_INFO_URL}?fidx=${fidx}&no=${agentNo}&upw=${upw}`;
+  await delay(800, 1500);
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await delay(1000, 2000);
+
+  // 세션 만료 감지 — URL 리다이렉트 + 에러 전용 문자열로 판별.
+  // 주의: 정상 가이드 페이지에도 "로그아웃(S)!" 버튼이 있어서
+  //   body 에서 "로그아웃" 을 찾으면 오탐 발생 (저스트 등 특정 상품에서 걸림).
+  //   → body 체크는 ACCESS_Deny / InValid_LoginInfo 등 에러 전용 패턴만 사용.
+  const sessionCheck = await page.evaluate(() => {
+    const body = document.body?.innerText || '';
+    const href = location.href || '';
+    // URL 기반 (확실한 리다이렉트)
+    if (href.includes('login.asp')) return { kicked: true, reason: 'URL→login.asp' };
+    // 에러 전용 문자열 (정상 가이드에는 절대 없는 것)
+    const errorPatterns = ['ACCESS_Deny', 'InValid_LoginInfo'];
+    const matched = errorPatterns.find(p => body.includes(p));
+    if (matched) return { kicked: true, reason: matched };
+    // "로그아웃되었습니다" 는 본문 앞 200자 이내에 있을 때만 (에러 페이지는 짧고 바로 나옴)
+    const head = body.substring(0, 200);
+    if (head.includes('로그아웃되었습니다') || head.includes('세션이 만료')) {
+      return { kicked: true, reason: '로그아웃 메시지 (상단)' };
+    }
+    return { kicked: false };
+  });
+  if (sessionCheck.kicked) {
+    isLoggedIn = false;
+    const err = new Error(`론앤마스터 세션이 만료되어 로그아웃되었습니다 (감지: "${sessionCheck.reason}"). 상단의 [론앤마스터 연동] 버튼으로 재로그인하세요.`);
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    throw err;
+  }
+
+  // 접수 메인 페이지로 리다이렉트됐는지 감지 — URL 기반만 사용.
+  // (이전에 본문 키워드 3개 이상 매칭으로 체크했으나 가이드 내용에
+  //  "고객 정보" 등이 포함되면 오탐 발생해 제거)
+  const redirectedToMain = await page.evaluate(() => {
+    const href = location.href || '';
+    const isGuide = href.includes('win_fininfo') || href.includes('fininfo');
+    return { redirected: !isGuide, href };
+  });
+  if (redirectedToMain.redirected) {
+    const err = new Error(`상품 가이드가 아닌 다른 페이지로 이동됨 (URL: ${redirectedToMain.href})`);
+    err.code = 'LMASTER_GUIDE_NOT_FOUND';
+    throw err;
+  }
+
+  // 페이지 내용 추출
+  const data = await page.evaluate(() => {
+    const title = document.querySelector('td[bgcolor] font b')?.textContent?.trim() || '';
+    const body = document.body.innerText;
+
+    // 파일 링크 수집
+    const files = [];
+    document.querySelectorAll('a').forEach(a => {
+      const href = a.href;
+      const text = a.textContent.trim();
+      if (href && (href.includes('.pdf') || href.includes('.xlsx') || href.includes('.xls') || href.includes('.hwp') || href.includes('download'))) {
+        files.push({ name: text, url: href });
+      }
+    });
+
+    // 버튼 (인증방법, 스크래핑방법, 동의서, 인증서 등)
+    // onclick 의 js_fnDownDoc_* / js_fnAuthSite 패턴을 파싱해 액션 정보를 첨부.
+    // (loanlist_app.asp 의 +인증/동의서 섹션과 동일한 함수명 체계)
+    const parseArgs = (raw) => [...raw.matchAll(/'([^']*)'/g)].map(x => x[1]);
+    const buttons = [];
+    document.querySelectorAll('input[type="button"], button').forEach(btn => {
+      const label = (btn.value || btn.textContent || '').trim();
+      if (!label) return;
+      const oc = btn.getAttribute('onclick') || '';
+      const m = oc.match(/js_fn(DownDoc_Mo|DownDoc_FinInfo|AuthSite|DownDoc_DataCommon)\((.*?)\)/);
+      if (m) {
+        const fnName = m[1];
+        const args = parseArgs(m[2]);
+        if (fnName === 'AuthSite') {
+          buttons.push({ label, action: 'auth', url: args[0] || '' });
+        } else if (fnName === 'DownDoc_Mo') {
+          buttons.push({ label, action: 'download', kind: 'mo', id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_FinInfo') {
+          buttons.push({ label, action: 'download', kind: 'fin', id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_DataCommon') {
+          buttons.push({ label, action: 'download', kind: 'data', id: '', flag: args[0] || '' });
+        } else {
+          buttons.push({ label });
+        }
+      } else {
+        buttons.push({ label });
+      }
+    });
+
+    return { title, body, files, buttons };
+  });
+
+  return {
+    fidx,
+    ...data,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+// 상품 목록에서 fidx 매핑 수집 (현재 페이지 DOM에서 추출)
+async function getProductFidxMap(agentNo, upw) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  // 현재 페이지가 신청서입력 페이지인지 확인
+  const currentUrl = page.url();
+  if (!currentUrl.includes('loanlist_app')) {
+    const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+    await delay(3000, 5000);
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    await delay(3000, 5000);
+  }
+
+  const products = await page.evaluate(() => {
+    const result = [];
+    // 모든 방식으로 fidx 추출 (onclick, href, 자바스크립트 호출 등)
+    const allElements = document.querySelectorAll('a, span, div, td, input');
+    const seen = new Set();
+    allElements.forEach(el => {
+      const onclick = el.getAttribute('onclick') || '';
+      const href = el.getAttribute('href') || '';
+      const allAttrs = onclick + ' ' + href;
+      const match = allAttrs.match(/fidx[=:](\d+)/i);
+      if (match) {
+        const fidx = parseInt(match[1]);
+        if (!seen.has(fidx)) {
+          seen.add(fidx);
+          // 상품명 찾기: 가장 가까운 텍스트
+          let name = el.textContent.trim();
+          if (!name || name.length > 50) {
+            const parent = el.closest('td') || el.parentElement;
+            if (parent) {
+              const nameEl = parent.querySelector('a, b, strong, span');
+              if (nameEl) name = nameEl.textContent.trim();
+            }
+          }
+          if (name && name.length < 50) {
+            result.push({ name, fidx });
+          }
+        }
+      }
+    });
+
+    // 추가: 페이지 전체 HTML에서 fidx 패턴 검색
+    const html = document.body.innerHTML;
+    const regex = /fidx[=:](\d+)/gi;
+    let m;
+    while ((m = regex.exec(html)) !== null) {
+      const fidx = parseInt(m[1]);
+      if (!seen.has(fidx)) {
+        seen.add(fidx);
+        result.push({ name: '(이름 미확인)', fidx });
+      }
+    }
+
+    return result;
+  });
+
+  return products;
+}
+
+// 론앤마스터 접수 폼 필드 스캔 (폼 구조 파악용)
+async function scanFormFields(agentNo, upw) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await delay(500, 1000);
+
+  const fields = await page.evaluate(() => {
+    const result = { inputs: [], selects: [], textareas: [] };
+
+    document.querySelectorAll('input').forEach(el => {
+      if (el.type === 'hidden' && !el.name) return;
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      result.inputs.push({
+        name: el.name || '', id: el.id || '', type: el.type || 'text',
+        value: el.value || '', placeholder: el.placeholder || '', label
+      });
+    });
+
+    document.querySelectorAll('select').forEach(el => {
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      const options = [...el.options].map(o => ({ value: o.value, text: o.text.trim() }));
+      result.selects.push({ name: el.name || '', id: el.id || '', label, options });
+    });
+
+    document.querySelectorAll('textarea').forEach(el => {
+      const label = el.closest('tr')?.querySelector('th,td:first-child')?.textContent?.trim() || '';
+      result.textareas.push({ name: el.name || '', id: el.id || '', label });
+    });
+
+    return result;
+  });
+
+  return fields;
+}
+
+// 대출 신청서 자동 입력
+// options.dryRun=true 면 폼 채우기까지만 하고 제출 직전에 멈춤 (스크린샷 반환)
+// options.files = [{ slot: 1|2, path, originalName }]  ← 폼 채움 후 파일 input 에 주입
+// options.checkboxName = '...'  ← '전송시체크' 계열 체크박스 이름 (ON 처리)
+async function submitLoanApplication(agentNo, upw, formData, options = {}) {
+  const { dryRun = false, files = [], checkboxName = null } = options;
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다. 상단의 [론앤마스터 연동] 버튼을 눌러 재로그인하세요.');
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'networkidle2' });
+  await delay(500, 1000);
+
+  // 로그아웃 / 세션만료 페이지 조기 감지 (로그인 재시도 유도)
+  const sessionCheck = await page.evaluate(() => {
+    const body = document.body?.innerText || '';
+    const href = location.href || '';
+    const patterns = ['ACCESS_Deny', 'InValid_LoginInfo', '로그아웃되었습니다', '로그아웃 되었습니다', '세션이 만료', 'Session Timeout', 'login.asp'];
+    const matched = patterns.find(p => body.includes(p) || href.includes(p));
+    return matched ? { kicked: true, reason: matched, url: href, snippet: body.substring(0, 300) } : { kicked: false };
+  });
+  if (sessionCheck.kicked) {
+    isLoggedIn = false; // 로컬 플래그 정정
+    const err = new Error(`론앤마스터 세션이 만료되어 로그아웃되었습니다 (감지: "${sessionCheck.reason}"). 상단의 [론앤마스터 연동] 버튼으로 재로그인 후 다시 시도하세요.`);
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    err.detail = sessionCheck;
+    throw err;
+  }
+
+  // 1단계: 상품 선택 (fidx 기반) - 다양한 패턴 커버
+  let productSelectResult = { selected: false, via: null, detail: '' };
+  if (formData.fidx) {
+    productSelectResult = await page.evaluate((fidx) => {
+      const fidxStr = String(fidx);
+      const fidxNum = Number(fidx);
+
+      // 1) radio/checkbox input: value 일치
+      const radios = document.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+      for (const r of radios) {
+        if (String(r.value) === fidxStr) {
+          r.click();
+          // label 클릭이 필요한 경우 대비
+          if (r.id) {
+            const lbl = document.querySelector(`label[for="${r.id}"]`);
+            if (lbl) lbl.click();
+          }
+          r.checked = true;
+          r.dispatchEvent(new Event('change', { bubbles: true }));
+          return { selected: true, via: 'radio/checkbox', detail: `name=${r.name}, value=${r.value}` };
+        }
+      }
+
+      // 2) select 옵션
+      const selects = document.querySelectorAll('select');
+      for (const sel of selects) {
+        for (const opt of sel.options) {
+          if (String(opt.value) === fidxStr || opt.getAttribute('data-fidx') === fidxStr) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            return { selected: true, via: 'select', detail: `name=${sel.name}, value=${opt.value}, text=${opt.text.trim()}` };
+          }
+        }
+      }
+
+      // 3) onclick / href / data-* 속성이 fidx를 참조하는 클릭 가능 요소
+      //    element 본문이나 자식의 텍스트에 fidx 숫자가 그대로 있는 경우도 매칭
+      const allEls = document.querySelectorAll('a, input[type="button"], input[type="submit"], button, span, td, tr, div, li, label');
+      // 정규식: fidx=2197 / fidx:2197 / fidx('2197') / fidx(2197) / (2197) / '2197'
+      const rx = new RegExp(`(?:^|[^0-9])${fidxStr}(?:$|[^0-9])`);
+      for (const el of allEls) {
+        const onclick = el.getAttribute('onclick') || '';
+        const href = el.getAttribute('href') || '';
+        const dataFidx = el.getAttribute('data-fidx') || el.getAttribute('data-idx') || '';
+
+        const matchOnclick = onclick && (
+          onclick.includes(`fidx=${fidxStr}`) ||
+          onclick.includes(`fidx:${fidxStr}`) ||
+          onclick.includes(`'${fidxStr}'`) ||
+          onclick.includes(`"${fidxStr}"`) ||
+          onclick.includes(`(${fidxStr})`) ||
+          onclick.includes(`(${fidxStr},`) ||
+          onclick.includes(`,${fidxStr})`) ||
+          onclick.includes(`,${fidxStr},`) ||
+          rx.test(onclick)
+        );
+        const matchHref = href && (
+          href.includes(`fidx=${fidxStr}`) ||
+          href.includes(`/${fidxStr}`) ||
+          href.includes(`=${fidxStr}`)
+        );
+        const matchData = String(dataFidx) === fidxStr;
+
+        if (matchOnclick || matchHref || matchData) {
+          try { el.click(); } catch (e) {}
+          return { selected: true, via: 'onclick/href/data', detail: `tag=${el.tagName}, text="${(el.textContent || '').trim().substring(0,40)}", onclick="${onclick.substring(0,80)}", data-fidx=${dataFidx}` };
+        }
+      }
+
+      // 4) fileblank(fidx) 같은 패턴의 input name → 그 주변 행/그룹에서 클릭 가능한 요소 탐색
+      const fileInput = document.querySelector(`input[name="fileblank(${fidxStr})"], input[name="file(${fidxStr})"]`);
+      if (fileInput) {
+        // 같은 행(tr)이나 부모 그룹에서 라디오/체크박스/라벨/버튼 클릭 시도
+        const row = fileInput.closest('tr, li, div, label');
+        if (row) {
+          const radio = row.querySelector('input[type="radio"], input[type="checkbox"]');
+          if (radio) {
+            radio.click();
+            radio.checked = true;
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+            return { selected: true, via: 'fileblank-neighbor-radio', detail: `name=${radio.name}, value=${radio.value}` };
+          }
+          const label = row.querySelector('label');
+          if (label) {
+            label.click();
+            return { selected: true, via: 'fileblank-neighbor-label', detail: `text=${(label.textContent||'').trim().substring(0,40)}` };
+          }
+        }
+      }
+
+      // 5) 전역 함수 호출 시도 (흔한 이름들)
+      try {
+        const globalFnNames = ['fn_fidx', 'go_fidx', 'select_fidx', 'selectFin', 'fn_sel', 'setFidx', 'chkFin', 'selFin'];
+        for (const fn of globalFnNames) {
+          if (typeof window[fn] === 'function') {
+            window[fn](fidxNum);
+            return { selected: true, via: 'global-fn', detail: `window.${fn}(${fidx})` };
+          }
+        }
+      } catch (e) {}
+
+      return { selected: false, via: null, detail: 'no matching element found' };
+    }, formData.fidx);
+
+    if (productSelectResult.selected) {
+      await delay(500, 1000);
+      // 상품 선택 후 페이지 변경 대기 (네비게이션 없이 부분 업데이트일 수도 있음)
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {});
+      await delay(300, 500);
+    }
+  }
+
+  // 2단계: 폼 필드 일괄 입력 (론앤마스터 실제 필드명 기반)
+  const fillResult = await page.evaluate((data) => {
+    const filled = [];
+    const notFound = [];
+
+    // === 등록직원 SELECT 자동 선택 ===
+    // 론앤마스터 폼의 "등록직원" 드롭다운. 기본값 "==선택==" 상태로 제출되면 누락됨.
+    // 3단계 탐지:
+    //   1) 모든 SELECT 를 훑어서 "데일리에프앤아이" 옵션이 있으면 그걸 선택 (우리 회사 고유)
+    //   2) 라벨("등록직원") 기준 같은 행 SELECT → 첫 비-placeholder 옵션
+    //   3) 흔한 필드명(s_staff, reg_staff 등) fallback
+    (function selectRegisteredStaff() {
+      const isPlaceholder = (t) => !t || /^==.*==$/.test(t) || /^-.*-$/.test(t) || /^선택$/.test(t);
+
+      // 1) "데일리에프앤아이" 옵션 직접 매칭 (가장 정확)
+      for (const sel of document.querySelectorAll('select')) {
+        for (const opt of sel.options) {
+          if (opt.text && opt.text.trim().includes('데일리에프앤아이')) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: '등록직원', target: sel.name || '(데일리매칭)', value: opt.text.trim() });
+            return;
+          }
+        }
+      }
+
+      // 2) 라벨 "등록직원" 기준 탐색
+      let targetSelect = null;
+      const cells = document.querySelectorAll('th, td, label, span, div');
+      for (const cell of cells) {
+        const txt = (cell.textContent || '').trim();
+        if (!/등록\s*직원/.test(txt)) continue;
+        // 셀 내부, 같은 행, 인접 셀 순으로 탐색
+        targetSelect = cell.querySelector('select')
+          || (cell.closest('tr')?.querySelector('select'))
+          || (cell.nextElementSibling?.querySelector('select'))
+          || (cell.parentElement?.querySelector('select'));
+        if (targetSelect) break;
+      }
+
+      // 3) 흔한 이름 fallback
+      if (!targetSelect) {
+        for (const n of ['s_staff','reg_staff','agent_staff','staff','member_sel','staff_sel','user_sel','mng_sel']) {
+          const el = document.querySelector(`select[name="${n}"]`);
+          if (el) { targetSelect = el; break; }
+        }
+      }
+
+      if (!targetSelect) { notFound.push('등록직원'); return; }
+
+      // 첫 비-placeholder 옵션 선택
+      for (const opt of targetSelect.options) {
+        if (!isPlaceholder(opt.text.trim()) && opt.value) {
+          targetSelect.value = opt.value;
+          targetSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: '등록직원', target: targetSelect.name || '(라벨매칭)', value: opt.text.trim() });
+          return;
+        }
+      }
+      notFound.push('등록직원 [선택 가능한 옵션 없음]');
+    })();
+
+    // 날짜 정규화: 'YYYYMMDD' / 'YYYY-MM-DD' / 'YYYY/MM/DD' / 'YYYY.MM.DD' 모두 'YYYY-MM-DD'
+    // 론앤마스터 date picker 는 YYYY-MM-DD 만 인식 (빨간 박스 방지)
+    function normalizeDate(s) {
+      if (!s && s !== 0) return '';
+      const m = String(s).match(/(\d{4})[^\d]?(\d{1,2})[^\d]?(\d{1,2})/);
+      if (!m) return String(s);
+      const mm = m[2].padStart(2, '0');
+      const dd = m[3].padStart(2, '0');
+      return `${m[1]}-${mm}-${dd}`;
+    }
+
+    function setInput(name, value, label) {
+      if (!value && value !== 0) return;
+      const el = document.querySelector(`input[name="${name}"], textarea[name="${name}"]`);
+      if (el) {
+        el.value = String(value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push({ field: label || name, target: name, value: String(value) });
+      } else { notFound.push(label || name); }
+    }
+
+    function setSelect(name, value, label) {
+      if (!value && value !== 0) return;
+      const vs = String(value).trim();
+      const looksPlaceholder = /^-.*-$/.test(vs) || /^==.*==$/.test(vs) ||
+                               /항목\s*선택|선택\s*하세요|선택해?주세요/.test(vs);
+      if (looksPlaceholder) { notFound.push((label || name) + ' [값이 placeholder]'); return; }
+
+      const el = document.querySelector(`select[name="${name}"]`);
+      if (!el) { notFound.push(label || name); return; }
+
+      const isPlaceholderText = (t) => /^-.*-$/.test(t) || /^==.*==$/.test(t) || /항목\s*선택|선택\s*하세요/.test(t);
+
+      // 1) 정확한 text 매칭 — 우리가 보낸 숫자 value 매핑이 론앤마스터와 달라 엉뚱한 옵션이 선택되던 버그 방지
+      for (const opt of el.options) {
+        const ot = opt.text.trim();
+        if (isPlaceholderText(ot)) continue;
+        if (ot === vs) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: ot });
+          return;
+        }
+      }
+      // 2) 정확한 value 매칭
+      for (const opt of el.options) {
+        if (opt.value === vs) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: opt.text.trim() });
+          return;
+        }
+      }
+      // 3) 텍스트 부분 매칭 (양방향)
+      for (const opt of el.options) {
+        const ot = opt.text.trim();
+        if (isPlaceholderText(ot)) continue;
+        if (ot.includes(vs) || vs.includes(ot)) {
+          el.value = opt.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          filled.push({ field: label || name, target: name, value: ot });
+          return;
+        }
+      }
+      notFound.push(label || name);
+    }
+
+    // === 고객 기본정보 ===
+    setInput('name', data.name, '이름');
+    setInput('jumin1', data.birth, '생년월일');
+    // 성별: 남(1)→1, 여(2)→2, 남(3)→3, 여(4)→4
+    const genderMap = {'남(1)':'1','여(2)':'2','남(3)':'3','여(4)':'4'};
+    setSelect('sex', genderMap[data.gender] || data.gender, '성별');
+    // 통신사: SK→S, KT→K, LGU+→L, 알뜰→T, SK알뜰→TS, KT알뜰→TK, LG알뜰→TL
+    const carrierMap = {'SK':'S','KT':'K','LGU+':'L','알뜰':'T','SK알뜰':'TS','KT알뜰':'TK','LG알뜰':'TL','기타':'E'};
+    setSelect('hpon_company', carrierMap[data.carrier] || data.carrier, '통신사');
+
+    // 휴대폰: hpon1/2/3 가 '연락처수정' 같은 버튼 뒤에 가려져 있는 경우가 있어 먼저 노출시킴
+    (function unmaskPhone() {
+      try {
+        // 이미 가시 상태면 skip
+        const test = document.querySelector('input[name="hpon1"]');
+        const isVisible = (el) => el && el.offsetParent !== null;
+        if (isVisible(test) && test.type !== 'hidden') return;
+        // 연락처수정/휴대폰수정/편집 등 버튼 찾아 클릭
+        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a, span'));
+        for (const b of btns) {
+          const t = (b.value || b.textContent || '').trim();
+          if (/연락처\s*수정|휴대폰\s*수정|전화\s*수정|핸드폰\s*수정|phone.*edit/i.test(t)) {
+            try { b.click(); } catch {}
+            break;
+          }
+        }
+      } catch {}
+    })();
+
+    setInput('hpon1', data.phone1, '전화1');
+    setInput('hpon2', data.phone2, '전화2');
+    setInput('hpon3', data.phone3, '전화3');
+
+    // 채운 뒤 실제로 DOM 에 반영됐는지 검증 (hidden 이거나 값이 안 들어갔으면 명시)
+    (function verifyPhone() {
+      ['hpon1','hpon2','hpon3'].forEach(n => {
+        const el = document.querySelector(`input[name="${n}"]`);
+        if (!el) { notFound.push(n + ' [미존재]'); return; }
+        if (el.offsetParent === null || el.type === 'hidden') {
+          notFound.push(n + ' [여전히 hidden — 연락처수정 버튼 필요]');
+        } else if (!el.value) {
+          notFound.push(n + ' [값 미반영]');
+        }
+      });
+    })();
+    setInput('p_pay', data.loanAmount, '대출요청액');
+
+    // === 주소 ===
+    setInput('ZoneCode', data.zipcode, '우편번호');
+    setInput('addr1', data.address, '주소');
+    setInput('addr2', data.addressDetail, '상세주소');
+    // 주거종류: 아파트→1, 빌라→2, 연립→3, 다세대→4, 단독주택→5, 상가→6, 오피스텔→7, 관사→8
+    const housingMap = {'아파트':'1','빌라':'2','연립':'3','다세대':'4','단독주택':'5','상가':'6','오피스텔':'7','관사':'8','기타':'99'};
+    setSelect('h_kind', housingMap[data.housingType] || data.housingType, '주거종류');
+    // 주택소유: 소유→11, 미소유→12
+    const ownMap = {'부동산 소유중':'11','부동산 없음':'12','기타':'99'};
+    setSelect('h_sel', ownMap[data.housingOwnership] || data.housingOwnership, '주택소유');
+
+    // === 직장 정보 ===
+    // 직업구분은 텍스트 매칭에 맡김 — 숫자 value 매핑이 론앤마스터와 달라 엉뚱한 옵션이
+    // 선택되던 이슈(무직을 선택했는데 프리랜서로 제출되는 현상)의 근본 원인
+    setSelect('j_sel', data.jobType, '직업구분');
+
+    // 직업 유형별 4대보험/직장 정보 처리
+    //   - 무직/주부/학생: 직장·4대보험 계열 전부 skip
+    //   - 개인사업자/프리랜서/기타: 4대보험은 '미가입' 으로 강제 (4대보험 대상 아님)
+    //     단, 사업자번호/소득 등은 채움
+    //   - 직장인(4대가입/미가입): 원래대로 전부 채움
+    const jobStr = String(data.jobType || '').trim();
+    const isNoJob = /^(무직|주부|학생)$/.test(jobStr);
+    const isNon4Insurance = /개인사업자|프리랜서|기타|법인사업자/.test(jobStr);
+
+    if (!isNoJob) {
+      if (isNon4Insurance) {
+        // 4대보험 대상 아닌 직종 → 미가입 강제
+        setSelect('j_IsInsu', '미가입', '4대보험');
+      } else {
+        // 직장인 → 사용자 선택값 그대로
+        setSelect('j_IsInsu', data.insurance4, '4대보험');
+      }
+      setInput('j_name', data.company, '직장명');
+      setInput('j_date', normalizeDate(data.joinDate), '입사일자');
+      setInput('j_no1', data.bizNo1, '사업자번호1');
+      setInput('j_no2', data.bizNo2, '사업자번호2');
+      setInput('j_no3', data.bizNo3, '사업자번호3');
+      setInput('j_pay1', data.salary, '연소득');
+      setInput('j_pay2', data.monthlySalary, '월소득');
+      setInput('j_insu_money', data.healthInsurance, '건강보험납부금');
+    }
+    // 직장 주소
+    setInput('j_zonecode', data.workZipcode, '직장우편번호');
+    setInput('j_addr1', data.workAddress, '직장주소');
+    setInput('j_addr2', data.workAddressDetail, '직장상세주소');
+
+    // === 차량 정보 ===
+    setInput('car_no', data.vehicleNo, '차량번호');
+    setInput('car_name', data.vehicleName, '차량명');
+    setSelect('car_year', data.vehicleYear, '차량연식');
+    setInput('car_distance', data.vehicleKm, '주행거리');
+    // 차량소유: 소유(본인명의)→1, 소유(공동명의 대표)→2, 소유(공동명의)→3, 미소유→4
+    const carOwnMap = {'소유(본인명의)':'1','소유(공동명의 대표)':'2','소유(공동명의)':'3','미소유':'4'};
+    setSelect('car_sel', carOwnMap[data.vehicleOwnership] || data.vehicleOwnership, '차량소유');
+    setInput('car_joinown_name', data.vehicleCoOwner, '공동명의자');
+
+    // === 회파복 ===
+    // 사용자가 미선택(==선택==) 또는 빈값으로 보낸 경우 '무' 로 자동 보정 — placeholder 채로 제출하면 lmaster 가 접수실패 처리
+    const recoveryRaw = String(data.recoveryType || '').trim();
+    const isRecoveryPlaceholder = !recoveryRaw || /^==.*==$/.test(recoveryRaw) || /^선택$/.test(recoveryRaw);
+    const recoveryFinal = isRecoveryPlaceholder ? '무' : recoveryRaw;
+    setSelect('brt_tp', recoveryFinal, '회파복구분');
+    setInput('brt_court_name', data.courtName, '법원명');
+    // 사건번호: 연도/종류/번호 분리
+    if (data.caseNoYear) setSelect('brt_no1', data.caseNoYear, '사건연도');
+    if (data.caseNoType) setSelect('brt_no2', data.caseNoType, '사건종류');
+    if (data.caseNoNum) setInput('brt_no3', data.caseNoNum, '사건번호');
+    setSelect('brt_bank', data.refundBankCode || data.refundBank, '환급은행');
+    setInput('brt_bank_addr', data.refundAccount, '환급계좌');
+    setInput('brt_month_repay_amt', data.monthlyPayment, '월변제금');
+
+    // === 고객적법확인 (아이앤유/대부 등) ===
+    // 론앤마스터 input 이름 (스캔 확인): call_date, call_comp, call_staff, call_ceo, call_url
+    // select (최초수집경로 / 중개사연락처경로) 는 이름이 불확실 → 라벨 매칭 우선 + 후보명 fallback
+    const legal = data.legal || {};
+    if (Object.keys(legal).length > 0) {
+      setInput('call_date',  normalizeDate(legal.writeDate), '작성년월일');
+      setInput('call_comp',  legal.company,   '회사명');
+      setInput('call_staff', legal.writer,    '작성자명');
+      setInput('call_ceo',   legal.ceo,       '대표자명');
+      setInput('call_url',   legal.url,       '접수주소(URL)');
+
+      // 최초수집경로 / 중개사연락처경로 — 라벨 기반 select 탐색 후 text 매칭
+      const findSelectByLabel = (rxLabel) => {
+        const selects = document.querySelectorAll('select');
+        for (const sel of selects) {
+          const label = sel.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim() || '';
+          if (rxLabel.test(label)) return sel;
+        }
+        return null;
+      };
+      const setSelectByText = (sel, text, labelForLog) => {
+        if (!sel || !text) return false;
+        for (const opt of sel.options) {
+          if (opt.text.trim() === String(text).trim()) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: labelForLog, target: sel.name || '(select)', value: opt.text.trim() });
+            return true;
+          }
+        }
+        // 부분 매칭 fallback
+        for (const opt of sel.options) {
+          if (opt.text.includes(String(text)) || String(text).includes(opt.text.trim())) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            filled.push({ field: labelForLog + ' (부분매칭)', target: sel.name || '(select)', value: opt.text.trim() });
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (legal.firstPath) {
+        const firstSel = findSelectByLabel(/최초수집경로|수집경로/);
+        if (firstSel) {
+          if (!setSelectByText(firstSel, legal.firstPath, '최초수집경로')) notFound.push('최초수집경로');
+        } else {
+          // 후보명 직접 매칭
+          for (const n of ['call_path', 'call_path1', 'call_origin', 'src_path', 'call_first']) {
+            const el = document.querySelector(`select[name="${n}"]`);
+            if (el) { if (!setSelectByText(el, legal.firstPath, `최초수집경로[${n}]`)) notFound.push('최초수집경로'); break; }
+          }
+        }
+      }
+      if (legal.brokerPath) {
+        const brSel = findSelectByLabel(/중개사연락처경로|연락처경로|중개사경로/);
+        if (brSel) {
+          if (!setSelectByText(brSel, legal.brokerPath, '중개사연락처경로')) notFound.push('중개사연락처경로');
+        } else {
+          for (const n of ['call_path2', 'call_contact', 'broker_path', 'call_broker']) {
+            const el = document.querySelector(`select[name="${n}"]`);
+            if (el) { if (!setSelectByText(el, legal.brokerPath, `중개사연락처경로[${n}]`)) notFound.push('중개사연락처경로'); break; }
+          }
+        }
+      }
+    }
+
+    // === 기타 (메모) ===
+    // 실제 화면에 보이는 textarea 에 우선 기재해야 접수원이 확인 가능.
+    // call_memo1/2/3 는 상품별로 hidden 이 많아 화면 반영이 안 되는 케이스 있음.
+    if (data.memo) {
+      const memoVal = String(data.memo);
+      const isVisible = (el) => {
+        if (!el) return false;
+        if (el.offsetParent === null) return false;
+        const st = window.getComputedStyle(el);
+        if (st.display === 'none' || st.visibility === 'hidden') return false;
+        if (el.type === 'hidden') return false;
+        return true;
+      };
+      const getLabel = (el) => el.closest('tr')?.querySelector('th, td:first-child')?.textContent?.trim()
+        || el.closest('label')?.textContent?.trim() || '';
+
+      const memoCandidateNames = ['call_memo1', 'call_memo2', 'call_memo3', 'call_memo',
+        'memo', 'etc', 'etc1', 'bigo', 'remark', 'note', 'content', 'detail'];
+
+      let memoTarget = null;
+
+      // 1) 이름이 후보 목록인 **가시** textarea/input 우선
+      for (const n of memoCandidateNames) {
+        const els = document.querySelectorAll(`textarea[name="${n}"], input[name="${n}"]`);
+        for (const el of els) {
+          if (isVisible(el)) { memoTarget = { el, name: n, via: 'visible-candidate-name' }; break; }
+        }
+        if (memoTarget) break;
+      }
+
+      // 2) 이름은 달라도 라벨에 "기타/메모/비고/특이/상담" 들어가는 **가시** textarea
+      if (!memoTarget) {
+        const allTas = document.querySelectorAll('textarea');
+        for (const ta of allTas) {
+          if (!isVisible(ta)) continue;
+          const label = getLabel(ta);
+          if (/기타|메모|비고|특이|상담|call_memo|상세/.test(label)) {
+            memoTarget = { el: ta, name: ta.name || `(textarea:${label.substring(0,20)})`, via: 'visible-label-match' };
+            break;
+          }
+        }
+      }
+
+      // 3) 그래도 없으면: **마지막 가시 textarea** (보통 기타사항이 폼 하단)
+      if (!memoTarget) {
+        const allVisTas = Array.from(document.querySelectorAll('textarea')).filter(isVisible);
+        if (allVisTas.length > 0) {
+          const ta = allVisTas[allVisTas.length - 1];
+          memoTarget = { el: ta, name: ta.name || '(last-visible-textarea)', via: 'last-visible-textarea' };
+        }
+      }
+
+      // 4) 최후 폴백: 존재하는 아무 call_memo* (hidden 이라도) - 최소 백엔드 전송 보장
+      if (!memoTarget) {
+        for (const n of ['call_memo1', 'call_memo2', 'call_memo3']) {
+          const el = document.querySelector(`textarea[name="${n}"], input[name="${n}"]`);
+          if (el) { memoTarget = { el, name: n, via: 'hidden-call_memo-fallback' }; break; }
+        }
+      }
+
+      if (memoTarget) {
+        memoTarget.el.value = memoVal;
+        memoTarget.el.dispatchEvent(new Event('input', { bubbles: true }));
+        memoTarget.el.dispatchEvent(new Event('change', { bubbles: true }));
+        filled.push({ field: `메모 [${memoTarget.via}]`, target: memoTarget.name, value: memoVal.substring(0, 120) });
+      } else {
+        notFound.push('메모');
+      }
+    }
+
+    return { filled, notFound };
+  }, formData);
+
+  // === 접수 요건 적용: 파일 업로드 + "전송시체크" 체크박스 ON ===
+  // dryRun 에서도 수행해서 미리보기 스크린샷에 파일명/체크 상태가 보이게 한다.
+  const requirementResult = await applySubmitRequirements({
+    fidx: formData.fidx,
+    files,
+    checkboxName,
+  });
+
+  // === Dry-run: 제출 직전에 멈추고 스크린샷/미매칭 필드 반환 ===
+  if (dryRun) {
+    let screenshot = '';
+    try {
+      screenshot = await page.screenshot({ encoding: 'base64', fullPage: true });
+    } catch (e) {
+      // 스크린샷 실패 시에도 필수 데이터는 반환
+      screenshot = '';
+    }
+    // dryRun 은 실제 제출 안 하므로 스크린샷 직후 stage 정리
+    for (const s of (requirementResult._stages || [])) { try { s.cleanup(); } catch (e) {} }
+    delete requirementResult._stages;
+    return {
+      success: true,
+      dryRun: true,
+      message: `[Dry-run] 폼 입력 (${fillResult.filled.length}개). 제출되지 않았습니다.`,
+      filledCount: fillResult.filled.length,
+      filledFields: fillResult.filled,
+      notFoundFields: fillResult.notFound,
+      productSelectResult,
+      requirementResult,
+      screenshot,
+      pageUrl: page.url()
+    };
+  }
+
+  // 3단계: alert 다이얼로그 핸들러 (제출 전에 등록)
+  let alertMessage = '';
+  const dialogHandler = async dialog => {
+    alertMessage = dialog.message();
+    await dialog.accept();
+  };
+  page.on('dialog', dialogHandler);
+
+  // 제출 버튼 클릭 (정확 매칭 우선 + 강화된 deny list, fallback 없음 — 못 찾으면 실패)
+  // 이전 버그: '등록'만 포함해도 매칭되어 '등록업체조회' 같은 조회 버튼을 눌러버림
+  const submitResult = await page.evaluate(() => {
+    const allBtns = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button, a'));
+
+    // 허용 단어
+    const ALLOW = ['접수', '등록', '저장', '신청', '제출', '완료'];
+    // 정확 매칭 대상 (최우선)
+    const EXACT = [
+      '접수', '등록', '저장', '신청', '제출', '완료',
+      '접수하기', '등록하기', '저장하기', '신청하기', '제출하기',
+      '최종접수', '최종 접수', '작성완료', '작성 완료', '접수완료', '접수 완료',
+      '대출접수', '대출 접수', '대출신청', '대출 신청', '신청서 저장'
+    ];
+    // 반드시 제외 단어 — 조회/임시저장/업체관리 등 접수가 아닌 버튼
+    const DENY = [
+      '조회', '검색', '찾기', '목록', '리스트',
+      '임시', '임시저장', '수정', '변경',
+      '삭제', '취소', '닫기', '되돌리기',
+      '초기화', '리셋', 'reset', 'RESET',
+      '보기', '상세', '다운로드', '업로드', '출력', '인쇄',
+      '이전', '다음', '새로고침', '확인',
+      '업체', '회사', '지점', '담당자', '관리', '설정'  // '등록업체조회','지점등록' 등
+    ];
+    const hasDeny = (t) => DENY.some(d => t.includes(d));
+    const btnText = (b) => (b.value || b.textContent || '').trim();
+    const visible = (b) => (b.offsetParent !== null) && !b.disabled && b.type !== 'hidden';
+
+    const typeRank = (b) => {
+      // input[type=submit] 1순위, input[type=button] 2, button 3, a 4
+      if (b.tagName === 'INPUT' && b.type === 'submit') return 1;
+      if (b.tagName === 'INPUT' && b.type === 'button') return 2;
+      if (b.tagName === 'BUTTON') return 3;
+      return 4;
+    };
+
+    // 1단계: 정확 매칭
+    let exact = [];
+    for (const b of allBtns) {
+      if (!visible(b)) continue;
+      const t = btnText(b);
+      if (!t || hasDeny(t)) continue;
+      if (EXACT.includes(t)) exact.push({ b, t });
+    }
+    if (exact.length > 0) {
+      exact.sort((x, y) => typeRank(x.b) - typeRank(y.b));
+      exact[0].b.click();
+      return { clicked: true, buttonText: exact[0].t, via: 'exact', candidateCount: exact.length };
+    }
+
+    // 2단계: 포함 매칭 (단 deny 단어 없어야 함)
+    let subs = [];
+    for (const b of allBtns) {
+      if (!visible(b)) continue;
+      const t = btnText(b);
+      if (!t || hasDeny(t)) continue;
+      if (ALLOW.some(a => t.includes(a))) subs.push({ b, t });
+    }
+    if (subs.length > 0) {
+      // ALLOW 우선순위: 접수 > 등록 > 신청 > 저장 > 제출 > 완료
+      const pri = ALLOW;
+      subs.sort((x, y) => {
+        const px = pri.findIndex(p => x.t.includes(p));
+        const py = pri.findIndex(p => y.t.includes(p));
+        if (px !== py) return (px < 0 ? 99 : px) - (py < 0 ? 99 : py);
+        return typeRank(x.b) - typeRank(y.b);
+      });
+      subs[0].b.click();
+      return { clicked: true, buttonText: subs[0].t, via: 'substring', candidateCount: subs.length };
+    }
+
+    // 후보가 없으면 실패 + 화면상 클릭 가능한 버튼 텍스트 샘플 반환 (디버그용)
+    const sample = allBtns
+      .filter(visible)
+      .map(btnText)
+      .filter(Boolean)
+      .slice(0, 40);
+    return { clicked: false, buttonText: '', reason: 'submit_button_not_found', sample };
+  });
+
+  // 제출 후 페이지 이동/응답 대기
+  let submitResponse = null;
+  if (submitResult.clicked) {
+    try {
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+      await delay(500, 1000);
+
+      // 제출 결과 판정
+      //  - 접수 성공 시 론앤마스터는 통상 대출신청내역(list_loanlist.asp) 으로 리다이렉트
+      //  - 폼 페이지(loanlist_app.asp) 에 그대로 있으면 실패/검증오류
+      //  - 본문의 '실패/오류/에러' 단순 포함은 왼쪽 메뉴/공지에 흔히 들어있어 오탐 유발 → 사용 안 함
+      submitResponse = await page.evaluate(() => {
+        const body = document.body.innerText || '';
+        const url = location.href || '';
+
+        // URL 기반 1차 판정
+        const onListPage = /list_loanlist\.asp/i.test(url);
+        const stillOnForm = /loanlist_app\.asp/i.test(url);
+
+        // 본문 기반 2차 판정 (명시적 문구만)
+        const explicitSuccess = /접수되었습니다|등록되었습니다|정상적으로\s*(처리|등록|접수)/.test(body);
+        const explicitError = /접수.*실패|등록.*실패|오류가\s*발생|에러가\s*발생|입력.{0,6}(확인|필수|누락)/.test(body);
+
+        let isSuccess = false;
+        let isError = false;
+        if (explicitError) { isError = true; }
+        else if (explicitSuccess) { isSuccess = true; }
+        else if (onListPage) { isSuccess = true; }       // 리스트로 넘어갔으면 성공
+        else if (stillOnForm) { isError = true; }        // 폼에 머물러있으면 실패
+
+        return {
+          pageText: body.substring(0, 500),
+          isSuccess,
+          isError,
+          onListPage,
+          stillOnForm,
+          url
+        };
+      });
+    } catch (e) {
+      // 네비게이션 안 되면 alert 팝업일 수 있음
+      submitResponse = { pageText: '페이지 이동 없음 (alert 팝업 가능)', isSuccess: false, isError: false };
+    }
+  }
+
+  // 핸들러 해제
+  page.off('dialog', dialogHandler);
+  if (alertMessage) {
+    submitResponse = submitResponse || {};
+    submitResponse.alertMessage = alertMessage;
+
+    // alert 메시지에서 실패/경고 신호 분석
+    const msg = alertMessage;
+    const failurePatterns = [
+      '필수', '누락', '입력', '선택하', '확인',                                // 입력 검증
+      '실패', '오류', '에러', '불가', '거부', '잘못',                           // 명시적 실패
+      '중복', '이미 등록', '이미 접수', '이미 존재',                             // 중복
+      '형식', '자리', '길이', '잘못된', 'invalid', 'error', 'fail',           // 포맷 오류
+      '본인확인', '인증', '권한'                                                // 인증 관련
+    ];
+    const successPatterns = ['완료', '성공', '등록되었습니다', '접수되었습니다', '처리되었습니다'];
+    const msgIsFailure = failurePatterns.some(p => msg.toLowerCase().includes(p.toLowerCase()));
+    const msgIsSuccess = successPatterns.some(p => msg.includes(p));
+    if (msgIsFailure && !msgIsSuccess) {
+      submitResponse.isError = true;
+      submitResponse.isSuccess = false;
+      submitResponse.failureReason = `론앤마스터 알림: ${msg}`;
+    } else if (msgIsSuccess && !msgIsFailure) {
+      submitResponse.isSuccess = true;
+    }
+  }
+
+  // 제출 버튼을 애초에 못 눌렀으면 실패
+  if (!submitResult.clicked) {
+    submitResponse = submitResponse || { isSuccess: false, isError: true };
+    submitResponse.isError = true;
+    submitResponse.isSuccess = false;
+    submitResponse.failureReason = submitResponse.failureReason || '제출 버튼을 찾을 수 없습니다.';
+  }
+
+  const pageUrl = page.url();
+
+  // 제출 버튼 클릭 + 네비게이션 완료 후 stage 파일 정리
+  for (const s of (requirementResult._stages || [])) { try { s.cleanup(); } catch (e) {} }
+  delete requirementResult._stages;
+
+  return {
+    success: submitResult.clicked,
+    message: submitResult.clicked
+      ? `폼 입력 (${fillResult.filled.length}개) + 제출 완료 [${submitResult.buttonText}]`
+      : `폼 입력 완료 (${fillResult.filled.length}개). 제출 버튼을 찾지 못했습니다.`,
+    filledCount: fillResult.filled.length,
+    filledFields: fillResult.filled,
+    notFoundFields: fillResult.notFound,
+    productSelectResult,
+    requirementResult,
+    submitResult,
+    submitResponse,
+    pageUrl
+  };
+}
+
+// 파일명만 안전하게 정제 (경로 구분자 제거, 한글/숫자/일반 문자 보존)
+function sanitizeFileName(name) {
+  const base = path.basename(String(name || '')).replace(/[\\/:*?"<>|]/g, '_').trim();
+  return base || 'file';
+}
+
+// multer 랜덤 경로 → 원본 파일명으로 임시 복사본 생성.
+// puppeteer 의 uploadFile 은 해당 파일 경로의 basename 을 폼 파일명으로 사용하므로,
+// 사전에 원본 이름으로 복사해야 lmaster 가 "김형준.tiff" 같은 원본명을 받는다.
+//
+// 반환: { path, cleanup() } — cleanup 을 finally 에서 호출
+function stageFileWithOriginalName(srcPath, originalName) {
+  const safeName = sanitizeFileName(originalName);
+  // 충돌/동시업로드 방지 — 임시 폴더 하나 만들어서 그 안에 원본 이름으로 복사
+  const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lmaster-upload-'));
+  const targetPath = path.join(stageDir, safeName);
+  fs.copyFileSync(srcPath, targetPath);
+  return {
+    path: targetPath,
+    cleanup() {
+      try { fs.unlinkSync(targetPath); } catch (e) {}
+      try { fs.rmdirSync(stageDir); } catch (e) {}
+    },
+  };
+}
+
+// 상품 접수 요건 적용 (파일 업로드 + 체크박스 ON).
+//   - fidx 에 바인딩된 파일 input 을 찾아 uploadFile()
+//   - checkboxName 과 매칭되는 체크박스를 찾아 ON 처리
+//   - 미완료/실패는 결과 배열에 기록하고 예외는 던지지 않음 (접수 자체는 진행시킴)
+async function applySubmitRequirements({ fidx, files = [], checkboxName = null }) {
+  const result = { fileUploads: [], checkbox: null };
+  const stages = []; // 업로드 후 정리할 임시 복사본
+
+  // 1) 파일 업로드
+  for (const f of (files || [])) {
+    let stage = null;
+    try {
+      // 우선순위 셀렉터: file(fidx), file2(fidx), 없으면 슬롯 순번 fallback
+      const primary = f.slot === 2
+        ? `input[type="file"][name="file2(${fidx})"]`
+        : `input[type="file"][name="file(${fidx})"]`;
+      let el = await page.$(primary);
+      let via = primary;
+      if (!el) {
+        const all = await page.$$('input[type="file"]');
+        const target = all[(f.slot || 1) - 1];
+        if (target) { el = target; via = `fallback:index ${f.slot - 1}`; }
+      }
+      if (!el) {
+        result.fileUploads.push({ slot: f.slot, success: false, message: '파일 input 미발견' });
+        continue;
+      }
+      // 원본 파일명 보존을 위해 임시 복사 후 업로드
+      stage = stageFileWithOriginalName(f.path, f.originalName);
+      stages.push(stage);
+      await el.uploadFile(stage.path);
+      result.fileUploads.push({ slot: f.slot, success: true, via, originalName: f.originalName });
+    } catch (e) {
+      result.fileUploads.push({ slot: f.slot, success: false, message: e.message });
+    }
+  }
+
+  // 업로드 후 stage 파일은 바로 정리해도 무방하지만,
+  // 브라우저가 submit 시점에 파일 읽기를 다시 할 수 있어
+  // 함수 리턴 시점까지는 유지. 호출부의 흐름 종료 후 정리되도록 result 에 cleanup 부착.
+  result._stages = stages;
+
+  // 2) 체크박스 ON
+  if (checkboxName) {
+    try {
+      const cbResult = await page.evaluate((targetName) => {
+        // name 이 정확히 일치하는 체크박스 우선, 없으면 name/id 에 포함되면 매칭
+        const all = [...document.querySelectorAll('input[type="checkbox"]')];
+        let cb = all.find(c => c.name === targetName || c.id === targetName);
+        if (!cb) cb = all.find(c => (c.name || '').includes(targetName) || (c.id || '').includes(targetName));
+        if (!cb) return { success: false, reason: '체크박스 미발견', targetName };
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('click', { bubbles: true }));
+        }
+        return { success: true, name: cb.name, alreadyChecked: cb.checked && false };
+      }, checkboxName);
+      result.checkbox = cbResult;
+    } catch (e) {
+      result.checkbox = { success: false, reason: e.message };
+    }
+  }
+
+  return result;
+}
+
+// 서류 첨부 업로드 (다중 파일 지원)
+async function uploadDocuments(agentNo, upw, fidx, files) {
+  // files: [{ slot: 1, path: '/tmp/...', originalName: '...' }, ...]
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!files || files.length === 0) throw new Error('파일이 없습니다.');
+
+  // 접수 페이지 이동 + 해당 상품 선택
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await delay(500, 1000);
+
+  // 상품 클릭 (fidx 기반)
+  if (fidx) {
+    await page.evaluate((f) => {
+      const els = document.querySelectorAll('a, input[type="button"], button, span, td');
+      for (const el of els) {
+        const onclick = el.getAttribute('onclick') || '';
+        if (onclick.includes(`fidx=${f}`) || onclick.includes(`'${f}'`)) {
+          el.click();
+          return;
+        }
+      }
+    }, fidx);
+    await delay(500, 1000);
+  }
+
+  // 파일 input 찾기 (file(fidx), file2(fidx) 패턴)
+  // puppeteer uploadFile 은 path 의 basename 을 폼 파일명으로 쓰므로
+  // 원본 파일명으로 임시 복사한 뒤 업로드 (김형준.tiff 가 f1d5d... 로 뜨던 문제 해결)
+  const uploadResults = [];
+  const stages = [];
+  for (const f of files) {
+    let stage = null;
+    try {
+      stage = stageFileWithOriginalName(f.path, f.originalName);
+      stages.push(stage);
+      const selector = f.slot === 2
+        ? `input[type="file"][name="file2(${fidx})"]`
+        : `input[type="file"][name="file(${fidx})"]`;
+      const el = await page.$(selector);
+      if (!el) {
+        // 백업 셀렉터: 슬롯 순번으로 찾기
+        const allFileInputs = await page.$$(`input[type="file"]`);
+        const targetEl = allFileInputs[f.slot - 1];
+        if (targetEl) {
+          await targetEl.uploadFile(stage.path);
+          uploadResults.push({ slot: f.slot, success: true, selector: 'fallback' });
+          continue;
+        }
+        uploadResults.push({ slot: f.slot, success: false, message: '파일 슬롯 미발견' });
+        continue;
+      }
+      await el.uploadFile(stage.path);
+      uploadResults.push({ slot: f.slot, success: true, selector });
+    } catch (e) {
+      uploadResults.push({ slot: f.slot, success: false, message: e.message });
+    }
+  }
+
+  await delay(500, 1000);
+
+  // 작성완료 버튼 클릭
+  const submitResult = await page.evaluate(() => {
+    const btns = document.querySelectorAll('input[type="submit"], input[type="button"], button');
+    for (const btn of btns) {
+      const text = (btn.value || btn.textContent || '').trim();
+      if (text.includes('작성완료') || text.includes('등록') || text.includes('접수')) {
+        if (text.includes('초기화') || text.includes('취소')) continue;
+        btn.click();
+        return { clicked: true, buttonText: text };
+      }
+    }
+    return { clicked: false };
+  });
+
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {});
+
+  // 제출 완료 후 임시 복사본 정리
+  for (const s of stages) { try { s.cleanup(); } catch (e) {} }
+
+  return { uploadResults, submitResult, pageUrl: page.url() };
+}
+
+// 상품별 파일 슬롯 개수 스캔 (하위 호환: fileSlots 배열만 반환)
+async function scanProductFileSlots(agentNo, upw, fidx) {
+  const req = await scanProductRequirements(agentNo, upw, fidx);
+  return req.fileSlots;
+}
+
+// 상품 접수 요건 전체 스캔 — 파일 슬롯 + "전송시체크" 류 체크박스까지.
+// 반환:
+//   {
+//     fidx,
+//     caseType: 'file' | 'checkbox' | 'both' | 'none',
+//     fileSlots: [{ slot, name, label }],
+//     checkbox:  { name, label } | null,
+//   }
+async function scanProductRequirements(agentNo, upw, fidx, options = {}) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  const { productNameHint = '' } = options;
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await delay(500, 1000);
+
+  // 상품 클릭 (파일 input 과 체크박스가 상품 클릭 후에만 노출됨)
+  await page.evaluate((f) => {
+    const els = document.querySelectorAll('a, input[type="button"], button, span, td');
+    for (const el of els) {
+      const onclick = el.getAttribute('onclick') || '';
+      if (onclick.includes(`fidx=${f}`) || onclick.includes(`'${f}'`)) {
+        el.click();
+        return;
+      }
+    }
+  }, fidx);
+  await delay(500, 1000);
+
+  const scanned = await page.evaluate(({ f, hint }) => {
+    // --- 파일 슬롯 ---
+    const fileInputs = document.querySelectorAll(`input[type="file"][name*="(${f})"]`);
+    const fileSlots = [];
+    fileInputs.forEach((inp, idx) => {
+      const label = inp.closest('tr')?.querySelector('td:first-child, th')?.textContent?.trim()
+        || inp.getAttribute('title')
+        || `파일${idx + 1}`;
+      fileSlots.push({ slot: idx + 1, name: inp.name, label });
+    });
+
+    // --- 체크박스 탐지 ---
+    // fidx 를 숨긴 input 형태로도 자주 씀. 상품 선택 후 나타나는 "전송시체크" 계열 체크박스를 찾음.
+    const checkboxes = [];
+    const allCb = document.querySelectorAll('input[type="checkbox"]');
+    const hintKeywords = ['전송시체크', '전송 시체크', '무서류', '무서류체크'];
+
+    const readLabel = (inp) => {
+      // 1) label[for=id]
+      if (inp.id) {
+        const lab = document.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
+        if (lab && lab.textContent.trim()) return lab.textContent.trim();
+      }
+      // 2) 감싸는 label
+      const parentLabel = inp.closest('label');
+      if (parentLabel && parentLabel.textContent.trim()) return parentLabel.textContent.trim();
+      // 3) 인접 td/th 텍스트 (같은 행의 첫 셀)
+      const tr = inp.closest('tr');
+      if (tr) {
+        const tds = [...tr.querySelectorAll('td, th')].map(t => t.textContent.trim()).filter(Boolean);
+        if (tds.length) return tds.join(' / ');
+      }
+      // 4) 바로 뒤 텍스트 노드/형제
+      const nextText = (inp.nextSibling?.textContent || inp.parentElement?.textContent || '').trim();
+      return nextText;
+    };
+
+    for (const inp of allCb) {
+      const name = inp.name || inp.id || '';
+      const labelText = readLabel(inp) || '';
+      const combined = `${name} ${labelText}`;
+
+      // 우선 순위: 키워드 매칭 > 상품명(hint) 매칭 > fidx 포함
+      const matchKeyword = hintKeywords.some(k => combined.includes(k));
+      const matchHint = hint && labelText && labelText.includes(hint);
+      const matchFidx = name.includes(String(f));
+
+      if (matchKeyword || matchHint || matchFidx) {
+        checkboxes.push({
+          name,
+          label: labelText.substring(0, 250),
+          score: (matchKeyword ? 3 : 0) + (matchHint ? 2 : 0) + (matchFidx ? 1 : 0),
+        });
+      }
+    }
+    checkboxes.sort((a, b) => b.score - a.score);
+
+    return {
+      fileSlots,
+      checkbox: checkboxes[0] ? { name: checkboxes[0].name, label: checkboxes[0].label } : null,
+    };
+  }, { f: fidx, hint: productNameHint || '' });
+
+  let caseType = 'none';
+  if (scanned.fileSlots.length > 0 && scanned.checkbox) caseType = 'both';
+  else if (scanned.fileSlots.length > 0) caseType = 'file';
+  else if (scanned.checkbox) caseType = 'checkbox';
+
+  return {
+    fidx,
+    caseType,
+    fileSlots: scanned.fileSlots,
+    checkbox: scanned.checkbox,
+  };
+}
+
+// 브라우저 종료
+// 대출신청내역 목록 가져오기 (사용자 행동 모방)
+async function getLoanList(agentNo, upw, filters = {}) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  let url = `${LOAN_LIST_URL}?no=${agentNo}&upw=${upw}`;
+
+  // 필터 파라미터 추가
+  if (filters.status) url += `&s_state=${encodeURIComponent(filters.status)}`;
+  if (filters.dateType) url += `&s_date_type=${filters.dateType}`;
+  if (filters.dateRange) url += `&s_date_range=${filters.dateRange}`;
+  if (filters.product) url += `&s_fin_name=${encodeURIComponent(filters.product)}`;
+
+  console.log('[크롤러] 대출목록 조회:', url);
+  await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+  // AJAX 데이터 로드 대기 (테이블에 td가 나올 때까지)
+  await page.waitForSelector('table td', { timeout: 10000 }).catch(() => {});
+  await delay(1000, 1500);
+  console.log('[크롤러] 페이지 로드 완료');
+
+  const data = await page.evaluate(() => {
+    const rows = [];
+
+    // 론앤마스터 테이블: id="id_list_table", 헤더는 td.cs_thema_ListBar_Header
+    const table = document.getElementById('id_list_table') || document.querySelector('table.cs_thema_ListTable');
+
+    if (table) {
+      const trs = table.querySelectorAll('tr');
+      for (let i = 1; i < trs.length; i++) { // 0번은 헤더
+        const tds = trs[i].querySelectorAll('td');
+        if (tds.length >= 14) {
+          // 상품명 정규화: LoanMaster 행에 따라 이름 뒤에 '.' / ',' / '·' / '…' 등이 섞여 오는 케이스가 있어
+          // 제거하지 않으면 동일 상품이 다른 이름으로 중복 저장됨
+          const rawProduct = tds[3]?.textContent?.trim() || '';
+          const productName = rawProduct.replace(/[\s.,·…ㆍ]+$/u, '').trim();
+
+          // 심사메모 셀: innerText 로 <br> 개행 유지 (textContent 는 개행 소실)
+          const memoCell = tds[13];
+          const reviewMemo = (memoCell?.innerText || memoCell?.textContent || '').trim();
+
+          // 각 행의 application idx 추출: 행/셀의 onclick, href, data-* 속성에서
+          // statuswin.asp?idx=... 혹은 숫자성 idx 를 찾는다.
+          // 예) onclick="statuswin('2026041599346')", href="statuswin.asp?upw=1&idx=2026041599346"
+          let idx = '';
+          const rowHtml = trs[i].outerHTML || '';
+          const idxPatterns = [
+            /statuswin[^\d]+(\d{10,})/i,   // statuswin(...) / statuswin.asp?idx=...
+            /[?&]idx=(\d{10,})/i,           // ?idx=1234567890
+            /data-idx=["'](\d{10,})["']/i,  // data-idx="..."
+          ];
+          for (const rx of idxPatterns) {
+            const m = rowHtml.match(rx);
+            if (m) { idx = m[1]; break; }
+          }
+
+          rows.push({
+            idx,
+            applyDate: tds[0]?.textContent?.trim() || '',
+            processDate: tds[1]?.textContent?.trim() || '',
+            productName,
+            recruiter: tds[4]?.textContent?.trim() || '',
+            customerName: tds[7]?.textContent?.trim() || '',
+            birthDate: tds[8]?.textContent?.trim() || '',
+            gender: tds[9]?.textContent?.trim() || '',
+            jobType: tds[10]?.textContent?.trim() || '',
+            status: tds[11]?.textContent?.trim() || '',
+            approvedAmount: tds[12]?.textContent?.trim() || '',
+            reviewMemo,
+            branchMemo: tds[14]?.textContent?.trim() || '',
+          });
+        }
+      }
+    }
+
+    // 요약 정보
+    const summaryText = document.body.innerText;
+    const summaryMatch = summaryText.match(/금일.*접수:(\d+)건.*승인:(\d+)건\/([\d,]+)만원.*부결:(\d+)건/);
+    const summary = summaryMatch ? {
+      todayApply: parseInt(summaryMatch[1]),
+      todayApproved: parseInt(summaryMatch[2]),
+      todayApprovedAmount: summaryMatch[3],
+      todayRejected: parseInt(summaryMatch[4])
+    } : null;
+
+    const total = rows.length;
+    return { rows, summary, total };
+  });
+
+  console.log('[크롤러] 파싱 결과:', data.rows?.length, '건, 테이블:', data.debug?.tableCount, ', TH:', JSON.stringify(data.debug?.thTexts?.slice(0,3)));
+
+  return {
+    ...data,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+// 대출신청 상세 정보 1건 가져오기
+// 심사메모 전체 내용 조회: 론앤마스터 statuswin.asp 팝업 페이지를
+// 서버 사이드에서 읽어 심사메모 전체 텍스트를 추출한다.
+// - upw 기본값 1 (기본 에이전트 권한)
+// - 페이지의 '심사메모' 라벨 주변 영역을 찾고, 없으면 body 전체 innerText 를 반환
+async function getLoanReviewMemo(idx, upw = '1') {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  if (!idx) throw new Error('idx 가 필요합니다.');
+
+  const url = `${STATUS_WIN_URL}?upw=${encodeURIComponent(upw)}&idx=${encodeURIComponent(idx)}`;
+  console.log('[크롤러] 심사메모 상세 조회:', url);
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(300, 700);
+
+  const result = await page.evaluate(() => {
+    // 전체 body 텍스트 확보 (개행 포함)
+    const fullText = (document.body.innerText || '').trim();
+
+    // '심사메모' 라벨 기준으로 본문 섹션 추출 시도
+    //   1) th/td/label/strong 요소에서 '심사메모' 포함 요소를 찾고 인접 블록 텍스트 사용
+    //   2) 실패 시 fullText 를 그대로 돌려줌
+    let memoText = '';
+    const labelEls = [...document.querySelectorAll('th, td, label, strong, b, span, dt')]
+      .filter(el => /심사\s*메모/.test(el.textContent || ''));
+    for (const labelEl of labelEls) {
+      // 인접 셀 (td 의 경우 형제, th 의 경우 같은 tr 의 다음 td)
+      let target = null;
+      if (labelEl.tagName === 'TH' || labelEl.tagName === 'DT') {
+        target = labelEl.parentElement?.querySelector('td, dd');
+      } else if (labelEl.tagName === 'TD') {
+        target = labelEl.nextElementSibling;
+      } else {
+        // 라벨 바로 다음 형제 또는 부모의 다음 형제
+        target = labelEl.nextElementSibling || labelEl.parentElement?.nextElementSibling;
+      }
+      const text = (target?.innerText || '').trim();
+      if (text && text.length > memoText.length) memoText = text;
+    }
+
+    if (!memoText) memoText = fullText;
+    return { memo: memoText, rawLength: fullText.length };
+  });
+
+  return {
+    idx,
+    memo: result.memo,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+async function getLoanDetail(detailUrl) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+
+  await delay(2000, 3500);
+  await page.goto(LMASTER_BASE + detailUrl, { waitUntil: 'networkidle2' });
+  await delay(1000, 2000);
+
+  const data = await page.evaluate(() => {
+    return { body: document.body.innerText };
+  });
+
+  return {
+    ...data,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+async function closeBrowser() {
+  if (browser) {
+    await browser.close();
+    browser = null;
+    page = null;
+    isLoggedIn = false;
+  }
+}
+
+// 현재 페이지 테이블 HTML 디버그
+async function getPageHtml() {
+  if (!page) throw new Error('브라우저가 실행 중이 아닙니다.');
+  return await page.evaluate(() => {
+    const tables = document.querySelectorAll('table');
+    const result = { tables: [], bodySnippet: document.body.innerHTML.substring(0, 3000) };
+    tables.forEach((t, i) => {
+      const rows = t.querySelectorAll('tr');
+      const rowData = [];
+      rows.forEach((r, j) => {
+        if (j < 3) { // 첫 3행만
+          const cells = [...r.querySelectorAll('th,td')].map(c => c.textContent.trim().substring(0, 30));
+          rowData.push(cells);
+        }
+      });
+      result.tables.push({ index: i, totalRows: rows.length, firstRows: rowData, html: t.outerHTML.substring(0, 500) });
+    });
+    return result;
+  });
+}
+
+// 론앤마스터 공지사항 목록 + 본문 가져오기
+// options.todayOnly=true 면 오늘 등록된 공지만 반환 (KST 기준)
+// options.fetchBodies=true 면 각 공지의 본문도 함께 가져옴 (느림, 당일분에 한해 권장)
+async function getNotices(agentNo, upw, options = {}) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+  const { todayOnly = true, fetchBodies = true } = options;
+
+  const url = `${NOTICE_LIST_URL}?no=${agentNo || '12'}&upw=${upw || '1'}`;
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  // 동적 로드 대비 — 게시판 테이블이 나올 때까지 최대 8초 대기
+  await page.waitForFunction(() => {
+    const frames = [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } }).filter(Boolean)];
+    for (const d of frames) {
+      const rows = d.querySelectorAll('table tr');
+      for (const r of rows) {
+        const text = (r.textContent || '');
+        if (/\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2}/.test(text)) return true;
+      }
+    }
+    return false;
+  }, { timeout: 8000 }).catch(() => {});
+  await delay(1500, 2500);
+
+  // KST 기준 오늘 날짜 (YYYY-MM-DD)
+  const now = new Date();
+  const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000) + now.getTimezoneOffset() * 60 * 1000);
+  const todayStr = `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,'0')}-${String(kst.getDate()).padStart(2,'0')}`;
+
+  // 공지 목록 파싱 — 모든 Puppeteer frame 을 순회 (iframe 안쪽 포함)
+  // 참고: window.iframe.contentDocument 는 sandbox/cross-origin 에 막힐 수 있어 page.frames() 사용
+  const parseInFrame = async (frame) => {
+    try {
+      return await frame.evaluate(() => {
+        const out = [];
+        const debug = { tableCount: 0, rowCount: 0, dateMatched: 0 };
+        const tables = document.querySelectorAll('table');
+        debug.tableCount = tables.length;
+        for (const t of tables) {
+          const rows = t.querySelectorAll('tr');
+          debug.rowCount += rows.length;
+          for (const r of rows) {
+            const tds = r.querySelectorAll('td, th');
+            if (tds.length < 2) continue;
+            const cellTexts = [...tds].map(td => (td.textContent || '').trim());
+            let dateStr = '';
+            for (const ct of cellTexts) {
+              const m = ct.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+              if (m) { dateStr = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`; break; }
+            }
+            if (!dateStr) continue;
+            debug.dateMatched++;
+
+            const linkEl = r.querySelector('a[href], a[onclick]');
+            let title = '';
+            if (linkEl) title = (linkEl.textContent || '').trim();
+            if (!title) title = cellTexts.find(s => s.length > 5) || '';
+            title = title.replace(/\s+/g, ' ').trim();
+            if (!title || title.length < 3) continue;
+
+            let href = linkEl ? (linkEl.getAttribute('href') || '') : '';
+            let onclick = linkEl ? (linkEl.getAttribute('onclick') || '') : '';
+            let idx = '';
+            if (onclick) {
+              const m = onclick.match(/[\(,'"\s](\d{2,})[\)'"\s,]/);
+              if (m) idx = m[1];
+            }
+            if (!idx && href) {
+              const m = href.match(/idx=(\d+)/i) || href.match(/no=(\d+)/i) || href.match(/(\d{3,})/);
+              if (m) idx = m[1];
+            }
+            if (!idx && /^\d{2,}$/.test(cellTexts[0])) idx = cellTexts[0];
+
+            out.push({ date: dateStr, title, idx, href, onclick });
+          }
+        }
+        // Fallback 파서: innerText 에서 [번호]\n[제목]\n[글쓴이]\n[날짜] 4줄 패턴 스캔
+        // lmaster 게시판이 table 로 안 그려지거나 우리 td 셀렉터가 놓치는 케이스 방어
+        if (out.length === 0) {
+          const bodyText = (document.body?.innerText || '');
+          const lines = bodyText.split(/\n+/).map(s => s.trim()).filter(Boolean);
+          for (let i = 0; i + 3 < lines.length; i++) {
+            const num = lines[i];
+            const title = lines[i+1];
+            const author = lines[i+2];
+            const dateLine = lines[i+3];
+            if (!/^\d{3,6}$/.test(num)) continue;                           // 번호: 3~6자리 숫자만
+            if (!title || title.length < 3) continue;
+            if (!author || author.length > 20) continue;                    // 글쓴이 짧음
+            const m = dateLine.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+            if (!m) continue;
+            const date = `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+            out.push({ date, title: title.replace(/\s+/g, ' ').trim(), idx: num, href: '' });
+            debug.dateMatched++;
+          }
+          debug.textFallback = out.length;
+        }
+
+        return {
+          items: out, debug,
+          url: location.href,
+          innerText: (document.body?.innerText || '').substring(0, 3000),
+          htmlSnippet: document.body ? document.body.innerHTML.substring(0, 1500) : ''
+        };
+      });
+    } catch (e) {
+      return { items: [], debug: { error: e.message }, url: frame.url() };
+    }
+  };
+
+  // 모든 frame 순회
+  const allFrames = page.frames();
+  const frameResults = [];
+  for (const f of allFrames) {
+    const r = await parseInFrame(f);
+    frameResults.push({ url: r.url || f.url(), ...r });
+  }
+
+  // 합치고 중복 제거
+  const seen = new Set();
+  const allItems = [];
+  for (const fr of frameResults) {
+    for (const n of (fr.items || [])) {
+      const key = `${n.date}_${n.title}_${n.idx}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      allItems.push(n);
+    }
+  }
+
+  const items = {
+    items: allItems,
+    todayStr,
+    debug: {
+      frameCount: allFrames.length,
+      frames: frameResults.map(fr => ({
+        url: fr.url,
+        tableCount: fr.debug?.tableCount,
+        rowCount: fr.debug?.rowCount,
+        dateMatched: fr.debug?.dateMatched,
+        innerText: (fr.innerText || '').substring(0, 500),
+        snippet: (fr.htmlSnippet || '').substring(0, 600)
+      }))
+    },
+    htmlSnippet: ''
+  };
+
+  const listItems = items.items || [];
+  let list = listItems.filter(n => !todayOnly || n.date === todayStr);
+  // 최신순
+  list.sort((a, b) => (b.date + (b.idx || '')).localeCompare(a.date + (a.idx || '')));
+
+  // 디버그: 파싱 통계
+  const debugInfo = {
+    parsedTotal: listItems.length,
+    parsedTodayOnly: list.length,
+    todayStr,
+    pageDebug: items.debug,
+    pageUrl: page.url(),
+    htmlSnippet: items.htmlSnippet
+  };
+
+  // 본문 fetch (옵션)
+  //
+  // 이전 버그: view.asp?idx= 추측 URL이 lmaster 의 실제 파라미터명과 다르면
+  // list.asp 의 "최신공지 팝업"이 그대로 노출돼서 모든 공지가 같은 본문으로 저장됐다.
+  // 팝업 블록은 [팝업제목]\n작성일: ...\n해당공지로 이동\n[실내용] 패턴으로 시작한다.
+  //
+  // 새 전략:
+  //  1) list.asp 에서 실제 링크를 클릭해 lmaster JS 가 라우팅을 맡게 한다 (URL 추측 X)
+  //  2) 본문 추출은 "title 기반 anchored search" — 공지 제목이 포함된 가장 짧은 블록 우선
+  //  3) "해당공지로 이동" 팝업 헤더는 마지막 발생 위치 이후 텍스트만 사용
+  //  4) 최종 본문에 은행시그니처(타이틀 핵심키워드)가 없으면 mismatch 로 표시 (DB 측에서 기존값 유지)
+  const NAV_LINE_RE = /^(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|QnA|로그아웃)$/;
+  const NAV_HEAVY_RE = /(신청서입력|대출신청내역|신청리스트|공지사항|통계메뉴|자료실|\(지점\)\s*직원관리|QnA|로그아웃|팝업검색|검색조건)/g;
+
+  // 공지 제목에서 식별용 signature 추출
+  //   "◈ 친애저축 - [ 기득권 주의사항 ] 안내 ◈" → { bank: "친애저축", core: "친애저축기득권" }
+  const titleSignature = (title) => {
+    if (!title) return { bank: '', core: '' };
+    const cleaned = title.replace(/[◈⚠️]/g, '').trim();
+    const m = cleaned.match(/^(.+?)\s*(?:-|\[)/);
+    const bank = (m ? m[1] : cleaned).replace(/\s+/g, '').slice(0, 8);
+    const core = cleaned.replace(/[\s\[\]\-]/g, '').slice(0, 10);
+    return { bank, core };
+  };
+
+  // 팝업/사이드바 헤더 잘라내기
+  const stripPopupHeader = (text) => {
+    if (!text) return '';
+    const marker = '해당공지로 이동';
+    const lastIdx = text.lastIndexOf(marker);
+    if (lastIdx >= 0) {
+      const after = text.slice(lastIdx + marker.length).trim();
+      if (after.length > 20) return after;
+    }
+    return text;
+  };
+
+  // 본문 추출 — 공지 제목으로 anchor 잡고 가장 가까운 부모의 텍스트 선택
+  const extractBodyForTitle = async (expectedTitle) => {
+    const sig = titleSignature(expectedTitle);
+    if (!sig.bank) return '';
+
+    let best = '';
+    let bestScore = -Infinity;
+
+    for (const fr of page.frames()) {
+      try {
+        const found = await fr.evaluate((bankSig, coreSig) => {
+          const score = (text) => {
+            if (!text) return -Infinity;
+            const len = text.length;
+            if (len < 30 || len > 8000) return -Infinity;
+            const hasBank = text.includes(bankSig);
+            const hasCore = coreSig && text.includes(coreSig.slice(0, 4));
+            if (!hasBank && !hasCore) return -Infinity;
+            // 짧고 bank/core 위치가 앞쪽일수록 좋음
+            const bankPos = hasBank ? text.indexOf(bankSig) : 9999;
+            return (hasBank ? 200 : 0) + (hasCore ? 100 : 0) - Math.min(bankPos, 500) - Math.floor(len / 100);
+          };
+
+          const candidates = document.querySelectorAll('td, div, article, section, pre');
+          let localBest = '';
+          let localScore = -Infinity;
+          for (const el of candidates) {
+            const t = (el.innerText || el.textContent || '').trim();
+            const s = score(t);
+            if (s > localScore) {
+              localScore = s;
+              localBest = t;
+            }
+          }
+          return { text: localBest, score: localScore };
+        }, sig.bank, sig.core);
+
+        if (found && found.score > bestScore) {
+          bestScore = found.score;
+          best = found.text;
+        }
+      } catch {}
+    }
+
+    // 후처리: 팝업 헤더 제거 + 메뉴/네비 라인 필터 + 길이 제한
+    const trimmed = stripPopupHeader(best);
+    return trimmed
+      .split(/\n+/)
+      .map(l => l.trim())
+      .filter(l => l && !NAV_LINE_RE.test(l))
+      .join('\n')
+      .slice(0, 8000);
+  };
+
+  // body 가 "이 공지"의 것이 맞는지 검증
+  const bodyMatchesTitle = (body, title) => {
+    const sig = titleSignature(title);
+    if (!sig.bank || !body) return false;
+    if (body.includes(sig.bank)) return true;
+    if (sig.core && body.includes(sig.core.slice(0, 5))) return true;
+    return false;
+  };
+
+  // 클릭 strategies: a.click() 가 JS 이벤트 핸들러를 못 깨우는 lmaster 가 있어서
+  // 1) onclick 문자열을 같은 frame 안에서 eval
+  // 2) javascript: href 도 eval
+  // 3) 평범한 href 면 location 변경
+  // 4) MouseEvent dispatch
+  // 5) 최후에 element.click()
+  const robustClickInFrame = async (frame, idx) => {
+    return await frame.evaluate((idx) => {
+      const links = [...document.querySelectorAll('a[onclick], a[href]')];
+      const link = links.find(a => {
+        const oc = a.getAttribute('onclick') || '';
+        const hr = a.getAttribute('href') || '';
+        return oc.includes(idx) || hr.includes(idx);
+      });
+      if (!link) return { ok: false, error: 'no_link' };
+      const oc = link.getAttribute('onclick') || '';
+      const hr = link.getAttribute('href') || '';
+      try {
+        if (oc) { try { new Function(oc)(); return { ok: true, method: 'eval_onclick' }; } catch (_) {} }
+        if (hr.startsWith('javascript:')) {
+          try { new Function(hr.slice('javascript:'.length))(); return { ok: true, method: 'eval_href' }; } catch (_) {}
+        }
+        if (hr && !hr.startsWith('javascript:') && !hr.startsWith('#')) {
+          window.location.href = hr;
+          return { ok: true, method: 'href' };
+        }
+        const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        link.dispatchEvent(evt);
+        link.click();
+        return { ok: true, method: 'dispatch' };
+      } catch (e) {
+        return { ok: false, error: 'click_threw:' + e.message };
+      }
+    }, idx);
+  };
+
+  const buildViewUrls = (idx) => [
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/read.asp?no=${agentNo || '12'}&upw=${upw || '1'}&idx=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&bbs_no=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&seq=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&num=${idx}`,
+    `${LMASTER_BASE}/admin/bbs/notice/view.asp?no=${agentNo || '12'}&upw=${upw || '1'}&wr_id=${idx}`
+  ];
+
+  const fetchBodyForNotice = async (notice) => {
+    const expectedBank = titleSignature(notice.title).bank;
+    const attempts = [];
+
+    // STRATEGY A: list.asp 에서 robust click 후 body 추출
+    try {
+      const listUrl = `${NOTICE_LIST_URL}?no=${agentNo || '12'}&upw=${upw || '1'}`;
+      await page.goto(listUrl, { waitUntil: 'networkidle2', timeout: 15000 });
+      await delay(400, 800);
+
+      let linkFrame = null;
+      for (const fr of page.frames()) {
+        try {
+          const has = await fr.evaluate((idx) => {
+            return [...document.querySelectorAll('a[onclick], a[href]')].some(a => {
+              const oc = a.getAttribute('onclick') || '';
+              const hr = a.getAttribute('href') || '';
+              return oc.includes(idx) || hr.includes(idx);
+            });
+          }, notice.idx);
+          if (has) { linkFrame = fr; break; }
+        } catch {}
+      }
+      if (linkFrame) {
+        const preUrl = linkFrame.url();
+        const clickRes = await robustClickInFrame(linkFrame, notice.idx);
+        attempts.push({ kind: 'click', method: clickRes.method || 'none', ok: clickRes.ok });
+        if (clickRes.ok) {
+          try {
+            await page.waitForFunction((preU, bank) => {
+              const dlist = [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } }).filter(Boolean)];
+              for (const d of dlist) {
+                if (!d) continue;
+                if (d.location && d.location.href !== preU) return true;
+                const t = (d.body?.innerText || '');
+                if (bank && t.includes(bank)) return true;
+              }
+              return false;
+            }, { timeout: 5000 }, preUrl, expectedBank).catch(() => {});
+          } catch {}
+          await delay(400, 800);
+          const body = await extractBodyForTitle(notice.title);
+          attempts.push({ kind: 'click_extracted', len: body.length, match: bodyMatchesTitle(body, notice.title) });
+          if (body && bodyMatchesTitle(body, notice.title)) {
+            return { body, error: '', source: 'click', attempts };
+          }
+        }
+      } else {
+        attempts.push({ kind: 'click', error: 'link_not_found' });
+      }
+    } catch (e) {
+      attempts.push({ kind: 'click', error: 'exception:' + e.message });
+    }
+
+    // STRATEGY B: URL 추측 6종 fallback
+    for (const url of buildViewUrls(notice.idx)) {
+      try {
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 12000 });
+        await delay(300, 600);
+        const body = await extractBodyForTitle(notice.title);
+        const ok = bodyMatchesTitle(body, notice.title);
+        attempts.push({ kind: 'url', url: url.replace(LMASTER_BASE, ''), len: body.length, match: ok });
+        if (body && ok) {
+          return { body, error: '', source: 'url', attempts };
+        }
+      } catch (e) {
+        attempts.push({ kind: 'url', url: url.replace(LMASTER_BASE, ''), error: e.message });
+      }
+    }
+
+    return { body: '', error: 'title_mismatch', attempts };
+  };
+
+  if (fetchBodies && list.length > 0) {
+    const MAX_BODIES = 20;
+    for (const n of list.slice(0, MAX_BODIES)) {
+      try {
+        if (!n.idx) { n.bodyError = 'no_idx'; continue; }
+        const { body, error, source, attempts } = await fetchBodyForNotice(n);
+        n.body = body || '';
+        if (error) n.bodyError = error;
+        if (source) n.bodySource = source;
+        // attempts 는 디버그 페이로드 — 운영 응답에서는 빼고 로그로 남긴다
+        console.log(`[공지] idx=${n.idx} title="${(n.title||'').slice(0,40)}" -> source=${source||'-'} err=${error||''} attempts=${JSON.stringify(attempts).slice(0,400)}`);
+      } catch (e) {
+        n.bodyError = 'exception:' + e.message;
+        console.error(`[공지] idx=${n.idx} 본문 fetch 예외:`, e.message);
+      }
+    }
+  }
+
+  return { todayStr, count: list.length, notices: list, debug: debugInfo };
+}
+
+// 공지 캐시 (1시간 TTL — 론앤마스터가 시간당 1건 올린다는 사용자 메모 기준)
+let _noticeCache = { ts: 0, data: null };
+const NOTICE_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+
+async function getCachedNotices(agentNo, upw, options = {}) {
+  const force = options.force === true;
+  const now = Date.now();
+  if (!force && _noticeCache.data && (now - _noticeCache.ts < NOTICE_CACHE_TTL_MS)) {
+    return { ..._noticeCache.data, cached: true, cachedAgeSec: Math.floor((now - _noticeCache.ts)/1000) };
+  }
+  const data = await getNotices(agentNo, upw, options);
+  _noticeCache = { ts: now, data };
+  return { ...data, cached: false };
+}
+
+// ============================================================
+// 동의서/인증/자료 다운로드 (loanlist_app.asp 의 +인증/동의서 섹션)
+// ============================================================
+// 페이지 DOM 구조:
+//   <div id="prdt_item_tr_{fidx}" data-fname="금융사명" data-trans="상품별칭">
+//     ...
+//     <input type="button" value="[동의서]" onclick="js_fnDownDoc_Mo('862','');">
+//     <input type="button" value="동의서작성예시" onclick="js_fnDownDoc_FinInfo('2439','1');">
+//     <input type="button" value="[인증주소]" onclick="js_fnAuthSite('https://...');">
+//   </div>
+// 다운로드 URL:
+//   - mo  : /admin/data/Proc_DownDoc_Mo.asp?upw=1&moidx={id}&flag={flag}
+//   - fin : /admin/finance/Proc_DownDoc_FinInfo.asp?upw=1&finidx={id}&flag={flag}
+//   - data: /admin/data/Proc_DownDoc_DataCommon.asp?upw=1&flag={flag}
+// 응답: Content-Disposition 의 filename 은 cp949 raw bytes (latin1 로 보임).
+// ============================================================
+
+const _downloadCache = { ts: 0, data: null };
+const DOWNLOAD_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+
+async function scanProductDownloads(agentNo = '12', upw = '1', options = {}) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+
+  const force = options.force === true;
+  const now = Date.now();
+  if (!force && _downloadCache.data && (now - _downloadCache.ts < DOWNLOAD_CACHE_TTL_MS)) {
+    return { ..._downloadCache.data, cached: true, cachedAgeSec: Math.floor((now - _downloadCache.ts)/1000) };
+  }
+
+  const url = `${LOAN_APP_URL}?no=${agentNo}&upw=${upw}&w=w`;
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(1500, 2500);
+
+  // 세션 만료 감지 (login.asp 로 리다이렉트 또는 로그인 폼 노출)
+  const after = page.url();
+  if (after.includes('login.asp')) {
+    isLoggedIn = false;
+    const err = new Error('론앤마스터 세션이 만료되었습니다. 재로그인이 필요합니다.');
+    err.code = 'LMASTER_SESSION_EXPIRED';
+    throw err;
+  }
+
+  const products = await page.evaluate(() => {
+    const parseArgs = (raw) => [...raw.matchAll(/'([^']*)'/g)].map(x => x[1]);
+
+    const items = [];
+    const containers = document.querySelectorAll('div[id^="prdt_item_tr_"]');
+    for (const c of containers) {
+      const fidxMatch = c.id.match(/prdt_item_tr_(\d+)/);
+      const fidx = fidxMatch ? fidxMatch[1] : '';
+      const finName = c.getAttribute('data-fname') || '';
+      const productAlias = c.getAttribute('data-trans') || '';
+      // 상태 텍스트 (예: "[ 후인증Y | 동의서첨부X ]") 추출
+      const statusEl = c.querySelector('.cs_txt_bold');
+      const statusText = statusEl ? (statusEl.innerText || '').trim() : '';
+
+      // 컨테이너 내 모든 동의서/인증 버튼
+      const auth = [];      // 인증주소(외부 URL)
+      const docs = [];      // 다운로드 가능 파일
+
+      const btns = c.querySelectorAll('input[type=button][onclick]');
+      for (const b of btns) {
+        const oc = b.getAttribute('onclick') || '';
+        const m = oc.match(/js_fn(DownDoc_Mo|DownDoc_FinInfo|AuthSite|DownDoc_DataCommon)\((.*?)\)/);
+        if (!m) continue;
+        const fnName = m[1];
+        const args = parseArgs(m[2]);
+        const label = b.value || '';
+
+        if (fnName === 'AuthSite') {
+          auth.push({ kind: 'auth', label, url: args[0] || '' });
+        } else if (fnName === 'DownDoc_Mo') {
+          docs.push({ kind: 'mo', label, id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_FinInfo') {
+          docs.push({ kind: 'fin', label, id: args[0] || '', flag: args[1] || '' });
+        } else if (fnName === 'DownDoc_DataCommon') {
+          docs.push({ kind: 'data', label, flag: args[0] || '' });
+        }
+      }
+
+      if (auth.length || docs.length) {
+        items.push({ fidx, finName, productAlias, statusText, auth, docs });
+      }
+    }
+    return items;
+  });
+
+  const data = { products, scannedAt: new Date().toISOString() };
+  _downloadCache.ts = now;
+  _downloadCache.data = data;
+  return { ...data, cached: false };
+}
+
+// 동의서/자료 1건 다운로드 — puppeteer page 컨텍스트의 fetch 로 세션 활용
+//   * Node 의 https 로 직접 호출하면 쿠키만으로는 "잘못된 세션" 응답이 떨어진다
+//     (다른 헤더/쿠키 흐름이 필요한 듯). 실제로 작동하는 건 page 컨텍스트 fetch.
+// 반환: { status, contentType, filename, body(Buffer) }
+async function downloadConsentDoc({ kind, id, flag = '' }) {
+  if (!isLoggedIn) throw new Error('론앤마스터 로그인이 필요합니다.');
+  if (!page) throw new Error('브라우저가 실행 중이 아닙니다.');
+
+  let url;
+  if (kind === 'mo') {
+    if (!id) throw new Error('moidx(id)가 필요합니다.');
+    url = `${LMASTER_BASE}/admin/data/Proc_DownDoc_Mo.asp?upw=1&moidx=${encodeURIComponent(id)}&flag=${encodeURIComponent(flag)}`;
+  } else if (kind === 'fin') {
+    if (!id) throw new Error('finidx(id)가 필요합니다.');
+    url = `${LMASTER_BASE}/admin/finance/Proc_DownDoc_FinInfo.asp?upw=1&finidx=${encodeURIComponent(id)}&flag=${encodeURIComponent(flag)}`;
+  } else if (kind === 'data') {
+    url = `${LMASTER_BASE}/admin/data/Proc_DownDoc_DataCommon.asp?upw=1&flag=${encodeURIComponent(flag)}`;
+  } else {
+    throw new Error(`unknown kind: ${kind}`);
+  }
+
+  // 다운로드 엔드포인트는 loanlist_app 안의 ifrm_g_work iframe 에서 호출되는 형태이므로,
+  // 현재 페이지가 그 페이지가 아니라면 먼저 이동해 둬야 세션이 활성화된다.
+  if (!page.url().includes('loanlist_app.asp')) {
+    await page.goto(`${LOAN_APP_URL}?no=12&upw=1&w=w`, { waitUntil: 'networkidle2', timeout: 15000 });
+    await delay(700, 1200);
+    if (page.url().includes('login.asp')) {
+      isLoggedIn = false;
+      const err = new Error('론앤마스터 세션이 만료되었습니다.');
+      err.code = 'LMASTER_SESSION_EXPIRED';
+      throw err;
+    }
+  }
+
+  // page 컨텍스트에서 fetch — 쿠키/Origin/Referer 가 자동으로 잡힘
+  // 응답 ArrayBuffer 를 base64 로 직렬화해서 Node 로 전달
+  const result = await page.evaluate(async (u) => {
+    try {
+      const r = await fetch(u, { credentials: 'include', cache: 'no-store' });
+      const ct = r.headers.get('content-type') || '';
+      const cd = r.headers.get('content-disposition') || '';
+      const buf = await r.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // ArrayBuffer → binary string → base64 (chunk 단위로 처리해 stack overflow 회피)
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      return { ok: true, status: r.status, contentType: ct, contentDisposition: cd, base64: btoa(binary) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }, url);
+
+  if (!result || !result.ok) {
+    throw new Error(result?.error || '다운로드 실패');
+  }
+  if (result.status !== 200) {
+    const err = new Error(`다운로드 실패: HTTP ${result.status}`);
+    err.code = 'LMASTER_DOWNLOAD_FAILED';
+    throw err;
+  }
+
+  const body = Buffer.from(result.base64, 'base64');
+
+  // 본문이 HTML/세션 만료 텍스트인지 확인
+  // 정상 PDF 시그니처: %PDF (0x25 0x50 0x44 0x46)
+  // 정상 HWP/Excel/zip 등도 가능하므로, "잘못된 세션" 같은 cp949 한글 텍스트가 들어오는지 확인
+  const iconv = require('iconv-lite');
+  if (body.length < 256) {
+    const head = body.slice(0, body.length).toString('binary');
+    const isHtml = /<html|<!doctype|<body/i.test(head);
+    let cp949 = '';
+    try { cp949 = iconv.decode(body, 'euc-kr'); } catch {}
+    if (isHtml || /세션|로그인|만료|오류|불가/.test(cp949)) {
+      isLoggedIn = isLoggedIn && !/세션|로그인|만료/.test(cp949);
+      const err = new Error(`다운로드 실패: ${cp949 || head}`.slice(0, 200));
+      err.code = isLoggedIn ? 'LMASTER_DOWNLOAD_FAILED' : 'LMASTER_SESSION_EXPIRED';
+      throw err;
+    }
+  }
+
+  // Content-Disposition 의 filename 디코드 (cp949)
+  let filename = '';
+  const cd = result.contentDisposition || '';
+  if (cd) {
+    let m = cd.match(/filename\*=UTF-8''([^;\n]+)/i);
+    if (m) {
+      try { filename = decodeURIComponent(m[1]); } catch { filename = m[1]; }
+    } else {
+      m = cd.match(/filename=([^;\n]+)/i);
+      if (m) {
+        const raw = m[1].trim().replace(/^"|"$/g, '');
+        // 브라우저가 헤더를 latin1 로 디코드해 JS 문자열로 줬으니, 다시 byte 로 되돌려 cp949 디코드
+        try {
+          const buf = Buffer.from(raw, 'binary');
+          filename = iconv.decode(buf, 'euc-kr');
+        } catch { filename = raw; }
+      }
+    }
+  }
+  if (!filename) {
+    const ct = (result.contentType || '').toLowerCase();
+    let ext = '';
+    if (ct.includes('pdf')) ext = '.pdf';
+    else if (ct.includes('excel') || ct.includes('spreadsheet')) ext = '.xlsx';
+    else if (ct.includes('hwp')) ext = '.hwp';
+    else if (ct.includes('zip')) ext = '.zip';
+    filename = `lmaster_${kind}_${id || ''}_${flag || ''}${ext}`;
+  }
+
+  return {
+    status: result.status,
+    contentType: result.contentType || 'application/octet-stream',
+    filename,
+    body
+  };
+}
+
+// 상태 확인
+function getStatus() {
+  return {
+    browserRunning: !!browser,
+    isLoggedIn,
+    pageUrl: page ? page.url() : null
+  };
+}
+
+// === 디버그: 임의 URL 로 이동 후 HTML/링크/폼 덤프 (탐색용) ===
+// options.js: 페이지 로드 후 실행할 JS 표현식 (예: 'selectmenu(15)')
+// options.waitMs: js 실행 후 추가 대기시간(ms)
+// options.htmlLen: bodyHtmlSnippet 길이 (기본 6000)
+async function debugFetch(rawUrl, options = {}) {
+  if (!isLoggedIn) throw new Error('로그인이 필요합니다.');
+  const url = rawUrl.startsWith('http') ? rawUrl : (LMASTER_BASE + rawUrl);
+  await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+  await delay(800, 1400);
+  if (options.js) {
+    try { await page.evaluate(options.js); } catch (e) { /* ignore */ }
+    await delay(options.waitMs || 1500, (options.waitMs || 1500) + 500);
+  }
+  const htmlLen = options.htmlLen || 6000;
+  return await page.evaluate((htmlLen) => {
+    const links = [...document.querySelectorAll('a')].map(a => ({
+      text: (a.textContent || '').trim().substring(0, 80),
+      href: a.getAttribute('href') || '',
+      onclick: a.getAttribute('onclick') || ''
+    })).filter(l => l.text || l.href || l.onclick);
+    const forms = [...document.querySelectorAll('form')].map(f => ({
+      name: f.name || '', id: f.id || '',
+      action: f.getAttribute('action') || '', method: (f.method || 'GET').toUpperCase(),
+      inputs: [...f.querySelectorAll('input,select,textarea')].map(i => ({
+        tag: i.tagName, type: i.type || '', name: i.name || '', value: (i.value || '').substring(0, 60)
+      }))
+    }));
+    const buttons = [...document.querySelectorAll('input[type=button],input[type=submit],button')].map(b => ({
+      type: b.type, value: b.value || '', text: (b.textContent || '').trim().substring(0, 60),
+      onclick: b.getAttribute('onclick') || ''
+    }));
+    const iframes = [...document.querySelectorAll('iframe,frame')].map(f => ({
+      name: f.name || '', src: f.getAttribute('src') || '', currentSrc: f.src || ''
+    }));
+    // 같은 origin iframe 의 본문도 추출
+    const iframeBodies = [];
+    document.querySelectorAll('iframe,frame').forEach(f => {
+      try {
+        const doc = f.contentDocument;
+        if (!doc) return;
+        iframeBodies.push({
+          name: f.name || '', src: f.src || '',
+          url: doc.location?.href || '',
+          title: doc.title || '',
+          bodySnippet: (doc.body?.innerText || '').substring(0, 1500),
+          bodyHtmlSnippet: (doc.body?.innerHTML || '').substring(0, htmlLen),
+          links: [...doc.querySelectorAll('a')].map(a => ({
+            text: (a.textContent || '').trim().substring(0, 80),
+            href: a.getAttribute('href') || '',
+            onclick: a.getAttribute('onclick') || ''
+          })).filter(l => l.text || l.href || l.onclick).slice(0, 200),
+          forms: [...doc.querySelectorAll('form')].map(form => ({
+            name: form.name || '', id: form.id || '',
+            action: form.getAttribute('action') || '', method: (form.method || 'GET').toUpperCase(),
+            inputs: [...form.querySelectorAll('input,select,textarea')].map(i => ({
+              tag: i.tagName, type: i.type || '', name: i.name || '', value: (i.value || '').substring(0, 60)
+            }))
+          })),
+          buttons: [...doc.querySelectorAll('input[type=button],input[type=submit],button')].map(b => ({
+            type: b.type, value: b.value || '', text: (b.textContent || '').trim().substring(0, 60),
+            onclick: b.getAttribute('onclick') || ''
+          })),
+        });
+      } catch (e) {
+        iframeBodies.push({ name: f.name || '', src: f.src || '', error: 'cross-origin or unloaded' });
+      }
+    });
+    return {
+      url: location.href,
+      title: document.title,
+      bodySnippet: (document.body?.innerText || '').substring(0, 2000),
+      bodyHtmlSnippet: (document.body?.innerHTML || '').substring(0, htmlLen),
+      links: links.slice(0, 200),
+      forms,
+      buttons,
+      iframes,
+      iframeBodies
+    };
+  }, htmlLen);
+}
+
+module.exports = {
+  login,
+  getProductGuide,
+  getProductFidxMap,
+  scanFormFields,
+  submitLoanApplication,
+  getLoanList,
+  getLoanDetail,
+  getLoanReviewMemo,
+  closeBrowser,
+  getStatus,
+  getPageHtml,
+  uploadDocuments,
+  scanProductFileSlots,
+  scanProductRequirements,
+  getNotices,
+  getCachedNotices,
+  scanProductDownloads,
+  downloadConsentDoc,
+  debugFetch
+};

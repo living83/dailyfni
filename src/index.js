@@ -10,82 +10,161 @@ const writerRoutes = require('./routes/writerRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const reviewerRoutes = require('./routes/reviewerRoutes');
 const publisherRoutes = require('./routes/publisherRoutes');
-const legalRoutes = require('./routes/legalRoutes');
 const customerRoutes = require('./routes/customerRoutes');
-const contentRoutes = require('./routes/contentRoutes');
-const imageAssetRoutes = require('./routes/imageAssetRoutes');
-const monitoringRoutes = require('./routes/monitoringRoutes');
-const webDesignRoutes = require('./routes/webDesignRoutes');
+const loanRoutes = require('./routes/loanRoutes');
+const settlementRoutes = require('./routes/settlementRoutes');
+const employeeRoutes = require('./routes/employeeRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const auditRoutes = require('./routes/auditRoutes');
+const crawlerRoutes = require('./routes/crawlerRoutes');
+const loginRoutes = require('./routes/loginRoutes');
+const settlementApiRoutes = require('./routes/settlementApiRoutes');
+const employeeApiRoutes = require('./routes/employeeApiRoutes');
+const notificationApiRoutes = require('./routes/notificationApiRoutes');
+const intakeRoutes = require('./routes/intakeRoutes');
+const auditApiRoutes = require('./routes/auditApiRoutes');
+const customerApiRoutes = require('./routes/customerApiRoutes');
+const consultationApiRoutes = require('./routes/consultationApiRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const docConvertRoutes = require('./routes/docConvertRoutes');
+const documentRoutes = require('./routes/documentRoutes');
+const smsRoutes = require('./routes/smsRoutes');
+
+const path = require('path');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- 미들웨어 ---
-app.use(express.json());
+app.use(cors({
+  origin: ['https://home.dailyfni.co.kr', 'https://dailyfni.co.kr', 'https://dailyfni.vercel.app', 'http://localhost:3001', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true
+}));
+// 정책 엑셀(수백 건) 업로드 시 기본 100kb 한도에 걸리는 문제 방지
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// CORS 허용 (홈페이지에서 API 호출)
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-
-// --- 홈페이지 고객 접수 API ---
-const intakeRecords = [];
-
-app.post('/api/intake/homepage', (req, res) => {
-  const { name, phone, content, source } = req.body;
-  if (!name || !phone) {
-    return res.status(400).json({ success: false, message: '이름과 전화번호는 필수입니다.' });
-  }
-  const record = {
-    id: intakeRecords.length + 1,
-    name,
-    phone,
-    content: content || '',
-    source: source || '홈페이지',
-    createdAt: new Date().toISOString(),
-  };
-  intakeRecords.push(record);
-  console.log('[신규 유입]', record.name, record.phone, record.source);
-  res.json({ success: true, message: '접수 완료', id: record.id });
-});
-
-app.get('/api/intake/list', (req, res) => {
-  res.json({ success: true, data: intakeRecords, total: intakeRecords.length });
-});
+// API 인증 미들웨어
+const { apiAuth } = require('./middleware/apiAuth');
+app.use('/api', apiAuth);
 
 // --- 라우트 ---
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api', authRoutes);
-app.use('/api', agencyRoutes);
-app.use('/api', plannerRoutes);
-app.use('/api', researchRoutes);
-app.use('/api', seoRoutes);
-app.use('/api', writerRoutes);
-app.use('/api', imageRoutes);
-app.use('/api', reviewerRoutes);
-app.use('/api', publisherRoutes);
-app.use('/api', legalRoutes);
-app.use('/api', customerRoutes);
-app.use('/api', contentRoutes);
-app.use('/api', imageAssetRoutes);
-app.use('/api', monitoringRoutes);
-app.use('/api', webDesignRoutes);
+// app.use('/api', authRoutes);
+// app.use('/api', agencyRoutes);
+// app.use('/api', plannerRoutes);
+// app.use('/api', researchRoutes);
+// app.use('/api', seoRoutes);
+// app.use('/api', writerRoutes);
+// app.use('/api', imageRoutes);
+// app.use('/api', reviewerRoutes);
+// app.use('/api', publisherRoutes);
+// app.use('/api', customerRoutes); // customerApiRoutes로 대체
+// app.use('/api', loanRoutes);
+// app.use('/api', settlementRoutes);
+// app.use('/api', employeeRoutes);
+// app.use('/api', notificationRoutes);
+// app.use('/api', auditRoutes);
+app.use('/api', crawlerRoutes);
+app.use('/api', loginRoutes);
+app.use('/api', settlementApiRoutes);
+app.use('/api', employeeApiRoutes);
+app.use('/api', notificationApiRoutes);
+app.use('/api', intakeRoutes);
+app.use('/api', auditApiRoutes);
+app.use('/api', customerApiRoutes);
+app.use('/api', consultationApiRoutes);
+app.use('/api', dashboardRoutes);
+app.use('/api', docConvertRoutes);
+app.use('/api', documentRoutes);
+app.use('/api', smsRoutes);
 
 // --- 에러 핸들링 ---
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n=== DailyFNI Agency System ===`);
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-  console.log(`Health: http://localhost:${PORT}/api/health`);
-  console.log(`==============================\n`);
-});
+// --- HTTPS + HTTP 서버 ---
+const fs = require('fs');
+const https = require('https');
+const http = require('http');
+
+const sslCertPath = '/etc/letsencrypt/live/work.dailyfni.co.kr';
+const hasSSL = fs.existsSync(sslCertPath + '/fullchain.pem');
+
+if (hasSSL) {
+  const sslOptions = {
+    key: fs.readFileSync(sslCertPath + '/privkey.pem'),
+    cert: fs.readFileSync(sslCertPath + '/fullchain.pem')
+  };
+  https.createServer(sslOptions, app).listen(443, async () => {
+    console.log(`\n=== 대부중개 전산시스템 ===`);
+    console.log(`서버: https://work.dailyfni.co.kr`);
+    const { testConnection, query } = require('./database/db');
+    const dbOk = await testConnection();
+    console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    if (dbOk) {
+      try {
+        await query(`CREATE TABLE IF NOT EXISTS lmaster_notices (
+          idx VARCHAR(20) PRIMARY KEY,
+          notice_date DATE,
+          title VARCHAR(500),
+          body LONGTEXT,
+          author VARCHAR(50) DEFAULT '',
+          body_status VARCHAR(32) DEFAULT 'ok',
+          fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_date (notice_date)
+        )`);
+        // 기존 테이블 보강 (idempotent) — TEXT → LONGTEXT, body_status 신설
+        try {
+          await query(`ALTER TABLE lmaster_notices MODIFY body LONGTEXT`);
+        } catch (_) {}
+        try {
+          await query(`ALTER TABLE lmaster_notices ADD COLUMN body_status VARCHAR(32) DEFAULT 'ok'`);
+        } catch (_) {}
+        console.log('lmaster_notices 테이블 준비됨');
+      } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
+    }
+    console.log(`==========================\n`);
+  });
+  // HTTP → HTTPS 리다이렉트
+  http.createServer((req, res) => {
+    res.writeHead(301, { Location: 'https://work.dailyfni.co.kr' + req.url });
+    res.end();
+  }).listen(80);
+} else {
+  app.listen(PORT, async () => {
+    console.log(`\n=== 대부중개 전산시스템 ===`);
+    console.log(`서버: http://localhost:${PORT}`);
+    const { testConnection, query } = require('./database/db');
+    const dbOk = await testConnection();
+    console.log(`MySQL: ${dbOk ? '연결됨' : '연결실패'}`);
+    if (dbOk) {
+      try {
+        await query(`CREATE TABLE IF NOT EXISTS lmaster_notices (
+          idx VARCHAR(20) PRIMARY KEY,
+          notice_date DATE,
+          title VARCHAR(500),
+          body LONGTEXT,
+          author VARCHAR(50) DEFAULT '',
+          body_status VARCHAR(32) DEFAULT 'ok',
+          fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_date (notice_date)
+        )`);
+        // 기존 테이블 보강 (idempotent) — TEXT → LONGTEXT, body_status 신설
+        try {
+          await query(`ALTER TABLE lmaster_notices MODIFY body LONGTEXT`);
+        } catch (_) {}
+        try {
+          await query(`ALTER TABLE lmaster_notices ADD COLUMN body_status VARCHAR(32) DEFAULT 'ok'`);
+        } catch (_) {}
+      } catch (e) { console.error('lmaster_notices 생성 실패:', e.message); }
+    }
+    console.log(`==========================\n`);
+  });
+}
 
 module.exports = app;
