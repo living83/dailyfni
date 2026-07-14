@@ -35,10 +35,10 @@ const productCategories = [
       { name: '대한저축은행(골프캐디론)', fidx: 2233, tags: ['프리랜서'], desc: '', auth: '', manager: '전소연' },
       { name: '친애저축은행-미인증', fidx: 2539, tags: ['직장인(4대가입)','법인사업자'], desc: '🔹신용,대환,사잇돌', auth: '인증 및 동의서첨부 X' },
       { name: '친애저축은행-선인증', fidx: 2540, tags: ['직장인(4대가입)','법인사업자'], desc: '🔹신용,대환,사잇돌', auth: '선인증Y | 동의서첨부X', manager: '정진옥' },
-      { name: '대한저축(청년)-4대가입', fidx: 2526, tags: ['청년'], desc: '', auth: '' },
-      { name: '대한저축(청년)-4대미가입', fidx: 2527, tags: ['청년'], desc: '', auth: '' },
+      { name: '대한저축(청년)-4대가입', fidx: 2526, tags: ['청년'], ageMin: 19, desc: '', auth: '' },
+      { name: '대한저축(청년)-4대미가입', fidx: 2527, tags: ['청년'], ageMin: 19, desc: '', auth: '' },
       { name: '대한저축은행(주부)', fidx: 2374, tags: ['주부'], desc: '', auth: '' },
-      { name: '삼호저축은행(새내기)', fidx: 2114, tags: ['직장인(4대가입)'], desc: '', auth: '', manager: '김성수' },
+      { name: '삼호저축은행(새내기)', fidx: 2114, tags: ['직장인(4대가입)'], ageMin: 19, desc: '', auth: '', manager: '김성수' },
       { name: '삼호저축은행(여성비상금)', fidx: 2543, tags: ['주부'], desc: '', auth: '', manager: '김성수' },
       { name: '애큐온저축은행-선인증', fidx: 2208, tags: ['직장인(4대가입)'], desc: '🔹신용,대환', auth: '선인증Y | 동의서첨부X', manager: '오현우' },
       { name: '예가람저축은행', fidx: 2528, tags: ['직장인(4대가입)','개인사업자','법인사업자'], desc: '🔹신용,대환,사잇돌,햇살론,특례', auth: '선인증Y | 동의서첨부X', manager: '한예지' },
@@ -109,11 +109,11 @@ const productCategories = [
   {
     name: '청년', color: '#06b6d4', open: false,
     products: [
-      { name: '삼호저축은행(청년)', fidx: 1157, tags: ['청년'], desc: '', auth: '', manager: '김성수' },
-      { name: '상상인플러스저축은행(청년)', fidx: 2323, tags: ['청년'], desc: '', auth: '', manager: '최윤' },
-      { name: '한성저축은행(군미필)', fidx: 2544, tags: ['청년'], desc: '', auth: '', manager: '김중원' },
-      { name: '한성저축은행(청년)', fidx: 2324, tags: ['청년'], desc: '', auth: '', manager: '김중원' },
-      { name: '상상인플러스저축은행(4대가입)', fidx: 2534, tags: ['직장인(4대가입)'], desc: '', auth: '', manager: '최윤' },
+      { name: '삼호저축은행(청년)', fidx: 1157, tags: ['청년'], ageMin: 19, desc: '', auth: '', manager: '김성수' },
+      { name: '상상인플러스저축은행(청년)', fidx: 2323, tags: ['청년'], ageMin: 19, desc: '', auth: '', manager: '최윤' },
+      { name: '한성저축은행(군미필)', fidx: 2544, tags: ['청년'], ageMin: 19, desc: '', auth: '', manager: '김중원' },
+      { name: '한성저축은행(청년)', fidx: 2324, tags: ['청년'], ageMin: 19, desc: '', auth: '', manager: '김중원' },
+      { name: '상상인플러스저축은행(4대가입)', fidx: 2534, tags: ['직장인(4대가입)'], ageMin: 19, desc: '', auth: '', manager: '최윤' },
     ]
   },
   {

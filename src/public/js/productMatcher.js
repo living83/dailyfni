@@ -10,7 +10,7 @@ const productConditions = {
   2422: { // SBI저축은행
     name: 'SBI저축은행', category: '저축은행',
     jobTypes: ['직장인(4대가입)','직장인(4대미가입)','개인사업자','법인사업자','주부','청년','프리랜서','무직'],
-    ageMin: 19, ageMax: 70,
+    ageMin: 20, ageMax: 70,  // SBI는 만20세부터 진행 가능 (만19 불가)
     loanMin: 100, loanMax: 10000,
     vehicle: false,
     recovery: ['무'],
@@ -318,6 +318,9 @@ const productConditions = {
 // ========================================
 // 고객 정보 → 상품 매칭 엔진
 // ========================================
+// 청년(만19~34) 자동판정 상한. '청년' 태그 상품은 직군과 무관하게 이 연령대면 매칭.
+const YOUTH_AGE_MAX = 34;
+
 function matchProducts(customer) {
   const results = [];
 
@@ -329,10 +332,14 @@ function matchProducts(customer) {
   const vehicleKm = customer.vehicleKm || 0;
   const recoveryType = customer.recoveryType || '무';
   const loanAmount = customer.loanAmount || 0;
+  // 나이로 청년 자동판정: 직군이 '청년'이 아니어도 만19~34면 '청년' 상품 매칭 허용
+  const isYouth = age >= 19 && age <= YOUTH_AGE_MAX;
+
+  const custCtx = { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount, isYouth };
 
   // 1단계: productConditions에 등록된 상품 매칭
   for (const [fidx, cond] of Object.entries(productConditions)) {
-    const match = matchOneProduct(parseInt(fidx), cond, { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount });
+    const match = matchOneProduct(parseInt(fidx), cond, custCtx);
     results.push(match);
   }
 
@@ -345,11 +352,12 @@ function matchProducts(customer) {
 
         // tags에서 자동 조건 생성
         const desc = p.desc || '';
+        // 연령: 상품별 ageMin/ageMax 필드 우선, 없으면 기본 만20~70
         const autoCond = {
           name: p.name,
           category: cat.name,
           jobTypes: p.tags || [],
-          ageMin: 20, ageMax: 70,
+          ageMin: (p.ageMin != null ? p.ageMin : 20), ageMax: (p.ageMax != null ? p.ageMax : 70),
           loanMin: 50, loanMax: 10000,
           vehicle: false,
           vehicleYear: null, vehicleKm: null,
@@ -365,7 +373,7 @@ function matchProducts(customer) {
         const parsed = parseDescConditions(desc, p.name, cat.name);
         Object.assign(autoCond, parsed);
 
-        const match = matchOneProduct(p.fidx, autoCond, { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount });
+        const match = matchOneProduct(p.fidx, autoCond, custCtx);
         results.push(match);
       });
     });
@@ -469,7 +477,7 @@ function detectRecovery(productName, categoryName) {
 
 // 단일 상품 매칭
 function matchOneProduct(fidx, cond, customer) {
-  const { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount } = customer;
+  const { age, jobType, hasVehicle, vehicleYear, vehicleKm, recoveryType, loanAmount, isYouth } = customer;
 
   const match = {
     fidx: fidx,
@@ -484,7 +492,9 @@ function matchOneProduct(fidx, cond, customer) {
 
   // 1. 직군 매칭 (필수)
   match.maxScore += 3;
-  const jobMatched = cond.jobTypes.some(j => jobType.includes(j) || j.includes(jobType));
+  // 나이로 청년 자동판정: 만19~34 고객은 직군이 '청년'이 아니어도 '청년' 대상 상품 매칭 허용
+  const youthJobMatch = isYouth && cond.jobTypes.includes('청년');
+  const jobMatched = cond.jobTypes.some(j => jobType.includes(j) || j.includes(jobType)) || youthJobMatch;
   if (jobMatched) {
     match.score += 3;
     match.reasons.push('직군 적합');
