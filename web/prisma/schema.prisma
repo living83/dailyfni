@@ -5,7 +5,6 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 // ─── 고객 신청 ───
@@ -19,6 +18,8 @@ model Application {
   has4Insurance   String?  @db.VarChar(10) // 가입/미가입
   step            Int      @default(1)
   status          String   @default("pending") @db.VarChar(20) // pending, submitted, completed
+  reviewMemo      String?  @db.Text // 심사메모 (관리자 작성)
+  reviewer        String?  @db.VarChar(50) // 심사자 (예: 윤장호)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
