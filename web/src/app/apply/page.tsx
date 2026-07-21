@@ -8,6 +8,7 @@ export default function ApplyPage() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: "",
+    birthDate: "",
     carrier: "",
     phone: "",
     consent: false,
@@ -33,6 +34,17 @@ export default function ApplyPage() {
     return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
   };
 
+  // 생년월일 6자리(YYMMDD) — 숫자만 허용
+  const formatBirth = (value: string) => value.replace(/[^0-9]/g, "").slice(0, 6);
+
+  // 생년월일 유효성 (6자리 + 월/일 범위)
+  const isValidBirth = (v: string) => {
+    if (!/^\d{6}$/.test(v)) return false;
+    const mm = parseInt(v.slice(2, 4), 10);
+    const dd = parseInt(v.slice(4, 6), 10);
+    return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31;
+  };
+
   // 전산 API 전송 (실패해도 무시 — 고객 경험에 영향 없음)
   const sendToSystem = (data: Record<string, string>) => {
     const endpoint = process.env.NEXT_PUBLIC_INTAKE_API || "http://localhost:3000/api/intake/homepage";
@@ -51,6 +63,8 @@ export default function ApplyPage() {
 
     if (!formData.name || formData.name.trim().length < 2)
       newErrors.name = "이름을 2자 이상 입력해 주세요.";
+    if (!isValidBirth(formData.birthDate))
+      newErrors.birthDate = "생년월일 6자리를 정확히 입력해 주세요. (예: 900101)";
     if (!formData.carrier) newErrors.carrier = "통신사를 선택해 주세요.";
     if (!formData.phone || !/^01[016789]\d{7,8}$/.test(formData.phone.replace(/-/g, "")))
       newErrors.phone = "올바른 전화번호를 입력해 주세요.";
@@ -68,6 +82,7 @@ export default function ApplyPage() {
     // 1차 전송: 전산에 백그라운드 전송 (실패해도 접수 완료 처리)
     sendToSystem({
       name: formData.name.trim(),
+      birthDate: formData.birthDate,
       phone: formData.phone.replace(/-/g, ""),
       content: `통신사: ${formData.carrier}`,
       source: "홈페이지",
@@ -86,6 +101,7 @@ export default function ApplyPage() {
       // 2차 전송: 추가 정보 백그라운드 전송
       sendToSystem({
         name: formData.name.trim(),
+        birthDate: formData.birthDate,
         phone: formData.phone.replace(/-/g, ""),
         content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType}`,
         source: "홈페이지",
@@ -98,6 +114,7 @@ export default function ApplyPage() {
     // 2차 전송: 전체 정보 백그라운드 전송
     sendToSystem({
       name: formData.name.trim(),
+      birthDate: formData.birthDate,
       phone: formData.phone.replace(/-/g, ""),
       content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType} / 4대보험: ${formData.has4Insurance}`,
       source: "홈페이지",
@@ -188,6 +205,21 @@ export default function ApplyPage() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">생년월일</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={formData.birthDate}
+                    onChange={(e) => updateField("birthDate", formatBirth(e.target.value))}
+                    placeholder="예: 900101 (앞 6자리)"
+                    className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 ${
+                      errors.birthDate ? "border-error bg-error/5" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.birthDate && <p className="mt-1 text-xs text-error">{errors.birthDate}</p>}
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">통신사</label>
                   <select
                     value={formData.carrier}
@@ -239,7 +271,7 @@ export default function ApplyPage() {
                         개인정보 이용 및 취득에 동의합니다.
                       </span>
                       <p className="text-xs text-gray-400 mt-1">
-                        입력하신 정보(이름, 통신사, 전화번호)는 대출 상담 목적으로만 사용되며, 동의 없이는 어떠한 정보도 저장·전송되지 않습니다.
+                        입력하신 정보(이름, 생년월일, 통신사, 전화번호)는 대출 상담 목적으로만 사용되며, 동의 없이는 어떠한 정보도 저장·전송되지 않습니다.
                       </p>
                     </div>
                   </label>
