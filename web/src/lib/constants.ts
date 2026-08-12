@@ -5,7 +5,8 @@ export const SITE = {
   registrationNumber: process.env.NEXT_PUBLIC_REGISTRATION_NUMBER || "2024-금감원-2626",
   registrationType: "대부업, 대부중개업",
   ceoName: process.env.NEXT_PUBLIC_CEO_NAME || "홍나령",
-  phone: process.env.NEXT_PUBLIC_PHONE || "02-2138-0749",
+  // 대표번호는 고객문의 번호와 동일(02-2138-0749). 배포 환경변수에 덮이지 않도록 고정.
+  phone: "02-2138-0749",
   complaintPhone: "02-2138-0749",
   email: process.env.NEXT_PUBLIC_EMAIL || "info@dailyfni.co.kr",
   address: process.env.NEXT_PUBLIC_ADDRESS || "서울특별시 금천구 서부샛길606 대성디폴리스지식산업센터 비동 2604-1호",
