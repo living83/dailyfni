@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 60" fill="none">
+  <!-- d 아이콘 -->
+  <g transform="translate(0, 5)">
+    <path d="M22 0C9.85 0 0 9.85 0 22s9.85 22 22 22c4.5 0 8.7-1.35 12.2-3.67V44h8V0h-8v3.67C30.7 1.35 26.5 0 22 0zm0 8c7.73 0 14 6.27 14 14s-6.27 14-14 14S8 29.73 8 22 14.27 8 22 8z" fill="#4272B9"/>
+    <path d="M34.2 0h8v44h-8V0z" fill="#4272B9"/>
+  </g>
+  <!-- DAILY F&I 텍스트 -->
+  <text x="58" y="32" font-family="'Arial Black', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="800" fill="#2C3048" letter-spacing="2">DAILY F&amp;I</text>
+  <!-- 부제 -->
+  <text x="58" y="50" font-family="'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif" font-size="11" fill="#888888" letter-spacing="1">주식회사  데일리에프앤아이대부</text>
+</svg>
