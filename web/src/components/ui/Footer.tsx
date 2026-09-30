@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { SITE } from "@/lib/constants";
+import ScamAlert from "@/components/sections/ScamAlert";
 
 export default function Footer() {
   return (
     <footer className="mt-auto">
+      {/* 사칭·보이스피싱 경고 (전 페이지 공통) */}
+      <ScamAlert variant="strip" />
+
       {/* 빨간 경고문 */}
       <div className="bg-white border-t border-gray-200 py-8">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-1">
@@ -69,6 +73,7 @@ export default function Footer() {
             <div>
               <p className="text-white font-bold text-sm mb-3">바로가기</p>
               <ul className="space-y-1.5 text-xs">
+                <li><Link href="/notice" className="hover:text-white transition-colors font-semibold text-gray-300">공지사항</Link></li>
                 <li><Link href="/terms" className="hover:text-white transition-colors">이용약관</Link></li>
                 <li><Link href="/privacy" className="hover:text-white transition-colors font-semibold text-gray-300">개인정보처리방침</Link></li>
                 <li><Link href="/legal" className="hover:text-white transition-colors">책임의 한계와 법적고지</Link></li>
