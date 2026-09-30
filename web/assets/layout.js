@@ -257,6 +257,138 @@
       + '</div>';
   }
 
+
+  /* ----------------------------------------------------------
+   * NOTICE POPUP — 사칭·보이스피싱 주의 (전 페이지, 1일 1회)
+   * 공지 전문: notice.html#impersonation
+   * ---------------------------------------------------------- */
+  var POPUP_KEY = 'dfni_notice_popup_hide_until';   // localStorage: '오늘 하루 열지 않기'
+  var POPUP_SESSION_KEY = 'dfni_notice_popup_closed'; // sessionStorage: 이번 방문에서 닫음
+
+  function buildNoticePopup() {
+    return ''
+      + '<div id="noticePopup" class="notice-popup" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="noticePopupTitle">'
+      +   '<div class="notice-popup__backdrop" data-popup-close></div>'
+      +   '<div class="notice-popup__panel">'
+      +     '<button type="button" class="notice-popup__x" data-popup-close aria-label="공지 닫기">'
+      +       '<iconify-icon icon="solar:close-circle-linear" width="20" aria-hidden="true"></iconify-icon>'
+      +     '</button>'
+      +     '<div class="notice-popup__body">'
+      +       '<div class="flex items-center gap-2.5">'
+      +         '<span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-400/15 text-rose-300 ring-1 ring-rose-400/30">'
+      +           '<iconify-icon icon="solar:shield-warning-bold" width="20" aria-hidden="true"></iconify-icon>'
+      +         '</span>'
+      +         '<span class="inline-flex items-center rounded-full bg-rose-400/15 px-2.5 py-0.5 text-[13px] font-semibold text-rose-200 ring-1 ring-rose-400/30">중요 공지</span>'
+      +         '<span class="text-[14px] text-zinc-500 tabular-nums">2026.09.30</span>'
+      +       '</div>'
+      +       '<h2 id="noticePopupTitle" class="mt-4 text-xl sm:text-2xl font-bold tracking-tightest-ko text-white leading-snug break-keep-all">'
+      +         '당사 사칭 대출 권유 · 불법 문자에 주의하십시오'
+      +       '</h2>'
+      +       '<p class="mt-3 text-[15px] text-zinc-400 leading-relaxed break-keep-all">'
+      +         '데일리에프앤아이대부 및 임직원을 사칭하여 대출을 권유하거나 금전을 요구하는 사례가 확인되고 있습니다.'
+      +       '</p>'
+      +       '<ul class="mt-5 space-y-2.5">'
+      +         '<li class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">'
+      +           '<p class="text-[15px] font-semibold text-white leading-snug break-keep-all">소비자금융(개인대출)을 취급하지 않습니다</p>'
+      +           '<p class="mt-1 text-[14px] text-zinc-400 leading-relaxed break-keep-all">당사의 등록 영업은 매입채권추심업에 한하며, 어떠한 대출 상품도 취급·중개하지 않습니다.</p>'
+      +         '</li>'
+      +         '<li class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">'
+      +           '<p class="text-[15px] font-semibold text-white leading-snug break-keep-all">대출 관련 전화·문자메시지를 일절 발송하지 않습니다</p>'
+      +           '<p class="mt-1 text-[14px] text-zinc-400 leading-relaxed break-keep-all">대출 승인·한도 조회·저금리 전환 안내는 모두 사칭입니다.</p>'
+      +         '</li>'
+      +         '<li class="rounded-2xl border border-white/10 bg-white/[0.02] p-4">'
+      +           '<p class="text-[15px] font-semibold text-white leading-snug break-keep-all">‘서○○ 팀장’은 당사 직원이 아닙니다</p>'
+      +           '<p class="mt-1 text-[14px] text-zinc-400 leading-relaxed break-keep-all">재직 사실이 없으며, 당사와 어떠한 위임·대리 관계도 없습니다.</p>'
+      +         '</li>'
+      +       '</ul>'
+      +       '<div class="brand-info mt-5 rounded-2xl p-4">'
+      +         '<p class="text-[14px] text-zinc-300 leading-relaxed break-keep-all">'
+      +           '당사 명의의 대출 안내를 받으셨다면 응답하지 마시고 대표번호 '
+      +           '<a href="tel:02-2138-0750" class="brand-link tabular-nums">02-2138-0750</a>'
+      +           ' 또는 금융감독원 '
+      +           '<a href="tel:1332" class="brand-link tabular-nums">1332</a>'
+      +           ' 로 신고해 주십시오.'
+      +         '</p>'
+      +       '</div>'
+      +       '<a href="./notice.html#impersonation" class="brand-btn mt-5 px-5 py-2.5 text-[15px]">'
+      +         '공지 전문 보기'
+      +         '<iconify-icon icon="solar:arrow-right-linear" width="16" aria-hidden="true"></iconify-icon>'
+      +       '</a>'
+      +     '</div>'
+      +     '<div class="notice-popup__foot">'
+      +       '<label class="notice-popup__check">'
+      +         '<input type="checkbox" id="noticePopupToday">'
+      +         '오늘 하루 열지 않기'
+      +       '</label>'
+      +       '<button type="button" class="notice-popup__close" data-popup-close>닫기</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  function popupSuppressed() {
+    try {
+      var until = window.localStorage.getItem(POPUP_KEY);
+      if (until && Date.now() < Number(until)) return true;
+    } catch (err) { /* private mode 등 — 무시하고 표시 */ }
+    try {
+      if (window.sessionStorage.getItem(POPUP_SESSION_KEY) === '1') return true;
+    } catch (err) { /* 무시 */ }
+    return false;
+  }
+
+  // 다음 자정(로컬 시각)까지 숨김
+  function suppressUntilTomorrow() {
+    var next = new Date();
+    next.setHours(24, 0, 0, 0);
+    try { window.localStorage.setItem(POPUP_KEY, String(next.getTime())); } catch (err) { /* 무시 */ }
+  }
+
+  function bindNoticePopup() {
+    var popup = document.getElementById('noticePopup');
+    if (!popup) return;
+    var checkbox = document.getElementById('noticePopupToday');
+    var lastFocus = null;
+
+    function open() {
+      lastFocus = document.activeElement;
+      popup.classList.add('is-open');
+      popup.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      var closeBtn = popup.querySelector('.notice-popup__close');
+      if (closeBtn) closeBtn.focus();
+    }
+
+    function close() {
+      if (checkbox && checkbox.checked) suppressUntilTomorrow();
+      else {
+        try { window.sessionStorage.setItem(POPUP_SESSION_KEY, '1'); } catch (err) { /* 무시 */ }
+      }
+      popup.classList.remove('is-open');
+      popup.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    popup.addEventListener('click', function (e) {
+      var el = e.target;
+      while (el && el !== popup) {
+        if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-popup-close')) { close(); return; }
+        el = el.parentNode;
+      }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && popup.classList.contains('is-open')) close();
+    });
+    // 공지 전문으로 이동할 때도 닫힘 처리(뒤로가기 시 재노출 방지)
+    var detailLink = popup.querySelector('a[href*="notice.html"]');
+    if (detailLink) detailLink.addEventListener('click', function () {
+      try { window.sessionStorage.setItem(POPUP_SESSION_KEY, '1'); } catch (err) { /* 무시 */ }
+    });
+
+    setTimeout(open, 500);
+  }
+
   /* ----------------------------------------------------------
    * INJECT
    * ---------------------------------------------------------- */
@@ -268,6 +400,10 @@
     if (footerSlot) footerSlot.outerHTML = buildFooter();
     if (document.body && !document.getElementById('legalModal')) {
       document.body.insertAdjacentHTML('beforeend', buildLegalModal());
+    }
+    // 사칭 주의 팝업 — 공지사항 페이지(전문 노출 중)와 재노출 억제 시에는 생략
+    if (document.body && page !== 'notice' && !document.getElementById('noticePopup') && !popupSuppressed()) {
+      document.body.insertAdjacentHTML('beforeend', buildNoticePopup());
     }
   }
 
@@ -296,6 +432,9 @@
 
     // Legal modal (공용 문서 뷰어)
     bindLegalModal();
+
+    // 사칭 주의 팝업
+    bindNoticePopup();
 
     // Reveal-on-scroll (IntersectionObserver, no scroll listeners)
     var reveals = document.querySelectorAll('.reveal');

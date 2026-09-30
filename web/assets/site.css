@@ -399,3 +399,167 @@ html.legal-modal-lock body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   Notice popup — 사칭·보이스피싱 주의 (layout.js가 #noticePopup 으로 주입)
+   ========================================================================== */
+.notice-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  opacity: 0;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notice-popup.is-open { display: flex; opacity: 1; }
+
+.notice-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 20, 0.82);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  cursor: pointer;
+}
+
+.notice-popup__panel {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  max-height: min(88vh, 860px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(244, 63, 94, 0.28);
+  background:
+    linear-gradient(180deg, rgba(244, 63, 94, 0.10) 0%, transparent 34%),
+    rgba(26, 30, 58, 0.96);
+  box-shadow:
+    0 50px 120px -30px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateY(18px) scale(0.975);
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notice-popup.is-open .notice-popup__panel { transform: translateY(0) scale(1); }
+
+.notice-popup__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 1.75rem 1.5rem 1.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+.notice-popup__body::-webkit-scrollbar { width: 8px; }
+.notice-popup__body::-webkit-scrollbar-track { background: transparent; }
+.notice-popup__body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 99px;
+}
+
+.notice-popup__foot {
+  flex: 0 0 auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 13, 30, 0.55);
+  padding: 0.875rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.notice-popup__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  color: #a1a1aa;
+  cursor: pointer;
+  user-select: none;
+}
+.notice-popup__check input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #2777b0;
+  cursor: pointer;
+}
+.notice-popup__check:hover { color: #e4e4e7; }
+
+.notice-popup__close {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.notice-popup__close:hover,
+.notice-popup__close:focus-visible { background: rgba(255, 255, 255, 0.12); }
+
+.notice-popup__x {
+  position: absolute;
+  top: 0.875rem;
+  right: 0.875rem;
+  z-index: 2;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d4d4d8;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.notice-popup__x:hover,
+.notice-popup__x:focus-visible { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+@media (max-width: 480px) {
+  .notice-popup { padding: 0.875rem; }
+  .notice-popup__body { padding: 1.5rem 1.125rem 1.25rem; }
+  .notice-popup__foot { padding: 0.75rem 1rem; }
+  .notice-popup__check { font-size: 0.875rem; }
+}
+
+/* --------------------------------------------------------------------------
+   Brand accent helpers
+   Tailwind CDN 설정의 커스텀 컬러(accent-*)가 런타임에 생성되지 않아
+   bg-accent / text-accent 계열이 적용되지 않는다. 사칭 공지·팝업은 확실히
+   보여야 하므로 브랜드 색을 CSS 로 직접 정의해 사용한다.
+   -------------------------------------------------------------------------- */
+.brand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #2777b0;
+  color: #fff;
+  border-radius: 999px;
+  font-weight: 600;
+  box-shadow: 0 22px 60px -24px rgba(39, 119, 176, 0.45);
+  transition: background-color 0.25s ease, transform 0.25s ease;
+}
+.brand-btn:hover { background-color: #206294; }
+
+.brand-link {
+  color: #6ca5ca;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.brand-link:hover { color: #9ec3df; }
+
+.brand-info {
+  border: 1px solid rgba(39, 119, 176, 0.32);
+  background: rgba(39, 119, 176, 0.08);
+}
+
+.brand-eyebrow { color: #6ca5ca; }
