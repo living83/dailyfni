@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ScamPopup from "@/components/ui/ScamPopup";
 
 export const metadata: Metadata = {
   title: "DAILY F&I - 신뢰할 수 있는 대출 중개 서비스",
@@ -37,7 +38,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="h-full antialiased">
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <ScamPopup />
+      </body>
     </html>
   );
 }
