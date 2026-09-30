@@ -360,11 +360,22 @@
 
       function renderError(msg) {
         if (!listEl) return;
+        // 원인 코드(HTTP 410 등)는 화면에 노출하지 않고 콘솔로만 남긴다.
+        if (msg && window.console && console.warn) console.warn('[notice] 공지 목록 로드 실패:', msg);
         listEl.innerHTML = ''
-          + '<li class="px-5 py-8 text-center text-sm text-zinc-500">'
-          +   '<iconify-icon icon="solar:danger-triangle-linear" width="28" aria-hidden="true"></iconify-icon>'
-          +   '<p class="mt-3 text-white">공지사항을 불러오지 못했습니다.</p>'
-          +   '<p class="mt-1 text-xs text-zinc-600">' + escape(msg || '네트워크 오류가 발생했습니다.') + '</p>'
+          + '<li class="rounded-2xl border border-white/10 bg-white/[0.02] px-5 py-10 text-center">'
+          +   '<iconify-icon icon="solar:danger-triangle-linear" class="text-zinc-500" width="30" aria-hidden="true"></iconify-icon>'
+          +   '<p class="mt-4 text-[17px] text-white font-semibold">공지사항을 불러오지 못했습니다.</p>'
+          +   '<p class="mt-2 text-[15px] text-zinc-400 leading-relaxed break-keep-all">'
+          +     '일시적인 오류일 수 있습니다. 잠시 후 다시 시도해 주세요.<br>'
+          +     '급한 문의는 대표번호 '
+          +     '<a href="tel:02-2138-0750" class="brand-link tabular-nums">02-2138-0750</a>'
+          +     ' 으로 연락해 주시기 바랍니다.'
+          +   '</p>'
+          +   '<button type="button" data-notice-retry class="brand-btn mt-6 px-5 py-2.5 text-[15px]">'
+          +     '<iconify-icon icon="solar:refresh-linear" width="16" aria-hidden="true"></iconify-icon>'
+          +     '다시 시도'
+          +   '</button>'
           + '</li>';
         if (emptyEl) emptyEl.classList.add('hidden');
       }
@@ -424,6 +435,20 @@
             state.error = (err && err.message) ? err.message : '알 수 없는 오류';
             render();
           });
+      }
+
+      // '다시 시도' 버튼 (에러 렌더 후 생성되므로 위임으로 처리)
+      if (listEl) {
+        listEl.addEventListener('click', function (e) {
+          var el = e.target;
+          while (el && el !== listEl) {
+            if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-notice-retry')) {
+              loadNotices();
+              return;
+            }
+            el = el.parentNode;
+          }
+        });
       }
 
       // Initial load
