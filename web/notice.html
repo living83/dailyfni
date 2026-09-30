@@ -232,7 +232,7 @@
     // To update notices: edit the spreadsheet in Google Sheets.
     // Changes may take up to ~5 minutes to appear (Google's publish cache).
     (function () {
-      var NOTICE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSH9aAyyy8M2ffmIo3MbWI-S1I1rLmEzcXLyrGIlADxhfg8q0N5nre4zZ-fPKqIMPcUcGZ9FA0G8UvK/pub?gid=0&single=true&output=csv';
+      var NOTICE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ6WYmL3pQOjMfIgxYXKgvJ7BRnpXcmK_gY7BJLNw8svOoljuDOB03aK8yFKFCbF-Q2pMu-u70lPNt/pub?gid=0&single=true&output=csv';
 
       // Korean category label (sheet A열) → internal code
       var CATEGORY_MAP = {
@@ -308,6 +308,7 @@
         raw.forEach(function (r) {
           var cat = CATEGORY_MAP[r.category];
           if (!cat) return; // unknown or blank category → skip
+          if (!r.title) return; // 제목이 비어 있는 행(작성 중)은 표시하지 않음
           result.push({
             category: cat,
             date:     r.date    || '',
