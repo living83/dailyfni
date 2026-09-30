@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F1A33"/>
+      <stop offset="50%" style="stop-color:#1B2A4A"/>
+      <stop offset="100%" style="stop-color:#1E3A5F"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1050" cy="100" r="200" fill="rgba(255,255,255,0.03)"/>
+  <circle cx="150" cy="530" r="150" fill="rgba(255,255,255,0.03)"/>
+  <text x="100" y="200" font-family="Arial, sans-serif" font-size="56" font-weight="bold" fill="white">DAILY F&amp;I</text>
+  <text x="100" y="270" font-family="Arial, sans-serif" font-size="24" fill="#9CA3AF">(주)데일리에프앤아이대부</text>
+  <text x="100" y="360" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="white">신뢰할 수 있는</text>
+  <text x="100" y="420" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="#2563EB">대출 중개 서비스</text>
+  <rect x="100" y="470" width="340" height="36" rx="18" fill="rgba(255,255,255,0.1)"/>
+  <text x="120" y="495" font-family="Arial, sans-serif" font-size="16" fill="#9CA3AF">2024-금감원-2626 | 대부중개업 정식 등록</text>
+  <text x="100" y="570" font-family="Arial, sans-serif" font-size="18" fill="#6B7280">회생·파산·신용회복 | 오토론 | 신용대출 | 무직자 | 부동산</text>
+</svg>

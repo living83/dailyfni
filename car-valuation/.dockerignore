@@ -1,0 +1,43 @@
+# Source control
+.git/
+.gitignore
+.gitattributes
+
+# Virtualenvs / caches
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Secrets — never bake into image
+.env
+.env.local
+.env.server
+.env.production
+.env.*.local
+
+# Runtime artifacts (mounted as volumes at runtime)
+data/
+logs/
+output/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+unmatched_models.log
+
+# Editor / OS junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Probe HTML dumps from step 4 debugging
+logs/*.html

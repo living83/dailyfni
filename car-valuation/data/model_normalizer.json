@@ -1,0 +1,30 @@
+{
+  "K7": {
+    "aliases": [
+      "K7",
+      "기아 K7",
+      "기아K7",
+      "더 뉴 K7",
+      "더뉴K7",
+      "더 뉴 K7 페이스리프트",
+      "올 뉴 K7",
+      "올뉴K7",
+      "K7 프리미어",
+      "K7프리미어",
+      "케이7",
+      "케이세븐"
+    ],
+    "encar": {
+      "Manufacturer": "기아",
+      "ModelGroup": "K7"
+    },
+    "kbchachacha": {
+      "makerCode": "102",
+      "classCode": "1173"
+    },
+    "heydealer": {
+      "brand_hash_id": "2oV0gK",
+      "model_group_hash_id": "XevRae"
+    }
+  }
+}

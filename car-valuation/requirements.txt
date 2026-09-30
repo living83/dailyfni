@@ -1,0 +1,25 @@
+# --- Web scraping ---
+playwright==1.49.1
+playwright-stealth==1.0.6
+
+# --- HTTP / async ---
+httpx==0.28.1
+aiosqlite==0.20.0
+tenacity==9.0.0
+
+# --- API server ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+python-multipart==0.0.20
+
+# --- Excel I/O ---
+openpyxl==3.1.5
+
+# --- Text matching / utils ---
+rapidfuzz==3.10.1
+python-dotenv==1.0.1
+
+# --- Dev / test ---
+pytest==8.3.4
+pytest-asyncio==0.25.0

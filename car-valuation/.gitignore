@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Local secrets / env files — never commit
+.env
+.env.local
+.env.server
+.env.production
+.env.*.local
+
+# Data + outputs are runtime artifacts, not source
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+output/
+logs/*.log
+logs/*.html
+unmatched_models.log
