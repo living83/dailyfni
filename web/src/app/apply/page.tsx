@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { SITE, CARRIERS, COMMON_LEGAL_NOTICE } from "@/lib/constants";
 
+const KAKAO_CHAT_URL = "https://pf.kakao.com/_XEUIX/chat";
+const CONTACT_METHOD_LABEL: Record<string, string> = { phone: "전화", kakao: "카카오톡" };
+
 export default function ApplyPage() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -14,6 +17,7 @@ export default function ApplyPage() {
     consent: false,
     employmentType: "",
     has4Insurance: "",
+    contactMethod: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [consentWarning, setConsentWarning] = useState(false);
@@ -52,6 +56,7 @@ export default function ApplyPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
+      keepalive: true, // 카카오톡 이동으로 페이지가 바뀌어도 전송 유지
     }).catch(() => {
       // 전산 연동 실패는 백그라운드 처리, 고객에게 영향 없음
       console.warn("[전산 연동 실패] 데이터:", data);
@@ -95,32 +100,38 @@ export default function ApplyPage() {
 
   const handleStep2Submit = () => {
     if (!formData.employmentType) return;
-    if (formData.employmentType === "employed") {
-      setStep(3);
-    } else {
-      // 2차 전송: 추가 정보 백그라운드 전송
-      sendToSystem({
-        name: formData.name.trim(),
-        birthDate: formData.birthDate,
-        phone: formData.phone.replace(/-/g, ""),
-        content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType}`,
-        source: "홈페이지",
-      });
-      setComplete(true);
-    }
+    setStep(formData.employmentType === "employed" ? 3 : 4);
   };
 
   const handleStep3Submit = () => {
+    setStep(4);
+  };
+
+  // 마지막 단계: 원하는 상담 방법 (전화 / 카카오톡)
+  const handleStep4Submit = () => {
+    if (!formData.contactMethod) return;
+    const parts = [`통신사: ${formData.carrier}`, `직업: ${formData.employmentType}`];
+    if (formData.employmentType === "employed") parts.push(`4대보험: ${formData.has4Insurance}`);
+    parts.push(`상담방법: ${CONTACT_METHOD_LABEL[formData.contactMethod]}`);
+
     // 2차 전송: 전체 정보 백그라운드 전송
     sendToSystem({
       name: formData.name.trim(),
       birthDate: formData.birthDate,
       phone: formData.phone.replace(/-/g, ""),
-      content: `통신사: ${formData.carrier} / 직업: ${formData.employmentType} / 4대보험: ${formData.has4Insurance}`,
+      content: parts.join(" / "),
       source: "홈페이지",
     });
     setComplete(true);
+
+    if (formData.contactMethod === "kakao") {
+      window.location.href = KAKAO_CHAT_URL;
+    }
   };
+
+  // 직장인은 4단계(4대보험 포함), 그 외는 3단계
+  const totalSteps = formData.employmentType === "employed" ? 4 : 3;
+  const displayStep = step === 4 ? totalSteps : step;
 
   if (complete) {
     return (
@@ -140,7 +151,24 @@ export default function ApplyPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">접수 완료!</h1>
-            <p className="text-gray-500 mb-6">곧 상담 연락을 드리겠습니다.</p>
+            {formData.contactMethod === "kakao" ? (
+              <>
+                <p className="text-gray-500 mb-4">카카오톡 상담 채널로 이동합니다.</p>
+                <a
+                  href={KAKAO_CHAT_URL}
+                  className="inline-flex items-center px-6 py-3 mb-3 bg-[#FEE500] hover:brightness-95 text-[#191919] font-semibold rounded-lg transition"
+                >
+                  카카오톡 상담 바로가기
+                </a>
+                <br />
+              </>
+            ) : (
+              <p className="text-gray-500 mb-6">
+                전문 상담원이 전화를 드릴 예정입니다.
+                <br />
+                잠시만 기다려 주세요.
+              </p>
+            )}
             <Link
               href="/"
               className="inline-flex items-center px-6 py-3 bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg transition-colors"
@@ -168,13 +196,13 @@ export default function ApplyPage() {
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="max-w-md mx-auto">
           <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-            <span>Step {step}/3</span>
-            <span>{Math.round((step / 3) * 100)}%</span>
+            <span>Step {displayStep}/{totalSteps}</span>
+            <span>{Math.round((displayStep / totalSteps) * 100)}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-accent h-2 rounded-full transition-all duration-500"
-              style={{ width: `${(step / 3) * 100}%` }}
+              style={{ width: `${(displayStep / totalSteps) * 100}%` }}
             />
           </div>
         </div>
@@ -330,7 +358,7 @@ export default function ApplyPage() {
           {step === 3 && (
             <div>
               <h1 className="text-xl font-bold text-gray-900 mb-1">상세 정보</h1>
-              <p className="text-gray-500 text-sm mb-6">마지막 단계입니다.</p>
+              <p className="text-gray-500 text-sm mb-6">더 정확한 상담을 위해 알려주세요.</p>
 
               <div className="space-y-4">
                 <div>
@@ -352,6 +380,47 @@ export default function ApplyPage() {
                 <button
                   onClick={handleStep3Submit}
                   className="w-full py-3.5 bg-accent hover:bg-accent-hover text-white font-semibold rounded-lg transition-colors"
+                >
+                  다음
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: 원하는 상담 방법 (마지막) */}
+          {step === 4 && (
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 mb-1">원하는 상담 방법</h1>
+              <p className="text-gray-500 text-sm mb-6">마지막 단계입니다. 편하신 상담 방법을 선택해 주세요.</p>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { value: "phone", label: "전화 상담", desc: "상담원이 전화 드려요" },
+                    { value: "kakao", label: "카카오톡 상담", desc: "채팅으로 바로 상담" },
+                  ].map((opt) => {
+                    const selected = formData.contactMethod === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => updateField("contactMethod", opt.value)}
+                        aria-pressed={selected}
+                        className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                          selected ? "border-accent bg-accent/5" : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold text-gray-900">{opt.label}</span>
+                        <span className="block text-xs text-gray-500 mt-1">{opt.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={handleStep4Submit}
+                  disabled={!formData.contactMethod}
+                  className="w-full py-3.5 bg-accent hover:bg-accent-hover disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
                 >
                   완료
                 </button>
